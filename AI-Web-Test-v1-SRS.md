@@ -409,13 +409,20 @@ Production Incidents + Test Results → Evolution Agent
 - Traffic Management: Nginx/Envoy for load balancing and routing
 - Monitoring: Prometheus + Grafana for circuit breaker dashboards
 
-**Data Layer:**
-- Primary Database: PostgreSQL 15+ with TimescaleDB extension
-- Cache: Redis 7+ (Cluster mode for high availability)
-- Vector Store: Qdrant for semantic search
-- Object Storage: MinIO (S3-compatible) for screenshots/artifacts
-- Search: Elasticsearch 8+ for logs and test results
-- Time-Series: TimescaleDB for metrics
+**Database Stack (Enhanced):**
+- Primary Database: PostgreSQL 15+ with optimized schema (9 core tables: users, projects, test_cases, test_executions, ml_models, predictions, agent_decisions, agent_messages, audit_logs)
+- Indexing Strategy: 30+ indexes including Primary key (9), Unique (5), Foreign key (8), Timestamp (4 with DESC), Composite (5 for multi-condition queries), Partial (6 with WHERE clauses), GIN for JSONB (3), GIN for full-text search (1)
+- Connection Pooling: PgBouncer 1.21.0 in transaction mode (25 default pool, 1000 max client connections, 10 min pool, 5 reserve pool) for 50x faster connection overhead
+- Query Optimization: EXPLAIN ANALYZE for performance tuning + materialized views (mv_project_stats refreshed every 15 min) + index monitoring queries (pg_stat_user_indexes, pg_stat_user_tables)
+- Performance Tracking: pg_stat_statements extension for query analysis (top slowest, most frequent, high I/O queries)
+- Database Monitoring: PostgreSQL Prometheus Exporter with metrics (pg_up, pg_database_size_bytes, pg_stat_database_*, pg_stat_user_tables_*, pg_stat_user_indexes_*)
+- Backup & Recovery: Automated daily pg_dump + gzip + S3 upload (30-day retention) + WAL archiving for Point-in-Time Recovery (PITR, archive every 5 min)
+- Full-Text Search: PostgreSQL FTS with GIN index on tsvector + ts_rank scoring + automatic tsvector update via trigger
+- Time-Series Extension: TimescaleDB for metrics and agent decision logs (hypertables for efficient time-based queries)
+- Cache: Redis 7+ (Cluster mode for high availability) for hot data, session storage
+- Vector Store: Qdrant for semantic search and agent memory
+- Object Storage: MinIO (S3-compatible) for screenshots, artifacts, model weights
+- Search: Elasticsearch 8+ for logs and test results full-text search
 
 **Observability:**
 - Metrics: Prometheus with custom agent metrics
@@ -425,12 +432,19 @@ Production Incidents + Test Results → Evolution Agent
 - APM: Sentry for error tracking
 - Alerts: Alertmanager with PagerDuty integration
 
-**Testing & Quality:**
-- Unit Tests: pytest with pytest-asyncio
-- Integration Tests: pytest with testcontainers
-- E2E Tests: Playwright for UI testing
-- Load Tests: Locust for performance testing
-- Code Quality: Ruff (linting), Black (formatting), mypy (type checking)
+**Testing Stack (Enhanced):**
+- Unit Tests: pytest 7.4.0 + pytest-asyncio 0.21.0 + pytest-cov 4.1.0 for 80% code coverage target + pytest-xdist for parallel execution
+- Integration Tests: pytest + Docker Compose (PostgreSQL test:5433, Redis test:6380) for multi-agent workflow testing (6 agents: Requirements, Generation, Execution, Observation, Analysis, Evolution), message bus testing (delivery, ordering, persistence), concurrent workflow testing (10+ simultaneous workflows)
+- Contract Tests: Pydantic 2.4.0 for message schema validation (RequirementsAnalyzedMessage, TestsGeneratedMessage, TestsExecutedMessage) + optional Pact 2.0.0 for consumer-driven contracts + backward compatibility testing (v1.0 messages validate with current contracts)
+- Chaos Engineering: Chaos Mesh 2.6.0 for Kubernetes-native chaos experiments (pod-kill for Generation Agent, network latency 500ms + 50ms jitter, database partition 30s) + Chaos Toolkit 1.16.0 for Python-based chaos experiments with steady-state hypothesis validation
+- Performance Tests: Locust 2.15.0 for load testing (100 concurrent users, 5-minute duration, 3 endpoints: /tests/generate, /tests/execute, /tests/executions) + k6 0.47.0 for stress testing (ramp 100 → 200 users over 9 minutes) + spike testing (50 → 500 users in 10 seconds)
+- Performance Thresholds: p95 response time < 2000ms, p99 < 5000ms, error rate < 1%, throughput > 100 req/sec (enforced in k6 options thresholds)
+- E2E Tests: Playwright 1.39.0 for UI workflow testing (login → generate → execute → view results) + cross-browser (Chromium, Firefox, WebKit) + headless mode for CI + agent monitoring dashboard tests
+- Test Infrastructure: Docker Compose test environment (isolated PostgreSQL, Redis, backend), pytest fixtures (sample users, test cases, executions), testcontainers for integration tests
+- CI/CD Integration: GitHub Actions with 5-stage pipeline (unit 5 min, integration 15 min, contract 10 min, E2E 30 min, performance 60 min main only) + Codecov for coverage reporting (80% target) + Playwright HTML reports (with screenshots) + Locust CSV results
+- Quality Gates: PR merge requires unit + integration + contract tests pass + 80% coverage + code review. Production deployment requires all tests + performance thresholds + chaos 80% resilience
+- Test Reporting: Optional Allure Framework 2.24.0 for unified test reports across all test types
+- Code Quality: Ruff 0.1.0 (linting), Black 23.10.0 (formatting), mypy 1.6.0 (type checking)
 
 **Security Stack:**
 - API Rate Limiting: slowapi 0.1.9 + Redis for distributed rate limiting with role-based quotas

@@ -597,6 +597,34 @@ This multi-agent architecture addresses critical pain points of manual testing o
 - Severity-based alert routing (critical → PagerDuty, high → Slack + Email, warning → Slack only)
 - Prediction logging in PostgreSQL with PredictionAnalyzer for low-confidence prediction review and statistics
 
+### 3.15 Database Performance & Optimization
+
+**FR-71: Database Architecture & Indexing Strategy**
+- Optimized PostgreSQL 15+ schema with 9 core tables: users, projects, test_cases, test_executions (high-volume), ml_models, predictions (ML monitoring), agent_decisions (observability), agent_messages (inter-agent), audit_logs (GDPR compliance)
+- 30+ indexes for optimal query performance: Primary key (9), Unique (5 for business keys like test_id, execution_id), Foreign key (8 for all FK constraints), Timestamp (4 with DESC for recent-first queries), Composite (5 for multi-condition queries), Partial (6 with WHERE clauses for filtered queries), GIN for JSONB (3 for agent context, ML metrics, prediction features), GIN for full-text search (1 for test case search)
+- Composite indexes for common query patterns: `(project_id, result, created_at)` for dashboard, `(agent_id, confidence_score, created_at)` for agent monitoring, `(model_name, model_version, created_at)` for ML monitoring, `(test_id, result, created_at)` for test history
+- Partial indexes for filtered queries: `WHERE status = 'active'` for active test cases, `WHERE result IN ('fail', 'error')` for failed executions, `WHERE ground_truth IS NULL` for predictions needing feedback, `WHERE status IN ('sent', 'delivered')` for unprocessed agent messages
+- PgBouncer connection pooling in transaction mode: 25 default pool size, 1000 max client connections, 10 min pool size, 5 reserve pool size for 50x faster connection overhead (50ms → 1ms)
+- pg_stat_statements extension for query performance tracking: Top slowest queries by mean_exec_time, most frequent queries by calls, high I/O queries by cache miss ratio
+- PostgreSQL Prometheus Exporter for real-time database monitoring: pg_up (health), pg_database_size_bytes, pg_stat_database_* (connections, transactions), pg_stat_user_tables_* (table sizes, scans), pg_stat_user_indexes_* (index usage)
+- Automated daily backups: pg_dump compressed with gzip to S3 (30-day retention), WAL archiving for Point-in-Time Recovery (PITR) every 5 minutes
+- Materialized views for complex dashboard queries: mv_project_stats refreshed every 15 minutes via scheduled job for instant dashboard load times
+- Full-text search with GIN indexes on tsvector: ts_rank scoring for test case search by title and description, automatic tsvector update via trigger
+
+### 3.16 Integration & End-to-End Testing
+
+**FR-72: Integration & End-to-End Testing**
+- Multi-agent integration tests with pytest 7.4.0 + pytest-asyncio 0.21.0 for complete workflows (Requirements → Generation → Execution → Observation → Analysis → Evolution) with workflow_id tracking and message verification (minimum 5 agent interactions per workflow)
+- Contract testing with Pydantic 2.4.0 for agent message schema validation: RequirementsAnalyzedMessage (confidence 0.0-1.0, scenarios min_items=1), TestsGeneratedMessage (tests min_items=1, generation_time_ms), TestsExecutedMessage (total_tests, passed, failed, execution_time_ms)
+- Backward compatibility testing: Old message formats (v1.0) must validate with current contracts to prevent breaking changes
+- Chaos engineering with Chaos Mesh 2.6.0: Pod-kill experiments (kill generation-agent pod, verify graceful Kubernetes restart + system continues), network latency injection (500ms delay + 50ms jitter, test degraded performance), database partition tests (30s PostgreSQL outage, verify circuit breaker activates)
+- Performance testing with Locust 2.15.0 + k6 0.47.0: Load tests (100 concurrent users, 5-minute duration, 3 endpoints: /tests/generate, /tests/execute, /tests/executions), stress tests (ramp 100 → 200 users over 9 minutes), spike tests (50 → 500 users in 10 seconds)
+- Performance thresholds enforced by k6: p95 response time < 2000ms, p99 response time < 5000ms, error rate < 1%, throughput > 100 req/sec
+- End-to-end testing with Playwright 1.39.0: Full workflow tests (login → generate tests → execute tests → view results), agent monitoring UI tests (real-time agent activity dashboard), error scenario tests (invalid inputs, agent failures), cross-browser support (Chromium, Firefox, WebKit)
+- Test infrastructure: Docker Compose for isolated test environment (PostgreSQL test DB port 5433, Redis port 6380, backend service port 8001), pytest fixtures (sample users, test cases, executions), pytest-xdist for parallel test execution
+- CI/CD integration with GitHub Actions: 5-stage pipeline (unit tests 5 min, integration tests 15 min, contract tests 10 min, E2E tests 30 min, performance tests 60 min main branch only), automated on every PR and push to main, test reports (Codecov for coverage 80% target, Playwright HTML for E2E with screenshots, Locust CSV for performance metrics)
+- Quality gates: PR merge requires unit tests pass + integration tests pass + contract tests pass + 80% code coverage + code review. Production deployment requires all tests pass + performance thresholds met + chaos tests 80% resilience score
+
 ---
 
 ## 4. User Stories
