@@ -376,6 +376,227 @@ This multi-agent architecture addresses critical pain points of manual testing o
 - Production model performance comparison
 - Cost per training run tracking
 
+### 3.10 MLOps & Model Lifecycle Management
+
+**FR-41: Experiment Tracking**
+- All model training experiments logged to MLflow
+- Parameters, metrics, and artifacts tracked automatically
+- Comparison and visualization of experiments
+- Reproducible training runs with version control
+- Integration with Git for code versioning
+
+**FR-42: Model Registry & Versioning**
+- Models registered in MLflow Registry
+- Semantic versioning (MAJOR.MINOR.PATCH)
+- Lifecycle stages: None → Staging → Production → Archived
+- Model promotion workflows with approval gates
+- Rollback capabilities to previous versions
+
+**FR-43: Feature Store**
+- Feast feature store for training/serving consistency
+- Online store (Redis) for low-latency serving (<10ms)
+- Offline store (PostgreSQL) for training data
+- Point-in-time correctness for historical features
+- Feature reusability across multiple models
+
+**FR-44: Data Versioning**
+- DVC (Data Version Control) for dataset management
+- Reproducible experiments with versioned data
+- Data lineage tracking for audit trails
+- Efficient storage of large datasets (GB/TB scale)
+- Integration with Git for data pipeline versioning
+
+**FR-45: Drift Detection & Monitoring**
+- Evidently AI for data drift detection using PSI metric
+- Concept drift detection through accuracy monitoring
+- Automated alerts when thresholds exceeded
+- Drift thresholds: PSI > 0.3 or Accuracy Drop > 10% → Auto-retrain
+- Hourly automated drift checks with daily reports
+
+**FR-46: A/B Testing Framework**
+- Traffic splitting for gradual model rollout
+- Bayesian A/B test analysis with early stopping
+- Gradual rollout stages: 5% → 20% → 50% → 100%
+- Automatic rollback on performance degradation
+- Statistical significance testing before promotion
+
+**FR-47: Automated Retraining**
+- Airflow-based retraining pipeline orchestration
+- Triggers: Scheduled (weekly), drift detected, manual request
+- End-to-end automation: data collection → training → validation → deployment
+- Great Expectations for data quality validation
+- Automatic model comparison and promotion
+
+**FR-48: Model Governance**
+- Approval workflows (auto for low-risk, manual for high-risk)
+- Model cards for comprehensive documentation
+- Audit trail for compliance and regulatory requirements
+- Risk assessment based on accuracy changes and architecture
+- Rollback history and incident tracking
+
+**FR-49: CI/CD for ML**
+- GitHub Actions pipeline for ML workflows
+- Automated testing (unit, integration, performance)
+- Automated deployment to staging and production
+- Quality gates: coverage > 80%, accuracy > threshold
+- Gradual rollout with monitoring at each stage
+
+### 3.11 Deployment Automation & Resilience
+
+**FR-50: Circuit Breaker Patterns**
+- Circuit breakers for all external dependencies (OpenRouter API, database, Redis)
+- PyBreaker implementation with configurable thresholds
+- Automatic fallback to cached responses when circuits open
+- Failure isolation to prevent cascading failures
+- Prometheus metrics for circuit breaker monitoring
+
+**FR-51: Health Checks**
+- Kubernetes liveness probes (restart unhealthy pods)
+- Kubernetes readiness probes (remove from load balancer)
+- Kubernetes startup probes (handle slow-starting services)
+- Comprehensive dependency health checks (database, Redis, external APIs)
+- Health check endpoints: /health/live, /health/ready, /health/startup
+
+**FR-52: Automated Rollback**
+- Prometheus-based rollback triggers with AlertManager
+- Rollback thresholds: Error rate > 1%, Latency p99 > 5s, Success rate < 99%
+- Automatic rollback within 1 minute of threshold violation
+- Rollback service with Kubernetes API integration
+- Rollback history tracking and notifications
+
+**FR-53: Blue-Green Deployment**
+- Zero-downtime major version updates
+- Instant rollback capability (switch back immediately)
+- Full testing in inactive environment before traffic switch
+- Smoke tests before production promotion
+- Database expand-contract pattern for schema changes
+
+**FR-54: Canary Deployment**
+- Gradual rollout stages: 5% → 20% → 50% → 100%
+- ArgoCD Rollouts for automated canary analysis
+- Automated analysis at each stage (success rate, error rate, latency)
+- Automatic rollback on metric violations
+- Prometheus-based analysis templates
+
+**FR-55: Chaos Engineering**
+- Regular chaos experiments (pod-kill, network latency, CPU stress)
+- Chaos Mesh for controlled failure injection
+- Weekly automated chaos tests to validate resilience
+- Automated recovery testing and validation
+- Chaos experiment results tracking and reporting
+
+### 3.12 Security & Compliance
+
+**FR-56: API Rate Limiting & Throttling**
+- Role-based API rate limiting (guest: 10/min, user: 100/min, premium: 500/min, admin: 1000/min, service: 10000/min)
+- slowapi integration with Redis for distributed rate limiting across backend instances
+- Adaptive rate limiting based on user trust scores (behavioral analysis)
+- Automatic IP blocking for repeated rate limit violations
+- Real-time rate limit metrics via Prometheus
+
+**FR-57: Defense-in-Depth Security Layers**
+- Implementation of 5 security layers (Network, Application, Data, Identity, Monitoring)
+- ModSecurity WAF with OWASP Core Rule Set for OWASP Top 10 protection
+- Kubernetes NetworkPolicy for VPC isolation and service-to-service communication control
+- Content Security Policy (CSP) headers for XSS prevention
+- CSRF protection with token-based validation for all state-changing operations
+- Security headers (X-Frame-Options, HSTS, X-Content-Type-Options, Referrer-Policy)
+
+**FR-58: Fine-Grained RBAC**
+- Casbin policy engine for fine-grained role-based access control
+- Permissions defined at endpoint + HTTP method level (e.g., admin can POST /api/tests/generate)
+- Role hierarchy support (admin > user > guest)
+- Admin API for dynamic permission management (assign roles, grant permissions)
+- Comprehensive audit logging for all RBAC permission checks
+
+**FR-59: PII Protection & Data Masking**
+- Presidio Analyzer for automatic PII detection (emails, phones, credit cards, names, locations, IP addresses, IBAN codes)
+- Data masking in API responses for non-privileged users
+- Pseudonymization support for reversible anonymization (with mapping storage)
+- AES-256 field-level encryption at rest for sensitive data (test inputs, outputs, API keys)
+- TLS 1.3 enforcement for all data in transit (database, Redis, external APIs)
+
+**FR-60: Security Monitoring & Alerting**
+- ELK Stack (Elasticsearch, Logstash, Kibana) for centralized security log aggregation
+- Custom Intrusion Detection System (IDS) rules (brute force detection, SQL injection detection)
+- Real-time security alerts via webhooks (Slack, AlertManager) for critical incidents
+- Automatic IP blocking for IPS that trigger IDS rules (brute force, repeated SQL injection)
+- Comprehensive audit logs for compliance (all POST, PUT, DELETE actions with user, timestamp, IP, changes)
+- Security metrics dashboard (failed logins, rate limit violations, PII detections, WAF blocks)
+
+**FR-61: Secrets Management & Audit**
+- HashiCorp Vault for centralized secrets management (database credentials, API keys, encryption keys)
+- Automatic API key rotation (90-day expiration with 24-hour grace period)
+- Audit logging for all user actions (user ID, username, action, resource, IP, user agent, request/response)
+- GDPR-compliant data export endpoint (export all user data on request)
+- GDPR-compliant data deletion endpoint (anonymize audit logs, delete user data)
+- Consent management for regulatory compliance (track user consents with timestamps)
+
+### 3.13 Data Governance & Quality
+
+**FR-62: Data Validation Pipeline**
+- Multi-layer validation: Pydantic (API layer) + Great Expectations (batch) + PostgreSQL (database constraints)
+- Schema validation at ingestion (test IDs regex: `^TEST-\d{6}$`, execution times: 0.1-3600s, results: pass/fail/skip)
+- Custom validators (reasonable execution time <30 min, completion timestamp after start timestamp)
+- Real-time validation feedback to users (422 Unprocessable Entity on validation failure)
+- Automated data docs generation for validation rules (Great Expectations HTML reports)
+
+**FR-63: Data Quality Monitoring**
+- Track 4 quality dimensions: Completeness (null rate), Accuracy (validation pass rate), Consistency (duplicate rate), Timeliness (data freshness lag)
+- Prometheus metrics: `data_quality_overall_score`, `data_quality_completeness_score`, `data_quality_accuracy_score`, `data_quality_consistency_score`, `data_quality_timeliness_score`
+- Scheduled quality metric collection every 15 minutes with APScheduler
+- Grafana dashboard for real-time data quality visualization (gauge for overall score, time series for dimensions)
+- Automated alerting on quality degradation via Prometheus AlertManager (alert if overall score < 70%)
+
+**FR-64: Data Retention Policies**
+- Defined retention periods per data type: Logs (90 days), Test Results (1 year, archive after 90 days), Test Artifacts (2 years, archive after 90 days), Screenshots (2 years, archive after 90 days), ML Models (2 years active + 1 year archived), User Data (until deletion + 30 days), Audit Logs (7 years for compliance)
+- S3 lifecycle policies for automated archival (S3 Standard → S3 Glacier after 90 days → S3 Deep Archive after 1-3 years)
+- PostgreSQL scheduled archival jobs (daily at 2 AM) to move old records to archive tables and export to S3
+- Summarization of archived data for historical analysis (aggregate statistics in database)
+- Cost optimization: 80% storage cost reduction for Glacier, 96% for Deep Archive
+
+**FR-65: GDPR Compliance**
+- Right to Deletion (GDPR Article 17) via `POST /api/gdpr/delete` endpoint (deletes user profile, test cases, executions, S3 artifacts; anonymizes audit logs)
+- Data Portability (GDPR Article 20) via `GET /api/gdpr/export` endpoint (JSON and CSV formats with all user data: profile, test cases, executions, audit logs)
+- Consent Management (GDPR Article 7) via `POST /api/gdpr/consent` endpoint (track consent types: data_processing, marketing, analytics, third_party_sharing)
+- Audit trail for all GDPR operations (deletion requests, data exports, consent changes with timestamps)
+- Deletion completed within 30 days of request per GDPR requirements
+
+**FR-66: Data Lineage & Catalog**
+- Data lineage tracking for all data entities (track creation source, transformations, timestamps)
+- Lineage graph API via `GET /api/lineage/{entity_id}` (returns nodes and edges showing data flow)
+- Track test generation lineage (requirement → AI model → test case) with model metadata
+- DataHub integration for searchable data catalog (optional, provides metadata management and data discovery)
+- Metadata ingestion for all database tables with column descriptions and data types
+
+### 3.14 ML Model Monitoring & Observability
+
+**FR-67: Model Performance Tracking**
+- Track classification metrics (accuracy, precision, recall, F1 score) over time using Prometheus Gauge metrics
+- Sliding window analysis of last 1000 predictions for recent performance trends
+- Ground truth feedback loop to update metrics with actual outcomes from test execution results
+- Scheduled metric updates every 15 minutes via APScheduler
+- Historical tracking for 90 days with 7-day moving average for trend analysis
+
+**FR-68: Inference Latency Monitoring**
+- Prometheus Histogram metrics for latency percentiles: p50 (median), p95, p99
+- Separate tracking for preprocessing, inference, and postprocessing latencies
+- Custom histogram buckets (0.01s, 0.025s, 0.05s, 0.1s, 0.5s, 1s, 2.5s, 5s, 10s) for accurate percentile calculation
+- Context managers for easy integration in ML service code (`with latency_monitor.track_inference():`)
+- Alert on 2x latency increase: p99 > 5s, p95 > 1s, p50 > 200ms
+
+**FR-69: Drift Detection (Data & Concept)**
+- **Data Drift Detection**: Evidently AI DataDriftPreset for feature distribution monitoring, weekly scheduled checks (every Monday @ 2 AM), feature-level drift detection with statistical tests (Kolmogorov-Smirnov, PSI, Chi-Square), HTML reports with visualizations, alert on >20% drifted features
+- **Concept Drift Detection**: Accuracy degradation monitoring vs baseline training accuracy (0.85), 7-day trend analysis comparing recent vs previous week accuracy, daily scheduled checks (3 AM), alert on >5% accuracy drop or declining trend for 3+ consecutive days
+- Prometheus metrics: `model_data_drift_detected`, `model_drifted_columns_ratio`, `model_concept_drift_detected`, `model_accuracy_drop_percent`
+
+**FR-70: ML Monitoring Dashboard & Alerting**
+- Prometheus AlertManager with 9 alert rules: ModelAccuracyDrop (<80% critical, <85% warning), HighInferenceLatencyP99 (>5s), HighInferenceLatencyP95 (>1s), DataDriftDetected, HighDriftedColumnsRatio (>20%), ConceptDriftDetected (>5% drop), LowPredictionVolume (<0.1/sec), HighModelErrorRate (>2%)
+- Multi-channel notifications: Slack (#ml-monitoring for warnings, #ml-alerts-urgent for high/critical), PagerDuty (critical alerts 24/7), Email (ML team for high-severity)
+- Grafana dashboard with 8 panels: Model Accuracy (7-day rolling), Model Performance Metrics (accuracy/precision/recall/F1), Inference Latency Percentiles (p50/p95/p99), Data Drift Status, Concept Drift (accuracy drop %), Prediction Volume, Error Rate, Prediction Class Distribution
+- Severity-based alert routing (critical → PagerDuty, high → Slack + Email, warning → Slack only)
+- Prediction logging in PostgreSQL with PredictionAnalyzer for low-confidence prediction review and statistics
+
 ---
 
 ## 4. User Stories

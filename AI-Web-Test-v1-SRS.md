@@ -386,6 +386,29 @@ Production Incidents + Test Results → Evolution Agent
 - Model Serving: BentoML for custom models
 - Prompt Management: LangSmith for prompt versioning
 
+**MLOps Stack:**
+- Experiment Tracking: MLflow 2.9.2 (tracking server + model registry)
+- Model Registry: MLflow Model Registry with lifecycle management
+- Feature Store: Feast 0.35.0 (online Redis + offline PostgreSQL)
+- Data Versioning: DVC 3.30.0 with S3-compatible storage
+- Drift Detection: Evidently AI 0.4.10 for data/concept drift
+- Model Monitoring: WhyLogs for data logging and profiling
+- Orchestration: Apache Airflow 2.7.0 for ML pipelines
+- Data Validation: Great Expectations 0.18.0 for quality checks
+- A/B Testing: Custom implementation with Bayesian analysis
+- CI/CD for ML: GitHub Actions with MLflow integration
+
+**Resilience & Deployment Stack:**
+- Circuit Breakers: PyBreaker 1.0.1 for failure isolation
+- Health Checks: Kubernetes liveness/readiness/startup probes
+- Automated Rollback: Prometheus + AlertManager with custom webhooks
+- Blue-Green Deployment: Kubernetes native with custom scripts
+- Canary Deployment: ArgoCD Rollouts 1.6.0 with analysis templates
+- Alternative Canary: Flagger for progressive delivery
+- Chaos Engineering: Chaos Mesh 2.6.0 for resilience testing
+- Traffic Management: Nginx/Envoy for load balancing and routing
+- Monitoring: Prometheus + Grafana for circuit breaker dashboards
+
 **Data Layer:**
 - Primary Database: PostgreSQL 15+ with TimescaleDB extension
 - Cache: Redis 7+ (Cluster mode for high availability)
@@ -409,12 +432,42 @@ Production Incidents + Test Results → Evolution Agent
 - Load Tests: Locust for performance testing
 - Code Quality: Ruff (linting), Black (formatting), mypy (type checking)
 
-**Security:**
-- Authentication: JWT with refresh tokens
-- Authorization: RBAC with CASL
-- Secrets Management: HashiCorp Vault / Azure Key Vault
-- API Security: Rate limiting, CORS, helmet
-- Data Encryption: AES-256 at rest, TLS 1.3 in transit
+**Security Stack:**
+- API Rate Limiting: slowapi 0.1.9 + Redis for distributed rate limiting with role-based quotas
+- Web Application Firewall: ModSecurity 3.0 + OWASP Core Rule Set 4.0 for OWASP Top 10 protection
+- RBAC Engine: Casbin 1.17.0 + casbin-sqlalchemy-adapter for fine-grained endpoint + method permissions
+- PII Protection: Presidio Analyzer 2.2.33 + Anonymizer for automatic PII detection (7 entity types)
+- Encryption: Cryptography (Fernet) + SQLAlchemy for AES-256 field-level encryption at rest
+- TLS: TLS 1.3 enforcement for all services (PostgreSQL, Redis, external APIs)
+- SIEM: ELK Stack (Elasticsearch, Logstash, Kibana) for centralized security log aggregation
+- Intrusion Detection: Custom Python IDS with brute force and SQL injection detection
+- Secrets Management: HashiCorp Vault 1.15.0 for centralized storage with automatic API key rotation
+- Authentication: OAuth 2.0 + JWT tokens with Multi-Factor Authentication (TOTP via pyotp)
+- CSRF Protection: Token-based validation for all state-changing operations
+- Security Headers: Content Security Policy (CSP), X-Frame-Options, HSTS, X-Content-Type-Options
+- Audit & Compliance: GDPR-compliant audit logging with data export/deletion endpoints
+
+**Data Governance Stack:**
+- Data Validation: Pydantic 2.5.0 (API layer schema validation) + Great Expectations 0.18.0 (batch data quality) + PostgreSQL CHECK constraints (database-level enforcement)
+- Quality Monitoring: Custom DataQualityMetrics class with 4 dimensions (completeness, accuracy, consistency, timeliness) + Prometheus metrics + Grafana dashboards
+- Retention Policies: S3 Lifecycle Policies for automated archival (Standard → Glacier @ 90 days → Deep Archive @ 1-3 years) + APScheduler 3.10.0 for daily PostgreSQL archival jobs (2 AM)
+- GDPR Compliance: Custom GDPRCompliance class for right to deletion (Article 17), data portability (Article 20, JSON/CSV export), consent management (Article 7)
+- Data Lineage: Custom DataLineageTracker for tracking data creation, transformations, and dependencies with graph API
+- Data Catalog: DataHub (LinkedIn OSS, optional) for searchable metadata repository and data discovery
+- Archival Storage: S3 Standard (active data) → S3 Glacier (90-day archived) → S3 Deep Archive (long-term compliance, 7 years for audit logs)
+- Quality Dashboard: Grafana dashboards with Prometheus data sources for real-time quality scores and validation failure tracking
+- Scheduled Jobs: APScheduler for automated archival (daily 2 AM), quality monitoring (every 15 minutes), and GDPR deletion processing
+
+**ML Monitoring Stack:**
+- Performance Tracking: Prometheus client_python with custom Gauge/Counter metrics (accuracy, precision, recall, F1) + sliding window (collections.deque, maxlen=1000) for recent predictions
+- Latency Monitoring: Prometheus Histogram with custom buckets (0.01-10s) for percentile calculation (p50, p95, p99) + separate tracking for preprocessing/inference/postprocessing
+- Data Drift Detection: Evidently AI 0.4.10 (DataDriftPreset for feature distribution monitoring) + weekly scheduled checks (APScheduler, Mondays @ 2 AM) + HTML report generation
+- Concept Drift Detection: Custom ConceptDriftDetector with 90-day accuracy history + 7-day trend analysis + daily scheduled checks (3 AM) + alert on >5% accuracy drop
+- Automated Alerting: Prometheus 2.45.0 + AlertManager 0.26.0 with 9 alert rules (accuracy, latency, drift, error rate, volume) + multi-channel notifications (Slack webhooks, PagerDuty API, Email)
+- Model Dashboard: Grafana 10.0.0 with custom ML monitoring dashboard (8 panels) for real-time performance, latency, drift, and error rate visualization
+- Prediction Logging: PostgreSQL for prediction storage (model_name, model_version, features, prediction, confidence, ground_truth, latency_ms) + S3 Glacier for archival
+- Ground Truth Feedback: Async job (APScheduler every 15 min) to fetch ground truth from test execution results and update performance metrics
+- Prediction Analysis: Custom PredictionAnalyzer for statistics (avg confidence, latency percentiles, ground truth coverage) and low-confidence prediction review
 
 **DevOps & Deployment:**
 - Containerization: Docker with multi-stage builds
