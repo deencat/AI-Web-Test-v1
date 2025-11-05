@@ -456,6 +456,16 @@ Production Incidents + Test Results → Evolution Agent
 - Code Examples: Multi-language examples for all endpoints (Python requests library, JavaScript axios, cURL with $TOKEN variable) embedded in OpenAPI spec responses, included in Swagger UI and ReDoc automatically
 - SDK Generation: OpenAPI Generator CLI 7.0.0 for auto-generated client SDKs (Python SDK with package name aiwebtest_sdk via python generator, TypeScript SDK with npm package @aiwebtest/sdk via typescript-axios generator), versioned releases matching API version, configuration classes for authentication
 
+**Operational Runbooks Stack:**
+- Documentation Format: Markdown files in Git repository (version controlled, searchable, easily updated, reviewed in PRs)
+- Runbook Categories: 13 categories (agent failure recovery 6 agents, database connection loss + performance, OpenRouter API outage + rate limiting, API high latency + test execution performance, model accuracy drop + data drift recovery, security breach response, complete system failure, on-call procedures)
+- Diagnosis Tools: kubectl (Kubernetes pod status, logs, resource usage via top), psql (PostgreSQL queries for audit logs, performance stats via pg_stat_statements, connection check), curl (API health checks, OpenRouter API status, circuit breaker control), Prometheus queries (metric values, alert status), Jaeger UI (distributed tracing for latency investigation)
+- Recovery Tools: kubectl rollout restart (pod restart for agents/backend/databases), kubectl scale (horizontal scaling for agents/Selenium nodes), kubectl set env (configuration updates for fallback/caching/rate limiting), psql (database VACUUM ANALYZE, query termination, user account locking), MLflow API (model version transition for rollback), Airflow API (trigger model retraining DAG), Vault (API key rotation), iptables (block malicious IPs)
+- Incident Management: PagerDuty (on-call scheduling, alert escalation, mobile app for 5 min response time) or free alternatives (Alertmanager + Slack), Statuspage.io (public status page for user communication, scheduled updates every 30 min) or self-hosted, Jira (incident tracking, action items, timeline documentation), Confluence (incident reports, post-mortem documentation)
+- On-Call Tools: PagerDuty mobile app (push notifications, acknowledge alerts), Slack (team communication in #incidents channel), VPN (secure remote access to infrastructure), kubectl (Kubernetes cluster access from any location), SSH (server access for advanced troubleshooting)
+- Post-Incident: Blameless post-mortems (Google Docs/Confluence templates, scheduled within 48 hours, action items tracking), incident timeline (Jira with timestamps, actions taken, decisions made), runbook updates (Git commits with lessons learned), continuous improvement (quarterly runbook review, chaos engineering validation)
+- MTTR Targets: P0 incidents <4 hours (vs 12-48 hours without runbooks, 75% reduction), P1 incidents <2 hours (vs 6-12 hours, 67% reduction), P2 incidents <4 hours (vs 4-8 hours, 50% reduction), Average MTTR 10-30 minutes (vs 5-12 hours, 16-72x faster, 87.5-95.8% reduction)
+
 **Security Stack:**
 - API Rate Limiting: slowapi 0.1.9 + Redis for distributed rate limiting with role-based quotas
 - Web Application Firewall: ModSecurity 3.0 + OWASP Core Rule Set 4.0 for OWASP Top 10 protection
