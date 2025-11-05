@@ -446,6 +446,16 @@ Production Incidents + Test Results → Evolution Agent
 - Test Reporting: Optional Allure Framework 2.24.0 for unified test reports across all test types
 - Code Quality: Ruff 0.1.0 (linting), Black 23.10.0 (formatting), mypy 1.6.0 (type checking)
 
+**API Documentation Stack:**
+- OpenAPI Specification: OpenAPI 3.0.3 (machine-readable API contract) with comprehensive metadata (title, description, version, tags, servers), security schemes (BearerAuth HTTP bearer with JWT, OAuth2 authorization code flow), global security requirement, custom extensions (x-tagGroups for endpoint organization)
+- Interactive Documentation: Swagger UI 5.9.0 at /docs (try-it-out API explorer, persistent authentication with JWT token storage, dark mode monokai syntax highlighting, deep linking to specific endpoints, response visualization, request duration display, search/filter by name/tag/description)
+- Professional Documentation: ReDoc 2.1.3 at /redoc (three-panel layout for navigation/content/code, full-text search across all endpoints, responsive mobile-friendly design, permanent links to sections, downloadable as PDF via browser print, multi-language examples auto-generated for cURL/Python/JavaScript, interactive schema visualization)
+- Schema Validation: Pydantic 2.4.0 for type-safe request/response models with Field descriptors (min_length, max_length, ge, le, regex patterns), custom validators (@validator decorator), Config.schema_extra for OpenAPI examples, enum support for controlled values
+- API Versioning: URL-based versioning (/api/v1, /api/v2) with FastAPI APIRouter prefix, version headers (X-API-Version, X-API-Deprecated, X-API-Sunset-Date), deprecation strategy (deprecated=True in endpoint decorator, 410 Gone status for removed endpoints, Location header for migration path)
+- Error Standards: ErrorResponse Pydantic model (detail string, error_code optional, validation_errors list with loc/msg/type, trace_id optional) with custom exception handler for RequestValidationError returning 422 status with structured validation details
+- Code Examples: Multi-language examples for all endpoints (Python requests library, JavaScript axios, cURL with $TOKEN variable) embedded in OpenAPI spec responses, included in Swagger UI and ReDoc automatically
+- SDK Generation: OpenAPI Generator CLI 7.0.0 for auto-generated client SDKs (Python SDK with package name aiwebtest_sdk via python generator, TypeScript SDK with npm package @aiwebtest/sdk via typescript-axios generator), versioned releases matching API version, configuration classes for authentication
+
 **Security Stack:**
 - API Rate Limiting: slowapi 0.1.9 + Redis for distributed rate limiting with role-based quotas
 - Web Application Firewall: ModSecurity 3.0 + OWASP Core Rule Set 4.0 for OWASP Top 10 protection

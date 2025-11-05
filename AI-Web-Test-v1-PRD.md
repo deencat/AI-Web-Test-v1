@@ -625,6 +625,19 @@ This multi-agent architecture addresses critical pain points of manual testing o
 - CI/CD integration with GitHub Actions: 5-stage pipeline (unit tests 5 min, integration tests 15 min, contract tests 10 min, E2E tests 30 min, performance tests 60 min main branch only), automated on every PR and push to main, test reports (Codecov for coverage 80% target, Playwright HTML for E2E with screenshots, Locust CSV for performance metrics)
 - Quality gates: PR merge requires unit tests pass + integration tests pass + contract tests pass + 80% code coverage + code review. Production deployment requires all tests pass + performance thresholds met + chaos tests 80% resilience score
 
+### 3.17 API Documentation Standards
+
+**FR-73: API Documentation Standards**
+- OpenAPI 3.0.3 specification with comprehensive metadata: title ("AI Web Test API"), description (multi-agent AI platform with 6 specialized agents for test automation), version (1.0.0), 8 endpoint tags (Authentication, Tests, Test Execution, Agents, Projects, Users, Analytics, ML Models), 3 servers (production https://api.aiwebtest.com, staging, local development)
+- Security schemes: BearerAuth (HTTP bearer scheme with JWT format, obtained from /api/v1/auth/login), OAuth2 (authorization code flow with authorizationUrl, tokenUrl, scopes: read/write/admin)
+- Swagger UI 5.9.0 at /docs with enhanced features: search bar (filter endpoints by name/tag/description), try-it-out (execute API calls from browser), persistent authentication (save JWT token across requests), response visualization (syntax-highlighted JSON), request duration display, deep linking (share links to specific endpoints), dark mode with monokai syntax highlighting
+- ReDoc 2.1.3 at /redoc with professional documentation: three-panel layout (navigation, content, code examples), powerful full-text search across all endpoints, responsive mobile-friendly design, permanent links to sections, downloadable as PDF (browser print), multi-language examples (cURL, Python, JavaScript), interactive schema visualization
+- API versioning strategy: URL-based versioning (/api/v1 current stable, /api/v2 beta optional) with version headers (X-API-Version, X-API-Deprecated, X-API-Sunset-Date), deprecation strategy (410 Gone status for removed endpoints, Location header pointing to replacement, deprecation notice 6 months before removal)
+- Comprehensive Pydantic 2.4.0 schemas with examples: TestGenerationRequest (requirements_text 10-10000 chars with validator, test_types enum list, max_tests 1-50 range, priority enum, include_edge_cases boolean, target_browser regex), TestGenerationResponse (workflow_id, tests list, generation_time_ms float, confidence 0.0-1.0, scenarios_identified int), all with Config.schema_extra examples
+- Standardized error responses: ErrorResponse model (detail human-readable message, error_code machine-readable, validation_errors list with loc/msg/type, trace_id for debugging) with custom exception handler for 422 validation errors returning structured validation details
+- Multi-language code examples for all endpoints: Python (requests library with authentication, JSON payloads, error handling), JavaScript (axios with async/await, headers, token management), cURL (with $TOKEN variable, -H headers, -d JSON data, jq for parsing)
+- SDK generation with OpenAPI Generator CLI: Python SDK (aiwebtest_sdk package, ApiClient, Configuration, TestsApi classes, auto-generated from OpenAPI spec), TypeScript SDK (@aiwebtest/sdk npm package, typescript-axios generator, Configuration, TestsApi with async/await), versioned releases matching API version
+
 ---
 
 ## 4. User Stories
