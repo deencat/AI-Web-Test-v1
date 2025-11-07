@@ -177,12 +177,34 @@ This multi-agent architecture addresses critical pain points of manual testing o
 - Change impact analysis before applying updates
 - Human approval workflow for major changes
 
-**FR-16: Knowledge Base**
-- Domain-specific knowledge for telecom testing
-- Common failure patterns and solutions
-- Best practices repository
-- Test design patterns library
-- Continuously updated from agent learnings
+**FR-16: Knowledge Base with Categorization**
+- **Categorized Document Organization:**
+  - Predefined categories (CRM, Billing, Network, Mobile App, Provisioning, Reporting, MIS, Customer Service, Products & Services, Sales & Marketing, Regulatory & Compliance, Technical Support)
+  - User-created custom categories during upload
+  - Category-based document filtering for agent context
+- **Document Type Support:**
+  - System user guides (telecom systems: CRM, billing, provisioning)
+  - Product catalogs (telecom offerings, pricing, features)
+  - Process documents (workflows, procedures, escalation paths)
+  - Reference manuals (field definitions, charge codes, API specs)
+  - Customer service documentation (call scripts, troubleshooting, FAQs)
+  - Sales materials (product datasheets, promotional offers, service bundles)
+- **Category-Aware Agent Context:**
+  - Agents receive only relevant category documents (20-30% efficiency improvement)
+  - Requirements Agent extracts scenarios from product docs
+  - Generation Agent uses system guides for exact UI paths
+  - Evolution Agent detects KB updates and adjusts tests
+- **Rich Metadata Support:**
+  - Product names, system versions, effective dates
+  - Target audience (sales, customer service, technical support, QA)
+  - Full-text search across all documents
+  - Usage tracking (agent reference count, relevance scoring)
+- **Scalability:** Support 1000+ documents via category filtering (vs 100 without categories)
+- **Domain-Specific Learning:**
+  - Common failure patterns and solutions
+  - Best practices repository
+  - Test design patterns library
+  - Continuously updated from agent learnings
 
 ### 3.4 Comprehensive Testing Coverage
 
@@ -930,6 +952,64 @@ This multi-agent architecture addresses critical pain points of manual testing o
 > - Access to learning curves and metrics
 > - Explanations of agent behavior changes
 
+### 4.7 Knowledge Base Management Stories
+
+**US-21: KB Document Upload with Categories**
+> **As a** QA Lead  
+> **I want to** upload system documentation and categorize it during upload  
+> **So that** agents can reference relevant documents when generating test cases  
+> **Acceptance Criteria:**
+> - Can upload PDF/DOCX documents (system guides, product catalogs, process docs)
+> - Select from predefined categories (CRM, Billing, Products & Services, etc.)
+> - Create new custom categories on-the-fly during upload
+> - Documents tagged with type (system_guide, product, process, reference)
+> - Upload confirmation shows category and document type
+
+**US-22: Category-Specific Test Generation**
+> **As a** QA Engineer  
+> **I want** agents to use only relevant KB documents from specific categories  
+> **So that** generated test cases are more accurate and focused  
+> **Acceptance Criteria:**
+> - Test case generation filters KB by category (e.g., only CRM docs for CRM tests)
+> - Generated test steps cite KB sources (e.g., "per CRM_Guide.pdf Sec 2.1")
+> - Test accuracy improves by 10-15% with category-specific context
+> - Agent processing 20-30% faster due to smaller KB context
+> - Can view which KB documents agents referenced for each test case
+
+**US-23: Product Catalog Integration**
+> **As a** Sales Operations Manager  
+> **I want to** upload product catalogs so agents can generate product-specific test cases  
+> **So that** we can test new telecom offerings immediately after launch  
+> **Acceptance Criteria:**
+> - Upload product catalogs to "Products & Services" category
+> - Agents extract product features, pricing, and limitations from catalogs
+> - Test cases validate product activation, billing, and feature availability
+> - Product names and pricing automatically included in test assertions
+> - Agents detect product catalog updates and suggest test case revisions
+
+**US-24: KB Document Search and Management**
+> **As a** QA Engineer  
+> **I want to** search and browse uploaded KB documents by category  
+> **So that** I can find relevant documentation quickly  
+> **Acceptance Criteria:**
+> - Full-text search across all KB documents
+> - Filter by category, document type, and upload date
+> - View document details (size, upload date, referenced by agents count)
+> - Download original documents
+> - Delete outdated documents with confirmation
+> - See which test cases reference each KB document
+
+**US-25: Customer Service Documentation Usage**
+> **As a** Customer Service Manager  
+> **I want to** upload call scripts and troubleshooting guides  
+> **So that** agents can generate test cases validating CS procedures  
+> **Acceptance Criteria:**
+> - Upload CS documentation to "Customer Service" category
+> - Agents generate test cases following documented escalation procedures
+> - Test cases validate system behavior matches troubleshooting guides
+> - Generated tests include expected system messages from CS docs
+> - Can verify CS process compliance via automated tests
+
 ---
 
 ## 5. User Interface
@@ -1149,12 +1229,21 @@ AI Generated Test Cases (Preview):
 - Agent decision confidence score (> 0.85 average)
 
 **Agent-Specific Metrics:**
-- **Requirements Agent:** Coverage accuracy (% of requirements properly analyzed)
-- **Generation Agent:** Test quality score, code maintainability index
+- **Requirements Agent:** Coverage accuracy (% of requirements properly analyzed), KB document relevance (% of KB docs used effectively)
+- **Generation Agent:** Test quality score, code maintainability index, KB citation rate (% of steps citing KB sources)
 - **Execution Agent:** Optimal parallelization efficiency, resource utilization
 - **Observation Agent:** Anomaly detection accuracy, alert precision
 - **Analysis Agent:** Root cause accuracy, recommendation acceptance rate
 - **Evolution Agent:** Test improvement rate, obsolete test identification accuracy
+
+**Knowledge Base Metrics:**
+- KB document utilization rate (% of uploaded docs referenced by agents)
+- Average KB documents per test case generation
+- Category filtering effectiveness (reduction in context size)
+- Agent processing time improvement with categorized KB (target: 20-30% faster)
+- Test case accuracy improvement with KB context (target: 10-15% increase)
+- User KB upload rate (documents per project per week)
+- KB document relevance score (agent feedback on usefulness)
 
 **Business Impact Metrics:**
 - Production incidents prevented by automated tests
@@ -1201,6 +1290,13 @@ AI Generated Test Cases (Preview):
 - Test execution for Three HK website
 - Basic reporting with screenshots
 - User authentication and basic RBAC
+- **Knowledge Base with Categorization** (Phase 1.5 - Week 2-3):
+  - Upload KB documents (PDF/DOCX) with category selection
+  - Predefined categories (CRM, Billing, Network, Mobile App, Products & Services, Customer Service, etc.)
+  - User-created custom categories during upload
+  - Category-aware agent context filtering
+  - Document type tagging (system_guide, product, process, reference)
+  - Basic KB document list view with category organization
 
 **Deliverables:**
 - Working test generation from natural language
@@ -1237,6 +1333,16 @@ AI Generated Test Cases (Preview):
 - Pattern recognition for failures
 - Confidence scoring for predictions
 - Experience collection from production
+
+**Knowledge Base Advanced Features** (Phase 2 - Week 5-6):
+- Full-text search across all KB documents (GIN indexes)
+- KB document versioning and update tracking
+- Rich metadata (product names, system versions, effective dates, target audience)
+- KB analytics dashboard (most referenced docs, category usage stats)
+- Automatic KB document expiry notifications
+- Agent KB usage tracking and relevance scoring
+- KB document search from test case generation interface
+- Bulk KB document upload with CSV metadata
 
 **Deliverables:**
 - All six agents operational with RL policies

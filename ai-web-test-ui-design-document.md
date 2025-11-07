@@ -294,9 +294,116 @@ Three modes accessible via tabs, with seamless switching:
 └─────────────────────────────────────────────────────┘
 ```
 
-### Component 8: Knowledge Base & Learning Interface
+### Component 8: Knowledge Base Document Management
 
-**Knowledge Base Viewer**
+**KB Document Upload Interface**
+- Drag-and-drop or file browser for document upload
+- Category selection dropdown (predefined + create new)
+- Document type tagging (system_guide, product, process, reference)
+- Rich metadata input (product names, system version, target audience)
+- Multi-file upload with progress tracking
+- Upload confirmation with document preview
+
+**KB Category Management**
+- View all categories with document counts
+- Create custom categories with icon and color selection
+- Edit category properties (name, description, display order)
+- Deactivate unused categories
+- Category usage statistics
+
+**KB Document Browser**
+- Categorized document list with collapsible sections
+- Filter by category, document type, upload date
+- Full-text search across all documents
+- Sort by relevance, date, or agent usage
+- Document details panel (size, upload date, referenced count)
+- Download original documents
+- Delete with confirmation
+
+**KB Search Interface**
+- Advanced search with filters (category, type, date range)
+- Search results with highlighted excerpts
+- Document preview before opening
+- Agent reference indicators (which agents use this doc)
+- Search history and saved searches
+
+**Layout - KB Upload:**
+```
+┌─────────────────────────────────────────────────────┐
+│ 📚 Upload Knowledge Base Document                  │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│ [Drag & Drop Files Here or Click to Browse]        │
+│                                                     │
+│ Selected: 5G_Product_Catalog.pdf (2.4 MB) ✓        │
+│                                                     │
+│ Category: [Select Category ▼]                      │
+│ • CRM                                               │
+│ • Billing                                           │
+│ • Products & Services ← Selected                    │
+│ • Customer Service                                  │
+│ • Sales & Marketing                                 │
+│ • [+ Create New Category]                           │
+│                                                     │
+│ Document Type:                                      │
+│ ◉ Product Catalog  ◯ System Guide                  │
+│ ◯ Process Document ◯ Reference Manual              │
+│                                                     │
+│ Description (Optional):                             │
+│ ┌─────────────────────────────────────────────┐   │
+│ │ 5G broadband product offerings with pricing │   │
+│ │ and features for Q4 2025                     │   │
+│ └─────────────────────────────────────────────┘   │
+│                                                     │
+│ Product Names: [5G Speed Boost, 5G+ Ultra    ]     │
+│ System Version: [CRM v4.5                     ]     │
+│ Target Audience: ☑Sales ☑Customer Service ☑QA     │
+│                                                     │
+│ [Upload to Knowledge Base]  [Cancel]               │
+└─────────────────────────────────────────────────────┘
+```
+
+**Layout - KB Document Browser:**
+```
+┌─────────────────────────────────────────────────────┐
+│ Knowledge Base Documents                            │
+├─────────────────────────────────────────────────────┤
+│ 🔍 Search: [______________________] 🔎              │
+│ Filter: [All Categories ▼] [All Types ▼] [Upload]  │
+│                                                     │
+│ [🔵 CRM] (3 documents) ▼                           │
+│   📄 CRM_User_Guide.pdf                  2.1 MB    │
+│      system_guide | Uploaded: Oct 15, 2025         │
+│      Referenced by agents: 47 times                │
+│      [View] [Download] [Delete]                    │
+│                                                     │
+│   📄 CRM_Procedures.pdf                  1.8 MB    │
+│      process | Uploaded: Oct 10, 2025              │
+│      Referenced by agents: 32 times                │
+│      [View] [Download] [Delete]                    │
+│                                                     │
+│ [🟢 Products & Services] (8 documents) ▼           │
+│   📄 5G_Product_Catalog.pdf              2.4 MB    │
+│      product | Uploaded: Oct 20, 2025              │
+│      Products: 5G Speed Boost, 5G+ Ultra           │
+│      Referenced by agents: 18 times                │
+│      [View] [Download] [Delete]                    │
+│                                                     │
+│   📄 VAS_Offerings.pdf                   1.5 MB    │
+│      product | Uploaded: Oct 18, 2025              │
+│      Referenced by agents: 12 times                │
+│      [View] [Download] [Delete]                    │
+│                                                     │
+│ [🟡 Customer Service] (6 documents) ▼              │
+│                                                     │
+│ Total: 17 documents (28.4 MB)                       │
+│ [+ Add New Category]                                │
+└─────────────────────────────────────────────────────┘
+```
+
+### Component 9: Agent Learning & Pattern Library
+
+**Agent Learning Repository**
 - Searchable repository of agent learnings
 - Categorized by domain (billing, auth, navigation, etc.)
 - Effectiveness ratings for each knowledge entry
@@ -317,7 +424,7 @@ Three modes accessible via tabs, with seamless switching:
 **Layout:**
 ```
 ┌─────────────────────────────────────────────────────┐
-│ Knowledge Base - Telecom Testing                    │
+│ Agent Learning Patterns - Telecom Testing           │
 ├─────────────────────────────────────────────────────┤
 │ 🔍 Search: [billing validation patterns       ] 🔎  │
 │                                                     │
@@ -402,7 +509,47 @@ Actions change based on:
 - Adapts default settings based on usage patterns
 - Suggests next actions based on current context
 
-### Pattern 5: Agent Interaction & Transparency
+### Pattern 5: KB Document Upload & Category Creation Flow
+
+**Streamlined Upload Process**
+- Single-page upload with all options visible
+- Real-time file validation (size, type, duplicates)
+- Smart category suggestions based on filename/content
+- Quick category creation without leaving upload flow
+- Multi-file queue with individual progress tracking
+
+**Category Creation Workflow**
+```
+User clicks [+ Create New Category]
+    ↓
+Modal opens with:
+- Category name input (auto-focus)
+- Description (optional)
+- Icon picker (visual grid)
+- Color picker (preset palette)
+- Preview of how it will look
+    ↓
+User clicks [Create & Assign]
+    ↓
+New category created + automatically selected
+Modal closes, upload form now shows new category
+    ↓
+User completes upload
+```
+
+**Smart Category Suggestions**
+- Filename contains "CRM" → Suggest CRM category
+- Filename contains "Product" → Suggest Products & Services
+- Content detection (PDF parsing) → Suggest relevant category
+- Learn from user's past categorization patterns
+
+**Upload Confirmation**
+- Success message with category badge
+- Show document in KB browser immediately
+- Option to upload another document
+- Option to generate tests using uploaded document
+
+### Pattern 6: Agent Interaction & Transparency
 
 **Real-Time Agent Feedback**
 - Visual indicators when agents are processing
@@ -471,6 +618,21 @@ Agent generates decision → Confidence check
 - **Medium** (0.70-0.85): #F39C12 (Amber)
 - **Low** (0.50-0.70): #E67E22 (Orange)
 - **Very Low** (<0.50): #E74C3C (Cautionary Red)
+
+**KB Category Colors** (for document categorization)
+- **CRM**: #3498db (Professional Blue)
+- **Billing**: #2ecc71 (Success Green)
+- **Network**: #e74c3c (Alert Red)
+- **Mobile App**: #9b59b6 (Purple)
+- **Products & Services**: #16a085 (Teal)
+- **Customer Service**: #c0392b (Dark Red)
+- **Sales & Marketing**: #d35400 (Orange)
+- **Technical Support**: #27ae60 (Support Green)
+- **Provisioning**: #f39c12 (Amber)
+- **Reporting**: #1abc9c (Light Teal)
+- **MIS**: #34495e (Dark Gray)
+- **Regulatory & Compliance**: #8e44ad (Dark Purple)
+- **User-Created Categories**: Customizable via color picker (12 preset options)
 
 ### Typography Hierarchy
 
@@ -843,15 +1005,46 @@ Font sizes adapt based on screen size and viewing distance:
 - Cross-session preference persistence
 - Performance optimization for adaptive features
 
+**Phase 1.5: Knowledge Base Integration (Weeks 2-3)** ⭐ NEW
+- KB document upload interface with drag-and-drop
+- Category selection dropdown (predefined categories)
+- Create new category modal with icon/color picker
+- KB document browser with categorized list
+- Basic search and filter functionality
+- Document details and download
+- Upload progress tracking
+- Category badge display throughout UI
+
+**Phase 2: KB Advanced Features (Weeks 5-6)** ⭐ NEW
+- Full-text search with highlighting
+- Advanced filters (date range, document type, target audience)
+- KB analytics dashboard (most referenced docs, category usage)
+- Document versioning interface
+- Agent reference tracking display
+- Bulk document upload with CSV metadata
+- Document expiry notifications
+- KB usage statistics integration with test generation
+
 **Phase 4: Agent Intelligence UI (Weeks 13-16)**
 - Agent monitoring dashboard
 - AI decision explainability interfaces
 - Agent performance analytics
-- Knowledge base viewer
+- Agent learning pattern library (separate from KB documents)
 - Real-time agent communication visualization
 - Confidence-based UI adaptations
 
 ### Technical Considerations
+
+**KB Interface Specific** ⭐ NEW
+- File upload with chunked transfer for large documents (>10MB)
+- PDF text extraction client-side preview
+- Image optimization for document thumbnails
+- IndexedDB caching for recently viewed documents
+- Progressive loading for document list (virtual scrolling)
+- Debounced search for full-text queries
+- WebWorker for PDF parsing to avoid UI blocking
+- Drag-and-drop with visual feedback and file validation
+- Multi-file upload queue with parallel processing
 
 **Agent Interface Specific**
 - WebSocket connections for real-time agent updates
@@ -860,6 +1053,7 @@ Font sizes adapt based on screen size and viewing distance:
 - Lazy loading for detailed reasoning chains
 - Optimistic UI updates for agent actions
 - Offline mode with agent action queue
+- Agent KB context display showing referenced documents
 
 **Performance Optimization**
 - Lazy loading for adaptive interface elements

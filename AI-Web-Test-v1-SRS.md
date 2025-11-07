@@ -28,15 +28,15 @@
   - Future cloud adaptation possible with containerized architecture
 
 - **Core Modules:**  
-  1. **User Interface Layer:** Dashboard, natural language input, reporting views, agent monitoring interface
+  1. **User Interface Layer:** Dashboard, natural language input, reporting views, agent monitoring interface, KB document upload and management
   2. **API Layer:** RESTful/GraphQL APIs for UI-backend communication (Python FastAPI)
   3. **Agent Orchestration Layer:** Central coordinator managing six specialized AI agents
   4. **Message Bus Layer:** Event-driven communication infrastructure for agent coordination
   5. **AI Agent System:** Six specialized agents (Requirements, Generation, Execution, Observation, Analysis, Evolution)
   6. **Test Execution Engine:** Stagehand-based executor with Playwright/Selenium fallback
   7. **AI Integration Layer:** OpenRouter API client with model management and fallback strategies
-  8. **Knowledge Base:** Domain-specific learning repository for continuous improvement
-  9. **Data Layer:** PostgreSQL for structured data, Redis for caching, Vector DB for agent memory
+  8. **Knowledge Base Layer:** Categorized document repository with full-text search, metadata management, and category-aware agent context filtering
+  9. **Data Layer:** PostgreSQL for structured data, Redis for caching, Vector DB for agent memory, S3/MinIO for KB documents
   10. **Observability Layer:** Prometheus metrics, distributed tracing, centralized logging  
 
 ***
@@ -146,6 +146,9 @@ All agents inherit from a common base agent class providing:
 - Identify edge cases and boundary conditions
 - Detect ambiguous or incomplete requirements
 - Map requirements to test coverage
+- **Reference KB documents** from relevant categories (Products & Services, System Guides)
+- Extract product features and constraints from product catalogs
+- Identify system-specific validation rules from user guides
 
 **Technical Implementation:**
 - **AI Model:** GPT-4 / Claude 3 Opus for deep understanding
@@ -173,6 +176,10 @@ Requirements Document → Requirements Agent → Test Scenarios → Generation A
 - Optimize test structure for maintainability
 - Support multiple test types (UI, API, integration)
 - Generate parameterized tests for data-driven scenarios
+- **Use KB system guides** for exact UI navigation paths and field names
+- **Reference KB product catalogs** for realistic test data and pricing
+- **Cite KB sources** in generated test steps (e.g., "per CRM_Guide.pdf Sec 2.1")
+- Generate system-specific validation based on KB process documents
 
 **Technical Implementation:**
 - **AI Model:** GPT-4 / Claude 3 Sonnet for code generation
@@ -285,6 +292,10 @@ Test Results → Analysis Agent → Root Cause Analysis
 - Update existing tests for accuracy
 - Remove redundant/obsolete tests
 - Self-healing test maintenance
+- **Monitor KB document updates** and trigger test case reviews
+- **Detect UI/system changes** from updated KB user guides
+- Generate new test cases when new products appear in KB catalogs
+- Validate existing tests against current KB procedures
 
 **Technical Implementation:**
 - **Learning:** Reinforcement learning from outcomes
@@ -572,6 +583,9 @@ Production Incidents + Test Results → Evolution Agent
 - `/tests` - Test management list view  
 - `/test/:id` - Test details and results view  
 - `/reports` - View analytics and export reports  
+- `/knowledge-base` - KB document upload and management  
+- `/knowledge-base/categories` - Manage KB categories  
+- `/knowledge-base/search` - Search KB documents  
 - `/settings` - AI configurations, integrations, and roles  
 
 **Backend API Routes:**  
@@ -587,6 +601,18 @@ Production Incidents + Test Results → Evolution Agent
 | POST | `/ai/generate` | AI test case creation |
 | GET | `/user/profile` | Retrieve user profile and permissions |
 | POST | `/settings/integrations` | Manage JIRA/CRM connections (Phase 2) |
+| **Knowledge Base Routes** | | |
+| GET | `/api/v1/knowledge-base/categories` | List all KB categories |
+| POST | `/api/v1/knowledge-base/categories` | Create new KB category |
+| PUT | `/api/v1/knowledge-base/categories/:id` | Update KB category |
+| DELETE | `/api/v1/knowledge-base/categories/:id` | Delete KB category |
+| POST | `/api/v1/knowledge-base/upload` | Upload KB document with category |
+| GET | `/api/v1/knowledge-base` | List KB documents with filters |
+| GET | `/api/v1/knowledge-base/:id` | Get KB document details |
+| DELETE | `/api/v1/knowledge-base/:id` | Delete KB document |
+| GET | `/api/v1/knowledge-base/search` | Full-text search KB documents |
+| GET | `/api/v1/knowledge-base/:id/download` | Download original KB document |
+| GET | `/api/v1/knowledge-base/:id/references` | Get agent references for KB doc |
 
 ***
 
@@ -740,7 +766,7 @@ Production Incidents + Test Results → Evolution Agent
    - tags JSONB
    - timestamp TIMESTAMP (partitioned by time)
 
-10. **KnowledgeBase**
+10. **KnowledgeBase (Legacy - being phased out)**
     - entry_id (PK, UUID)
     - category VARCHAR(100)
     - title VARCHAR(500)
@@ -754,9 +780,74 @@ Production Incidents + Test Results → Evolution Agent
     - created_at TIMESTAMP
     - updated_at TIMESTAMP
 
+**Knowledge Base Document System Entities:**
+
+11. **kb_categories**
+    - category_id (PK, UUID)
+    - project_id (FK to Project)
+    - category_name VARCHAR(100) UNIQUE per project
+    - description TEXT
+    - color VARCHAR(7) -- Hex color for UI badges
+    - icon VARCHAR(50) -- Icon name (e.g., 'database', 'users')
+    - display_order INT
+    - is_active BOOLEAN DEFAULT TRUE
+    - is_predefined BOOLEAN DEFAULT FALSE
+    - target_audience TEXT[] -- ['sales', 'customer_service', 'technical_support', 'qa']
+    - system_type VARCHAR(50) -- 'crm', 'billing', 'provisioning', etc.
+    - update_frequency VARCHAR(20) -- 'weekly', 'monthly', 'quarterly'
+    - compliance_required BOOLEAN DEFAULT FALSE
+    - created_at TIMESTAMP
+    - updated_at TIMESTAMP
+    - created_by (FK to User, nullable)
+    
+12. **knowledge_base_documents**
+    - doc_id (PK, UUID)
+    - project_id (FK to Project)
+    - kb_category_id (FK to kb_categories) ON DELETE SET NULL
+    - file_name VARCHAR(500)
+    - original_file_name VARCHAR(500)
+    - file_path VARCHAR(1000) -- S3/MinIO path
+    - file_size_bytes BIGINT
+    - mime_type VARCHAR(100)
+    - doc_sub_type VARCHAR(50) -- 'system_guide', 'product', 'process', 'reference'
+    - description TEXT
+    - extracted_text TEXT -- Full text for search
+    - key_terms TEXT[] -- Important terms for matching
+    - product_names TEXT[] -- Products mentioned in this doc
+    - system_version VARCHAR(20) -- CRM v4.5, Billing v2.1, etc.
+    - effective_date DATE -- When this doc version became effective
+    - expiry_date DATE -- For time-sensitive pricing/product docs
+    - target_audience TEXT[] -- ['sales', 'qa', 'customer_service']
+    - referenced_by_agents INT DEFAULT 0 -- Usage tracking
+    - last_referenced_at TIMESTAMP
+    - relevance_score FLOAT DEFAULT 1.0 -- Agent feedback on usefulness
+    - upload_status ENUM('pending', 'processing', 'completed', 'failed')
+    - error_message TEXT
+    - created_at TIMESTAMP
+    - updated_at TIMESTAMP
+    - uploaded_by (FK to User)
+    
+13. **kb_document_versions**
+    - version_id (PK, UUID)
+    - doc_id (FK to knowledge_base_documents)
+    - version_number INT
+    - file_path VARCHAR(1000)
+    - change_notes TEXT
+    - created_at TIMESTAMP
+    - created_by (FK to User)
+    
+14. **kb_agent_references**
+    - reference_id (PK, UUID)
+    - doc_id (FK to knowledge_base_documents)
+    - agent_id (FK to Agent)
+    - test_case_id (FK to TestCase, nullable)
+    - reference_context TEXT -- What the agent used this doc for
+    - relevance_feedback FLOAT -- 0.0-1.0, how useful was this doc
+    - referenced_at TIMESTAMP
+
 **AI/ML Entities:**
 
-11. **AIRequestLog**  
+15. **AIRequestLog**  
     - request_id (PK, UUID)
     - agent_id (FK to Agent)
     - user_id (FK to User, nullable)
@@ -772,7 +863,7 @@ Production Incidents + Test Results → Evolution Agent
     - error_message TEXT
     - timestamp TIMESTAMP
 
-12. **ModelPerformance**
+16. **ModelPerformance**
     - performance_id (PK, UUID)
     - model_name VARCHAR(100)
     - task_type VARCHAR(100)
@@ -786,7 +877,7 @@ Production Incidents + Test Results → Evolution Agent
     - sample_size INT
     - evaluation_date DATE
 
-13. **PromptTemplate**
+17. **PromptTemplate**
     - template_id (PK, UUID)
     - name VARCHAR(200)
     - version INT
@@ -801,7 +892,7 @@ Production Incidents + Test Results → Evolution Agent
 
 **Integration Entities:**
 
-14. **IntegrationConfig**  
+18. **IntegrationConfig**  
     - integration_id (PK, UUID)
     - type ENUM('jira', 'github', 'jenkins', 'prometheus', 'pagerduty')
     - config_data JSONB (encrypted)
@@ -810,7 +901,7 @@ Production Incidents + Test Results → Evolution Agent
     - created_by (FK to User)
     - created_at TIMESTAMP
 
-15. **ProductionIncident**
+19. **ProductionIncident**
     - incident_id (PK, UUID)
     - external_id VARCHAR(200)
     - severity ENUM('critical', 'high', 'medium', 'low')
@@ -835,6 +926,14 @@ Production Incidents + Test Results → Evolution Agent
 - **Agent ↔ KnowledgeBase:** 1:M
 - **User ↔ AIRequestLog:** 1:M (nullable)
 - **ProductionIncident ↔ TestCase:** M:M
+- **Project ↔ kb_categories:** 1:M
+- **kb_categories ↔ knowledge_base_documents:** 1:M
+- **Project ↔ knowledge_base_documents:** 1:M
+- **User ↔ knowledge_base_documents:** 1:M (uploaded_by)
+- **knowledge_base_documents ↔ kb_document_versions:** 1:M
+- **knowledge_base_documents ↔ kb_agent_references:** 1:M
+- **Agent ↔ kb_agent_references:** 1:M
+- **TestCase ↔ kb_agent_references:** 1:M (nullable)
 
 **Indexes:**
 - ExecutionResult: (test_id, executed_at DESC)
@@ -842,7 +941,11 @@ Production Incidents + Test Results → Evolution Agent
 - AgentMetrics: (agent_id, timestamp DESC) -- TimescaleDB hypertable
 - KnowledgeBase: HNSW index on embeddings
 - AIRequestLog: (timestamp DESC, agent_id)
-- TestCase: (created_by_agent, confidence_score DESC)  
+- TestCase: (created_by_agent, confidence_score DESC)
+- kb_categories: (project_id), (is_active), (display_order)
+- knowledge_base_documents: (kb_category_id), (project_id, kb_category_id), (uploaded_by), GIN index on extracted_text for full-text search, GIN index on product_names, (upload_status, created_at DESC)
+- kb_document_versions: (doc_id, version_number DESC)
+- kb_agent_references: (doc_id, referenced_at DESC), (agent_id, referenced_at DESC), (test_case_id)  
 
 ***
 
