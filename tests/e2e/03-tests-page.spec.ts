@@ -41,9 +41,9 @@ test.describe('Tests Page', () => {
   test('should display mock test cases', async ({ page }) => {
     // Verify test cases are displayed
     // Mock data includes: Login Flow Test, API Health Check, Payment Gateway Test
-    await expect(page.getByText(/login flow test/i)).toBeVisible();
-    await expect(page.getByText(/API health check/i)).toBeVisible();
-    await expect(page.getByText(/payment gateway test/i)).toBeVisible();
+    await expect(page.getByText(/login flow test/i).first()).toBeVisible();
+    await expect(page.getByText(/API health check/i).first()).toBeVisible();
+    await expect(page.getByText(/payment gateway test/i).first()).toBeVisible();
   });
 
   test('should display test status badges', async ({ page }) => {
@@ -91,8 +91,8 @@ test.describe('Tests Page', () => {
 
   test('should display test metadata', async ({ page }) => {
     // Verify test metadata is shown (agent, priority, etc.)
-    await expect(page.getByText(/explorer agent/i)).toBeVisible();
-    await expect(page.getByText(/high/i)).toBeVisible();
+    await expect(page.getByText(/explorer agent/i).first()).toBeVisible();
+    await expect(page.getByText(/high/i).first()).toBeVisible();
   });
 
   test('should maintain layout on mobile', async ({ page }) => {

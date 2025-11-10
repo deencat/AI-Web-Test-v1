@@ -89,7 +89,7 @@ test.describe('Dashboard Page', () => {
     // Verify navigation
     await page.waitForURL('**/settings');
     await expect(page).toHaveURL(/settings/);
-    await expect(page.getByRole('heading', { name: /settings/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /settings/i }).first()).toBeVisible();
   });
 
   test('should be responsive on mobile', async ({ page }) => {
