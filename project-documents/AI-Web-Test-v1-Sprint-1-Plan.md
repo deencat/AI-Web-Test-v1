@@ -281,96 +281,12 @@
 
 ---
 
-#### Day 3 (Wednesday) - API Endpoints & API Client
+#### Day 3 (Wednesday) - Frontend Polish & Integration Prep
 
-**Backend Developer (8 hours):**
-- [ ] **Task 3.1: Create Pydantic schemas** (2 hours)
-  - Create `backend/app/schemas/user.py`:
-    ```python
-    from pydantic import BaseModel, EmailStr, UUID4
-    from datetime import datetime
-    from typing import Optional
-    
-    class UserBase(BaseModel):
-        email: EmailStr
-        username: str
-        full_name: Optional[str] = None
-    
-    class UserCreate(UserBase):
-        password: str
-    
-    class UserUpdate(UserBase):
-        password: Optional[str] = None
-    
-    class UserInDB(UserBase):
-        id: UUID4
-        is_active: bool
-        is_superuser: bool
-        created_at: datetime
-        updated_at: datetime
-        
-        class Config:
-            from_attributes = True
-    
-    class UserResponse(UserBase):
-        id: UUID4
-        is_active: bool
-        created_at: datetime
-    ```
-  - Create `backend/app/schemas/auth.py` for login/token schemas
-  
-- [ ] **Task 3.2: Create CRUD operations** (3 hours)
-  - Create `backend/app/crud/user.py`:
-    ```python
-    from sqlalchemy.orm import Session
-    from app.models.user import User
-    from app.schemas.user import UserCreate
-    from passlib.context import CryptContext
-    
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    
-    def get_user_by_email(db: Session, email: str):
-        return db.query(User).filter(User.email == email).first()
-    
-    def get_user_by_username(db: Session, username: str):
-        return db.query(User).filter(User.username == username).first()
-    
-    def create_user(db: Session, user: UserCreate):
-        hashed_password = pwd_context.hash(user.password)
-        db_user = User(
-            email=user.email,
-            username=user.username,
-            full_name=user.full_name,
-            hashed_password=hashed_password
-        )
-        db.add(db_user)
-        db.commit()
-        db.refresh(db_user)
-        return db_user
-    
-    def verify_password(plain_password: str, hashed_password: str):
-        return pwd_context.verify(plain_password, hashed_password)
-    ```
-  
-- [ ] **Task 3.3: Create API routes** (3 hours)
-  - Create `backend/app/api/routes/users.py`:
-    - POST `/api/v1/users/` - Create user
-    - GET `/api/v1/users/me` - Get current user (protected)
-    - GET `/api/v1/users/{user_id}` - Get user by ID (protected)
-  - Create `backend/app/api/routes/__init__.py` to register routes
-  - Update `main.py` to include routers:
-    ```python
-    from app.api.routes import users
-    app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
-    ```
-  - Test endpoints with Swagger UI
-
-**Deliverable:** 3 user API endpoints working and documented in Swagger
-
----
+**Decision:** Maintain Design Mode focus for one more day. Backend foundation moves to Day 4 while frontend reaches “Sprint 1 complete” quality.
 
 **Frontend Developer (8 hours):**
-- [ ] **Task 3.1: Setup API client** (3 hours)
+- [ ] **Task 3.1: Setup API client scaffolding** (3 hours)
   - Create `src/services/api.ts`:
     ```typescript
     import axios from 'axios';
@@ -412,6 +328,8 @@
     ```
     VITE_API_URL=http://localhost:8000
     ```
+  - Export mock fallbacks (e.g., resolved Promises) so UI continues working until live endpoints are connected
+  - Pair with backend developer to confirm error/response format based on `docs/API-REQUIREMENTS.md`
   
 - [ ] **Task 3.2: Create TypeScript types** (2 hours)
   - Create `src/types/user.ts`:
@@ -465,8 +383,31 @@
       }
     };
     ```
-  - Test API client by calling health check endpoint
-  - Add error handling and TypeScript types
+  - Provide temporary mock implementations returning existing Design Mode data until backend endpoints are available
+  - Once health/auth endpoints are live, replace fallbacks with real API calls and verify Playwright regression remains green (`npm test`)
+
+- [ ] **Task 3.4: Dashboard enhancements** (1 hour)
+  - Add trend widgets (e.g., pass rate history, active tests sparkline) using expanded mock stats
+  - Introduce loading skeletons / empty states for slow data scenarios
+  - Improve responsive layout for tablet/mobile breakpoints
+
+- [ ] **Task 3.5: Knowledge Base UX polish** (1 hour)
+  - Implement document preview modal with metadata summary
+  - Add tag-based filtering chips and empty-state messaging
+  - Ensure keyboard navigation and focus management for filters/buttons
+
+- [ ] **Task 3.6: Settings refinements** (1 hour)
+  - Extend notification options (e.g., Slack channel input, SMS toggle with mock validation)
+  - Add inline validation messaging and success toast mock
+  - Confirm accessibility (ARIA labels for sliders, toggles)
+
+- [ ] **Task 3.7: Regression maintenance** (0.5 hour)
+  - Run `npm test` after each enhancement batch
+  - Update/add Playwright tests to cover new UI states (modals, empty states, alerts)
+
+**Backend Developer (Status: Deferred to Day 4)**
+- ⏸️ FastAPI scaffold, Pydantic schemas, CRUD, and initial routes postponed until frontend Sprint 1 scope is finalized
+- 📄 Use Day 3 to review `docs/API-REQUIREMENTS.md`, prep environment scripts, and align with frontend on integration sequence
 
 **Deliverable:** API client setup with type-safe methods
 

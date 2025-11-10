@@ -141,6 +141,15 @@ Sprint 1 follows a **prototyping-first strategy**: complete frontend UI with moc
 - ✅ API requirements documented for backend handoff (`docs/API-REQUIREMENTS.md`)
 - ✅ Frontend prototype validated in Design Mode (no backend dependencies yet)
 
+**Day 3 Plan (Nov 12):**
+- 🟢 Continue Design Mode frontend polish to complete the Sprint 1 UI scope before backend work begins
+  - Dashboard enhancements (additional widgets, loading skeletons, responsive tweaks)
+  - Knowledge Base UX improvements (document preview modal, tag filters, empty-state messaging)
+  - Settings refinements (advanced notification options, form validation feedback)
+- 🟡 Frontend developer scaffolds API client (`src/services/api.ts`, service modules, shared types) using `docs/API-REQUIREMENTS.md` so integration is ready when backend starts
+- 🟠 Backend infrastructure kickoff (FastAPI scaffold, Docker Compose refresh, PostgreSQL + Redis services) **deferred to Day 4** to honor frontend-first focus
+- 🔄 Maintain Playwright regression at 69/69 passing after every UI enhancement (`npm test`)
+
 **Days 3-15 Plan:**
 - Setup development environment (Docker, PostgreSQL, Redis)
 - Initialize FastAPI backend
