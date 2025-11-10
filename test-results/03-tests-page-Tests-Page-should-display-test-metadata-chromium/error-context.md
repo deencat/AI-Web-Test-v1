@@ -1,0 +1,83 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: 🤖
+      - generic [ref=e7]: AI Web Test
+    - generic [ref=e8]:
+      - generic [ref=e9]: Admin User
+      - button "Logout" [ref=e10]
+  - generic [ref=e11]:
+    - complementary [ref=e12]:
+      - navigation [ref=e13]:
+        - link "Dashboard" [ref=e14] [cursor=pointer]:
+          - /url: /dashboard
+          - img [ref=e15]
+          - generic [ref=e18]: Dashboard
+        - link "Tests" [ref=e19] [cursor=pointer]:
+          - /url: /tests
+          - img [ref=e20]
+          - generic [ref=e23]: Tests
+        - link "Knowledge Base" [ref=e24] [cursor=pointer]:
+          - /url: /knowledge-base
+          - img [ref=e25]
+          - generic [ref=e29]: Knowledge Base
+        - link "Settings" [ref=e30] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e31]
+          - generic [ref=e34]: Settings
+    - main [ref=e35]:
+      - generic [ref=e36]:
+        - generic [ref=e37]:
+          - generic [ref=e38]:
+            - heading "Test Cases" [level=1] [ref=e39]
+            - paragraph [ref=e40]: Manage and execute your test cases
+          - button "Create New Test" [ref=e41]
+        - generic [ref=e42]:
+          - button "All" [ref=e43]
+          - button "Passed" [ref=e44]
+          - button "Failed" [ref=e45]
+          - button "Pending" [ref=e46]
+        - generic [ref=e48]:
+          - generic [ref=e49]:
+            - generic [ref=e52]:
+              - generic [ref=e53]:
+                - paragraph [ref=e54]: Login Flow Test
+                - generic [ref=e55]: TEST-001
+                - generic [ref=e56]: high
+              - paragraph [ref=e57]: Test the Three Hong Kong customer login flow
+              - paragraph [ref=e58]: "Agent: Explorer Agent"
+            - generic [ref=e59]:
+              - generic [ref=e60]:
+                - paragraph [ref=e61]: passed
+                - paragraph [ref=e62]: 45.2s
+              - button "View Details" [ref=e63]
+          - generic [ref=e64]:
+            - generic [ref=e67]:
+              - generic [ref=e68]:
+                - paragraph [ref=e69]: API Health Check
+                - generic [ref=e70]: TEST-002
+                - generic [ref=e71]: medium
+              - paragraph [ref=e72]: Verify API endpoints are responding correctly
+              - paragraph [ref=e73]: "Agent: Developer Agent"
+            - generic [ref=e74]:
+              - generic [ref=e75]:
+                - paragraph [ref=e76]: passed
+                - paragraph [ref=e77]: 32.1s
+              - button "View Details" [ref=e78]
+          - generic [ref=e79]:
+            - generic [ref=e82]:
+              - generic [ref=e83]:
+                - paragraph [ref=e84]: Payment Gateway Test
+                - generic [ref=e85]: TEST-003
+                - generic [ref=e86]: high
+              - paragraph [ref=e87]: Test payment processing functionality
+              - paragraph [ref=e88]: "Agent: Explorer Agent"
+            - generic [ref=e89]:
+              - generic [ref=e90]:
+                - paragraph [ref=e91]: failed
+                - paragraph [ref=e92]: 28.5s
+              - button "View Details" [ref=e93]
+```

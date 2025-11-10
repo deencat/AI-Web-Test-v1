@@ -1,0 +1,93 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: 🤖
+      - generic [ref=e7]: AI Web Test
+    - generic [ref=e8]:
+      - generic [ref=e9]: Admin User
+      - button "Logout" [ref=e10]
+  - generic [ref=e11]:
+    - complementary [ref=e12]:
+      - navigation [ref=e13]:
+        - link "Dashboard" [ref=e14] [cursor=pointer]:
+          - /url: /dashboard
+          - img [ref=e15]
+          - generic [ref=e18]: Dashboard
+        - link "Tests" [ref=e19] [cursor=pointer]:
+          - /url: /tests
+          - img [ref=e20]
+          - generic [ref=e23]: Tests
+        - link "Knowledge Base" [ref=e24] [cursor=pointer]:
+          - /url: /knowledge-base
+          - img [ref=e25]
+          - generic [ref=e29]: Knowledge Base
+        - link "Settings" [ref=e30] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e31]
+          - generic [ref=e34]: Settings
+    - main [ref=e35]:
+      - generic [ref=e36]:
+        - generic [ref=e37]:
+          - generic [ref=e38]:
+            - heading "Knowledge Base" [level=1] [ref=e39]
+            - paragraph [ref=e40]: Upload and manage documentation
+          - button "Upload Document" [ref=e41]:
+            - img [ref=e42]
+            - text: Upload Document
+        - generic [ref=e46]:
+          - generic [ref=e47]:
+            - img [ref=e48]
+            - textbox "Search knowledge base documents..." [ref=e51]
+          - button "Search" [ref=e52]
+        - generic [ref=e53]:
+          - heading "Categories" [level=2] [ref=e54]
+          - generic [ref=e55]:
+            - generic [ref=e57]:
+              - generic [ref=e58]: C
+              - generic [ref=e59]:
+                - paragraph [ref=e60]: CRM
+                - paragraph [ref=e61]: 5 documents
+            - generic [ref=e63]:
+              - generic [ref=e64]: B
+              - generic [ref=e65]:
+                - paragraph [ref=e66]: Billing
+                - paragraph [ref=e67]: 8 documents
+            - generic [ref=e69]:
+              - generic [ref=e70]: P
+              - generic [ref=e71]:
+                - paragraph [ref=e72]: Products & Services
+                - paragraph [ref=e73]: 12 documents
+            - generic [ref=e75]:
+              - generic [ref=e76]: C
+              - generic [ref=e77]:
+                - paragraph [ref=e78]: Customer Service
+                - paragraph [ref=e79]: 6 documents
+        - generic [ref=e80]:
+          - heading "Recent Documents" [level=2] [ref=e81]
+          - generic [ref=e82]:
+            - generic [ref=e83]:
+              - generic [ref=e84]:
+                - generic [ref=e85]: 📄
+                - generic [ref=e86]:
+                  - paragraph [ref=e87]: CRM_User_Guide.pdf
+                  - paragraph [ref=e88]: CRM • 2.1 MB • Uploaded 2025-10-15
+              - generic [ref=e89]:
+                - generic [ref=e90]:
+                  - paragraph [ref=e91]: Referenced by agents
+                  - paragraph [ref=e92]: 47 times
+                - button "View" [ref=e93]
+            - generic [ref=e94]:
+              - generic [ref=e95]:
+                - generic [ref=e96]: 📄
+                - generic [ref=e97]:
+                  - paragraph [ref=e98]: 5G_Product_Catalog.pdf
+                  - paragraph [ref=e99]: Products & Services • 2.4 MB • Uploaded 2025-10-20
+              - generic [ref=e100]:
+                - generic [ref=e101]:
+                  - paragraph [ref=e102]: Referenced by agents
+                  - paragraph [ref=e103]: 18 times
+                - button "View" [ref=e104]
+```

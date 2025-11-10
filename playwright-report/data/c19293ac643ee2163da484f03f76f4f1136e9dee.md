@@ -1,0 +1,78 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: 🤖
+      - generic [ref=e7]: AI Web Test
+    - generic [ref=e8]:
+      - generic [ref=e9]: Admin User
+      - button "Logout" [ref=e10]
+  - generic [ref=e11]:
+    - complementary [ref=e12]:
+      - navigation [ref=e13]:
+        - link "Dashboard" [ref=e14] [cursor=pointer]:
+          - /url: /dashboard
+          - img [ref=e15]
+          - generic [ref=e18]: Dashboard
+        - link "Tests" [ref=e19] [cursor=pointer]:
+          - /url: /tests
+          - img [ref=e20]
+          - generic [ref=e23]: Tests
+        - link "Knowledge Base" [ref=e24] [cursor=pointer]:
+          - /url: /knowledge-base
+          - img [ref=e25]
+          - generic [ref=e29]: Knowledge Base
+        - link "Settings" [ref=e30] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e31]
+          - generic [ref=e34]: Settings
+    - main [ref=e35]:
+      - generic [ref=e36]:
+        - generic [ref=e37]:
+          - heading "Settings" [level=1] [ref=e38]
+          - paragraph [ref=e39]: Manage your account and preferences
+        - generic [ref=e40]:
+          - heading "Profile Information" [level=2] [ref=e41]
+          - generic [ref=e42]:
+            - generic [ref=e43]:
+              - generic [ref=e44]: Full Name
+              - textbox "Enter your full name" [ref=e45]: Admin User
+            - generic [ref=e46]:
+              - generic [ref=e47]: Email
+              - textbox "Enter your email" [ref=e48]: admin@aiwebtest.com
+            - generic [ref=e49]:
+              - generic [ref=e50]: Username
+              - textbox "Enter your username" [disabled] [ref=e51]: admin
+              - paragraph [ref=e52]: Username cannot be changed
+            - generic [ref=e53]:
+              - button "Save Changes" [ref=e54]
+              - button "Cancel" [ref=e55]
+        - generic [ref=e56]:
+          - heading "Change Password" [level=2] [ref=e57]
+          - generic [ref=e58]:
+            - generic [ref=e59]:
+              - generic [ref=e60]: Current Password
+              - textbox "Enter current password" [ref=e61]
+            - generic [ref=e62]:
+              - generic [ref=e63]: New Password
+              - textbox "Enter new password" [ref=e64]
+            - generic [ref=e65]:
+              - generic [ref=e66]: Confirm New Password
+              - textbox "Confirm new password" [ref=e67]
+            - button "Update Password" [ref=e68]
+        - generic [ref=e69]:
+          - heading "Preferences" [level=2] [ref=e70]
+          - generic [ref=e71]:
+            - generic [ref=e72]:
+              - generic [ref=e73]:
+                - paragraph [ref=e74]: Email Notifications
+                - paragraph [ref=e75]: Receive email alerts for test failures
+              - checkbox [checked] [ref=e77]
+            - generic [ref=e79]:
+              - generic [ref=e80]:
+                - paragraph [ref=e81]: Auto-run Tests
+                - paragraph [ref=e82]: Automatically run tests on schedule
+              - checkbox [ref=e84]
+```

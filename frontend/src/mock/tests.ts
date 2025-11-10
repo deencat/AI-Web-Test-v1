@@ -1,0 +1,67 @@
+export const mockTests = [
+  {
+    id: 'TEST-001',
+    name: 'Login Flow Test',
+    description: 'Test the Three Hong Kong customer login flow',
+    status: 'passed',
+    priority: 'high',
+    agent: 'Explorer Agent',
+    created_at: '2025-11-01T10:00:00Z',
+    execution_time: 45.2,
+  },
+  {
+    id: 'TEST-002',
+    name: 'API Health Check',
+    description: 'Verify API endpoints are responding correctly',
+    status: 'passed',
+    priority: 'medium',
+    agent: 'Developer Agent',
+    created_at: '2025-11-01T11:00:00Z',
+    execution_time: 32.1,
+  },
+  {
+    id: 'TEST-003',
+    name: 'Payment Gateway Test',
+    description: 'Test payment processing functionality',
+    status: 'failed',
+    priority: 'high',
+    agent: 'Explorer Agent',
+    created_at: '2025-11-01T12:00:00Z',
+    execution_time: 28.5,
+  },
+];
+
+export const mockDashboardStats = {
+  total_tests: 156,
+  passed: 142,
+  failed: 8,
+  running: 6,
+  active_agents: 4,
+  pass_rate: 91.0,
+  last_run: '2025-11-01T13:30:00Z',
+};
+
+export const mockAgentActivity = [
+  {
+    id: '1',
+    agent: 'Explorer Agent',
+    status: 'active',
+    current_task: 'Generating test cases for checkout flow',
+    last_activity: '2025-11-10T10:30:00Z',
+  },
+  {
+    id: '2',
+    agent: 'Developer Agent',
+    status: 'active',
+    current_task: 'Executing API health checks',
+    last_activity: '2025-11-10T10:28:00Z',
+  },
+  {
+    id: '3',
+    agent: 'Evolution Agent',
+    status: 'idle',
+    current_task: 'Monitoring for test failures',
+    last_activity: '2025-11-10T10:15:00Z',
+  },
+];
+
