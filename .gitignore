@@ -45,3 +45,31 @@ coverage/
 *.bak
 *.orig
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Backend specific
+backend/venv/
+backend/env/
+backend/.env
+backend/*.db
+backend/*.sqlite
+backend/*.sqlite3
+backend/aiwebtest.db
+
+# Python virtual environments
+**/venv/
+**/env/
+
