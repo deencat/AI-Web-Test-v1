@@ -20,7 +20,7 @@ export const Header: React.FC = () => {
       </div>
 
       <div className="flex items-center gap-4">
-        <span className="text-sm text-gray-600">{user?.full_name || 'User'}</span>
+        <span className="text-sm text-gray-600">{user?.username || 'User'}</span>
         <button
           onClick={handleLogout}
           className="text-sm text-gray-600 hover:text-gray-900 transition-colors"

@@ -1,4 +1,6 @@
-export const mockTests = [
+import { Test } from '../types/api';
+
+export const mockTests: Test[] = [
   {
     id: 'TEST-001',
     name: 'Login Flow Test',
@@ -7,6 +9,8 @@ export const mockTests = [
     priority: 'high',
     agent: 'Explorer Agent',
     created_at: '2025-11-01T10:00:00Z',
+    updated_at: '2025-11-01T10:45:00Z',
+    last_run: '2025-11-01T10:45:00Z',
     execution_time: 45.2,
   },
   {
@@ -17,6 +21,8 @@ export const mockTests = [
     priority: 'medium',
     agent: 'Developer Agent',
     created_at: '2025-11-01T11:00:00Z',
+    updated_at: '2025-11-01T11:32:00Z',
+    last_run: '2025-11-01T11:32:00Z',
     execution_time: 32.1,
   },
   {
@@ -27,6 +33,8 @@ export const mockTests = [
     priority: 'high',
     agent: 'Explorer Agent',
     created_at: '2025-11-01T12:00:00Z',
+    updated_at: '2025-11-01T12:28:00Z',
+    last_run: '2025-11-01T12:28:00Z',
     execution_time: 28.5,
   },
 ];
@@ -64,4 +72,3 @@ export const mockAgentActivity = [
     last_activity: '2025-11-10T10:15:00Z',
   },
 ];
-

@@ -48,7 +48,7 @@ test.describe('Application Navigation', () => {
     for (const pageName of pages) {
       await page.goto(`/${pageName}`);
       await expect(page.getByText(/AI Web Test/i).first()).toBeVisible();
-      await expect(page.getByText(/Admin User/i)).toBeVisible();
+      await expect(page.getByText(/admin/i)).toBeVisible();
     }
   });
 
@@ -165,7 +165,7 @@ test.describe('Application Navigation', () => {
       await page.goto(`/${pageName}`);
       
       // User info should be visible in header
-      await expect(page.getByText(/Admin User/i)).toBeVisible();
+      await expect(page.getByText(/admin/i)).toBeVisible();
     }
   });
 });

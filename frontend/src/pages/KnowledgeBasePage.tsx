@@ -123,7 +123,7 @@ export const KnowledgeBasePage: React.FC = () => {
                 >
                   <div
                     className={`w-12 h-12 rounded-lg flex items-center justify-center text-white font-bold text-xl ${
-                      colorMap[category.color]
+                      colorMap[category.color || 'blue']
                     }`}
                   >
                     {category.name[0]}

@@ -51,7 +51,7 @@ test.describe('Dashboard Page', () => {
   test('should have functional header with user info', async ({ page }) => {
     // Verify header elements
     await expect(page.getByText(/AI Web Test/i)).toBeVisible();
-    await expect(page.getByText(/Admin User/i)).toBeVisible();
+    await expect(page.getByText(/admin/i)).toBeVisible();
   });
 
   test('should have functional sidebar navigation', async ({ page }) => {

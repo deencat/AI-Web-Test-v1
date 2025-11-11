@@ -26,12 +26,13 @@ export const LoginPage: React.FC = () => {
 
     // Simulate API delay
     setTimeout(() => {
-      const result = mockLogin(username, password);
+      const user = mockLogin(username, password);
       
-      if (result.success) {
-        // Store token in localStorage
-        localStorage.setItem('token', result.token);
-        localStorage.setItem('user', JSON.stringify(result.user));
+      if (user) {
+        // Generate mock token and store in localStorage
+        const token = `mock-token-${Date.now()}`;
+        localStorage.setItem('token', token);
+        localStorage.setItem('user', JSON.stringify(user));
         
         // Navigate to dashboard
         navigate('/dashboard');
