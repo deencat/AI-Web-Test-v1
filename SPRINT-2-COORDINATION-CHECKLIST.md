@@ -38,12 +38,12 @@
 ### **Day 2 (Tuesday)**
 
 #### **Backend Tasks**
-- [ ] Create `app/services/generation.py`
-- [ ] Implement test case parsing logic
-- [ ] Test with various prompts
-- [ ] Refine prompt template
+- [x] Create `app/services/generation.py` ✅
+- [x] Implement test case parsing logic ✅
+- [x] Test with various prompts ✅
+- [x] Refine prompt template ✅
 
-**Deliverable:** Test generation service working
+**Deliverable:** ✅ Test generation service working (using FREE Mixtral 8x7B)
 
 #### **Frontend Tasks**
 - [ ] Build test generation form
