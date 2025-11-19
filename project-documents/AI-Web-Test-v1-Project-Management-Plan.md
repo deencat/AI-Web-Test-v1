@@ -1,12 +1,13 @@
 # AI Web Test v1.0 - Project Management Plan
 ## Multi-Agent Test Automation Platform
 
-**Version:** 1.5  
-**Date:** November 11, 2025  
-**Status:** ✅ Sprint 1 COMPLETE (100%) | 🎯 Ready for Sprint 2  
+**Version:** 1.6  
+**Date:** November 19, 2025  
+**Status:** ✅ Sprint 1 COMPLETE (100%) | 🎯 Sprint 2 Ready to Start | 👥 Team Split Complete  
 **Project Duration:** 32 weeks (8 months)  
+**Team Structure:** 2 Developers (Frontend + Backend split)  
 **Methodology:** Agile with 2-week sprints + Pragmatic MVP approach  
-**Latest Update:** Sprint 1 complete - Full-stack authentication MVP tested and verified (69/69 tests passing with real backend)  
+**Latest Update:** Team handoff complete - Frontend developer (VS Code + Copilot) and Backend developer (Cursor) ready for parallel Sprint 2 development  
 
 ---
 
@@ -203,23 +204,53 @@ Deliver a **fully functional test automation platform** that QA engineers can us
 ---
 
 #### Sprint 2 (Week 3-4): Generation Agent + KB Foundation
-**Goal:** Users can generate test cases from natural language
+**Goal:** Users can generate test cases from natural language  
+**Status:** 🎯 Ready to Start (Team handoff complete)  
+**Actual Team:** 1 Backend Developer + 1 Frontend Developer (Parallel development)  
+**Strategy:** Frontend and backend work in parallel with daily syncs
 
-**Tasks:**
-- Implement Generation Agent with OpenRouter integration
-- Create natural language input UI
-- Build test case generation prompt templates
-- Implement KB document upload (basic - no categories yet)
-- Create test case display UI
-- Setup PostgreSQL schema for test cases
+**Team Split:**
+- **Backend Developer:** OpenRouter integration, test generation service, test CRUD API, KB upload API
+- **Frontend Developer:** Test generation UI, test display components, KB upload UI, dashboard charts
+
+**Backend Tasks:**
+- Implement OpenRouter API integration (GPT-4/Claude)
+- Create test generation service with prompt templates
+- Build test case CRUD endpoints (create, read, update, delete)
+- Implement KB document upload endpoint
+- Create database models and schemas (TestCase, KBDocument)
+- Setup SQLite schema for test cases (PostgreSQL deferred)
+
+**Frontend Tasks:**
+- Create natural language input UI (textarea + generate button)
+- Build test case display components (list, card, detail view)
+- Implement test case management UI (edit, delete)
+- Create KB document upload UI (drag & drop)
+- Add dashboard charts using Recharts
+- Update Playwright tests for new features
 
 **Deliverables:**
 - User can input "Test login flow for Three HK"
-- Agent generates 5-10 test cases
-- Test cases display in UI with details
-- User can upload a KB document (stored in MinIO)
+- System generates 5-10 test cases in < 10 seconds
+- Test cases display in UI with full details
+- User can edit/delete test cases
+- User can upload KB documents (PDF, DOCX, TXT up to 10MB)
+- Documents display in list view with search/delete
+- Dashboard shows charts for test trends
 
-**Team:** 2 Backend + 2 Frontend + 1 AI Engineer
+**Coordination:**
+- Daily 10-minute sync meetings
+- API contracts defined before implementation
+- Feature branches with PR reviews
+- 4 handoff guides created for team coordination
+
+**Documentation Created:**
+- `TEAM-SPLIT-HANDOFF-GUIDE.md` (15 pages)
+- `FRONTEND-DEVELOPER-QUICK-START.md` (Quick reference)
+- `BACKEND-DEVELOPER-QUICK-START.md` (Quick reference)
+- `SPRINT-2-COORDINATION-CHECKLIST.md` (Daily tracker)
+
+**Progress:** 🟢 **0% STARTED** - Team ready, handoff complete, Sprint 2 begins Week 3
 
 ---
 
@@ -740,6 +771,8 @@ Implement **Reinforcement Learning** for continuous agent improvement, leveragin
 ### Team Composition by Phase
 
 #### Phase 1 (Weeks 1-8) - MVP Team
+
+**Originally Planned:**
 - **Backend Developers**: 2 (Python, FastAPI, PostgreSQL)
 - **Frontend Developers**: 2 (React, TypeScript, TailwindCSS)
 - **AI Engineer**: 1 (LLM integration, prompt engineering)
@@ -747,8 +780,22 @@ Implement **Reinforcement Learning** for continuous agent improvement, leveragin
 - **QA Engineer**: 1 (Testing, validation)
 - **UX Designer**: 0.5 (Part-time for UI/UX)
 - **Project Manager**: 1
+- **Total FTEs: 8.5**
 
-**Total FTEs: 8.5**
+**Actual (Sprint 1-2):**
+- **Sprint 1 (Week 1):** 1 Solo Developer (Full-stack)
+  - Completed in 5 days vs 15 planned (66% time saved)
+  - Built complete authentication MVP (frontend + backend)
+  - 69/69 tests passing, production-ready
+  
+- **Sprint 2 (Week 3-4):** 2 Developers (Split team)
+  - **Backend Developer**: 1 (You - Cursor/VS Code + Copilot)
+    - OpenRouter integration, test generation API, KB upload
+  - **Frontend Developer**: 1 (Your friend - VS Code + Copilot)
+    - Test generation UI, KB upload UI, dashboard charts
+  - **Coordination**: Daily 10-min syncs, 4 handoff guides created
+  
+**Actual FTEs: 1-2** (Significantly under planned, ahead of schedule)
 
 #### Phase 2 (Weeks 9-16) - Enhanced Team
 - **Backend Developers**: 3 (Agent system complexity)
