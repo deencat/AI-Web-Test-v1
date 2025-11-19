@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+/* Custom base styles */
+body {
+  background-color: rgb(249 250 251);
+  color: rgb(17 24 39);
+}
+
+/* Custom component styles */
+.btn-primary {
+  background-color: #2E86AB;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  transition: background-color 0.2s;
+}
+
+.btn-primary:hover {
+  background-color: #1d4e89;
+}
+
+.btn-secondary {
+  background-color: rgb(229 231 235);
+  color: rgb(55 65 81);
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  transition: background-color 0.2s;
+}
+
+.btn-secondary:hover {
+  background-color: rgb(209 213 219);
+}
+
