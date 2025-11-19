@@ -1,0 +1,30 @@
+{
+  "name": "ai-web-test-v1",
+  "version": "1.0.0",
+  "description": "AI-powered Web Testing Platform with Multi-Agent Architecture",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:report": "playwright show-report",
+    "test:codegen": "playwright codegen http://localhost:5173",
+    "frontend:dev": "cd frontend && npm run dev",
+    "frontend:build": "cd frontend && npm run build",
+    "frontend:preview": "cd frontend && npm run preview",
+    "install:all": "npm install && cd frontend && npm install"
+  },
+  "keywords": [
+    "testing",
+    "ai",
+    "automation",
+    "playwright",
+    "multi-agent"
+  ],
+  "author": "AI Web Test Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.49.1"
+  }
+}
+
