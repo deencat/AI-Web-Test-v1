@@ -63,13 +63,14 @@
 ### **Day 3 (Wednesday)**
 
 #### **Backend Tasks**
-- [ ] Create `app/models/test.py` (SQLAlchemy)
-- [ ] Create `app/schemas/test.py` (Pydantic)
-- [ ] Create `app/crud/test.py` (CRUD operations)
-- [ ] Create database migration
-- [ ] Apply migration
+- [x] Create `app/models/test_case.py` (SQLAlchemy) ✅
+- [x] Create `app/schemas/test_case.py` (Pydantic) ✅
+- [x] Create `app/crud/test_case.py` (CRUD operations) ✅
+- [x] Create test generation endpoints ✅
+- [x] Create CRUD endpoints (9 total) ✅
+- [x] Test all endpoints (9/9 passing) ✅
 
-**Deliverable:** Database schema ready
+**Deliverable:** ✅ Database + API endpoints complete (ALL TESTS PASSING)
 
 #### **Frontend Tasks**
 - [ ] Create `TestCaseCard` component
