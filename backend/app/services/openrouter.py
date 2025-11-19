@@ -14,7 +14,7 @@ class OpenRouterService:
     async def chat_completion(
         self,
         messages: List[Dict[str, str]],
-        model: str = "anthropic/claude-3.5-sonnet",  # Claude is available globally
+        model: Optional[str] = None,  # Uses OPENROUTER_MODEL from settings if not specified
         temperature: float = 0.7,
         max_tokens: Optional[int] = None
     ) -> dict:
@@ -23,7 +23,7 @@ class OpenRouterService:
         
         Args:
             messages: List of message dicts with 'role' and 'content'
-            model: Model to use (default: gpt-4-turbo)
+            model: Model to use (default: uses OPENROUTER_MODEL from settings)
             temperature: Sampling temperature (0-2)
             max_tokens: Maximum tokens to generate
             
@@ -39,6 +39,10 @@ class OpenRouterService:
                 "OPENROUTER_API_KEY not set in environment. "
                 "Please add it to backend/.env file."
             )
+        
+        # Use configured model if not specified
+        if model is None:
+            model = settings.OPENROUTER_MODEL
         
         # Prepare request payload
         payload = {

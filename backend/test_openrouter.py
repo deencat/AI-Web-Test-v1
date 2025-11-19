@@ -23,6 +23,7 @@ async def test_basic_connection():
         return False
     
     print(f"\nAPI Key configured: {settings.OPENROUTER_API_KEY[:20]}...")
+    print(f"Model configured: {settings.OPENROUTER_MODEL}")
     
     # Initialize service
     service = OpenRouterService()
@@ -51,6 +52,7 @@ async def test_basic_connection():
     
     # Test 2: Simple chat completion
     print("\n[Test 2] Testing chat completion...")
+    print(f"Using model: {settings.OPENROUTER_MODEL}")
     messages = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Say 'Hello from OpenRouter!' in one sentence."}
