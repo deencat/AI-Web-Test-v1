@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     
     # OpenRouter (for Sprint 2 - Test Generation)
     OPENROUTER_API_KEY: str | None = None  # Optional for now
-    OPENROUTER_MODEL: str = "anthropic/claude-3.5-sonnet"  # Default model (works globally, paid)
+    OPENROUTER_MODEL: str = "mistralai/mixtral-8x7b-instruct"  # Default: Free, high-quality model
     
     class Config:
         env_file = ".env"
