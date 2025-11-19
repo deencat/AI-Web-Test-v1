@@ -12,13 +12,13 @@
 ### **Day 1 (Monday)**
 
 #### **Backend Tasks**
-- [ ] Get OpenRouter API key (https://openrouter.ai/keys)
-- [ ] Add `OPENROUTER_API_KEY` to `backend/.env`
-- [ ] Create `app/services/openrouter.py`
-- [ ] Test OpenRouter API connection
-- [ ] Create basic prompt template
+- [x] Get OpenRouter API key (https://openrouter.ai/keys) ✅
+- [x] Add `OPENROUTER_API_KEY` to `backend/.env` ✅
+- [x] Create `app/services/openrouter.py` ✅
+- [x] Test OpenRouter API connection ✅
+- [x] Create basic prompt template ✅
 
-**Deliverable:** OpenRouter integration working
+**Deliverable:** ✅ OpenRouter integration working (using Claude 3.5 Sonnet)
 
 #### **Frontend Tasks**
 - [ ] Design test generation UI mockup
