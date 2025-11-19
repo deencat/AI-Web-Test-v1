@@ -1,75 +1,62 @@
 {
   "test_cases": [
     {
-      "title": "Successfully create test case with valid authentication and data",
-      "description": "Verify that a test case can be created when sending valid authentication and complete test data",
+      "title": "POST /api/v1/tests - Valid Request with Expected Response",
+      "description": "Verify that a valid request with all necessary fields creates a new test case successfully.",
       "test_type": "api",
       "priority": "high",
       "steps": [
-        "Step 1: Set valid authentication token in request header",
-        "Step 2: Prepare valid test case JSON payload with all required fields",
-        "Step 3: Send POST request to /api/v1/tests",
-        "Step 4: Verify response status and body"
+        "Send a POST request to /api/v1/tests with valid JSON containing all required fields.",
+        "Check the response status code.",
+        "Verify the returned JSON contains the correct test case details."
       ],
-      "expected_result": "Response with 201 Created status and created test case details in response body",
-      "preconditions": "User must be authenticated with valid permissions",
+      "expected_result": "Response status code 201 Created, JSON containing the created test case details.",
+      "preconditions": "User must be authenticated with a valid token.",
       "test_data": {
-        "headers": {
-          "Authorization": "Bearer valid-token-123",
-          "Content-Type": "application/json"
-        },
-        "body": {
-          "title": "Sample Test Case",
-          "description": "Test description",
-          "priority": "high"
-        }
+        "token": "valid_token",
+        "title": "Test Case Title",
+        "description": "Test Case Description",
+        "test_type": "unit",
+        "priority": "medium",
+        "steps": [
+          "Step 1: Action to take",
+          "Step 2: Next action",
+          "Step 3: Final action"
+        ],
+        "expected_result": "Expected result of the test case"
       }
     },
     {
-      "title": "Attempt to create test case with missing authentication",
-      "description": "Verify that the API returns appropriate error when authentication is missing",
-      "test_type": "api",
-      "priority": "high",
-      "steps": [
-        "Step 1: Prepare valid test case JSON payload",
-        "Step 2: Send POST request to /api/v1/tests without authentication token",
-        "Step 3: Verify error response"
-      ],
-      "expected_result": "Response with 401 Unauthorized status and appropriate error message",
-      "test_data": {
-        "headers": {
-          "Content-Type": "application/json"
-        },
-        "body": {
-          "title": "Sample Test Case",
-          "description": "Test description",
-          "priority": "high"
-        }
-      }
-    },
-    {
-      "title": "Create test case with missing required fields",
-      "description": "Verify that the API handles missing required fields appropriately",
+      "title": "POST /api/v1/tests - Missing Fields in Request Body",
+      "description": "Verify that sending a request with missing fields returns a 400 Bad Request.",
       "test_type": "api",
       "priority": "medium",
       "steps": [
-        "Step 1: Set valid authentication token in request header",
-        "Step 2: Prepare incomplete test case JSON payload (missing title)",
-        "Step 3: Send POST request to /api/v1/tests",
-        "Step 4: Verify error response"
+        "Send a POST request to /api/v1/tests with a JSON request body missing one or more required fields.",
+        "Check the response status code.",
+        "Verify the response includes error message indicating missing fields."
       ],
-      "expected_result": "Response with 400 Bad Request status and validation error details",
-      "preconditions": "User must be authenticated with valid permissions",
+      "expected_result": "Response status code 400 Bad Request, JSON with error message indicating missing fields.",
+      "preconditions": "User must be authenticated with a valid token.",
       "test_data": {
-        "headers": {
-          "Authorization": "Bearer valid-token-123",
-          "Content-Type": "application/json"
-        },
-        "body": {
-          "description": "Test description",
-          "priority": "high"
-        }
+        "token": "valid_token",
+        "title": "Test Case Title",
+        "description": "Test Case Description"
       }
+    },
+    {
+      "title": "POST /api/v1/tests - Unauthorized Access",
+      "description": "Verify that unauthenticated users cannot create a new test case.",
+      "test_type": "api",
+      "priority": "high",
+      "steps": [
+        "Send a POST request to /api/v1/tests without a valid token.",
+        "Check the response status code.",
+        "Verify the response includes error message indicating unauthorized access."
+      ],
+      "expected_result": "Response status code 401 Unauthorized, JSON with error message indicating unauthorized access.",
+      "preconditions": "User is not authenticated.",
+      "test_data": {}
     }
   ],
   "metadata": {
@@ -77,7 +64,7 @@
     "test_type": "api",
     "num_requested": 3,
     "num_generated": 3,
-    "model": "anthropic/claude-3.5-sonnet",
-    "tokens": 1122
+    "model": "qwen/qwen-2.5-7b-instruct",
+    "tokens": 927
   }
 }
