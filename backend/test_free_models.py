@@ -11,47 +11,37 @@ from app.core.config import settings
 
 
 # List of free models to test
+# Updated with correct model IDs (November 2025)
 FREE_MODELS = [
     # DeepSeek models
     "deepseek/deepseek-chat",
-    "deepseek/deepseek-coder",
     
     # Qwen models
-    "qwen/qwen-2-7b-instruct:free",
-    "qwen/qwen-2.5-7b-instruct:free",
-    "qwen/qwen-2-72b-instruct",
+    "qwen/qwen-2.5-7b-instruct",
     
     # Meta Llama models
-    "meta-llama/llama-3.1-8b-instruct:free",
-    "meta-llama/llama-3.2-3b-instruct:free",
-    "meta-llama/llama-3.1-70b-instruct:free",
-    "meta-llama/llama-3-8b-instruct:free",
+    "meta-llama/llama-3.2-3b-instruct",
+    "meta-llama/llama-3.1-8b-instruct",
+    "meta-llama/llama-3-8b-instruct",
     
     # Google models
-    "google/gemma-2-9b-it:free",
-    "google/gemma-7b-it:free",
+    "google/gemma-2-9b-it",
     
     # Mistral models
-    "mistralai/mistral-7b-instruct:free",
     "mistralai/mistral-7b-instruct",
     "mistralai/mixtral-8x7b-instruct",
+    "mistralai/mistral-7b-instruct-v0.3",
+    "mistralai/mistral-nemo",
     
     # Microsoft models
-    "microsoft/phi-3-mini-128k-instruct:free",
-    "microsoft/phi-3-medium-128k-instruct:free",
-    
-    # Hugging Face models
-    "huggingfaceh4/zephyr-7b-beta:free",
+    "microsoft/phi-3-mini-128k-instruct",
+    "microsoft/phi-3-medium-128k-instruct",
     
     # Nous Research
-    "nousresearch/nous-hermes-2-mixtral-8x7b-dpo",
+    "nousresearch/hermes-3-llama-3.1-405b",
     
-    # OpenChat
-    "openchat/openchat-7b:free",
-    
-    # Other free models
-    "gryphe/mythomist-7b:free",
-    "undi95/toppy-m-7b:free",
+    # Other models
+    "gryphe/mythomax-l2-13b",
 ]
 
 
