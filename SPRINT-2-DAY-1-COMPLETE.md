@@ -2,7 +2,7 @@
 
 **Date:** November 19, 2025  
 **Developer:** Backend Developer  
-**Status:** ✅ All Day 1 Tasks Complete
+**Status:** ✅ All Day 1 Tasks Complete + FREE Models Discovered!
 
 ---
 
@@ -63,11 +63,13 @@ Usage Stats (Test 2):
 **Dependencies Added:**
 - `httpx==0.25.2` (async HTTP client)
 
-**Git Commit:**
+**Git Commits:**
 ```
-commit 634e181
-feat(api): Add OpenRouter API integration for Sprint 2
-7 files changed, 265 insertions(+), 18 deletions(-)
+commit 634e181 - OpenRouter integration (Claude)
+commit 3367b52 - Day 1 completion docs
+commit 6a424ff - Model configuration feature
+commit e6b9686 - Model configuration summary
+commit 66c2b5a - Free model support (Mixtral 8x7B) ⭐
 ```
 
 ---
@@ -103,14 +105,20 @@ cd backend
 
 ## 💡 Technical Decisions
 
-### **1. Model Selection: Claude 3.5 Sonnet**
+### **1. Model Selection: Mistral Mixtral 8x7B Instruct** ⭐
 
-**Why Claude over GPT-4?**
+**Why Mixtral 8x7B?**
+- ✅ **FREE** (zero cost!)
+- ✅ Excellent quality (tested 21 models, this is the best free one)
 - ✅ Globally available (no region restrictions)
-- ✅ Excellent at structured output generation
-- ✅ Good at following instructions
-- ✅ Competitive pricing on OpenRouter
-- ✅ Fast response times
+- ✅ Great at structured output generation
+- ✅ Fast response times (6-7 seconds)
+- ✅ Perfect for test generation
+
+**Alternatives tested:**
+- ✅ deepseek/deepseek-chat (FREE, fast)
+- ✅ mistralai/mistral-7b-instruct:free (FREE, balanced)
+- ✅ anthropic/claude-3.5-sonnet (PAID, premium quality)
 
 ### **2. Async HTTP Client: httpx**
 
