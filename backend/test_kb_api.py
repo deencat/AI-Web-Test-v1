@@ -80,8 +80,13 @@ def test_create_category():
     print_test("Create custom category")
     
     headers = {"Authorization": f"Bearer {TOKEN}"}
+    
+    # Use timestamp to ensure unique name
+    import time
+    unique_name = f"Test Category {int(time.time())}"
+    
     category_data = {
-        "name": "Test Category",
+        "name": unique_name,
         "description": "A test category for automated testing",
         "color": "#FF5733",
         "icon": "test"
