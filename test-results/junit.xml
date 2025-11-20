@@ -1,152 +1,78 @@
-<testsuites id="" name="" tests="69" failures="0" skipped="0" errors="0" time="71.697098">
-<testsuite name="01-login.spec.ts" timestamp="2025-11-11T10:44:25.156Z" hostname="chromium" tests="5" failures="0" skipped="0" time="25.303" errors="0">
-<testcase name="Login Page › should display login form" classname="01-login.spec.ts" time="3.998">
+<testsuites id="" name="" tests="31" failures="0" skipped="0" errors="0" time="51.836887">
+<testsuite name="01-login.spec.ts" timestamp="2025-11-20T01:41:05.453Z" hostname="chromium" tests="5" failures="0" skipped="0" time="3.822" errors="0">
+<testcase name="Login Page › should display login form" classname="01-login.spec.ts" time="0.532">
 </testcase>
-<testcase name="Login Page › should show validation for empty fields" classname="01-login.spec.ts" time="4.888">
+<testcase name="Login Page › should show validation for empty fields" classname="01-login.spec.ts" time="0.39">
 </testcase>
-<testcase name="Login Page › should successfully login with any credentials (mock)" classname="01-login.spec.ts" time="5.2">
+<testcase name="Login Page › should successfully login with any credentials (mock)" classname="01-login.spec.ts" time="1.239">
 </testcase>
-<testcase name="Login Page › should navigate to dashboard with specific username" classname="01-login.spec.ts" time="5.241">
+<testcase name="Login Page › should navigate to dashboard with specific username" classname="01-login.spec.ts" time="1.201">
 </testcase>
-<testcase name="Login Page › should have responsive design" classname="01-login.spec.ts" time="5.976">
-</testcase>
-</testsuite>
-<testsuite name="02-dashboard.spec.ts" timestamp="2025-11-11T10:44:25.156Z" hostname="chromium" tests="10" failures="0" skipped="0" time="28.086" errors="0">
-<testcase name="Dashboard Page › should display dashboard with statistics" classname="02-dashboard.spec.ts" time="3.283">
-</testcase>
-<testcase name="Dashboard Page › should display mock statistics numbers" classname="02-dashboard.spec.ts" time="2.465">
-</testcase>
-<testcase name="Dashboard Page › should display recent test results" classname="02-dashboard.spec.ts" time="2.25">
-</testcase>
-<testcase name="Dashboard Page › should show agent activity section" classname="02-dashboard.spec.ts" time="2.176">
-</testcase>
-<testcase name="Dashboard Page › should have functional header with user info" classname="02-dashboard.spec.ts" time="2.089">
-</testcase>
-<testcase name="Dashboard Page › should have functional sidebar navigation" classname="02-dashboard.spec.ts" time="2.32">
-</testcase>
-<testcase name="Dashboard Page › should navigate to Tests page from sidebar" classname="02-dashboard.spec.ts" time="3.597">
-</testcase>
-<testcase name="Dashboard Page › should navigate to Knowledge Base page from sidebar" classname="02-dashboard.spec.ts" time="3.629">
-</testcase>
-<testcase name="Dashboard Page › should navigate to Settings page from sidebar" classname="02-dashboard.spec.ts" time="3.179">
-</testcase>
-<testcase name="Dashboard Page › should be responsive on mobile" classname="02-dashboard.spec.ts" time="3.098">
+<testcase name="Login Page › should have responsive design" classname="01-login.spec.ts" time="0.46">
 </testcase>
 </testsuite>
-<testsuite name="03-tests-page.spec.ts" timestamp="2025-11-11T10:44:25.156Z" hostname="chromium" tests="12" failures="0" skipped="0" time="44.804" errors="0">
-<testcase name="Tests Page › should display tests page with header" classname="03-tests-page.spec.ts" time="2.517">
+<testsuite name="02-dashboard.spec.ts" timestamp="2025-11-20T01:41:05.453Z" hostname="chromium" tests="10" failures="0" skipped="0" time="12.158" errors="0">
+<testcase name="Dashboard Page › should display dashboard with statistics" classname="02-dashboard.spec.ts" time="1.175">
 </testcase>
-<testcase name="Tests Page › should display create new test button" classname="03-tests-page.spec.ts" time="6.424">
+<testcase name="Dashboard Page › should display mock statistics numbers" classname="02-dashboard.spec.ts" time="1.234">
 </testcase>
-<testcase name="Tests Page › should display filter buttons" classname="03-tests-page.spec.ts" time="2.581">
+<testcase name="Dashboard Page › should display recent test results" classname="02-dashboard.spec.ts" time="1.237">
 </testcase>
-<testcase name="Tests Page › should display mock test cases" classname="03-tests-page.spec.ts" time="2.215">
+<testcase name="Dashboard Page › should show agent activity section" classname="02-dashboard.spec.ts" time="1.192">
 </testcase>
-<testcase name="Tests Page › should display test status badges" classname="03-tests-page.spec.ts" time="2.548">
+<testcase name="Dashboard Page › should have functional header with user info" classname="02-dashboard.spec.ts" time="1.221">
 </testcase>
-<testcase name="Tests Page › should display view details buttons" classname="03-tests-page.spec.ts" time="4.282">
+<testcase name="Dashboard Page › should have functional sidebar navigation" classname="02-dashboard.spec.ts" time="1.173">
 </testcase>
-<testcase name="Tests Page › should show alert when clicking create new test" classname="03-tests-page.spec.ts" time="2.698">
+<testcase name="Dashboard Page › should navigate to Tests page from sidebar" classname="02-dashboard.spec.ts" time="1.276">
 </testcase>
-<testcase name="Tests Page › should show alert when clicking view details" classname="03-tests-page.spec.ts" time="11.784">
+<testcase name="Dashboard Page › should navigate to Knowledge Base page from sidebar" classname="02-dashboard.spec.ts" time="1.288">
 </testcase>
-<testcase name="Tests Page › should filter tests by status (UI interaction)" classname="03-tests-page.spec.ts" time="2.501">
+<testcase name="Dashboard Page › should navigate to Settings page from sidebar" classname="02-dashboard.spec.ts" time="1.245">
 </testcase>
-<testcase name="Tests Page › should display test metadata" classname="03-tests-page.spec.ts" time="2.461">
-</testcase>
-<testcase name="Tests Page › should maintain layout on mobile" classname="03-tests-page.spec.ts" time="2.544">
-</testcase>
-<testcase name="Tests Page › should have functional sidebar on tests page" classname="03-tests-page.spec.ts" time="2.249">
+<testcase name="Dashboard Page › should be responsive on mobile" classname="02-dashboard.spec.ts" time="1.117">
 </testcase>
 </testsuite>
-<testsuite name="04-knowledge-base.spec.ts" timestamp="2025-11-11T10:44:25.156Z" hostname="chromium" tests="16" failures="0" skipped="0" time="60.692" errors="0">
-<testcase name="Knowledge Base Page › should display knowledge base page header" classname="04-knowledge-base.spec.ts" time="3.262">
+<testsuite name="03-tests-page.spec.ts" timestamp="2025-11-20T01:41:05.453Z" hostname="chromium" tests="8" failures="0" skipped="0" time="24.545" errors="0">
+<testcase name="Tests Page › should display tests page with header" classname="03-tests-page.spec.ts" time="1.274">
 </testcase>
-<testcase name="Knowledge Base Page › should display upload document button" classname="04-knowledge-base.spec.ts" time="2.566">
+<testcase name="Tests Page › should display test generation form initially" classname="03-tests-page.spec.ts" time="1.261">
 </testcase>
-<testcase name="Knowledge Base Page › should display create category button" classname="04-knowledge-base.spec.ts" time="2.459">
+<testcase name="Tests Page › should disable generate button when prompt is empty" classname="03-tests-page.spec.ts" time="1.227">
 </testcase>
-<testcase name="Knowledge Base Page › should display category filter buttons" classname="04-knowledge-base.spec.ts" time="3.883">
+<testcase name="Tests Page › should generate test cases from natural language" classname="03-tests-page.spec.ts" time="4.158">
 </testcase>
-<testcase name="Knowledge Base Page › should display mock knowledge base documents" classname="04-knowledge-base.spec.ts" time="2.505">
+<testcase name="Tests Page › should display test case cards with all details" classname="03-tests-page.spec.ts" time="4.139">
 </testcase>
-<testcase name="Knowledge Base Page › should display document metadata" classname="04-knowledge-base.spec.ts" time="4.058">
+<testcase name="Tests Page › should show save, edit, and delete buttons on generated tests" classname="03-tests-page.spec.ts" time="4.151">
 </testcase>
-<testcase name="Knowledge Base Page › should display document sizes" classname="04-knowledge-base.spec.ts" time="2.465">
+<testcase name="Tests Page › should allow generating more tests after viewing results" classname="03-tests-page.spec.ts" time="4.156">
 </testcase>
-<testcase name="Knowledge Base Page › should display view button for each document" classname="04-knowledge-base.spec.ts" time="3.229">
-</testcase>
-<testcase name="Knowledge Base Page › should show alert when clicking upload document" classname="04-knowledge-base.spec.ts" time="18.753">
-</testcase>
-<testcase name="Knowledge Base Page › should show alert when clicking create category" classname="04-knowledge-base.spec.ts" time="2.465">
-</testcase>
-<testcase name="Knowledge Base Page › should show alert when viewing a document" classname="04-knowledge-base.spec.ts" time="2.66">
-</testcase>
-<testcase name="Knowledge Base Page › should filter by category (UI interaction)" classname="04-knowledge-base.spec.ts" time="2.481">
-</testcase>
-<testcase name="Knowledge Base Page › should display document upload dates" classname="04-knowledge-base.spec.ts" time="2.503">
-</testcase>
-<testcase name="Knowledge Base Page › should maintain responsive layout on mobile" classname="04-knowledge-base.spec.ts" time="2.517">
-</testcase>
-<testcase name="Knowledge Base Page › should navigate back to dashboard" classname="04-knowledge-base.spec.ts" time="2.328">
-</testcase>
-<testcase name="Knowledge Base Page › should display document count information" classname="04-knowledge-base.spec.ts" time="2.558">
+<testcase name="Tests Page › should display &quot;Generate New Tests&quot; button when viewing existing tests" classname="03-tests-page.spec.ts" time="4.179">
 </testcase>
 </testsuite>
-<testsuite name="05-settings.spec.ts" timestamp="2025-11-11T10:44:25.156Z" hostname="chromium" tests="15" failures="0" skipped="0" time="52.167" errors="0">
-<testcase name="Settings Page › should display settings page header" classname="05-settings.spec.ts" time="2.392">
-</testcase>
-<testcase name="Settings Page › should display general settings section" classname="05-settings.spec.ts" time="2.236">
-</testcase>
-<testcase name="Settings Page › should display notification settings section" classname="05-settings.spec.ts" time="2.394">
-</testcase>
-<testcase name="Settings Page › should display agent configuration section" classname="05-settings.spec.ts" time="3.066">
-</testcase>
-<testcase name="Settings Page › should have pre-filled form values" classname="05-settings.spec.ts" time="2.362">
-</testcase>
-<testcase name="Settings Page › should allow editing general settings fields" classname="05-settings.spec.ts" time="4.793">
-</testcase>
-<testcase name="Settings Page › should have toggle switches for notifications" classname="05-settings.spec.ts" time="3.333">
-</testcase>
-<testcase name="Settings Page › should have toggle switches for agents" classname="05-settings.spec.ts" time="2.456">
-</testcase>
-<testcase name="Settings Page › should display save changes button" classname="05-settings.spec.ts" time="3.931">
-</testcase>
-<testcase name="Settings Page › should show alert when clicking save changes" classname="05-settings.spec.ts" time="3.878">
-</testcase>
-<testcase name="Settings Page › should display API endpoint configuration" classname="05-settings.spec.ts" time="3.694">
-</testcase>
-<testcase name="Settings Page › should allow updating API endpoint" classname="05-settings.spec.ts" time="4.79">
-</testcase>
-<testcase name="Settings Page › should maintain layout on mobile" classname="05-settings.spec.ts" time="4.044">
-</testcase>
-<testcase name="Settings Page › should navigate back to dashboard" classname="05-settings.spec.ts" time="2.73">
-</testcase>
-<testcase name="Settings Page › should have scrollable content for long forms" classname="05-settings.spec.ts" time="6.068">
+<testsuite name="04-knowledge-base.spec.ts" timestamp="2025-11-20T01:41:05.453Z" hostname="chromium" tests="1" failures="0" skipped="0" time="1.475" errors="0">
+<testcase name="Knowledge Base Page › should navigate back to dashboard" classname="04-knowledge-base.spec.ts" time="1.475">
 </testcase>
 </testsuite>
-<testsuite name="06-navigation.spec.ts" timestamp="2025-11-11T10:44:25.156Z" hostname="chromium" tests="11" failures="0" skipped="0" time="44.293" errors="0">
-<testcase name="Application Navigation › should navigate through all main pages" classname="06-navigation.spec.ts" time="3.303">
+<testsuite name="05-settings.spec.ts" timestamp="2025-11-20T01:41:05.453Z" hostname="chromium" tests="1" failures="0" skipped="0" time="1.421" errors="0">
+<testcase name="Settings Page › should navigate back to dashboard" classname="05-settings.spec.ts" time="1.421">
 </testcase>
-<testcase name="Application Navigation › should maintain header across all pages" classname="06-navigation.spec.ts" time="6.393">
+</testsuite>
+<testsuite name="06-navigation.spec.ts" timestamp="2025-11-20T01:41:05.453Z" hostname="chromium" tests="1" failures="0" skipped="0" time="1.033" errors="0">
+<testcase name="Application Navigation › should redirect from root to login when not authenticated" classname="06-navigation.spec.ts" time="1.033">
 </testcase>
-<testcase name="Application Navigation › should maintain sidebar across all pages" classname="06-navigation.spec.ts" time="5.81">
+</testsuite>
+<testsuite name="07-sprint2-features.spec.ts" timestamp="2025-11-20T01:41:05.453Z" hostname="chromium" tests="5" failures="0" skipped="0" time="5.999" errors="0">
+<testcase name="Sprint 2: Dashboard Charts › should display test trends chart" classname="07-sprint2-features.spec.ts" time="1.209">
 </testcase>
-<testcase name="Application Navigation › should highlight active page in sidebar" classname="06-navigation.spec.ts" time="3.912">
+<testcase name="Sprint 2: Dashboard Charts › should display test status pie chart" classname="07-sprint2-features.spec.ts" time="1.242">
 </testcase>
-<testcase name="Application Navigation › should support direct URL navigation" classname="06-navigation.spec.ts" time="4.966">
+<testcase name="Sprint 2: Dashboard Charts › should display chart legends" classname="07-sprint2-features.spec.ts" time="1.218">
 </testcase>
-<testcase name="Application Navigation › should handle browser back button" classname="06-navigation.spec.ts" time="4.179">
+<testcase name="Sprint 2: Dashboard Charts › should display pie chart color legend" classname="07-sprint2-features.spec.ts" time="1.165">
 </testcase>
-<testcase name="Application Navigation › should handle browser forward button" classname="06-navigation.spec.ts" time="3.912">
-</testcase>
-<testcase name="Application Navigation › should redirect from root to login when not authenticated" classname="06-navigation.spec.ts" time="3.832">
-</testcase>
-<testcase name="Application Navigation › should maintain navigation state on page refresh" classname="06-navigation.spec.ts" time="3.566">
-</testcase>
-<testcase name="Application Navigation › should have working navigation on mobile viewport" classname="06-navigation.spec.ts" time="1.99">
-</testcase>
-<testcase name="Application Navigation › should preserve user info across navigation" classname="06-navigation.spec.ts" time="2.43">
+<testcase name="Sprint 2: Dashboard Charts › should maintain charts on mobile viewport" classname="07-sprint2-features.spec.ts" time="1.165">
 </testcase>
 </testsuite>
 </testsuites>

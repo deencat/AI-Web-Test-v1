@@ -17,14 +17,14 @@ export const Input: React.FC<InputProps> = ({
   return (
     <div className="w-full">
       {label && (
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-semibold text-gray-900 mb-1">
           {label}
         </label>
       )}
       <input
         className={clsx(
-          'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary transition-colors',
-          error ? 'border-danger focus:ring-danger' : 'border-gray-300',
+          'w-full px-3 py-2 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-blue-700 transition-colors bg-white',
+          error ? 'border-red-600 focus:ring-red-600' : 'border-gray-300',
           className
         )}
         {...props}
