@@ -20,18 +20,23 @@ test.describe('Dashboard Page', () => {
     // Verify dashboard heading
     await expect(page.getByRole('heading', { name: /dashboard/i })).toBeVisible();
     
-    // Verify statistics cards are visible
-    await expect(page.getByText(/total tests/i)).toBeVisible();
-    await expect(page.getByText(/passed/i)).toBeVisible();
-    await expect(page.getByText(/failed/i)).toBeVisible();
-    await expect(page.getByText(/active agents/i)).toBeVisible();
+    // Verify statistics cards are visible - use more specific selectors
+    await expect(page.getByText(/total tests/i).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: /dashboard/i })).toBeVisible();
+    
+    // Check for stat cards by looking for the emoji icons (use first() to handle duplicates in header)
+    await expect(page.getByText('📊')).toBeVisible();
+    await expect(page.getByText('✅')).toBeVisible();
+    await expect(page.getByText('❌')).toBeVisible();
+    await expect(page.getByText('🤖').first()).toBeVisible();
   });
 
   test('should display mock statistics numbers', async ({ page }) => {
-    // Verify mock data is displayed (from mockTests.length = 3)
-    // Note: These numbers may vary based on mock data
-    await expect(page.getByText(/total tests/i)).toBeVisible();
-    await expect(page.getByText(/passed/i)).toBeVisible();
+    // Verify mock data is displayed - just check the section exists
+    await expect(page.getByText(/total tests/i).first()).toBeVisible();
+    
+    // Check that numbers are displayed (our mock has 156 total tests)
+    await expect(page.getByText('156')).toBeVisible();
   });
 
   test('should display recent test results', async ({ page }) => {

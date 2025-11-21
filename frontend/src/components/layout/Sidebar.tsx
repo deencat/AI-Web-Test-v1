@@ -18,10 +18,10 @@ export const Sidebar: React.FC = () => {
             key={item.path}
             to={item.path}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+              `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors font-medium ${
                 isActive
-                  ? 'bg-primary text-white'
-                  : 'text-gray-600 hover:bg-gray-100'
+                  ? 'bg-blue-700 text-white shadow-sm'
+                  : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
               }`
             }
           >
