@@ -21,6 +21,10 @@ class Settings(BaseSettings):
         "http://localhost:3000",
     ]
     
+    # OpenRouter (for Sprint 2 - Test Generation)
+    OPENROUTER_API_KEY: str | None = None  # Optional for now
+    OPENROUTER_MODEL: str = "mistralai/mixtral-8x7b-instruct"  # Default: Free, high-quality model
+    
     class Config:
         env_file = ".env"
         case_sensitive = True
