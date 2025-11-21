@@ -47,7 +47,11 @@ coverage/
 
 # Python
 __pycache__/
+*/__pycache__/
+**/__pycache__/
 *.py[cod]
+*.pyc
+*.pyo
 *$py.class
 *.so
 .Python
@@ -59,6 +63,8 @@ ENV/
 .mypy_cache/
 .coverage
 htmlcov/
+*.pyd
+.tox/
 
 # Backend specific
 backend/venv/
