@@ -19,4 +19,5 @@ class User(Base):
     # Relationships
     test_cases = relationship("TestCase", back_populates="user", cascade="all, delete-orphan")
     kb_documents = relationship("KBDocument", back_populates="user", cascade="all, delete-orphan")
+    test_executions = relationship("TestExecution", back_populates="user", cascade="all, delete-orphan")
 
