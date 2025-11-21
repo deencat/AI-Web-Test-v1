@@ -6,6 +6,8 @@ import {
   RunTestRequest,
   RunTestResponse,
   PaginatedResponse,
+  GenerateTestsRequest,
+  GenerateTestsResponse,
 } from '../types/api';
 import { mockTests } from '../mock/tests';
 
@@ -218,6 +220,48 @@ class TestsService {
     // Real API call
     try {
       const response = await api.get('/tests/stats');
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  /**
+   * Generate test cases from natural language prompt
+   */
+  async generateTests(data: GenerateTestsRequest): Promise<GenerateTestsResponse> {
+    // Use mock data if configured
+    if (apiHelpers.useMockData()) {
+      // Simulate API delay
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Generate mock test cases
+      const count = data.count || 5;
+      const test_cases = Array.from({ length: count }, (_, i) => ({
+        id: `GENERATED-${Date.now()}-${i + 1}`,
+        title: `Test Case ${i + 1}: ${data.prompt.substring(0, 50)}`,
+        description: `Verify that ${data.prompt.toLowerCase()} works correctly as expected`,
+        steps: [
+          'Navigate to the application homepage',
+          'Locate and click on the target element',
+          'Verify the element state changes',
+          'Confirm the expected behavior',
+          'Validate success message appears',
+        ],
+        expected_result: 'The test should pass with all steps completing successfully',
+        priority: (i === 0 ? 'high' : i < 3 ? 'medium' : 'low') as 'high' | 'medium' | 'low',
+      }));
+
+      return {
+        test_cases,
+        prompt: data.prompt,
+        generated_at: new Date().toISOString(),
+      };
+    }
+
+    // Real API call
+    try {
+      const response = await api.post<GenerateTestsResponse>('/tests/generate', data);
       return response.data;
     } catch (error) {
       throw new Error(apiHelpers.getErrorMessage(error));

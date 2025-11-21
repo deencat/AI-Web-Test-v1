@@ -72,3 +72,14 @@ export const mockAgentActivity = [
     last_activity: '2025-11-10T10:15:00Z',
   },
 ];
+
+// Test trend data for charts (last 7 days)
+export const mockTestTrends = [
+  { date: '2025-11-13', passed: 18, failed: 2, total: 20 },
+  { date: '2025-11-14', passed: 22, failed: 1, total: 23 },
+  { date: '2025-11-15', passed: 19, failed: 3, total: 22 },
+  { date: '2025-11-16', passed: 24, failed: 1, total: 25 },
+  { date: '2025-11-17', passed: 21, failed: 2, total: 23 },
+  { date: '2025-11-18', passed: 26, failed: 1, total: 27 },
+  { date: '2025-11-19', passed: 28, failed: 2, total: 30 },
+];
