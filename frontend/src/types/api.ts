@@ -94,6 +94,27 @@ export interface RunTestResponse {
   message: string;
 }
 
+// Test Generation types
+export interface GenerateTestsRequest {
+  prompt: string;
+  count?: number;
+}
+
+export interface GeneratedTestCase {
+  id?: string;
+  title: string;
+  description: string;
+  steps: string[];
+  expected_result: string;
+  priority: 'high' | 'medium' | 'low';
+}
+
+export interface GenerateTestsResponse {
+  test_cases: GeneratedTestCase[];
+  prompt: string;
+  generated_at: string;
+}
+
 // Knowledge Base types
 export interface KBDocument {
   id: string;
