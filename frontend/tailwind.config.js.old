@@ -1,0 +1,20 @@
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {
+      colors: {
+        primary: '#1E40AF', // Darker blue for better contrast (blue-800)
+        'primary-hover': '#1E3A8A', // Even darker on hover (blue-900)
+        success: '#16A34A', // Darker green (green-600)
+        warning: '#F59E0B', // Amber-500 for better visibility
+        danger: '#DC2626', // Red-600 for better contrast
+        info: '#0EA5E9', // Sky-500
+      },
+    },
+  },
+  plugins: [],
+}

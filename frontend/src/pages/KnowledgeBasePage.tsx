@@ -4,13 +4,105 @@ import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { Upload, Search, FileText, FolderPlus } from 'lucide-react';
 import { mockKBDocuments, mockKBCategories, mockKBStats } from '../mock/knowledgeBase';
+import knowledgeBaseService from '../services/knowledgeBaseService';
 
 export const KnowledgeBasePage: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadData, setUploadData] = useState({
+    file: null as File | null,
+    name: '',
+    description: '',
+    category_id: '',
+    document_type: 'system_guide' as 'system_guide' | 'product' | 'process' | 'reference',
+    tags: '',
+  });
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
 
   const handleUploadDocument = () => {
-    alert('Upload Document - This will open a modal to upload a new document');
+    setShowUploadModal(true);
+    setUploadData({
+      file: null,
+      name: '',
+      description: '',
+      category_id: '',
+      document_type: 'system_guide',
+      tags: '',
+    });
+    setUploadError(null);
+  };
+
+  const handleFileSelect = (file: File) => {
+    // Check file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadError('File size must be less than 10MB');
+      return;
+    }
+
+    // Check file type
+    const allowedTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain',
+    ];
+    if (!allowedTypes.includes(file.type)) {
+      setUploadError('Only PDF, DOCX, and TXT files are allowed');
+      return;
+    }
+
+    setUploadData({ ...uploadData, file, name: uploadData.name || file.name });
+    setUploadError(null);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFileSelect(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setDragActive(true);
+    } else if (e.type === 'dragleave') {
+      setDragActive(false);
+    }
+  };
+
+  const handleSubmitUpload = async () => {
+    if (!uploadData.file || !uploadData.name || !uploadData.category_id) {
+      setUploadError('Please fill in all required fields');
+      return;
+    }
+
+    setUploading(true);
+    setUploadError(null);
+
+    try {
+      await knowledgeBaseService.uploadDocument({
+        file: uploadData.file,
+        name: uploadData.name,
+        description: uploadData.description,
+        category_id: uploadData.category_id,
+        document_type: uploadData.document_type,
+        tags: uploadData.tags ? uploadData.tags.split(',').map((t) => t.trim()) : [],
+      });
+
+      setShowUploadModal(false);
+      alert('Document uploaded successfully!');
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Failed to upload document');
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleCreateCategory = () => {
@@ -72,6 +164,191 @@ export const KnowledgeBasePage: React.FC = () => {
             </Button>
           </div>
         </div>
+
+        {/* Upload Modal */}
+        {showUploadModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <Card className="max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-2xl font-bold text-gray-900">Upload Document</h2>
+                  <button
+                    onClick={() => setShowUploadModal(false)}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Drag & Drop Zone */}
+                <div
+                  onDrop={handleDrop}
+                  onDragEnter={handleDrag}
+                  onDragLeave={handleDrag}
+                  onDragOver={handleDrag}
+                  className={`border-2 border-dashed rounded-lg p-8 text-center ${
+                    dragActive
+                      ? 'border-primary bg-blue-50'
+                      : 'border-gray-300 bg-gray-50'
+                  }`}
+                >
+                  {uploadData.file ? (
+                    <div className="space-y-2">
+                      <FileText className="w-12 h-12 mx-auto text-green-600" />
+                      <p className="font-semibold text-gray-900">{uploadData.file.name}</p>
+                      <p className="text-sm text-gray-600">
+                        {(uploadData.file.size / (1024 * 1024)).toFixed(2)} MB
+                      </p>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setUploadData({ ...uploadData, file: null })}
+                      >
+                        Remove File
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Upload className="w-12 h-12 mx-auto text-gray-400" />
+                      <p className="text-gray-700">
+                        Drag and drop a file here, or click to select
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        Supported formats: PDF, DOCX, TXT (Max 10MB)
+                      </p>
+                      <input
+                        type="file"
+                        accept=".pdf,.docx,.txt"
+                        onChange={(e) =>
+                          e.target.files && handleFileSelect(e.target.files[0])
+                        }
+                        className="hidden"
+                        id="file-upload"
+                      />
+                      <label htmlFor="file-upload" className="inline-block">
+                        <span className="inline-flex items-center px-4 py-2 bg-gray-200 text-gray-900 rounded-lg hover:bg-gray-300 cursor-pointer transition-colors">
+                          Select File
+                        </span>
+                      </label>
+                    </div>
+                  )}
+                </div>
+
+                {/* Form Fields */}
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-900 mb-2">
+                      Document Name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={uploadData.name}
+                      onChange={(e) =>
+                        setUploadData({ ...uploadData, name: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      placeholder="Enter document name"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-900 mb-2">
+                      Description
+                    </label>
+                    <textarea
+                      value={uploadData.description}
+                      onChange={(e) =>
+                        setUploadData({ ...uploadData, description: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary min-h-[80px]"
+                      placeholder="Brief description of the document"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-900 mb-2">
+                      Category <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={uploadData.category_id}
+                      onChange={(e) =>
+                        setUploadData({ ...uploadData, category_id: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="">Select a category</option>
+                      {mockKBCategories.map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-900 mb-2">
+                      Document Type
+                    </label>
+                    <select
+                      value={uploadData.document_type}
+                      onChange={(e) =>
+                        setUploadData({
+                          ...uploadData,
+                          document_type: e.target.value as any,
+                        })
+                      }
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="system_guide">System Guide</option>
+                      <option value="product">Product</option>
+                      <option value="process">Process</option>
+                      <option value="reference">Reference</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-900 mb-2">
+                      Tags (comma-separated)
+                    </label>
+                    <input
+                      type="text"
+                      value={uploadData.tags}
+                      onChange={(e) =>
+                        setUploadData({ ...uploadData, tags: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      placeholder="e.g. billing, user-guide, api"
+                    />
+                  </div>
+                </div>
+
+                {uploadError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+                    {uploadError}
+                  </div>
+                )}
+
+                <div className="flex gap-3">
+                  <Button
+                    variant="primary"
+                    onClick={handleSubmitUpload}
+                    disabled={uploading || !uploadData.file}
+                    className="flex-1"
+                  >
+                    {uploading ? 'Uploading...' : 'Upload Document'}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => setShowUploadModal(false)}
+                    disabled={uploading}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          </div>
+        )}
 
         {/* Search Bar */}
         <Card>
