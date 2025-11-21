@@ -57,6 +57,9 @@ class TestCase(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     user = relationship("User", back_populates="test_cases")
     
+    # Executions
+    executions = relationship("TestExecution", back_populates="test_case", cascade="all, delete-orphan")
+    
     def __repr__(self):
         return f"<TestCase(id={self.id}, title='{self.title}', type={self.test_type}, status={self.status})>"
 
