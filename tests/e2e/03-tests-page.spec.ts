@@ -25,94 +25,97 @@ test.describe('Tests Page', () => {
     await expect(page.getByRole('heading', { name: /test cases/i })).toBeVisible();
   });
 
-  test('should display create new test button', async ({ page }) => {
-    // Verify action button
-    await expect(page.getByRole('button', { name: /create new test/i })).toBeVisible();
+  // Sprint 2: Tests page now starts with generation form
+  test('should display test generation form initially', async ({ page }) => {
+    // Verify test generation UI is shown by default
+    await expect(page.getByText(/describe the test you want to create/i)).toBeVisible();
+    await expect(page.getByPlaceholder(/example.*test the login flow/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: /generate test cases/i })).toBeVisible();
   });
 
-  test('should display filter buttons', async ({ page }) => {
-    // Verify filter buttons exist
-    await expect(page.getByRole('button', { name: /all/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /passed/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /failed/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /pending/i })).toBeVisible();
-  });
-
-  test('should display mock test cases', async ({ page }) => {
-    // Verify test cases are displayed
-    // Mock data includes: Login Flow Test, API Health Check, Payment Gateway Test
-    await expect(page.getByText(/login flow test/i).first()).toBeVisible();
-    await expect(page.getByText(/API health check/i).first()).toBeVisible();
-    await expect(page.getByText(/payment gateway test/i).first()).toBeVisible();
-  });
-
-  test('should display test status badges', async ({ page }) => {
-    // Verify status indicators
-    await expect(page.locator('text=passed').first()).toBeVisible();
-    await expect(page.locator('text=failed').first()).toBeVisible();
-  });
-
-  test('should display view details buttons', async ({ page }) => {
-    // Verify each test has a view button
-    const viewButtons = page.getByRole('button', { name: /view details/i });
-    await expect(viewButtons.first()).toBeVisible();
-    expect(await viewButtons.count()).toBeGreaterThan(0);
-  });
-
-  test('should show alert when clicking create new test', async ({ page }) => {
-    // Setup dialog handler
-    page.on('dialog', dialog => {
-      expect(dialog.message()).toContain('Create New Test');
-      dialog.accept();
-    });
+  test('should disable generate button when prompt is empty', async ({ page }) => {
+    // Clear the textarea if it has any value
+    const textarea = page.getByPlaceholder(/example.*test the login flow/i);
+    await textarea.clear();
     
-    // Click create button
-    await page.getByRole('button', { name: /create new test/i }).click();
+    // Generate button should be disabled
+    const generateBtn = page.getByRole('button', { name: /generate test cases/i });
+    await expect(generateBtn).toBeDisabled();
   });
 
-  test('should show alert when clicking view details', async ({ page }) => {
-    // Setup dialog handler
-    page.on('dialog', dialog => {
-      expect(dialog.message()).toContain('View test details');
-      dialog.accept();
-    });
+  test('should generate test cases from natural language', async ({ page }) => {
+    // Enter test description
+    await page.getByPlaceholder(/example.*test the login flow/i).fill('Test login flow for Three HK');
     
-    // Click first view details button
-    await page.getByRole('button', { name: /view details/i }).first().click();
-  });
-
-  test('should filter tests by status (UI interaction)', async ({ page }) => {
-    // Click on passed filter
-    await page.getByRole('button', { name: /passed/i }).click();
+    // Click generate button
+    await page.getByRole('button', { name: /generate test cases/i }).click();
     
-    // Button should be visually selected (this is UI state, actual filtering will be implemented later)
-    await expect(page.getByRole('button', { name: /passed/i })).toBeVisible();
-  });
-
-  test('should display test metadata', async ({ page }) => {
-    // Verify test metadata is shown (agent, priority, etc.)
-    await expect(page.getByText(/explorer agent/i).first()).toBeVisible();
-    await expect(page.getByText(/high/i).first()).toBeVisible();
-  });
-
-  test('should maintain layout on mobile', async ({ page }) => {
-    // Set mobile viewport
-    await page.setViewportSize({ width: 375, height: 667 });
+    // Wait for loading to finish and results to appear
+    await expect(page.getByText(/generating tests/i)).toBeVisible({ timeout: 1000 });
     
-    // Verify key elements are still visible
-    await expect(page.getByRole('heading', { name: /test cases/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /create new test/i })).toBeVisible();
-    await expect(page.getByText(/login flow test/i)).toBeVisible();
+    // Wait for generated tests (mock data returns after 2 seconds)
+    await expect(page.getByText(/generated test cases/i)).toBeVisible({ timeout: 5000 });
+    
+    // Should show test case cards
+    await expect(page.getByText(/test case 1/i)).toBeVisible();
   });
 
-  test('should have functional sidebar on tests page', async ({ page }) => {
-    // Verify sidebar navigation
-    await expect(page.getByRole('link', { name: /dashboard/i })).toBeVisible();
+  test('should display test case cards with all details', async ({ page }) => {
+    // Generate tests first
+    await page.getByPlaceholder(/example.*test the login flow/i).fill('Test checkout process');
+    await page.getByRole('button', { name: /generate test cases/i }).click();
     
-    // Navigate back to dashboard
-    await page.getByRole('link', { name: /dashboard/i }).click();
-    await page.waitForURL('**/dashboard');
-    await expect(page).toHaveURL(/dashboard/);
+    // Wait for results
+    await expect(page.getByText(/generated test cases/i)).toBeVisible({ timeout: 5000 });
+    
+    // Verify test case card has all elements
+    await expect(page.getByText(/test case 1/i)).toBeVisible();
+    await expect(page.getByText(/test steps/i).first()).toBeVisible();
+    await expect(page.getByText(/expected result/i).first()).toBeVisible();
+    
+    // Verify priority badge
+    await expect(page.getByText(/high|medium|low/i).first()).toBeVisible();
+  });
+
+  test('should show save, edit, and delete buttons on generated tests', async ({ page }) => {
+    // Generate tests first
+    await page.getByPlaceholder(/example.*test the login flow/i).fill('Test user profile');
+    await page.getByRole('button', { name: /generate test cases/i }).click();
+    
+    // Wait for results
+    await expect(page.getByText(/generated test cases/i)).toBeVisible({ timeout: 5000 });
+    
+    // Verify action buttons exist
+    const saveButtons = page.getByRole('button', { name: /save/i });
+    await expect(saveButtons.first()).toBeVisible();
+    expect(await saveButtons.count()).toBeGreaterThan(0);
+  });
+
+  test('should allow generating more tests after viewing results', async ({ page }) => {
+    // Generate tests first
+    await page.getByPlaceholder(/example.*test the login flow/i).fill('Test search');
+    await page.getByRole('button', { name: /generate test cases/i }).click();
+    
+    // Wait for results
+    await expect(page.getByText(/generated test cases/i)).toBeVisible({ timeout: 5000 });
+    
+    // Click "Generate More Tests" button
+    await page.getByRole('button', { name: /generate more tests/i }).click();
+    
+    // Should return to generation form
+    await expect(page.getByPlaceholder(/example.*test the login flow/i)).toBeVisible();
+  });
+
+  test('should display "Generate New Tests" button when viewing existing tests', async ({ page }) => {
+    // First, go through the generation flow
+    await page.getByPlaceholder(/example.*test the login flow/i).fill('Test API');
+    await page.getByRole('button', { name: /generate test cases/i }).click();
+    await expect(page.getByText(/generated test cases/i)).toBeVisible({ timeout: 5000 });
+    
+    // Clear results to show existing tests view
+    await page.getByRole('button', { name: /generate more tests/i }).click();
+    
+    // The "Generate New Tests" button should be in header when showing generator
+    await expect(page.getByRole('button', { name: /generate test cases/i })).toBeVisible();
   });
 });
-
