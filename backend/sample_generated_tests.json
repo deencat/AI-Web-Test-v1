@@ -1,0 +1,70 @@
+{
+  "test_cases": [
+    {
+      "title": "POST /api/v1/tests - Valid Request with Expected Response",
+      "description": "Verify that a valid request with all necessary fields creates a new test case successfully.",
+      "test_type": "api",
+      "priority": "high",
+      "steps": [
+        "Send a POST request to /api/v1/tests with valid JSON containing all required fields.",
+        "Check the response status code.",
+        "Verify the returned JSON contains the correct test case details."
+      ],
+      "expected_result": "Response status code 201 Created, JSON containing the created test case details.",
+      "preconditions": "User must be authenticated with a valid token.",
+      "test_data": {
+        "token": "valid_token",
+        "title": "Test Case Title",
+        "description": "Test Case Description",
+        "test_type": "unit",
+        "priority": "medium",
+        "steps": [
+          "Step 1: Action to take",
+          "Step 2: Next action",
+          "Step 3: Final action"
+        ],
+        "expected_result": "Expected result of the test case"
+      }
+    },
+    {
+      "title": "POST /api/v1/tests - Missing Fields in Request Body",
+      "description": "Verify that sending a request with missing fields returns a 400 Bad Request.",
+      "test_type": "api",
+      "priority": "medium",
+      "steps": [
+        "Send a POST request to /api/v1/tests with a JSON request body missing one or more required fields.",
+        "Check the response status code.",
+        "Verify the response includes error message indicating missing fields."
+      ],
+      "expected_result": "Response status code 400 Bad Request, JSON with error message indicating missing fields.",
+      "preconditions": "User must be authenticated with a valid token.",
+      "test_data": {
+        "token": "valid_token",
+        "title": "Test Case Title",
+        "description": "Test Case Description"
+      }
+    },
+    {
+      "title": "POST /api/v1/tests - Unauthorized Access",
+      "description": "Verify that unauthenticated users cannot create a new test case.",
+      "test_type": "api",
+      "priority": "high",
+      "steps": [
+        "Send a POST request to /api/v1/tests without a valid token.",
+        "Check the response status code.",
+        "Verify the response includes error message indicating unauthorized access."
+      ],
+      "expected_result": "Response status code 401 Unauthorized, JSON with error message indicating unauthorized access.",
+      "preconditions": "User is not authenticated.",
+      "test_data": {}
+    }
+  ],
+  "metadata": {
+    "requirement": "\nAPI Endpoint: POST /api/v1/tests\n\nDescription:\nCreate a new test case. Requires authentication. Accepts test details in JSON format.\n\nGenerate API test cases including:\n- Valid requests with expected responses\n- Invalid requests (bad data, missing fields)\n- Authentication/authorization scenarios\n- Edge cases (empty data, large payloads)\n",
+    "test_type": "api",
+    "num_requested": 3,
+    "num_generated": 3,
+    "model": "qwen/qwen-2.5-7b-instruct",
+    "tokens": 927
+  }
+}
