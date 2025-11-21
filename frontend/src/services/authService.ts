@@ -31,16 +31,33 @@ class AuthService {
 
     // Real API call
     try {
-      const response = await api.post<LoginResponse>('/auth/login', {
-        username,
-        password,
-      } as LoginRequest);
+      // FastAPI OAuth2 expects form data, not JSON
+      const formData = new URLSearchParams();
+      formData.append('username', username);
+      formData.append('password', password);
 
-      // Store token and user in localStorage
-      localStorage.setItem('token', response.data.token);
-      localStorage.setItem('user', JSON.stringify(response.data.user));
+      const response = await api.post<{ access_token: string; token_type: string }>(
+        '/auth/login',
+        formData,
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        }
+      );
 
-      return response.data;
+      // Store token
+      const token = response.data.access_token;
+      localStorage.setItem('token', token);
+
+      // Fetch user data using the token
+      const userResponse = await api.get<User>('/auth/me');
+      localStorage.setItem('user', JSON.stringify(userResponse.data));
+
+      return {
+        token,
+        user: userResponse.data,
+      };
     } catch (error) {
       throw new Error(apiHelpers.getErrorMessage(error));
     }
