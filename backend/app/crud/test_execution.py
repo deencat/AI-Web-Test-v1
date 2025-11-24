@@ -16,11 +16,21 @@ from app.schemas.test_execution import (
 # Execution CRUD
 # ============================================================================
 
-def create_execution(db: Session, execution: TestExecutionCreate, user_id: int) -> TestExecution:
+def create_execution(
+    db: Session,
+    test_case_id: int,
+    user_id: int,
+    browser: str = "chromium",
+    environment: str = "dev",
+    base_url: Optional[str] = None
+) -> TestExecution:
     """Create a new test execution."""
     db_execution = TestExecution(
-        **execution.model_dump(),
+        test_case_id=test_case_id,
         user_id=user_id,
+        browser=browser,
+        environment=environment,
+        base_url=base_url,
         status=ExecutionStatus.PENDING,
         total_steps=0,
         passed_steps=0,
@@ -31,6 +41,74 @@ def create_execution(db: Session, execution: TestExecutionCreate, user_id: int) 
     db.commit()
     db.refresh(db_execution)
     return db_execution
+
+
+def start_execution(db: Session, execution_id: int) -> TestExecution:
+    """Mark execution as started and record start time."""
+    execution = db.query(TestExecution).filter(TestExecution.id == execution_id).first()
+    if execution:
+        execution.status = ExecutionStatus.RUNNING
+        execution.started_at = datetime.utcnow()
+        db.commit()
+        db.refresh(execution)
+        print(f"[DEBUG] Updated execution {execution_id} to RUNNING status")
+    return execution
+
+
+def complete_execution(
+    db: Session,
+    execution_id: int,
+    result: ExecutionResult,
+    total_steps: int = 0,
+    passed_steps: int = 0,
+    failed_steps: int = 0,
+    screenshot_path: Optional[str] = None,
+    video_path: Optional[str] = None
+) -> TestExecution:
+    """Mark execution as completed with results."""
+    execution = db.query(TestExecution).filter(TestExecution.id == execution_id).first()
+    if execution:
+        execution.status = ExecutionStatus.COMPLETED
+        execution.result = result
+        execution.completed_at = datetime.utcnow()
+        execution.total_steps = total_steps
+        execution.passed_steps = passed_steps
+        execution.failed_steps = failed_steps
+        execution.screenshot_path = screenshot_path
+        execution.video_path = video_path
+        
+        # Calculate duration
+        if execution.started_at:
+            duration = (execution.completed_at - execution.started_at).total_seconds()
+            execution.duration_seconds = duration
+        
+        db.commit()
+        db.refresh(execution)
+        print(f"[DEBUG] Completed execution {execution_id} with result {result}, {passed_steps}/{total_steps} passed")
+    return execution
+
+
+def fail_execution(
+    db: Session,
+    execution_id: int,
+    error_message: str
+) -> TestExecution:
+    """Mark execution as failed with error message."""
+    execution = db.query(TestExecution).filter(TestExecution.id == execution_id).first()
+    if execution:
+        execution.status = ExecutionStatus.FAILED
+        execution.result = ExecutionResult.ERROR
+        execution.completed_at = datetime.utcnow()
+        execution.error_message = error_message
+        
+        # Calculate duration if started
+        if execution.started_at:
+            duration = (execution.completed_at - execution.started_at).total_seconds()
+            execution.duration_seconds = duration
+        
+        db.commit()
+        db.refresh(execution)
+    return execution
 
 
 def get_execution(db: Session, execution_id: int) -> Optional[TestExecution]:
@@ -150,9 +228,32 @@ def delete_execution(db: Session, execution_id: int) -> bool:
 # Execution Step CRUD
 # ============================================================================
 
-def create_execution_step(db: Session, step: TestExecutionStepCreate) -> TestExecutionStep:
+def create_execution_step(
+    db: Session,
+    execution_id: int,
+    step_number: int,
+    step_description: str,
+    expected_result: Optional[str] = None,
+    result: ExecutionResult = ExecutionResult.PASS,
+    actual_result: Optional[str] = None,
+    error_message: Optional[str] = None,
+    screenshot_path: Optional[str] = None,
+    duration_seconds: Optional[float] = None
+) -> TestExecutionStep:
     """Create an execution step."""
-    db_step = TestExecutionStep(**step.model_dump())
+    db_step = TestExecutionStep(
+        execution_id=execution_id,
+        step_number=step_number,
+        step_description=step_description,
+        expected_result=expected_result,
+        result=result,
+        actual_result=actual_result,
+        error_message=error_message,
+        screenshot_path=screenshot_path,
+        started_at=datetime.utcnow(),
+        completed_at=datetime.utcnow(),
+        duration_seconds=duration_seconds
+    )
     db.add(db_step)
     db.commit()
     db.refresh(db_step)
