@@ -1,3 +1,5 @@
+import sys
+import asyncio
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -9,6 +11,11 @@ from app.api.v1.api import api_router
 from app.db.base import Base
 from app.db.session import engine, SessionLocal
 from app.db.init_db import init_db
+
+# Fix for Windows: Set event loop policy to support subprocess
+# This is required for Playwright to work on Windows
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
