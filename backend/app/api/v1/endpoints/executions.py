@@ -1,8 +1,9 @@
 """Test execution API endpoints."""
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 from datetime import datetime
+import asyncio
 
 from app.api import deps
 from app.models.user import User
@@ -19,6 +20,7 @@ from app.schemas.test_execution import (
 )
 from app.crud import test_case as crud_tests
 from app.crud import test_execution as crud_executions
+from app.services.stagehand_service import get_stagehand_service
 
 router = APIRouter()
 
@@ -79,6 +81,164 @@ def start_execution(
         test_case_id=execution.test_case_id,
         status=execution.status,
         message=f"Execution started for test case {test_case_id}"
+    )
+
+
+@router.post("/tests/{test_case_id}/run", response_model=ExecutionStartResponse, status_code=status.HTTP_201_CREATED)
+async def run_test_with_playwright(
+    test_case_id: int,
+    request: ExecutionStartRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(deps.get_current_user),
+    db: Session = Depends(deps.get_db)
+):
+    """
+    Run a test case with Playwright browser automation.
+    
+    **Authentication required**
+    
+    Executes the test case steps using Playwright in a real browser.
+    The test runs in the background and returns immediately with execution ID.
+    Use GET /executions/{execution_id} to check progress and results.
+    
+    **Request Body:**
+    - `browser`: Browser to use (chromium, firefox, webkit) - default: chromium
+    - `environment`: Target environment (dev, staging, production) - default: dev
+    - `base_url`: Base URL for the application under test (required)
+    - `triggered_by`: Who/what triggered the execution - default: manual
+    
+    **Response:**
+    - `id`: Execution ID for tracking
+    - `test_case_id`: Test case being executed
+    - `status`: Initial status (PENDING)
+    - `message`: Confirmation message
+    
+    **Example:**
+    ```json
+    {
+      "browser": "chromium",
+      "environment": "dev",
+      "base_url": "https://example.com",
+      "triggered_by": "manual"
+    }
+    ```
+    """
+    # Verify test case exists
+    test_case = crud_tests.get_test_case(db, test_case_id)
+    if not test_case:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Test case with ID {test_case_id} not found"
+        )
+    
+    # Check permissions
+    if current_user.role != "admin" and test_case.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to execute this test case"
+        )
+    
+    # Validate base_url is provided
+    if not request.base_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="base_url is required for test execution"
+        )
+    
+    # Get Stagehand execution service
+    service = get_stagehand_service()
+    
+    # Create initial execution record FIRST (before thread)
+    execution = crud_executions.create_execution(
+        db=db,
+        test_case_id=test_case_id,
+        user_id=current_user.id,
+        browser=request.browser or "chromium",
+        environment=request.environment or "dev",
+        base_url=request.base_url
+    )
+    execution_id = execution.id  # Capture ID for closure
+    
+    # Run test in background - use executor to run in separate thread with proper event loop
+    def run_test_in_thread():
+        """
+        Run test in a separate thread with its own event loop.
+        This ensures ProactorEventLoopPolicy is respected on Windows.
+        """
+        import asyncio
+        import sys
+        import signal
+        from app.db.session import SessionLocal, engine
+        from sqlalchemy.orm import scoped_session, sessionmaker
+        
+        # Patch signal.signal to be a no-op in threads (Playwright tries to use it)
+        original_signal = signal.signal
+        def thread_safe_signal(signalnum, handler):
+            """No-op signal handler for threads."""
+            return None
+        signal.signal = thread_safe_signal
+        
+        try:
+            # Set Windows event loop policy in this thread
+            if sys.platform == 'win32':
+                asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+            
+            # Create new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                # Create a thread-local database session
+                # This ensures the session is properly bound to this thread
+                ThreadSession = scoped_session(sessionmaker(bind=engine))
+                bg_db = ThreadSession()
+                
+                try:
+                    loop.run_until_complete(
+                        service.execute_test(
+                            db=bg_db,
+                            test_case=test_case,
+                            execution_id=execution_id,  # Use captured ID
+                            user_id=current_user.id,
+                            base_url=request.base_url,
+                            environment=request.environment or "dev"
+                        )
+                    )
+                    # Force commit and flush to ensure all changes are written
+                    bg_db.commit()
+                    bg_db.flush()
+                    print(f"[DEBUG] Background thread committed execution updates to database")
+                except Exception as e:
+                    print(f"[ERROR] Test execution failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    bg_db.rollback()
+                    raise
+                finally:
+                    bg_db.close()
+                    ThreadSession.remove()
+            finally:
+                loop.close()
+        finally:
+            # Restore original signal handler
+            signal.signal = original_signal
+    
+    # Use thread executor to run the test
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    
+    executor = ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(run_test_in_thread)
+    
+    # Don't wait for the result - let it run in background
+    # The thread will handle the execution and update the database
+    background_tasks.add_task(lambda: future.result())
+    
+    return ExecutionStartResponse(
+        id=execution.id,
+        test_case_id=execution.test_case_id,
+        status=execution.status,
+        message=f"Test execution started in background. Use GET /executions/{execution.id} to check progress."
     )
 
 
