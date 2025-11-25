@@ -11,6 +11,8 @@ from app.api.v1.api import api_router
 from app.db.base import Base
 from app.db.session import engine, SessionLocal
 from app.db.init_db import init_db
+from app.services.queue_manager import start_queue_manager
+from app.core.config import settings
 
 # Fix for Windows: Set event loop policy to support subprocess
 # This is required for Playwright to work on Windows
@@ -26,6 +28,12 @@ try:
     init_db(db)
 finally:
     db.close()
+
+# Start queue manager (Sprint 3 Day 2)
+start_queue_manager(
+    max_concurrent=settings.MAX_CONCURRENT_EXECUTIONS,
+    check_interval=settings.QUEUE_CHECK_INTERVAL
+)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
