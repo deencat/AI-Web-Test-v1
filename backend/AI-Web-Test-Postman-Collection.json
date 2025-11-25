@@ -1,0 +1,426 @@
+{
+  "info": {
+    "name": "AI Web Test v1.0 - Sprint 3 API",
+    "description": "Complete API collection for Sprint 3 Test Execution System",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "testId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "executionId",
+      "value": "1",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.collectionVariables.set('token', jsonData.access_token);",
+                  "    pm.environment.set('token', jsonData.access_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "username",
+                  "value": "admin@aiwebtest.com",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "admin123",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Login to get JWT token. Token is automatically saved to collection variable."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Test Execution",
+      "item": [
+        {
+          "name": "Execute Test",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.collectionVariables.set('executionId', jsonData.id);",
+                  "    console.log('Execution queued with ID:', jsonData.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"priority\": 5\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/tests/{{testId}}/run",
+              "host": ["{{baseUrl}}"],
+              "path": ["tests", "{{testId}}", "run"]
+            },
+            "description": "Execute a test case. Returns execution ID which is auto-saved."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Execution Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/executions/{{executionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["executions", "{{executionId}}"]
+            },
+            "description": "Get detailed information about a specific execution including all steps."
+          },
+          "response": []
+        },
+        {
+          "name": "List Executions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/executions?skip=0&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["executions"],
+              "query": [
+                {
+                  "key": "skip",
+                  "value": "0",
+                  "description": "Pagination offset"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Items per page"
+                },
+                {
+                  "key": "status",
+                  "value": "completed",
+                  "description": "Filter by status",
+                  "disabled": true
+                },
+                {
+                  "key": "result",
+                  "value": "passed",
+                  "description": "Filter by result",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List all executions with optional filters."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Execution Statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/executions/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["executions", "stats"]
+            },
+            "description": "Get overall execution statistics (total, passed, failed, pass rate)."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Execution",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/executions/{{executionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["executions", "{{executionId}}"]
+            },
+            "description": "Delete a specific execution and all its steps."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Queue Management",
+      "item": [
+        {
+          "name": "Get Queue Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/executions/queue/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["executions", "queue", "status"]
+            },
+            "description": "Get current queue status (active, pending, max concurrent)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Queue Statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/executions/queue/statistics",
+              "host": ["{{baseUrl}}"],
+              "path": ["executions", "queue", "statistics"]
+            },
+            "description": "Get queue processing statistics."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Active Executions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/executions/queue/active",
+              "host": ["{{baseUrl}}"],
+              "path": ["executions", "queue", "active"]
+            },
+            "description": "Get list of currently running executions."
+          },
+          "response": []
+        },
+        {
+          "name": "Clear Queue (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/executions/queue/clear",
+              "host": ["{{baseUrl}}"],
+              "path": ["executions", "queue", "clear"]
+            },
+            "description": "Clear all pending executions from queue. Admin only."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Test Management",
+      "item": [
+        {
+          "name": "List Tests",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.length > 0) {",
+                  "        pm.collectionVariables.set('testId', jsonData[0].id);",
+                  "        console.log('First test ID:', jsonData[0].id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/tests?skip=0&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["tests"],
+              "query": [
+                {
+                  "key": "skip",
+                  "value": "0"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "List all test cases. First test ID is auto-saved."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Test Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/tests/{{testId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["tests", "{{testId}}"]
+            },
+            "description": "Get detailed information about a specific test case."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Test",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sample Test\",\n  \"description\": \"Test created via Postman\",\n  \"test_type\": \"e2e\",\n  \"url\": \"https://example.com\",\n  \"steps\": [\n    {\n      \"order\": 0,\n      \"action\": \"Navigate to homepage\",\n      \"expected_result\": \"Page loads successfully\"\n    },\n    {\n      \"order\": 1,\n      \"action\": \"Click login button\",\n      \"expected_result\": \"Login form appears\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/tests",
+              "host": ["{{baseUrl}}"],
+              "path": ["tests"]
+            },
+            "description": "Create a new test case."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Knowledge Base",
+      "item": [
+        {
+          "name": "List KB Documents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/kb/documents?skip=0&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["kb", "documents"],
+              "query": [
+                {
+                  "key": "skip",
+                  "value": "0"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "List all knowledge base documents."
+          },
+          "response": []
+        },
+        {
+          "name": "Get KB Categories",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/kb/categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["kb", "categories"]
+            },
+            "description": "Get all knowledge base categories."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Health Check",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Check if API is healthy and responding."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
+
