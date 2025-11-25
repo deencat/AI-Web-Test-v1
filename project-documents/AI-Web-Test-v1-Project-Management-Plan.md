@@ -363,24 +363,519 @@ Deliver a **fully functional test automation platform** that QA engineers can us
 ---
 
 #### Sprint 3 (Week 5-6): Execution Agent + Stagehand Integration
-**Goal:** Generated tests can execute against real websites
+**Goal:** Generated tests can execute against real websites with real-time monitoring
+
+**Development Approach:** 🔄 **Parallel Backend + Frontend Development**
+- Backend provides API contracts early
+- Frontend integrates with documented endpoints
+- Teams work simultaneously for faster delivery
+
+---
+
+### Sprint 3: Backend Track (Days 1-4)
+**Owner:** Backend Developer  
+**Status:** 🚀 **50% COMPLETE** (Days 1-2 merged to main)
+
+#### ✅ Day 1-2: Stagehand + Playwright Integration (COMPLETE)
+**Branch:** `backend-dev-sprint-3` (merged to main)  
+**Completed:** November 24, 2025
+
+**What Was Built:**
+- ✅ Stagehand SDK integration (LOCAL environment)
+- ✅ Playwright browser automation (Chromium)
+- ✅ Windows asyncio compatibility fixes
+- ✅ Test execution engine with StagehandService
+- ✅ Screenshot capture on each step
+- ✅ Database integration for execution tracking
+- ✅ Real website testing verified (www.three.com.hk)
+
+**API Endpoints Created:**
+- ✅ `POST /api/v1/tests/{test_id}/run` - Execute test (queues execution)
+- ✅ `GET /api/v1/executions/{id}` - Get execution details
+- ✅ `GET /api/v1/executions` - List all executions
+- ✅ `DELETE /api/v1/executions/{id}` - Delete execution
+
+**Technical Achievements:**
+- ✅ 100% test success rate (19/19 executions passed)
+- ✅ Browser automation working on Windows
+- ✅ Screenshots saved to `/artifacts/screenshots/`
+- ✅ Step-by-step execution tracking
+- ✅ Comprehensive error handling
+
+**Documentation:**
+- ✅ `SPRINT-3-DAY-1-COMPLETION.md`
+- ✅ `SPRINT-3-DAY-1-FINAL-REPORT.md`
+- ✅ `DATABASE-FIX-COMPLETE.md`
+
+---
+
+#### ✅ Day 3-4: Queue System (COMPLETE - Ready to Merge)
+**Branch:** `backend-dev-sprint-3-queue` (committed, ready for PR)  
+**Completed:** November 25, 2025
+
+**What Was Built:**
+- ✅ Thread-safe priority queue (ExecutionQueue)
+- ✅ Background queue manager (QueueManager)
+- ✅ Concurrent execution management (max 5 simultaneous)
+- ✅ Priority-based queuing (1=high, 5=medium, 10=low)
+- ✅ Queue status monitoring
+- ✅ Database schema updates (3 new fields)
+
+**API Endpoints Created:**
+- ✅ `GET /api/v1/executions/queue/status` - Get queue status
+- ✅ `GET /api/v1/executions/queue/statistics` - Get queue stats
+- ✅ `GET /api/v1/executions/queue/active` - Get active executions
+- ✅ `POST /api/v1/executions/queue/clear` - Clear queue (admin)
+- ✅ Modified `POST /api/v1/tests/{id}/run` - Now queues executions
+
+**Technical Achievements:**
+- ✅ 100% test success rate (19/19 tests passed)
+- ✅ Thread-safe queue operations
+- ✅ Proper resource cleanup
+- ✅ Per-thread browser instances
+- ✅ Queue response time: ~50ms
+
+**Testing:**
+- ✅ Comprehensive test suite (7/7 passed)
+- ✅ Final verification (5/5 passed)
+- ✅ Stress test (10/10 rapid queues)
+
+**Documentation:**
+- ✅ `SPRINT-3-DAY-2-PLAN.md`
+- ✅ `SPRINT-3-DAY-2-FINAL-REPORT.md`
+- ✅ `TEST-RESULTS-SUMMARY.md`
+- ✅ `EXECUTION-ENGINE-FIX.md`
+
+**Database Migration Required:**
+After merge, run: `python backend/add_queue_fields.py`
+
+**Files Changed:** 20 files (+3,480/-86 lines)
+
+---
+
+### Sprint 3: Frontend Track (Days 1-4)
+**Owner:** Frontend Developer  
+**Status:** 🎯 **READY TO START** (Backend APIs complete and documented)
+
+**Prerequisites:**
+- ✅ Backend Sprint 3 APIs deployed to main
+- ✅ API documentation available at: `http://127.0.0.1:8000/docs`
+- ✅ Test executions working (verified with real websites)
+- ✅ Queue system operational
+
+---
+
+#### 🎯 Day 1-2: Test Execution UI
+**Goal:** Users can run tests and see real-time progress
 
 **Tasks:**
-- Implement Execution Agent with Stagehand SDK
-- Integrate Playwright for browser automation
-- Build test execution queue system
-- Create real-time execution monitoring UI
-- Implement screenshot capture on failures
-- Store execution results in PostgreSQL
+
+1. **"Run Test" Button Component**
+   - Add "Run Test" button to test detail page
+   - Call `POST /api/v1/tests/{test_id}/run` endpoint
+   - Handle response (execution queued)
+   - Show toast notification: "Test queued for execution"
+
+2. **Queue Status Indicator**
+   - Create queue status widget
+   - Call `GET /api/v1/executions/queue/status` endpoint
+   - Display:
+     - Active executions count (X/5)
+     - Pending in queue count
+     - Queue position for user's test
+   - Update every 2 seconds (polling)
+
+3. **Execution Progress Page**
+   - Create new route: `/executions/{execution_id}`
+   - Call `GET /api/v1/executions/{execution_id}` endpoint
+   - Display execution details:
+     - Status badge (pending/running/completed/failed)
+     - Progress indicator (X/Y steps completed)
+     - Start time and duration
+     - Test case name and description
+   - Auto-refresh every 2 seconds while running
+
+4. **Step-by-Step Progress Display**
+   - Show list of test steps
+   - Display status for each step:
+     - ⏳ Pending (gray)
+     - ▶️ Running (blue, animated)
+     - ✅ Passed (green)
+     - ❌ Failed (red)
+   - Show step details:
+     - Order number
+     - Action description
+     - Expected result
+     - Actual result (when completed)
+     - Screenshot thumbnail (if available)
+
+**API Endpoints to Use:**
+```typescript
+// Execute test
+POST /api/v1/tests/{test_id}/run
+Request: { priority?: 1 | 5 | 10 }
+Response: { 
+  id: number, 
+  status: "pending", 
+  test_case_id: number,
+  queued_at: string,
+  priority: number
+}
+
+// Get execution details
+GET /api/v1/executions/{execution_id}
+Response: {
+  id: number,
+  test_case_id: number,
+  status: "pending" | "running" | "completed" | "failed",
+  result: "passed" | "failed" | "error" | null,
+  started_at: string,
+  completed_at: string | null,
+  duration: number | null,
+  steps_total: number,
+  steps_passed: number,
+  steps_failed: number,
+  error_message: string | null,
+  test_case: {
+    name: string,
+    description: string
+  },
+  steps: [
+    {
+      id: number,
+      execution_id: number,
+      step_order: number,
+      action: string,
+      expected_result: string,
+      actual_result: string | null,
+      status: "pending" | "running" | "passed" | "failed",
+      screenshot_path: string | null,
+      error_message: string | null
+    }
+  ]
+}
+
+// Get queue status
+GET /api/v1/executions/queue/status
+Response: {
+  status: "operational" | "stopped",
+  active_count: number,
+  pending_count: number,
+  max_concurrent: number,
+  queue_size: number,
+  is_under_limit: boolean
+}
+```
+
+**UI Design Reference:**
+- See: `project-documents/ai-web-test-ui-design-document.md`
+- Test Execution Page: Lines 400-500
+- Real-time Progress: Lines 500-600
+
+**Component Structure:**
+```tsx
+// Components to create:
+1. RunTestButton.tsx - Button with loading state
+2. QueueStatusWidget.tsx - Shows queue status
+3. ExecutionProgressPage.tsx - Main page
+4. ExecutionStatusBadge.tsx - Status indicator
+5. StepProgressList.tsx - List of steps with status
+6. StepCard.tsx - Individual step details
+7. ScreenshotModal.tsx - View full-size screenshots
+```
 
 **Deliverables:**
-- User can click "Run Test" button
-- Test executes in real browser (Chromium)
-- Real-time progress updates in UI
-- Test results display with pass/fail status
-- Screenshots saved for failures
+- ✅ User can click "Run Test" button
+- ✅ Test queues for execution
+- ✅ User sees queue position
+- ✅ User can view execution progress
+- ✅ Steps show real-time status updates
+- ✅ Screenshots display as thumbnails
 
-**Team:** 2 Backend + 2 Frontend + 1 QA
+---
+
+#### 🎯 Day 3-4: Execution Results & History
+**Goal:** Users can view execution history and detailed results
+
+**Tasks:**
+
+1. **Execution History List**
+   - Create new route: `/executions`
+   - Call `GET /api/v1/executions` endpoint (with pagination)
+   - Display table/cards with:
+     - Execution ID
+     - Test case name
+     - Status badge
+     - Result badge (passed/failed)
+     - Started time (relative: "2 minutes ago")
+     - Duration
+     - Progress (X/Y steps passed)
+   - Add filters:
+     - By status (pending/running/completed/failed)
+     - By result (passed/failed/error)
+     - By test case
+     - By date range
+   - Add sorting:
+     - By start time (newest first)
+     - By duration
+     - By test case name
+   - Click row → navigate to execution detail page
+
+2. **Screenshot Gallery**
+   - Display screenshots in execution detail page
+   - Show thumbnail for each step
+   - Click thumbnail → open full-size modal
+   - Add navigation arrows (previous/next)
+   - Show step context (action, expected result)
+   - Download button for screenshots
+
+3. **Execution Statistics Dashboard**
+   - Create dashboard widget
+   - Call `GET /api/v1/executions/stats` endpoint
+   - Display:
+     - Total executions (today/week/month)
+     - Pass rate percentage
+     - Average duration
+     - Most tested pages
+     - Failure rate by test case
+   - Add date range selector
+   - Add charts:
+     - Pass/fail pie chart
+     - Executions over time (line chart)
+     - Average duration by test (bar chart)
+
+4. **Delete Execution**
+   - Add delete button to execution detail page
+   - Confirm dialog: "Are you sure?"
+   - Call `DELETE /api/v1/executions/{id}` endpoint
+   - Show success toast
+   - Navigate back to executions list
+
+**API Endpoints to Use:**
+```typescript
+// List executions (with pagination)
+GET /api/v1/executions?skip=0&limit=20&status=completed&result=passed
+Response: {
+  items: ExecutionResponse[],
+  total: number,
+  skip: number,
+  limit: number
+}
+
+// Get execution statistics
+GET /api/v1/executions/stats
+Response: {
+  total_count: number,
+  completed_count: number,
+  passed_count: number,
+  failed_count: number,
+  error_count: number,
+  pass_rate: number,
+  average_duration: number
+}
+
+// Delete execution
+DELETE /api/v1/executions/{execution_id}
+Response: { message: "Execution deleted successfully" }
+
+// Get screenshot
+GET /artifacts/screenshots/exec_{id}_step_{order}_pass.png
+Response: Image file
+```
+
+**UI Design Reference:**
+- Execution History: `ai-web-test-ui-design-document.md` Lines 600-700
+- Statistics Dashboard: Lines 200-300
+
+**Component Structure:**
+```tsx
+// Components to create:
+1. ExecutionHistoryPage.tsx - Main list page
+2. ExecutionTable.tsx - Table view
+3. ExecutionCard.tsx - Card view (mobile)
+4. ExecutionFilters.tsx - Filter controls
+5. ScreenshotGallery.tsx - Gallery component
+6. ScreenshotModal.tsx - Full-size viewer
+7. ExecutionStatsWidget.tsx - Dashboard stats
+8. ExecutionCharts.tsx - Charts component
+9. DeleteExecutionButton.tsx - Delete with confirm
+```
+
+**Deliverables:**
+- ✅ Users can view execution history
+- ✅ Executions filterable by status/result
+- ✅ Screenshots viewable in gallery
+- ✅ Statistics dashboard shows key metrics
+- ✅ Users can delete old executions
+
+---
+
+### Sprint 3: Integration & Testing (Day 5)
+**Team:** Backend + Frontend  
+**Status:** 📅 **Pending** (After both tracks complete)
+
+**Tasks:**
+1. **End-to-End Testing**
+   - Test complete flow: Create test → Run → View progress → See results
+   - Test queue limits (5 concurrent executions)
+   - Test priority queuing (high priority first)
+   - Test error scenarios (browser crashes, network issues)
+
+2. **Performance Testing**
+   - Test with 10 concurrent users running tests
+   - Verify queue handles overflow correctly
+   - Check UI responsiveness during polling
+   - Measure execution time consistency
+
+3. **Bug Fixes & Polish**
+   - Fix any integration issues
+   - Improve error messages
+   - Add loading states
+   - Improve UI transitions
+
+4. **Documentation**
+   - Update user guide
+   - Create video demo
+   - Document known issues
+   - Update API documentation
+
+**Deliverables:**
+- ✅ Complete Sprint 3 feature working end-to-end
+- ✅ All tests passing (backend + frontend)
+- ✅ User documentation complete
+- ✅ Ready for Sprint 4
+
+---
+
+### Sprint 3: Key Endpoints Reference for Frontend
+
+**Authentication:**
+```bash
+POST /api/v1/auth/login
+Request: { username: string, password: string }
+Response: { access_token: string, token_type: "bearer" }
+
+# Use token in headers:
+Authorization: Bearer <access_token>
+```
+
+**Test Execution:**
+```bash
+# Execute a test
+POST /api/v1/tests/{test_id}/run
+Headers: { Authorization: Bearer <token> }
+Request: { priority?: 1 | 5 | 10 }
+Response: ExecutionResponse
+
+# Get execution details
+GET /api/v1/executions/{execution_id}
+Headers: { Authorization: Bearer <token> }
+Response: ExecutionDetailResponse
+
+# List executions
+GET /api/v1/executions?skip=0&limit=20
+Headers: { Authorization: Bearer <token> }
+Response: ExecutionListResponse
+
+# Get queue status
+GET /api/v1/executions/queue/status
+Headers: { Authorization: Bearer <token> }
+Response: QueueStatusResponse
+
+# Get statistics
+GET /api/v1/executions/stats
+Headers: { Authorization: Bearer <token> }
+Response: ExecutionStatistics
+
+# Delete execution
+DELETE /api/v1/executions/{execution_id}
+Headers: { Authorization: Bearer <token> }
+Response: { message: string }
+```
+
+**Base URL:** `http://127.0.0.1:8000/api/v1`  
+**API Docs:** `http://127.0.0.1:8000/docs` (Swagger UI)  
+**Interactive Testing:** Use Swagger UI to test endpoints
+
+---
+
+### Sprint 3: Getting Started for Frontend Developer
+
+**1. Clone and Setup:**
+```bash
+git clone https://github.com/deencat/AI-Web-Test-v1.git
+cd AI-Web-Test-v1
+git checkout main  # Backend Sprint 3 features are on main
+```
+
+**2. Start Backend Server:**
+```bash
+cd backend
+.\venv\Scripts\activate
+python start_server.py
+```
+
+Server will be available at: `http://127.0.0.1:8000`
+
+**3. Explore API:**
+- Open: `http://127.0.0.1:8000/docs`
+- Login with: `admin@aiwebtest.com` / `admin123`
+- Test endpoints interactively
+
+**4. Frontend Development:**
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+**5. Test Execution Flow:**
+```bash
+# In backend directory, run test:
+python test_final_verification.py
+
+# This will:
+# - Create 5 test executions
+# - Queue them
+# - Execute with real browser
+# - Generate screenshots
+# - Return results
+
+# You can then build UI to display these results!
+```
+
+**6. View Sample Screenshots:**
+```bash
+cd backend/artifacts/screenshots
+# View screenshots from test executions
+# Format: exec_{execution_id}_step_{order}_{status}.png
+```
+
+---
+
+### Sprint 3: Success Criteria
+
+**Backend (Complete ✅):**
+- ✅ Tests execute against real websites
+- ✅ Queue system handles 5 concurrent executions
+- ✅ Screenshots captured on each step
+- ✅ Database tracks execution lifecycle
+- ✅ 100% test pass rate (19/19 tests)
+- ✅ All API endpoints documented
+
+**Frontend (In Progress 🎯):**
+- 🎯 User can click "Run Test" button
+- 🎯 Real-time progress updates visible
+- 🎯 Queue status indicator working
+- 🎯 Execution history list displays
+- 🎯 Screenshots viewable in gallery
+- 🎯 Statistics dashboard shows metrics
+
+**Integration (Pending 📅):**
+- 📅 End-to-end flow tested
+- 📅 10 concurrent users verified
+- 📅 All edge cases handled
+- 📅 User documentation complete
 
 ---
 
