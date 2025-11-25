@@ -9,9 +9,9 @@
     "globalTimeout": 0,
     "grep": {},
     "grepInvert": null,
-    "maxFailures": 5,
+    "maxFailures": 0,
     "metadata": {
-      "actualWorkers": 1
+      "actualWorkers": 6
     },
     "preserveOutput": "always",
     "reporter": [
@@ -49,7 +49,7 @@
         "repeatEach": 1,
         "retries": 0,
         "metadata": {
-          "actualWorkers": 1
+          "actualWorkers": 6
         },
         "id": "chromium",
         "name": "chromium",
@@ -65,7 +65,7 @@
     "updateSnapshots": "missing",
     "updateSourceMethod": "patch",
     "version": "1.52.0",
-    "workers": 1,
+    "workers": 6,
     "webServer": {
       "command": "cd frontend && npm run dev",
       "url": "http://localhost:5173",
@@ -75,21 +75,21 @@
   },
   "suites": [
     {
-      "title": "01-login.spec.ts",
-      "file": "01-login.spec.ts",
+      "title": "08-sprint3-executions.spec.ts",
+      "file": "08-sprint3-executions.spec.ts",
       "column": 0,
       "line": 0,
       "specs": [],
       "suites": [
         {
-          "title": "Login Page",
-          "file": "01-login.spec.ts",
-          "line": 9,
+          "title": "Sprint 3 - Test Execution Features",
+          "file": "08-sprint3-executions.spec.ts",
+          "line": 3,
           "column": 6,
           "specs": [
             {
-              "title": "should display login form",
-              "ok": true,
+              "title": "should show Executions link in sidebar",
+              "ok": false,
               "tags": [],
               "tests": [
                 {
@@ -102,28 +102,76 @@
                     {
                       "workerIndex": 0,
                       "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 532,
-                      "errors": [],
+                      "status": "timedOut",
+                      "duration": 32311,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8",
+                        "location": {
+                          "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                          "column": 8,
+                          "line": 4
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 8,
+                            "line": 4
+                          },
+                          "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n\n\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8\u001b[22m"
+                        },
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 16,
+                            "line": 7
+                          },
+                          "message": "Error: page.fill: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input[type=\"email\"]')\u001b[22m\n\n\n\u001b[0m \u001b[90m  5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m  6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m  7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m  8 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"password\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin123'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m  9 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mclick(\u001b[32m'button[type=\"submit\"]'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 10 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForURL(\u001b[32m'**/dashboard'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16\u001b[22m"
+                        }
+                      ],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2025-11-20T01:41:05.980Z",
+                      "startTime": "2025-11-25T07:56:50.684Z",
                       "annotations": [],
-                      "attachments": []
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-04bf7--Executions-link-in-sidebar-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-04bf7--Executions-link-in-sidebar-chromium/video.webm"
+                        },
+                        {
+                          "name": "_error-context-1",
+                          "contentType": "text/markdown",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-04bf7--Executions-link-in-sidebar-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                        "column": 8,
+                        "line": 4
+                      }
                     }
                   ],
-                  "status": "expected"
+                  "status": "unexpected"
                 }
               ],
-              "id": "29ac412fd126331721f5-954996a1925b10e4b729",
-              "file": "01-login.spec.ts",
-              "line": 14,
+              "id": "e2dcefd400a806b880c8-00bf3326c7e282308104",
+              "file": "08-sprint3-executions.spec.ts",
+              "line": 13,
               "column": 7
             },
             {
-              "title": "should show validation for empty fields",
-              "ok": true,
+              "title": "should navigate to execution history page",
+              "ok": false,
               "tags": [],
               "tests": [
                 {
@@ -134,30 +182,78 @@
                   "projectName": "chromium",
                   "results": [
                     {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 390,
-                      "errors": [],
+                      "workerIndex": 1,
+                      "parallelIndex": 1,
+                      "status": "timedOut",
+                      "duration": 32605,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8",
+                        "location": {
+                          "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                          "column": 8,
+                          "line": 4
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 8,
+                            "line": 4
+                          },
+                          "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n\n\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8\u001b[22m"
+                        },
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 16,
+                            "line": 7
+                          },
+                          "message": "Error: page.fill: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input[type=\"email\"]')\u001b[22m\n\n\n\u001b[0m \u001b[90m  5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m  6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m  7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m  8 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"password\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin123'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m  9 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mclick(\u001b[32m'button[type=\"submit\"]'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 10 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForURL(\u001b[32m'**/dashboard'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16\u001b[22m"
+                        }
+                      ],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2025-11-20T01:41:06.591Z",
+                      "startTime": "2025-11-25T07:56:50.640Z",
                       "annotations": [],
-                      "attachments": []
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-f9193-e-to-execution-history-page-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-f9193-e-to-execution-history-page-chromium/video.webm"
+                        },
+                        {
+                          "name": "_error-context-1",
+                          "contentType": "text/markdown",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-f9193-e-to-execution-history-page-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                        "column": 8,
+                        "line": 4
+                      }
                     }
                   ],
-                  "status": "expected"
+                  "status": "unexpected"
                 }
               ],
-              "id": "29ac412fd126331721f5-d88e6caa9bbcb670489d",
-              "file": "01-login.spec.ts",
-              "line": 25,
+              "id": "e2dcefd400a806b880c8-8ba4954c5640abe52675",
+              "file": "08-sprint3-executions.spec.ts",
+              "line": 20,
               "column": 7
             },
             {
-              "title": "should successfully login with any credentials (mock)",
-              "ok": true,
+              "title": "should display execution history table",
+              "ok": false,
               "tags": [],
               "tests": [
                 {
@@ -168,540 +264,78 @@
                   "projectName": "chromium",
                   "results": [
                     {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1239,
-                      "errors": [],
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "timedOut",
+                      "duration": 32356,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8",
+                        "location": {
+                          "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                          "column": 8,
+                          "line": 4
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 8,
+                            "line": 4
+                          },
+                          "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n\n\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8\u001b[22m"
+                        },
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 16,
+                            "line": 7
+                          },
+                          "message": "Error: page.fill: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input[type=\"email\"]')\u001b[22m\n\n\n\u001b[0m \u001b[90m  5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m  6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m  7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m  8 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"password\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin123'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m  9 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mclick(\u001b[32m'button[type=\"submit\"]'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 10 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForURL(\u001b[32m'**/dashboard'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16\u001b[22m"
+                        }
+                      ],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2025-11-20T01:41:06.989Z",
+                      "startTime": "2025-11-25T07:56:50.755Z",
                       "annotations": [],
-                      "attachments": []
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-bd0bf-lay-execution-history-table-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-bd0bf-lay-execution-history-table-chromium/video.webm"
+                        },
+                        {
+                          "name": "_error-context-1",
+                          "contentType": "text/markdown",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-bd0bf-lay-execution-history-table-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                        "column": 8,
+                        "line": 4
+                      }
                     }
                   ],
-                  "status": "expected"
+                  "status": "unexpected"
                 }
               ],
-              "id": "29ac412fd126331721f5-76d072cfd9157c853230",
-              "file": "01-login.spec.ts",
-              "line": 33,
-              "column": 7
-            },
-            {
-              "title": "should navigate to dashboard with specific username",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1201,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2025-11-20T01:41:08.234Z",
-                      "annotations": [],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "29ac412fd126331721f5-e2946c0839ab3f890f4d",
-              "file": "01-login.spec.ts",
-              "line": 48,
-              "column": 7
-            },
-            {
-              "title": "should have responsive design",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 460,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2025-11-20T01:41:09.443Z",
-                      "annotations": [],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "29ac412fd126331721f5-33218fd2436e2cd54582",
-              "file": "01-login.spec.ts",
-              "line": 59,
-              "column": 7
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "title": "02-dashboard.spec.ts",
-      "file": "02-dashboard.spec.ts",
-      "column": 0,
-      "line": 0,
-      "specs": [],
-      "suites": [
-        {
-          "title": "Dashboard Page",
-          "file": "02-dashboard.spec.ts",
-          "line": 9,
-          "column": 6,
-          "specs": [
-            {
-              "title": "should display dashboard with statistics",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1175,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2025-11-20T01:41:09.914Z",
-                      "annotations": [],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "4d2f27bfb2b30c5eaf6b-1e2cac07786d4c7fc210",
-              "file": "02-dashboard.spec.ts",
-              "line": 19,
-              "column": 7
-            },
-            {
-              "title": "should display mock statistics numbers",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1234,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2025-11-20T01:41:11.099Z",
-                      "annotations": [],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "4d2f27bfb2b30c5eaf6b-eb55fe881e342471f8f7",
-              "file": "02-dashboard.spec.ts",
-              "line": 34,
-              "column": 7
-            },
-            {
-              "title": "should display recent test results",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1237,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2025-11-20T01:41:12.342Z",
-                      "annotations": [],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "4d2f27bfb2b30c5eaf6b-c9e2d3e007597ee936ef",
-              "file": "02-dashboard.spec.ts",
-              "line": 42,
-              "column": 7
-            },
-            {
-              "title": "should show agent activity section",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1192,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2025-11-20T01:41:13.585Z",
-                      "annotations": [],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "4d2f27bfb2b30c5eaf6b-f37ae53cc59db447f24e",
-              "file": "02-dashboard.spec.ts",
-              "line": 51,
-              "column": 7
-            },
-            {
-              "title": "should have functional header with user info",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1221,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2025-11-20T01:41:14.784Z",
-                      "annotations": [],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "4d2f27bfb2b30c5eaf6b-9f02e4f95fbce6a3019b",
-              "file": "02-dashboard.spec.ts",
-              "line": 56,
-              "column": 7
-            },
-            {
-              "title": "should have functional sidebar navigation",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1173,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2025-11-20T01:41:16.011Z",
-                      "annotations": [],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "4d2f27bfb2b30c5eaf6b-a30b5c861b5d59e0df80",
-              "file": "02-dashboard.spec.ts",
-              "line": 62,
-              "column": 7
-            },
-            {
-              "title": "should navigate to Tests page from sidebar",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1276,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2025-11-20T01:41:17.190Z",
-                      "annotations": [],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "4d2f27bfb2b30c5eaf6b-bf35ff9463880d66872a",
-              "file": "02-dashboard.spec.ts",
-              "line": 70,
-              "column": 7
-            },
-            {
-              "title": "should navigate to Knowledge Base page from sidebar",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1288,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2025-11-20T01:41:18.473Z",
-                      "annotations": [],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "4d2f27bfb2b30c5eaf6b-362a902e4c45d2708c4d",
-              "file": "02-dashboard.spec.ts",
-              "line": 80,
-              "column": 7
-            },
-            {
-              "title": "should navigate to Settings page from sidebar",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1245,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2025-11-20T01:41:19.767Z",
-                      "annotations": [],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "4d2f27bfb2b30c5eaf6b-bacd403d07ebdeacfc81",
-              "file": "02-dashboard.spec.ts",
-              "line": 90,
-              "column": 7
-            },
-            {
-              "title": "should be responsive on mobile",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1117,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2025-11-20T01:41:21.019Z",
-                      "annotations": [],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "4d2f27bfb2b30c5eaf6b-0bb0f983bc0eb0c19be9",
-              "file": "02-dashboard.spec.ts",
-              "line": 100,
-              "column": 7
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "title": "03-tests-page.spec.ts",
-      "file": "03-tests-page.spec.ts",
-      "column": 0,
-      "line": 0,
-      "specs": [],
-      "suites": [
-        {
-          "title": "Tests Page",
-          "file": "03-tests-page.spec.ts",
-          "line": 9,
-          "column": 6,
-          "specs": [
-            {
-              "title": "should display tests page with header",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1274,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2025-11-20T01:41:22.147Z",
-                      "annotations": [],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "454f898e1347a0c95c1a-f0450b1a4e6c9b1e3799",
-              "file": "03-tests-page.spec.ts",
-              "line": 23,
-              "column": 7
-            },
-            {
-              "title": "should display test generation form initially",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1261,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2025-11-20T01:41:23.427Z",
-                      "annotations": [],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "454f898e1347a0c95c1a-986bb3196eada527e774",
-              "file": "03-tests-page.spec.ts",
+              "id": "e2dcefd400a806b880c8-e81a294c4bc81c7fb4e5",
+              "file": "08-sprint3-executions.spec.ts",
               "line": 29,
               "column": 7
             },
             {
-              "title": "should disable generate button when prompt is empty",
-              "ok": true,
+              "title": "should filter executions by status",
+              "ok": false,
               "tags": [],
               "tests": [
                 {
@@ -712,64 +346,78 @@
                   "projectName": "chromium",
                   "results": [
                     {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1227,
-                      "errors": [],
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "timedOut",
+                      "duration": 32547,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8",
+                        "location": {
+                          "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                          "column": 8,
+                          "line": 4
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 8,
+                            "line": 4
+                          },
+                          "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n\n\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8\u001b[22m"
+                        },
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 16,
+                            "line": 7
+                          },
+                          "message": "Error: page.fill: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input[type=\"email\"]')\u001b[22m\n\n\n\u001b[0m \u001b[90m  5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m  6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m  7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m  8 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"password\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin123'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m  9 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mclick(\u001b[32m'button[type=\"submit\"]'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 10 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForURL(\u001b[32m'**/dashboard'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16\u001b[22m"
+                        }
+                      ],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2025-11-20T01:41:24.693Z",
+                      "startTime": "2025-11-25T07:56:50.675Z",
                       "annotations": [],
-                      "attachments": []
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-3ec1c-filter-executions-by-status-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-3ec1c-filter-executions-by-status-chromium/video.webm"
+                        },
+                        {
+                          "name": "_error-context-1",
+                          "contentType": "text/markdown",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-3ec1c-filter-executions-by-status-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                        "column": 8,
+                        "line": 4
+                      }
                     }
                   ],
-                  "status": "expected"
+                  "status": "unexpected"
                 }
               ],
-              "id": "454f898e1347a0c95c1a-1ab338f5ab080bdaf52d",
-              "file": "03-tests-page.spec.ts",
-              "line": 36,
-              "column": 7
-            },
-            {
-              "title": "should generate test cases from natural language",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 4158,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2025-11-20T01:41:25.925Z",
-                      "annotations": [],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "454f898e1347a0c95c1a-169ab9f9429d306ce2c9",
-              "file": "03-tests-page.spec.ts",
+              "id": "e2dcefd400a806b880c8-7814cf3950c780f6cfe6",
+              "file": "08-sprint3-executions.spec.ts",
               "line": 46,
               "column": 7
             },
             {
-              "title": "should display test case cards with all details",
-              "ok": true,
+              "title": "should filter executions by result",
+              "ok": false,
               "tags": [],
               "tests": [
                 {
@@ -780,30 +428,78 @@
                   "projectName": "chromium",
                   "results": [
                     {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 4139,
-                      "errors": [],
+                      "workerIndex": 4,
+                      "parallelIndex": 4,
+                      "status": "timedOut",
+                      "duration": 32183,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8",
+                        "location": {
+                          "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                          "column": 8,
+                          "line": 4
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 8,
+                            "line": 4
+                          },
+                          "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n\n\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8\u001b[22m"
+                        },
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 16,
+                            "line": 7
+                          },
+                          "message": "Error: page.fill: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input[type=\"email\"]')\u001b[22m\n\n\n\u001b[0m \u001b[90m  5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m  6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m  7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m  8 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"password\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin123'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m  9 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mclick(\u001b[32m'button[type=\"submit\"]'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 10 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForURL(\u001b[32m'**/dashboard'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16\u001b[22m"
+                        }
+                      ],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2025-11-20T01:41:30.088Z",
+                      "startTime": "2025-11-25T07:56:50.715Z",
                       "annotations": [],
-                      "attachments": []
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-2bb89-filter-executions-by-result-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-2bb89-filter-executions-by-result-chromium/video.webm"
+                        },
+                        {
+                          "name": "_error-context-1",
+                          "contentType": "text/markdown",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-2bb89-filter-executions-by-result-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                        "column": 8,
+                        "line": 4
+                      }
                     }
                   ],
-                  "status": "expected"
+                  "status": "unexpected"
                 }
               ],
-              "id": "454f898e1347a0c95c1a-7f788c11afd447a8ddbd",
-              "file": "03-tests-page.spec.ts",
-              "line": 63,
+              "id": "e2dcefd400a806b880c8-7b2c46cbe8e6b5d7ffa0",
+              "file": "08-sprint3-executions.spec.ts",
+              "line": 64,
               "column": 7
             },
             {
-              "title": "should show save, edit, and delete buttons on generated tests",
-              "ok": true,
+              "title": "should have refresh button",
+              "ok": false,
               "tags": [],
               "tests": [
                 {
@@ -814,30 +510,78 @@
                   "projectName": "chromium",
                   "results": [
                     {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 4151,
-                      "errors": [],
+                      "workerIndex": 5,
+                      "parallelIndex": 5,
+                      "status": "timedOut",
+                      "duration": 32530,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8",
+                        "location": {
+                          "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                          "column": 8,
+                          "line": 4
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 8,
+                            "line": 4
+                          },
+                          "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n\n\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8\u001b[22m"
+                        },
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 16,
+                            "line": 7
+                          },
+                          "message": "Error: page.fill: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input[type=\"email\"]')\u001b[22m\n\n\n\u001b[0m \u001b[90m  5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m  6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m  7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m  8 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"password\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin123'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m  9 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mclick(\u001b[32m'button[type=\"submit\"]'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 10 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForURL(\u001b[32m'**/dashboard'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16\u001b[22m"
+                        }
+                      ],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2025-11-20T01:41:34.232Z",
+                      "startTime": "2025-11-25T07:56:50.747Z",
                       "annotations": [],
-                      "attachments": []
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-34d6c--should-have-refresh-button-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-34d6c--should-have-refresh-button-chromium/video.webm"
+                        },
+                        {
+                          "name": "_error-context-1",
+                          "contentType": "text/markdown",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-34d6c--should-have-refresh-button-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                        "column": 8,
+                        "line": 4
+                      }
                     }
                   ],
-                  "status": "expected"
+                  "status": "unexpected"
                 }
               ],
-              "id": "454f898e1347a0c95c1a-8a75f18e62d598e13d56",
-              "file": "03-tests-page.spec.ts",
-              "line": 80,
+              "id": "e2dcefd400a806b880c8-d70d400f1bef4fa27c01",
+              "file": "08-sprint3-executions.spec.ts",
+              "line": 82,
               "column": 7
             },
             {
-              "title": "should allow generating more tests after viewing results",
-              "ok": true,
+              "title": "should navigate to execution detail page when clicking a row",
+              "ok": false,
               "tags": [],
               "tests": [
                 {
@@ -848,30 +592,78 @@
                   "projectName": "chromium",
                   "results": [
                     {
-                      "workerIndex": 0,
+                      "workerIndex": 6,
                       "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 4156,
-                      "errors": [],
+                      "status": "timedOut",
+                      "duration": 32721,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8",
+                        "location": {
+                          "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                          "column": 8,
+                          "line": 4
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 8,
+                            "line": 4
+                          },
+                          "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n\n\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8\u001b[22m"
+                        },
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 16,
+                            "line": 7
+                          },
+                          "message": "Error: page.fill: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input[type=\"email\"]')\u001b[22m\n\n\n\u001b[0m \u001b[90m  5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m  6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m  7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m  8 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"password\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin123'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m  9 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mclick(\u001b[32m'button[type=\"submit\"]'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 10 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForURL(\u001b[32m'**/dashboard'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16\u001b[22m"
+                        }
+                      ],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2025-11-20T01:41:38.389Z",
+                      "startTime": "2025-11-25T07:57:31.972Z",
                       "annotations": [],
-                      "attachments": []
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-39d6a-il-page-when-clicking-a-row-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-39d6a-il-page-when-clicking-a-row-chromium/video.webm"
+                        },
+                        {
+                          "name": "_error-context-1",
+                          "contentType": "text/markdown",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-39d6a-il-page-when-clicking-a-row-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                        "column": 8,
+                        "line": 4
+                      }
                     }
                   ],
-                  "status": "expected"
+                  "status": "unexpected"
                 }
               ],
-              "id": "454f898e1347a0c95c1a-9690a3c82177a2f22150",
-              "file": "03-tests-page.spec.ts",
+              "id": "e2dcefd400a806b880c8-65177c0e4cc14849feed",
+              "file": "08-sprint3-executions.spec.ts",
               "line": 94,
               "column": 7
             },
             {
-              "title": "should display \"Generate New Tests\" button when viewing existing tests",
-              "ok": true,
+              "title": "should show execution progress page with correct elements",
+              "ok": false,
               "tags": [],
               "tests": [
                 {
@@ -882,47 +674,78 @@
                   "projectName": "chromium",
                   "results": [
                     {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 4179,
-                      "errors": [],
+                      "workerIndex": 7,
+                      "parallelIndex": 4,
+                      "status": "timedOut",
+                      "duration": 32646,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8",
+                        "location": {
+                          "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                          "column": 8,
+                          "line": 4
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 8,
+                            "line": 4
+                          },
+                          "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n\n\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8\u001b[22m"
+                        },
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 16,
+                            "line": 7
+                          },
+                          "message": "Error: page.fill: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input[type=\"email\"]')\u001b[22m\n\n\n\u001b[0m \u001b[90m  5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m  6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m  7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m  8 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"password\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin123'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m  9 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mclick(\u001b[32m'button[type=\"submit\"]'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 10 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForURL(\u001b[32m'**/dashboard'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16\u001b[22m"
+                        }
+                      ],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2025-11-20T01:41:42.551Z",
+                      "startTime": "2025-11-25T07:57:32.081Z",
                       "annotations": [],
-                      "attachments": []
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-f210f--page-with-correct-elements-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-f210f--page-with-correct-elements-chromium/video.webm"
+                        },
+                        {
+                          "name": "_error-context-1",
+                          "contentType": "text/markdown",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-f210f--page-with-correct-elements-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                        "column": 8,
+                        "line": 4
+                      }
                     }
                   ],
-                  "status": "expected"
+                  "status": "unexpected"
                 }
               ],
-              "id": "454f898e1347a0c95c1a-4d5fedc7c3cb69492fb8",
-              "file": "03-tests-page.spec.ts",
-              "line": 109,
+              "id": "e2dcefd400a806b880c8-ffa2f8316bb703786ccc",
+              "file": "08-sprint3-executions.spec.ts",
+              "line": 114,
               "column": 7
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "title": "04-knowledge-base.spec.ts",
-      "file": "04-knowledge-base.spec.ts",
-      "column": 0,
-      "line": 0,
-      "specs": [],
-      "suites": [
-        {
-          "title": "Knowledge Base Page",
-          "file": "04-knowledge-base.spec.ts",
-          "line": 9,
-          "column": 6,
-          "specs": [
+            },
             {
-              "title": "should navigate back to dashboard",
-              "ok": true,
+              "title": "should have back button on execution detail page",
+              "ok": false,
               "tags": [],
               "tests": [
                 {
@@ -933,47 +756,78 @@
                   "projectName": "chromium",
                   "results": [
                     {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1475,
-                      "errors": [],
+                      "workerIndex": 8,
+                      "parallelIndex": 2,
+                      "status": "timedOut",
+                      "duration": 32969,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8",
+                        "location": {
+                          "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                          "column": 8,
+                          "line": 4
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 8,
+                            "line": 4
+                          },
+                          "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n\n\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8\u001b[22m"
+                        },
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 16,
+                            "line": 7
+                          },
+                          "message": "Error: page.fill: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input[type=\"email\"]')\u001b[22m\n\n\n\u001b[0m \u001b[90m  5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m  6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m  7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m  8 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"password\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin123'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m  9 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mclick(\u001b[32m'button[type=\"submit\"]'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 10 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForURL(\u001b[32m'**/dashboard'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16\u001b[22m"
+                        }
+                      ],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2025-11-20T01:41:46.737Z",
+                      "startTime": "2025-11-25T07:57:32.044Z",
                       "annotations": [],
-                      "attachments": []
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-965b4-on-on-execution-detail-page-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-965b4-on-on-execution-detail-page-chromium/video.webm"
+                        },
+                        {
+                          "name": "_error-context-1",
+                          "contentType": "text/markdown",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-965b4-on-on-execution-detail-page-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                        "column": 8,
+                        "line": 4
+                      }
                     }
                   ],
-                  "status": "expected"
+                  "status": "unexpected"
                 }
               ],
-              "id": "0555bfbf78b00ae76f01-a776fb9c5eae8501ecd8",
-              "file": "04-knowledge-base.spec.ts",
+              "id": "e2dcefd400a806b880c8-4dbe824005a37f591ee0",
+              "file": "08-sprint3-executions.spec.ts",
               "line": 129,
               "column": 7
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "title": "05-settings.spec.ts",
-      "file": "05-settings.spec.ts",
-      "column": 0,
-      "line": 0,
-      "specs": [],
-      "suites": [
-        {
-          "title": "Settings Page",
-          "file": "05-settings.spec.ts",
-          "line": 9,
-          "column": 6,
-          "specs": [
+            },
             {
-              "title": "should navigate back to dashboard",
-              "ok": true,
+              "title": "should show execution overview card with stats",
+              "ok": false,
               "tags": [],
               "tests": [
                 {
@@ -984,132 +838,78 @@
                   "projectName": "chromium",
                   "results": [
                     {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1421,
-                      "errors": [],
+                      "workerIndex": 9,
+                      "parallelIndex": 5,
+                      "status": "timedOut",
+                      "duration": 32863,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8",
+                        "location": {
+                          "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                          "column": 8,
+                          "line": 4
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 8,
+                            "line": 4
+                          },
+                          "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n\n\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8\u001b[22m"
+                        },
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 16,
+                            "line": 7
+                          },
+                          "message": "Error: page.fill: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input[type=\"email\"]')\u001b[22m\n\n\n\u001b[0m \u001b[90m  5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m  6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m  7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m  8 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"password\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin123'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m  9 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mclick(\u001b[32m'button[type=\"submit\"]'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 10 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForURL(\u001b[32m'**/dashboard'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16\u001b[22m"
+                        }
+                      ],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2025-11-20T01:41:48.219Z",
+                      "startTime": "2025-11-25T07:57:32.191Z",
                       "annotations": [],
-                      "attachments": []
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-7edb0-on-overview-card-with-stats-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-7edb0-on-overview-card-with-stats-chromium/video.webm"
+                        },
+                        {
+                          "name": "_error-context-1",
+                          "contentType": "text/markdown",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-7edb0-on-overview-card-with-stats-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                        "column": 8,
+                        "line": 4
+                      }
                     }
                   ],
-                  "status": "expected"
+                  "status": "unexpected"
                 }
               ],
-              "id": "c779a39932beb0ea163e-335ba6c537b19b8fc363",
-              "file": "05-settings.spec.ts",
-              "line": 140,
-              "column": 7
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "title": "06-navigation.spec.ts",
-      "file": "06-navigation.spec.ts",
-      "column": 0,
-      "line": 0,
-      "specs": [],
-      "suites": [
-        {
-          "title": "Application Navigation",
-          "file": "06-navigation.spec.ts",
-          "line": 9,
-          "column": 6,
-          "specs": [
-            {
-              "title": "should redirect from root to login when not authenticated",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1033,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2025-11-20T01:41:49.650Z",
-                      "annotations": [],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "d84697c9428e56b3d677-21c9f314295b4525b335",
-              "file": "06-navigation.spec.ts",
-              "line": 127,
-              "column": 7
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "title": "07-sprint2-features.spec.ts",
-      "file": "07-sprint2-features.spec.ts",
-      "column": 0,
-      "line": 0,
-      "specs": [],
-      "suites": [
-        {
-          "title": "Sprint 2: Dashboard Charts",
-          "file": "07-sprint2-features.spec.ts",
-          "line": 130,
-          "column": 6,
-          "specs": [
-            {
-              "title": "should display test trends chart",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1209,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2025-11-20T01:41:50.693Z",
-                      "annotations": [],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "527ef4ef9e3965bc991e-4d50f33d99e83abb6999",
-              "file": "07-sprint2-features.spec.ts",
+              "id": "e2dcefd400a806b880c8-6aa116a9f5d398f2ba6c",
+              "file": "08-sprint3-executions.spec.ts",
               "line": 140,
               "column": 7
             },
             {
-              "title": "should display test status pie chart",
-              "ok": true,
+              "title": "should display test steps if execution exists",
+              "ok": false,
               "tags": [],
               "tests": [
                 {
@@ -1120,30 +920,78 @@
                   "projectName": "chromium",
                   "results": [
                     {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1242,
-                      "errors": [],
+                      "workerIndex": 10,
+                      "parallelIndex": 3,
+                      "status": "timedOut",
+                      "duration": 32733,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8",
+                        "location": {
+                          "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                          "column": 8,
+                          "line": 4
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 8,
+                            "line": 4
+                          },
+                          "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n\n\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8\u001b[22m"
+                        },
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 16,
+                            "line": 7
+                          },
+                          "message": "Error: page.fill: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input[type=\"email\"]')\u001b[22m\n\n\n\u001b[0m \u001b[90m  5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m  6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m  7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m  8 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"password\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin123'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m  9 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mclick(\u001b[32m'button[type=\"submit\"]'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 10 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForURL(\u001b[32m'**/dashboard'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16\u001b[22m"
+                        }
+                      ],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2025-11-20T01:41:51.908Z",
+                      "startTime": "2025-11-25T07:57:32.136Z",
                       "annotations": [],
-                      "attachments": []
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-26a2e-t-steps-if-execution-exists-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-26a2e-t-steps-if-execution-exists-chromium/video.webm"
+                        },
+                        {
+                          "name": "_error-context-1",
+                          "contentType": "text/markdown",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-26a2e-t-steps-if-execution-exists-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                        "column": 8,
+                        "line": 4
+                      }
                     }
                   ],
-                  "status": "expected"
+                  "status": "unexpected"
                 }
               ],
-              "id": "527ef4ef9e3965bc991e-0508ad8973e5dacaa0c2",
-              "file": "07-sprint2-features.spec.ts",
-              "line": 148,
+              "id": "e2dcefd400a806b880c8-ac8ddfb5dd9275f66b7d",
+              "file": "08-sprint3-executions.spec.ts",
+              "line": 154,
               "column": 7
             },
             {
-              "title": "should display chart legends",
-              "ok": true,
+              "title": "should show queue status widget on tests page",
+              "ok": false,
               "tags": [],
               "tests": [
                 {
@@ -1154,30 +1002,78 @@
                   "projectName": "chromium",
                   "results": [
                     {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1218,
-                      "errors": [],
+                      "workerIndex": 11,
+                      "parallelIndex": 1,
+                      "status": "timedOut",
+                      "duration": 32546,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8",
+                        "location": {
+                          "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                          "column": 8,
+                          "line": 4
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 8,
+                            "line": 4
+                          },
+                          "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n\n\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8\u001b[22m"
+                        },
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 16,
+                            "line": 7
+                          },
+                          "message": "Error: page.fill: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input[type=\"email\"]')\u001b[22m\n\n\n\u001b[0m \u001b[90m  5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m  6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m  7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m  8 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"password\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin123'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m  9 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mclick(\u001b[32m'button[type=\"submit\"]'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 10 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForURL(\u001b[32m'**/dashboard'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16\u001b[22m"
+                        }
+                      ],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2025-11-20T01:41:53.155Z",
+                      "startTime": "2025-11-25T07:57:32.217Z",
                       "annotations": [],
-                      "attachments": []
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-9d304-status-widget-on-tests-page-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-9d304-status-widget-on-tests-page-chromium/video.webm"
+                        },
+                        {
+                          "name": "_error-context-1",
+                          "contentType": "text/markdown",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-9d304-status-widget-on-tests-page-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                        "column": 8,
+                        "line": 4
+                      }
                     }
                   ],
-                  "status": "expected"
+                  "status": "unexpected"
                 }
               ],
-              "id": "527ef4ef9e3965bc991e-18fd35f792b5146ebe51",
-              "file": "07-sprint2-features.spec.ts",
-              "line": 156,
+              "id": "e2dcefd400a806b880c8-da881ec10d65a339edd9",
+              "file": "08-sprint3-executions.spec.ts",
+              "line": 167,
               "column": 7
             },
             {
-              "title": "should display pie chart color legend",
-              "ok": true,
+              "title": "should display execution status badges correctly",
+              "ok": false,
               "tags": [],
               "tests": [
                 {
@@ -1188,30 +1084,78 @@
                   "projectName": "chromium",
                   "results": [
                     {
-                      "workerIndex": 0,
+                      "workerIndex": 12,
                       "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1165,
-                      "errors": [],
+                      "status": "timedOut",
+                      "duration": 32867,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8",
+                        "location": {
+                          "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                          "column": 8,
+                          "line": 4
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 8,
+                            "line": 4
+                          },
+                          "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n\n\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8\u001b[22m"
+                        },
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 16,
+                            "line": 7
+                          },
+                          "message": "Error: page.fill: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input[type=\"email\"]')\u001b[22m\n\n\n\u001b[0m \u001b[90m  5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m  6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m  7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m  8 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"password\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin123'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m  9 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mclick(\u001b[32m'button[type=\"submit\"]'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 10 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForURL(\u001b[32m'**/dashboard'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16\u001b[22m"
+                        }
+                      ],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2025-11-20T01:41:54.379Z",
+                      "startTime": "2025-11-25T07:58:05.806Z",
                       "annotations": [],
-                      "attachments": []
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-2919a-ion-status-badges-correctly-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-2919a-ion-status-badges-correctly-chromium/video.webm"
+                        },
+                        {
+                          "name": "_error-context-1",
+                          "contentType": "text/markdown",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-2919a-ion-status-badges-correctly-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                        "column": 8,
+                        "line": 4
+                      }
                     }
                   ],
-                  "status": "expected"
+                  "status": "unexpected"
                 }
               ],
-              "id": "527ef4ef9e3965bc991e-552ee55118cc3c3f13e6",
-              "file": "07-sprint2-features.spec.ts",
-              "line": 163,
+              "id": "e2dcefd400a806b880c8-0e610900fa2860e22b62",
+              "file": "08-sprint3-executions.spec.ts",
+              "line": 179,
               "column": 7
             },
             {
-              "title": "should maintain charts on mobile viewport",
-              "ok": true,
+              "title": "should handle empty execution list gracefully",
+              "ok": false,
               "tags": [],
               "tests": [
                 {
@@ -1222,25 +1166,319 @@
                   "projectName": "chromium",
                   "results": [
                     {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1165,
-                      "errors": [],
+                      "workerIndex": 13,
+                      "parallelIndex": 4,
+                      "status": "timedOut",
+                      "duration": 32397,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8",
+                        "location": {
+                          "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                          "column": 8,
+                          "line": 4
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 8,
+                            "line": 4
+                          },
+                          "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n\n\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8\u001b[22m"
+                        },
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 16,
+                            "line": 7
+                          },
+                          "message": "Error: page.fill: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input[type=\"email\"]')\u001b[22m\n\n\n\u001b[0m \u001b[90m  5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m  6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m  7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m  8 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"password\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin123'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m  9 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mclick(\u001b[32m'button[type=\"submit\"]'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 10 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForURL(\u001b[32m'**/dashboard'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16\u001b[22m"
+                        }
+                      ],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2025-11-20T01:41:55.550Z",
+                      "startTime": "2025-11-25T07:58:05.854Z",
                       "annotations": [],
-                      "attachments": []
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-96e02-y-execution-list-gracefully-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-96e02-y-execution-list-gracefully-chromium/video.webm"
+                        },
+                        {
+                          "name": "_error-context-1",
+                          "contentType": "text/markdown",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-96e02-y-execution-list-gracefully-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                        "column": 8,
+                        "line": 4
+                      }
                     }
                   ],
-                  "status": "expected"
+                  "status": "unexpected"
                 }
               ],
-              "id": "527ef4ef9e3965bc991e-d7f430a8d2419dcbc24b",
-              "file": "07-sprint2-features.spec.ts",
-              "line": 171,
+              "id": "e2dcefd400a806b880c8-212f961bf30cf63c2a72",
+              "file": "08-sprint3-executions.spec.ts",
+              "line": 192,
+              "column": 7
+            },
+            {
+              "title": "should show delete button for executions",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 14,
+                      "parallelIndex": 1,
+                      "status": "timedOut",
+                      "duration": 32585,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8",
+                        "location": {
+                          "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                          "column": 8,
+                          "line": 4
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 8,
+                            "line": 4
+                          },
+                          "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n\n\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8\u001b[22m"
+                        },
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 16,
+                            "line": 7
+                          },
+                          "message": "Error: page.fill: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input[type=\"email\"]')\u001b[22m\n\n\n\u001b[0m \u001b[90m  5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m  6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m  7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m  8 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"password\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin123'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m  9 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mclick(\u001b[32m'button[type=\"submit\"]'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 10 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForURL(\u001b[32m'**/dashboard'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16\u001b[22m"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2025-11-25T07:58:05.928Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-6021a-elete-button-for-executions-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-6021a-elete-button-for-executions-chromium/video.webm"
+                        },
+                        {
+                          "name": "_error-context-1",
+                          "contentType": "text/markdown",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-6021a-elete-button-for-executions-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                        "column": 8,
+                        "line": 4
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "e2dcefd400a806b880c8-f3aa302129031716e1eb",
+              "file": "08-sprint3-executions.spec.ts",
+              "line": 208,
+              "column": 7
+            },
+            {
+              "title": "should navigate between pages using sidebar",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 15,
+                      "parallelIndex": 3,
+                      "status": "timedOut",
+                      "duration": 32344,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8",
+                        "location": {
+                          "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                          "column": 8,
+                          "line": 4
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 8,
+                            "line": 4
+                          },
+                          "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n\n\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8\u001b[22m"
+                        },
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 16,
+                            "line": 7
+                          },
+                          "message": "Error: page.fill: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input[type=\"email\"]')\u001b[22m\n\n\n\u001b[0m \u001b[90m  5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m  6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m  7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m  8 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"password\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin123'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m  9 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mclick(\u001b[32m'button[type=\"submit\"]'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 10 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForURL(\u001b[32m'**/dashboard'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16\u001b[22m"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2025-11-25T07:58:05.994Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-d13d6-between-pages-using-sidebar-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-d13d6-between-pages-using-sidebar-chromium/video.webm"
+                        },
+                        {
+                          "name": "_error-context-1",
+                          "contentType": "text/markdown",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-d13d6-between-pages-using-sidebar-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                        "column": 8,
+                        "line": 4
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "e2dcefd400a806b880c8-c59c55143553e73ea408",
+              "file": "08-sprint3-executions.spec.ts",
+              "line": 222,
+              "column": 7
+            },
+            {
+              "title": "should maintain active nav state on executions page",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 16,
+                      "parallelIndex": 2,
+                      "status": "timedOut",
+                      "duration": 32610,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8",
+                        "location": {
+                          "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                          "column": 8,
+                          "line": 4
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 8,
+                            "line": 4
+                          },
+                          "message": "\u001b[31mTest timeout of 30000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n\n\u001b[0m \u001b[90m 2 |\u001b[39m\n \u001b[90m 3 |\u001b[39m test\u001b[33m.\u001b[39mdescribe(\u001b[32m'Sprint 3 - Test Execution Features'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 4 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m   |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m 6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8\u001b[22m"
+                        },
+                        {
+                          "location": {
+                            "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                            "column": 16,
+                            "line": 7
+                          },
+                          "message": "Error: page.fill: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input[type=\"email\"]')\u001b[22m\n\n\n\u001b[0m \u001b[90m  5 |\u001b[39m     \u001b[90m// Login\u001b[39m\n \u001b[90m  6 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'http://localhost:5173/login'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m  7 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"email\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin@aiwebtest.com'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m  8 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'input[type=\"password\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin123'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m  9 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mclick(\u001b[32m'button[type=\"submit\"]'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 10 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForURL(\u001b[32m'**/dashboard'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16\u001b[22m"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2025-11-25T07:58:06.172Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-3dfe7-av-state-on-executions-page-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-3dfe7-av-state-on-executions-page-chromium/video.webm"
+                        },
+                        {
+                          "name": "_error-context-1",
+                          "contentType": "text/markdown",
+                          "path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/test-results/08-sprint3-executions-Spri-3dfe7-av-state-on-executions-page-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts",
+                        "column": 8,
+                        "line": 4
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "e2dcefd400a806b880c8-18a2eb5afc25f85da34b",
+              "file": "08-sprint3-executions.spec.ts",
+              "line": 237,
               "column": 7
             }
           ]
@@ -1250,11 +1488,11 @@
   ],
   "errors": [],
   "stats": {
-    "startTime": "2025-11-20T01:41:04.949Z",
-    "duration": 51836.886999999995,
-    "expected": 31,
+    "startTime": "2025-11-25T07:56:49.428Z",
+    "duration": 109983.066,
+    "expected": 0,
     "skipped": 0,
-    "unexpected": 0,
+    "unexpected": 17,
     "flaky": 0
   }
 }
