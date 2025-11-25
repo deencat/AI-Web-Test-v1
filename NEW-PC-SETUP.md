@@ -195,7 +195,7 @@ python -m venv venv
 # Ensure venv is activated
 pip install --upgrade pip
 
-# Install all dependencies
+# Install all dependencies (including Stagehand)
 pip install -r requirements.txt
 
 # This installs:
@@ -204,22 +204,28 @@ pip install -r requirements.txt
 # - Pydantic (Data validation)
 # - python-jose, passlib (Authentication)
 # - PyPDF2, python-docx (File handling)
-# - Playwright, Stagehand (Browser automation)
-# + all other dependencies
+# - Playwright 1.56.0 (Browser automation)
+# - Stagehand 0.5.6 (Browser automation wrapper)
+# - websockets 15.0.1 (WebSocket support)
+# + all other dependencies (50+ packages total)
 ```
 
 **Expected Output:**
 ```
-Successfully installed fastapi-0.104.1 uvicorn-0.24.0 ...
+Successfully installed fastapi-0.104.1 uvicorn-0.24.0 playwright-1.56.0 stagehand-0.5.6 ...
 (50+ packages)
 ```
+
+**Note:** Stagehand is included in requirements.txt and will be installed automatically with the above command.
 
 ---
 
 ### 3. Install Playwright Browsers
 
+**Important:** Playwright and Stagehand are already installed from requirements.txt in step 2, but you need to download the actual browser binaries.
+
 ```powershell
-# Install Chromium browser for Playwright
+# Install Chromium browser for Playwright/Stagehand
 playwright install chromium
 
 # This downloads Chromium browser (~150MB)
@@ -227,9 +233,34 @@ playwright install chromium
 
 **Expected Output:**
 ```
-Downloading Chromium...
-100% [================================]
-Chromium 1.56.0 downloaded successfully
+Downloading Chromium 125.0.6422.14 (playwright build v1124)
+100% [================================] 150 MB
+Chromium 125.0.6422.14 (playwright build v1124) downloaded to C:\Users\...
+```
+
+**What This Does:**
+- Downloads Chromium browser binary
+- Stagehand uses this browser for test execution
+- Required for Sprint 3 browser automation features
+
+**Verify Installation:**
+```powershell
+# Check Stagehand is installed
+pip show stagehand
+
+# Should show:
+# Name: stagehand
+# Version: 0.5.6
+# Summary: Browser automation library
+# ...
+
+# Check Playwright is installed
+pip show playwright
+
+# Should show:
+# Name: playwright
+# Version: 1.56.0
+# ...
 ```
 
 ---

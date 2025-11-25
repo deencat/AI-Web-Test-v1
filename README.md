@@ -57,10 +57,10 @@ python -m venv venv
 .\venv\Scripts\activate  # Windows
 # source venv/bin/activate  # Mac/Linux
 
-# Install dependencies
+# Install dependencies (includes Stagehand + Playwright)
 pip install -r requirements.txt
 
-# Install Playwright browser
+# Install Chromium browser for Playwright/Stagehand
 playwright install chromium
 
 # Configure environment
