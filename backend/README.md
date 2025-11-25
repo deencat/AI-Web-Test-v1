@@ -35,15 +35,17 @@ python -m venv venv
 # source venv/bin/activate  # Mac/Linux
 ```
 
-2. Install dependencies:
+2. Install dependencies (includes Stagehand + Playwright):
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Install Playwright browser:
+3. Install Chromium browser for Playwright/Stagehand:
 ```bash
 playwright install chromium
 ```
+
+**Note:** Stagehand (0.5.6) is included in requirements.txt and installed automatically in step 2. Step 3 downloads the actual Chromium browser binary that Stagehand uses for test execution.
 
 4. Configure environment:
 ```bash
