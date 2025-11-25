@@ -4,6 +4,8 @@ import { DashboardPage } from './pages/DashboardPage';
 import { TestsPage } from './pages/TestsPage';
 import { KnowledgeBasePage } from './pages/KnowledgeBasePage';
 import { SettingsPage } from './pages/SettingsPage';
+import { ExecutionProgressPage } from './pages/ExecutionProgressPage';
+import { ExecutionHistoryPage } from './pages/ExecutionHistoryPage';
 import './index.css';
 
 // Protected Route wrapper
@@ -51,6 +53,22 @@ function App() {
           element={
             <ProtectedRoute>
               <SettingsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/executions"
+          element={
+            <ProtectedRoute>
+              <ExecutionHistoryPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/executions/:executionId"
+          element={
+            <ProtectedRoute>
+              <ExecutionProgressPage />
             </ProtectedRoute>
           }
         />

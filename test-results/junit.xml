@@ -1,78 +1,854 @@
-<testsuites id="" name="" tests="31" failures="0" skipped="0" errors="0" time="51.836887">
-<testsuite name="01-login.spec.ts" timestamp="2025-11-20T01:41:05.453Z" hostname="chromium" tests="5" failures="0" skipped="0" time="3.822" errors="0">
-<testcase name="Login Page › should display login form" classname="01-login.spec.ts" time="0.532">
+<testsuites id="" name="" tests="17" failures="17" skipped="0" errors="0" time="109.98306600000001">
+<testsuite name="08-sprint3-executions.spec.ts" timestamp="2025-11-25T07:56:49.992Z" hostname="chromium" tests="17" failures="17" skipped="0" time="553.813" errors="0">
+<testcase name="Sprint 3 - Test Execution Features › should show Executions link in sidebar" classname="08-sprint3-executions.spec.ts" time="32.311">
+<failure message="08-sprint3-executions.spec.ts:13:7 should show Executions link in sidebar" type="FAILURE">
+<![CDATA[  [chromium] › 08-sprint3-executions.spec.ts:13:7 › Sprint 3 - Test Execution Features › should show Executions link in sidebar 
+
+    Test timeout of 30000ms exceeded while running "beforeEach" hook.
+
+      2 |
+      3 | test.describe('Sprint 3 - Test Execution Features', () => {
+    > 4 |   test.beforeEach(async ({ page }) => {
+        |        ^
+      5 |     // Login
+      6 |     await page.goto('http://localhost:5173/login');
+      7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8
+
+    Error: page.fill: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('input[type="email"]')
+
+
+       5 |     // Login
+       6 |     await page.goto('http://localhost:5173/login');
+    >  7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+         |                ^
+       8 |     await page.fill('input[type="password"]', 'admin123');
+       9 |     await page.click('button[type="submit"]');
+      10 |     await page.waitForURL('**/dashboard');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-04bf7--Executions-link-in-sidebar-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-04bf7--Executions-link-in-sidebar-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../test-results/08-sprint3-executions-Spri-04bf7--Executions-link-in-sidebar-chromium/error-context.md
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|08-sprint3-executions-Spri-04bf7--Executions-link-in-sidebar-chromium/test-failed-1.png]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-04bf7--Executions-link-in-sidebar-chromium/video.webm]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-04bf7--Executions-link-in-sidebar-chromium/error-context.md]]
+]]>
+</system-out>
 </testcase>
-<testcase name="Login Page › should show validation for empty fields" classname="01-login.spec.ts" time="0.39">
+<testcase name="Sprint 3 - Test Execution Features › should navigate to execution history page" classname="08-sprint3-executions.spec.ts" time="32.605">
+<failure message="08-sprint3-executions.spec.ts:20:7 should navigate to execution history page" type="FAILURE">
+<![CDATA[  [chromium] › 08-sprint3-executions.spec.ts:20:7 › Sprint 3 - Test Execution Features › should navigate to execution history page 
+
+    Test timeout of 30000ms exceeded while running "beforeEach" hook.
+
+      2 |
+      3 | test.describe('Sprint 3 - Test Execution Features', () => {
+    > 4 |   test.beforeEach(async ({ page }) => {
+        |        ^
+      5 |     // Login
+      6 |     await page.goto('http://localhost:5173/login');
+      7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8
+
+    Error: page.fill: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('input[type="email"]')
+
+
+       5 |     // Login
+       6 |     await page.goto('http://localhost:5173/login');
+    >  7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+         |                ^
+       8 |     await page.fill('input[type="password"]', 'admin123');
+       9 |     await page.click('button[type="submit"]');
+      10 |     await page.waitForURL('**/dashboard');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-f9193-e-to-execution-history-page-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-f9193-e-to-execution-history-page-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../test-results/08-sprint3-executions-Spri-f9193-e-to-execution-history-page-chromium/error-context.md
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|08-sprint3-executions-Spri-f9193-e-to-execution-history-page-chromium/test-failed-1.png]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-f9193-e-to-execution-history-page-chromium/video.webm]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-f9193-e-to-execution-history-page-chromium/error-context.md]]
+]]>
+</system-out>
 </testcase>
-<testcase name="Login Page › should successfully login with any credentials (mock)" classname="01-login.spec.ts" time="1.239">
+<testcase name="Sprint 3 - Test Execution Features › should display execution history table" classname="08-sprint3-executions.spec.ts" time="32.356">
+<failure message="08-sprint3-executions.spec.ts:29:7 should display execution history table" type="FAILURE">
+<![CDATA[  [chromium] › 08-sprint3-executions.spec.ts:29:7 › Sprint 3 - Test Execution Features › should display execution history table 
+
+    Test timeout of 30000ms exceeded while running "beforeEach" hook.
+
+      2 |
+      3 | test.describe('Sprint 3 - Test Execution Features', () => {
+    > 4 |   test.beforeEach(async ({ page }) => {
+        |        ^
+      5 |     // Login
+      6 |     await page.goto('http://localhost:5173/login');
+      7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8
+
+    Error: page.fill: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('input[type="email"]')
+
+
+       5 |     // Login
+       6 |     await page.goto('http://localhost:5173/login');
+    >  7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+         |                ^
+       8 |     await page.fill('input[type="password"]', 'admin123');
+       9 |     await page.click('button[type="submit"]');
+      10 |     await page.waitForURL('**/dashboard');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-bd0bf-lay-execution-history-table-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-bd0bf-lay-execution-history-table-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../test-results/08-sprint3-executions-Spri-bd0bf-lay-execution-history-table-chromium/error-context.md
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|08-sprint3-executions-Spri-bd0bf-lay-execution-history-table-chromium/test-failed-1.png]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-bd0bf-lay-execution-history-table-chromium/video.webm]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-bd0bf-lay-execution-history-table-chromium/error-context.md]]
+]]>
+</system-out>
 </testcase>
-<testcase name="Login Page › should navigate to dashboard with specific username" classname="01-login.spec.ts" time="1.201">
+<testcase name="Sprint 3 - Test Execution Features › should filter executions by status" classname="08-sprint3-executions.spec.ts" time="32.547">
+<failure message="08-sprint3-executions.spec.ts:46:7 should filter executions by status" type="FAILURE">
+<![CDATA[  [chromium] › 08-sprint3-executions.spec.ts:46:7 › Sprint 3 - Test Execution Features › should filter executions by status 
+
+    Test timeout of 30000ms exceeded while running "beforeEach" hook.
+
+      2 |
+      3 | test.describe('Sprint 3 - Test Execution Features', () => {
+    > 4 |   test.beforeEach(async ({ page }) => {
+        |        ^
+      5 |     // Login
+      6 |     await page.goto('http://localhost:5173/login');
+      7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8
+
+    Error: page.fill: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('input[type="email"]')
+
+
+       5 |     // Login
+       6 |     await page.goto('http://localhost:5173/login');
+    >  7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+         |                ^
+       8 |     await page.fill('input[type="password"]', 'admin123');
+       9 |     await page.click('button[type="submit"]');
+      10 |     await page.waitForURL('**/dashboard');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-3ec1c-filter-executions-by-status-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-3ec1c-filter-executions-by-status-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../test-results/08-sprint3-executions-Spri-3ec1c-filter-executions-by-status-chromium/error-context.md
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|08-sprint3-executions-Spri-3ec1c-filter-executions-by-status-chromium/test-failed-1.png]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-3ec1c-filter-executions-by-status-chromium/video.webm]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-3ec1c-filter-executions-by-status-chromium/error-context.md]]
+]]>
+</system-out>
 </testcase>
-<testcase name="Login Page › should have responsive design" classname="01-login.spec.ts" time="0.46">
+<testcase name="Sprint 3 - Test Execution Features › should filter executions by result" classname="08-sprint3-executions.spec.ts" time="32.183">
+<failure message="08-sprint3-executions.spec.ts:64:7 should filter executions by result" type="FAILURE">
+<![CDATA[  [chromium] › 08-sprint3-executions.spec.ts:64:7 › Sprint 3 - Test Execution Features › should filter executions by result 
+
+    Test timeout of 30000ms exceeded while running "beforeEach" hook.
+
+      2 |
+      3 | test.describe('Sprint 3 - Test Execution Features', () => {
+    > 4 |   test.beforeEach(async ({ page }) => {
+        |        ^
+      5 |     // Login
+      6 |     await page.goto('http://localhost:5173/login');
+      7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8
+
+    Error: page.fill: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('input[type="email"]')
+
+
+       5 |     // Login
+       6 |     await page.goto('http://localhost:5173/login');
+    >  7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+         |                ^
+       8 |     await page.fill('input[type="password"]', 'admin123');
+       9 |     await page.click('button[type="submit"]');
+      10 |     await page.waitForURL('**/dashboard');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-2bb89-filter-executions-by-result-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-2bb89-filter-executions-by-result-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../test-results/08-sprint3-executions-Spri-2bb89-filter-executions-by-result-chromium/error-context.md
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|08-sprint3-executions-Spri-2bb89-filter-executions-by-result-chromium/test-failed-1.png]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-2bb89-filter-executions-by-result-chromium/video.webm]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-2bb89-filter-executions-by-result-chromium/error-context.md]]
+]]>
+</system-out>
 </testcase>
-</testsuite>
-<testsuite name="02-dashboard.spec.ts" timestamp="2025-11-20T01:41:05.453Z" hostname="chromium" tests="10" failures="0" skipped="0" time="12.158" errors="0">
-<testcase name="Dashboard Page › should display dashboard with statistics" classname="02-dashboard.spec.ts" time="1.175">
+<testcase name="Sprint 3 - Test Execution Features › should have refresh button" classname="08-sprint3-executions.spec.ts" time="32.53">
+<failure message="08-sprint3-executions.spec.ts:82:7 should have refresh button" type="FAILURE">
+<![CDATA[  [chromium] › 08-sprint3-executions.spec.ts:82:7 › Sprint 3 - Test Execution Features › should have refresh button 
+
+    Test timeout of 30000ms exceeded while running "beforeEach" hook.
+
+      2 |
+      3 | test.describe('Sprint 3 - Test Execution Features', () => {
+    > 4 |   test.beforeEach(async ({ page }) => {
+        |        ^
+      5 |     // Login
+      6 |     await page.goto('http://localhost:5173/login');
+      7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8
+
+    Error: page.fill: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('input[type="email"]')
+
+
+       5 |     // Login
+       6 |     await page.goto('http://localhost:5173/login');
+    >  7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+         |                ^
+       8 |     await page.fill('input[type="password"]', 'admin123');
+       9 |     await page.click('button[type="submit"]');
+      10 |     await page.waitForURL('**/dashboard');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-34d6c--should-have-refresh-button-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-34d6c--should-have-refresh-button-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../test-results/08-sprint3-executions-Spri-34d6c--should-have-refresh-button-chromium/error-context.md
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|08-sprint3-executions-Spri-34d6c--should-have-refresh-button-chromium/test-failed-1.png]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-34d6c--should-have-refresh-button-chromium/video.webm]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-34d6c--should-have-refresh-button-chromium/error-context.md]]
+]]>
+</system-out>
 </testcase>
-<testcase name="Dashboard Page › should display mock statistics numbers" classname="02-dashboard.spec.ts" time="1.234">
+<testcase name="Sprint 3 - Test Execution Features › should navigate to execution detail page when clicking a row" classname="08-sprint3-executions.spec.ts" time="32.721">
+<failure message="08-sprint3-executions.spec.ts:94:7 should navigate to execution detail page when clicking a row" type="FAILURE">
+<![CDATA[  [chromium] › 08-sprint3-executions.spec.ts:94:7 › Sprint 3 - Test Execution Features › should navigate to execution detail page when clicking a row 
+
+    Test timeout of 30000ms exceeded while running "beforeEach" hook.
+
+      2 |
+      3 | test.describe('Sprint 3 - Test Execution Features', () => {
+    > 4 |   test.beforeEach(async ({ page }) => {
+        |        ^
+      5 |     // Login
+      6 |     await page.goto('http://localhost:5173/login');
+      7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8
+
+    Error: page.fill: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('input[type="email"]')
+
+
+       5 |     // Login
+       6 |     await page.goto('http://localhost:5173/login');
+    >  7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+         |                ^
+       8 |     await page.fill('input[type="password"]', 'admin123');
+       9 |     await page.click('button[type="submit"]');
+      10 |     await page.waitForURL('**/dashboard');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-39d6a-il-page-when-clicking-a-row-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-39d6a-il-page-when-clicking-a-row-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../test-results/08-sprint3-executions-Spri-39d6a-il-page-when-clicking-a-row-chromium/error-context.md
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|08-sprint3-executions-Spri-39d6a-il-page-when-clicking-a-row-chromium/test-failed-1.png]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-39d6a-il-page-when-clicking-a-row-chromium/video.webm]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-39d6a-il-page-when-clicking-a-row-chromium/error-context.md]]
+]]>
+</system-out>
 </testcase>
-<testcase name="Dashboard Page › should display recent test results" classname="02-dashboard.spec.ts" time="1.237">
+<testcase name="Sprint 3 - Test Execution Features › should show execution progress page with correct elements" classname="08-sprint3-executions.spec.ts" time="32.646">
+<failure message="08-sprint3-executions.spec.ts:114:7 should show execution progress page with correct elements" type="FAILURE">
+<![CDATA[  [chromium] › 08-sprint3-executions.spec.ts:114:7 › Sprint 3 - Test Execution Features › should show execution progress page with correct elements 
+
+    Test timeout of 30000ms exceeded while running "beforeEach" hook.
+
+      2 |
+      3 | test.describe('Sprint 3 - Test Execution Features', () => {
+    > 4 |   test.beforeEach(async ({ page }) => {
+        |        ^
+      5 |     // Login
+      6 |     await page.goto('http://localhost:5173/login');
+      7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8
+
+    Error: page.fill: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('input[type="email"]')
+
+
+       5 |     // Login
+       6 |     await page.goto('http://localhost:5173/login');
+    >  7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+         |                ^
+       8 |     await page.fill('input[type="password"]', 'admin123');
+       9 |     await page.click('button[type="submit"]');
+      10 |     await page.waitForURL('**/dashboard');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-f210f--page-with-correct-elements-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-f210f--page-with-correct-elements-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../test-results/08-sprint3-executions-Spri-f210f--page-with-correct-elements-chromium/error-context.md
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|08-sprint3-executions-Spri-f210f--page-with-correct-elements-chromium/test-failed-1.png]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-f210f--page-with-correct-elements-chromium/video.webm]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-f210f--page-with-correct-elements-chromium/error-context.md]]
+]]>
+</system-out>
 </testcase>
-<testcase name="Dashboard Page › should show agent activity section" classname="02-dashboard.spec.ts" time="1.192">
+<testcase name="Sprint 3 - Test Execution Features › should have back button on execution detail page" classname="08-sprint3-executions.spec.ts" time="32.969">
+<failure message="08-sprint3-executions.spec.ts:129:7 should have back button on execution detail page" type="FAILURE">
+<![CDATA[  [chromium] › 08-sprint3-executions.spec.ts:129:7 › Sprint 3 - Test Execution Features › should have back button on execution detail page 
+
+    Test timeout of 30000ms exceeded while running "beforeEach" hook.
+
+      2 |
+      3 | test.describe('Sprint 3 - Test Execution Features', () => {
+    > 4 |   test.beforeEach(async ({ page }) => {
+        |        ^
+      5 |     // Login
+      6 |     await page.goto('http://localhost:5173/login');
+      7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8
+
+    Error: page.fill: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('input[type="email"]')
+
+
+       5 |     // Login
+       6 |     await page.goto('http://localhost:5173/login');
+    >  7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+         |                ^
+       8 |     await page.fill('input[type="password"]', 'admin123');
+       9 |     await page.click('button[type="submit"]');
+      10 |     await page.waitForURL('**/dashboard');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-965b4-on-on-execution-detail-page-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-965b4-on-on-execution-detail-page-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../test-results/08-sprint3-executions-Spri-965b4-on-on-execution-detail-page-chromium/error-context.md
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|08-sprint3-executions-Spri-965b4-on-on-execution-detail-page-chromium/test-failed-1.png]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-965b4-on-on-execution-detail-page-chromium/video.webm]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-965b4-on-on-execution-detail-page-chromium/error-context.md]]
+]]>
+</system-out>
 </testcase>
-<testcase name="Dashboard Page › should have functional header with user info" classname="02-dashboard.spec.ts" time="1.221">
+<testcase name="Sprint 3 - Test Execution Features › should show execution overview card with stats" classname="08-sprint3-executions.spec.ts" time="32.863">
+<failure message="08-sprint3-executions.spec.ts:140:7 should show execution overview card with stats" type="FAILURE">
+<![CDATA[  [chromium] › 08-sprint3-executions.spec.ts:140:7 › Sprint 3 - Test Execution Features › should show execution overview card with stats 
+
+    Test timeout of 30000ms exceeded while running "beforeEach" hook.
+
+      2 |
+      3 | test.describe('Sprint 3 - Test Execution Features', () => {
+    > 4 |   test.beforeEach(async ({ page }) => {
+        |        ^
+      5 |     // Login
+      6 |     await page.goto('http://localhost:5173/login');
+      7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8
+
+    Error: page.fill: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('input[type="email"]')
+
+
+       5 |     // Login
+       6 |     await page.goto('http://localhost:5173/login');
+    >  7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+         |                ^
+       8 |     await page.fill('input[type="password"]', 'admin123');
+       9 |     await page.click('button[type="submit"]');
+      10 |     await page.waitForURL('**/dashboard');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-7edb0-on-overview-card-with-stats-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-7edb0-on-overview-card-with-stats-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../test-results/08-sprint3-executions-Spri-7edb0-on-overview-card-with-stats-chromium/error-context.md
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|08-sprint3-executions-Spri-7edb0-on-overview-card-with-stats-chromium/test-failed-1.png]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-7edb0-on-overview-card-with-stats-chromium/video.webm]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-7edb0-on-overview-card-with-stats-chromium/error-context.md]]
+]]>
+</system-out>
 </testcase>
-<testcase name="Dashboard Page › should have functional sidebar navigation" classname="02-dashboard.spec.ts" time="1.173">
+<testcase name="Sprint 3 - Test Execution Features › should display test steps if execution exists" classname="08-sprint3-executions.spec.ts" time="32.733">
+<failure message="08-sprint3-executions.spec.ts:154:7 should display test steps if execution exists" type="FAILURE">
+<![CDATA[  [chromium] › 08-sprint3-executions.spec.ts:154:7 › Sprint 3 - Test Execution Features › should display test steps if execution exists 
+
+    Test timeout of 30000ms exceeded while running "beforeEach" hook.
+
+      2 |
+      3 | test.describe('Sprint 3 - Test Execution Features', () => {
+    > 4 |   test.beforeEach(async ({ page }) => {
+        |        ^
+      5 |     // Login
+      6 |     await page.goto('http://localhost:5173/login');
+      7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8
+
+    Error: page.fill: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('input[type="email"]')
+
+
+       5 |     // Login
+       6 |     await page.goto('http://localhost:5173/login');
+    >  7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+         |                ^
+       8 |     await page.fill('input[type="password"]', 'admin123');
+       9 |     await page.click('button[type="submit"]');
+      10 |     await page.waitForURL('**/dashboard');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-26a2e-t-steps-if-execution-exists-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-26a2e-t-steps-if-execution-exists-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../test-results/08-sprint3-executions-Spri-26a2e-t-steps-if-execution-exists-chromium/error-context.md
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|08-sprint3-executions-Spri-26a2e-t-steps-if-execution-exists-chromium/test-failed-1.png]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-26a2e-t-steps-if-execution-exists-chromium/video.webm]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-26a2e-t-steps-if-execution-exists-chromium/error-context.md]]
+]]>
+</system-out>
 </testcase>
-<testcase name="Dashboard Page › should navigate to Tests page from sidebar" classname="02-dashboard.spec.ts" time="1.276">
+<testcase name="Sprint 3 - Test Execution Features › should show queue status widget on tests page" classname="08-sprint3-executions.spec.ts" time="32.546">
+<failure message="08-sprint3-executions.spec.ts:167:7 should show queue status widget on tests page" type="FAILURE">
+<![CDATA[  [chromium] › 08-sprint3-executions.spec.ts:167:7 › Sprint 3 - Test Execution Features › should show queue status widget on tests page 
+
+    Test timeout of 30000ms exceeded while running "beforeEach" hook.
+
+      2 |
+      3 | test.describe('Sprint 3 - Test Execution Features', () => {
+    > 4 |   test.beforeEach(async ({ page }) => {
+        |        ^
+      5 |     // Login
+      6 |     await page.goto('http://localhost:5173/login');
+      7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8
+
+    Error: page.fill: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('input[type="email"]')
+
+
+       5 |     // Login
+       6 |     await page.goto('http://localhost:5173/login');
+    >  7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+         |                ^
+       8 |     await page.fill('input[type="password"]', 'admin123');
+       9 |     await page.click('button[type="submit"]');
+      10 |     await page.waitForURL('**/dashboard');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-9d304-status-widget-on-tests-page-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-9d304-status-widget-on-tests-page-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../test-results/08-sprint3-executions-Spri-9d304-status-widget-on-tests-page-chromium/error-context.md
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|08-sprint3-executions-Spri-9d304-status-widget-on-tests-page-chromium/test-failed-1.png]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-9d304-status-widget-on-tests-page-chromium/video.webm]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-9d304-status-widget-on-tests-page-chromium/error-context.md]]
+]]>
+</system-out>
 </testcase>
-<testcase name="Dashboard Page › should navigate to Knowledge Base page from sidebar" classname="02-dashboard.spec.ts" time="1.288">
+<testcase name="Sprint 3 - Test Execution Features › should display execution status badges correctly" classname="08-sprint3-executions.spec.ts" time="32.867">
+<failure message="08-sprint3-executions.spec.ts:179:7 should display execution status badges correctly" type="FAILURE">
+<![CDATA[  [chromium] › 08-sprint3-executions.spec.ts:179:7 › Sprint 3 - Test Execution Features › should display execution status badges correctly 
+
+    Test timeout of 30000ms exceeded while running "beforeEach" hook.
+
+      2 |
+      3 | test.describe('Sprint 3 - Test Execution Features', () => {
+    > 4 |   test.beforeEach(async ({ page }) => {
+        |        ^
+      5 |     // Login
+      6 |     await page.goto('http://localhost:5173/login');
+      7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8
+
+    Error: page.fill: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('input[type="email"]')
+
+
+       5 |     // Login
+       6 |     await page.goto('http://localhost:5173/login');
+    >  7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+         |                ^
+       8 |     await page.fill('input[type="password"]', 'admin123');
+       9 |     await page.click('button[type="submit"]');
+      10 |     await page.waitForURL('**/dashboard');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-2919a-ion-status-badges-correctly-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-2919a-ion-status-badges-correctly-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../test-results/08-sprint3-executions-Spri-2919a-ion-status-badges-correctly-chromium/error-context.md
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|08-sprint3-executions-Spri-2919a-ion-status-badges-correctly-chromium/test-failed-1.png]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-2919a-ion-status-badges-correctly-chromium/video.webm]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-2919a-ion-status-badges-correctly-chromium/error-context.md]]
+]]>
+</system-out>
 </testcase>
-<testcase name="Dashboard Page › should navigate to Settings page from sidebar" classname="02-dashboard.spec.ts" time="1.245">
+<testcase name="Sprint 3 - Test Execution Features › should handle empty execution list gracefully" classname="08-sprint3-executions.spec.ts" time="32.397">
+<failure message="08-sprint3-executions.spec.ts:192:7 should handle empty execution list gracefully" type="FAILURE">
+<![CDATA[  [chromium] › 08-sprint3-executions.spec.ts:192:7 › Sprint 3 - Test Execution Features › should handle empty execution list gracefully 
+
+    Test timeout of 30000ms exceeded while running "beforeEach" hook.
+
+      2 |
+      3 | test.describe('Sprint 3 - Test Execution Features', () => {
+    > 4 |   test.beforeEach(async ({ page }) => {
+        |        ^
+      5 |     // Login
+      6 |     await page.goto('http://localhost:5173/login');
+      7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8
+
+    Error: page.fill: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('input[type="email"]')
+
+
+       5 |     // Login
+       6 |     await page.goto('http://localhost:5173/login');
+    >  7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+         |                ^
+       8 |     await page.fill('input[type="password"]', 'admin123');
+       9 |     await page.click('button[type="submit"]');
+      10 |     await page.waitForURL('**/dashboard');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-96e02-y-execution-list-gracefully-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-96e02-y-execution-list-gracefully-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../test-results/08-sprint3-executions-Spri-96e02-y-execution-list-gracefully-chromium/error-context.md
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|08-sprint3-executions-Spri-96e02-y-execution-list-gracefully-chromium/test-failed-1.png]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-96e02-y-execution-list-gracefully-chromium/video.webm]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-96e02-y-execution-list-gracefully-chromium/error-context.md]]
+]]>
+</system-out>
 </testcase>
-<testcase name="Dashboard Page › should be responsive on mobile" classname="02-dashboard.spec.ts" time="1.117">
+<testcase name="Sprint 3 - Test Execution Features › should show delete button for executions" classname="08-sprint3-executions.spec.ts" time="32.585">
+<failure message="08-sprint3-executions.spec.ts:208:7 should show delete button for executions" type="FAILURE">
+<![CDATA[  [chromium] › 08-sprint3-executions.spec.ts:208:7 › Sprint 3 - Test Execution Features › should show delete button for executions 
+
+    Test timeout of 30000ms exceeded while running "beforeEach" hook.
+
+      2 |
+      3 | test.describe('Sprint 3 - Test Execution Features', () => {
+    > 4 |   test.beforeEach(async ({ page }) => {
+        |        ^
+      5 |     // Login
+      6 |     await page.goto('http://localhost:5173/login');
+      7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8
+
+    Error: page.fill: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('input[type="email"]')
+
+
+       5 |     // Login
+       6 |     await page.goto('http://localhost:5173/login');
+    >  7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+         |                ^
+       8 |     await page.fill('input[type="password"]', 'admin123');
+       9 |     await page.click('button[type="submit"]');
+      10 |     await page.waitForURL('**/dashboard');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-6021a-elete-button-for-executions-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-6021a-elete-button-for-executions-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../test-results/08-sprint3-executions-Spri-6021a-elete-button-for-executions-chromium/error-context.md
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|08-sprint3-executions-Spri-6021a-elete-button-for-executions-chromium/test-failed-1.png]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-6021a-elete-button-for-executions-chromium/video.webm]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-6021a-elete-button-for-executions-chromium/error-context.md]]
+]]>
+</system-out>
 </testcase>
-</testsuite>
-<testsuite name="03-tests-page.spec.ts" timestamp="2025-11-20T01:41:05.453Z" hostname="chromium" tests="8" failures="0" skipped="0" time="24.545" errors="0">
-<testcase name="Tests Page › should display tests page with header" classname="03-tests-page.spec.ts" time="1.274">
+<testcase name="Sprint 3 - Test Execution Features › should navigate between pages using sidebar" classname="08-sprint3-executions.spec.ts" time="32.344">
+<failure message="08-sprint3-executions.spec.ts:222:7 should navigate between pages using sidebar" type="FAILURE">
+<![CDATA[  [chromium] › 08-sprint3-executions.spec.ts:222:7 › Sprint 3 - Test Execution Features › should navigate between pages using sidebar 
+
+    Test timeout of 30000ms exceeded while running "beforeEach" hook.
+
+      2 |
+      3 | test.describe('Sprint 3 - Test Execution Features', () => {
+    > 4 |   test.beforeEach(async ({ page }) => {
+        |        ^
+      5 |     // Login
+      6 |     await page.goto('http://localhost:5173/login');
+      7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8
+
+    Error: page.fill: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('input[type="email"]')
+
+
+       5 |     // Login
+       6 |     await page.goto('http://localhost:5173/login');
+    >  7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+         |                ^
+       8 |     await page.fill('input[type="password"]', 'admin123');
+       9 |     await page.click('button[type="submit"]');
+      10 |     await page.waitForURL('**/dashboard');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-d13d6-between-pages-using-sidebar-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-d13d6-between-pages-using-sidebar-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../test-results/08-sprint3-executions-Spri-d13d6-between-pages-using-sidebar-chromium/error-context.md
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|08-sprint3-executions-Spri-d13d6-between-pages-using-sidebar-chromium/test-failed-1.png]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-d13d6-between-pages-using-sidebar-chromium/video.webm]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-d13d6-between-pages-using-sidebar-chromium/error-context.md]]
+]]>
+</system-out>
 </testcase>
-<testcase name="Tests Page › should display test generation form initially" classname="03-tests-page.spec.ts" time="1.261">
-</testcase>
-<testcase name="Tests Page › should disable generate button when prompt is empty" classname="03-tests-page.spec.ts" time="1.227">
-</testcase>
-<testcase name="Tests Page › should generate test cases from natural language" classname="03-tests-page.spec.ts" time="4.158">
-</testcase>
-<testcase name="Tests Page › should display test case cards with all details" classname="03-tests-page.spec.ts" time="4.139">
-</testcase>
-<testcase name="Tests Page › should show save, edit, and delete buttons on generated tests" classname="03-tests-page.spec.ts" time="4.151">
-</testcase>
-<testcase name="Tests Page › should allow generating more tests after viewing results" classname="03-tests-page.spec.ts" time="4.156">
-</testcase>
-<testcase name="Tests Page › should display &quot;Generate New Tests&quot; button when viewing existing tests" classname="03-tests-page.spec.ts" time="4.179">
-</testcase>
-</testsuite>
-<testsuite name="04-knowledge-base.spec.ts" timestamp="2025-11-20T01:41:05.453Z" hostname="chromium" tests="1" failures="0" skipped="0" time="1.475" errors="0">
-<testcase name="Knowledge Base Page › should navigate back to dashboard" classname="04-knowledge-base.spec.ts" time="1.475">
-</testcase>
-</testsuite>
-<testsuite name="05-settings.spec.ts" timestamp="2025-11-20T01:41:05.453Z" hostname="chromium" tests="1" failures="0" skipped="0" time="1.421" errors="0">
-<testcase name="Settings Page › should navigate back to dashboard" classname="05-settings.spec.ts" time="1.421">
-</testcase>
-</testsuite>
-<testsuite name="06-navigation.spec.ts" timestamp="2025-11-20T01:41:05.453Z" hostname="chromium" tests="1" failures="0" skipped="0" time="1.033" errors="0">
-<testcase name="Application Navigation › should redirect from root to login when not authenticated" classname="06-navigation.spec.ts" time="1.033">
-</testcase>
-</testsuite>
-<testsuite name="07-sprint2-features.spec.ts" timestamp="2025-11-20T01:41:05.453Z" hostname="chromium" tests="5" failures="0" skipped="0" time="5.999" errors="0">
-<testcase name="Sprint 2: Dashboard Charts › should display test trends chart" classname="07-sprint2-features.spec.ts" time="1.209">
-</testcase>
-<testcase name="Sprint 2: Dashboard Charts › should display test status pie chart" classname="07-sprint2-features.spec.ts" time="1.242">
-</testcase>
-<testcase name="Sprint 2: Dashboard Charts › should display chart legends" classname="07-sprint2-features.spec.ts" time="1.218">
-</testcase>
-<testcase name="Sprint 2: Dashboard Charts › should display pie chart color legend" classname="07-sprint2-features.spec.ts" time="1.165">
-</testcase>
-<testcase name="Sprint 2: Dashboard Charts › should maintain charts on mobile viewport" classname="07-sprint2-features.spec.ts" time="1.165">
+<testcase name="Sprint 3 - Test Execution Features › should maintain active nav state on executions page" classname="08-sprint3-executions.spec.ts" time="32.61">
+<failure message="08-sprint3-executions.spec.ts:237:7 should maintain active nav state on executions page" type="FAILURE">
+<![CDATA[  [chromium] › 08-sprint3-executions.spec.ts:237:7 › Sprint 3 - Test Execution Features › should maintain active nav state on executions page 
+
+    Test timeout of 30000ms exceeded while running "beforeEach" hook.
+
+      2 |
+      3 | test.describe('Sprint 3 - Test Execution Features', () => {
+    > 4 |   test.beforeEach(async ({ page }) => {
+        |        ^
+      5 |     // Login
+      6 |     await page.goto('http://localhost:5173/login');
+      7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:4:8
+
+    Error: page.fill: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for locator('input[type="email"]')
+
+
+       5 |     // Login
+       6 |     await page.goto('http://localhost:5173/login');
+    >  7 |     await page.fill('input[type="email"]', 'admin@aiwebtest.com');
+         |                ^
+       8 |     await page.fill('input[type="password"]', 'admin123');
+       9 |     await page.click('button[type="submit"]');
+      10 |     await page.waitForURL('**/dashboard');
+        at /home/dt-qa/alex_workspace/AI-Web-Test-v1-main/tests/e2e/08-sprint3-executions.spec.ts:7:16
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-3dfe7-av-state-on-executions-page-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/08-sprint3-executions-Spri-3dfe7-av-state-on-executions-page-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../test-results/08-sprint3-executions-Spri-3dfe7-av-state-on-executions-page-chromium/error-context.md
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|08-sprint3-executions-Spri-3dfe7-av-state-on-executions-page-chromium/test-failed-1.png]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-3dfe7-av-state-on-executions-page-chromium/video.webm]]
+
+[[ATTACHMENT|08-sprint3-executions-Spri-3dfe7-av-state-on-executions-page-chromium/error-context.md]]
+]]>
+</system-out>
 </testcase>
 </testsuite>
 </testsuites>
