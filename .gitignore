@@ -75,6 +75,16 @@ backend/*.sqlite
 backend/*.sqlite3
 backend/aiwebtest.db
 
+# Test artifacts and screenshots
+backend/artifacts/
+backend/artifacts/screenshots/
+backend/artifacts/videos/
+
+# Test scripts (keep test suite, exclude temp test scripts)
+backend/check_*.py
+backend/test_queue_quick.py
+backend/verify_*.py
+
 # Python virtual environments
 **/venv/
 **/env/

@@ -65,6 +65,11 @@ class TestExecution(Base):
     triggered_by = Column(String(50), nullable=True)  # manual, scheduled, ci_cd, webhook
     trigger_details = Column(Text, nullable=True)  # Additional trigger info (JSON)
     
+    # Queue fields (Sprint 3 Day 2)
+    queued_at = Column(DateTime, nullable=True)  # When execution was queued
+    priority = Column(Integer, default=5)  # Priority (1=high, 5=medium, 10=low)
+    queue_position = Column(Integer, nullable=True)  # Position in queue
+    
     # Relationships
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     user = relationship("User", back_populates="test_executions")
