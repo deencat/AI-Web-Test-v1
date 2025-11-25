@@ -1,25 +1,37 @@
+# Core API Framework
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
-sqlalchemy==2.0.23
-psycopg2-binary==2.9.9
-alembic==1.12.1
 pydantic==2.5.0
+pydantic-core==2.14.1
 pydantic-settings==2.1.0
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-bcrypt==4.0.1
 python-multipart==0.0.6
 email-validator==2.1.0
 httpx==0.25.2
+anyio==3.7.1
 
-# File handling (Day 4 - KB system)
+# Database
+sqlalchemy==2.0.23
+alembic==1.12.1
+psycopg2-binary==2.9.9
+
+# Authentication & Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+
+# File Handling (KB System)
 PyPDF2==3.0.1
 python-docx==1.1.0
 aiofiles==23.2.1
 
-# Browser automation (Sprint 3 - Test execution)
+# Browser Automation (Sprint 3 - Test Execution)
 playwright==1.56.0
 stagehand==0.5.6
 websockets==15.0.1
+
+# Environment & Configuration
 python-dotenv==1.2.1
+
+# HTTP Client (for API calls)
+requests==2.31.0
 
