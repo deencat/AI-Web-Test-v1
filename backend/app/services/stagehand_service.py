@@ -5,6 +5,7 @@ Uses Stagehand for browser automation with Playwright under the hood.
 import asyncio
 import os
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Callable
@@ -64,6 +65,8 @@ class StagehandExecutionService:
                     except:
                         pass
             
+            print(f"[DEBUG] Initializing Stagehand in thread {threading.current_thread().name}")
+            
             config = StagehandConfig(
                 env="LOCAL",  # Use local Playwright
                 headless=self.headless,
@@ -79,6 +82,11 @@ class StagehandExecutionService:
             self.stagehand = Stagehand(config)
             await self.stagehand.init()
             self.page = self.stagehand.page
+            
+            if not self.page:
+                raise RuntimeError("Stagehand initialization failed: page is None")
+            
+            print(f"[DEBUG] Stagehand initialized successfully, page={self.page}")
     
     async def cleanup(self):
         """Clean up browser resources."""
