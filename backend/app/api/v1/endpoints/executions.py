@@ -21,6 +21,8 @@ from app.schemas.test_execution import (
 from app.crud import test_case as crud_tests
 from app.crud import test_execution as crud_executions
 from app.services.stagehand_service import get_stagehand_service
+from app.services.queue_manager import get_queue_manager
+from app.services.execution_queue import get_execution_queue
 
 router = APIRouter()
 
@@ -145,10 +147,7 @@ async def run_test_with_playwright(
             detail="base_url is required for test execution"
         )
     
-    # Get Stagehand execution service
-    service = get_stagehand_service()
-    
-    # Create initial execution record FIRST (before thread)
+    # Create initial execution record with QUEUED status (Sprint 3 Day 2)
     execution = crud_executions.create_execution(
         db=db,
         test_case_id=test_case_id,
@@ -157,88 +156,43 @@ async def run_test_with_playwright(
         environment=request.environment or "dev",
         base_url=request.base_url
     )
-    execution_id = execution.id  # Capture ID for closure
+    execution_id = execution.id
     
-    # Run test in background - use executor to run in separate thread with proper event loop
-    def run_test_in_thread():
-        """
-        Run test in a separate thread with its own event loop.
-        This ensures ProactorEventLoopPolicy is respected on Windows.
-        """
-        import asyncio
-        import sys
-        import signal
-        from app.db.session import SessionLocal, engine
-        from sqlalchemy.orm import scoped_session, sessionmaker
-        
-        # Patch signal.signal to be a no-op in threads (Playwright tries to use it)
-        original_signal = signal.signal
-        def thread_safe_signal(signalnum, handler):
-            """No-op signal handler for threads."""
-            return None
-        signal.signal = thread_safe_signal
-        
-        try:
-            # Set Windows event loop policy in this thread
-            if sys.platform == 'win32':
-                asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-            
-            # Create new event loop for this thread
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            try:
-                # Create a thread-local database session
-                # This ensures the session is properly bound to this thread
-                ThreadSession = scoped_session(sessionmaker(bind=engine))
-                bg_db = ThreadSession()
-                
-                try:
-                    loop.run_until_complete(
-                        service.execute_test(
-                            db=bg_db,
-                            test_case=test_case,
-                            execution_id=execution_id,  # Use captured ID
-                            user_id=current_user.id,
-                            base_url=request.base_url,
-                            environment=request.environment or "dev"
-                        )
-                    )
-                    # Force commit and flush to ensure all changes are written
-                    bg_db.commit()
-                    bg_db.flush()
-                    print(f"[DEBUG] Background thread committed execution updates to database")
-                except Exception as e:
-                    print(f"[ERROR] Test execution failed: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    bg_db.rollback()
-                    raise
-                finally:
-                    bg_db.close()
-                    ThreadSession.remove()
-            finally:
-                loop.close()
-        finally:
-            # Restore original signal handler
-            signal.signal = original_signal
+    # Set queued timestamp and priority
+    execution.queued_at = datetime.utcnow()
+    execution.priority = getattr(request, 'priority', 5)  # Default: medium priority
+    execution.status = ExecutionStatus.PENDING  # Will be updated to RUNNING by queue
+    db.commit()
+    db.refresh(execution)
     
-    # Use thread executor to run the test
-    from concurrent.futures import ThreadPoolExecutor
-    import threading
+    # Add to execution queue (Sprint 3 Day 2)
+    queue = get_execution_queue()
+    queue_position = queue.add_to_queue(
+        execution_id=execution_id,
+        test_case_id=test_case_id,
+        user_id=current_user.id,
+        priority=execution.priority
+    )
     
-    executor = ThreadPoolExecutor(max_workers=1)
-    future = executor.submit(run_test_in_thread)
+    # Update queue position in database
+    execution.queue_position = queue_position
+    db.commit()
+    db.refresh(execution)
     
-    # Don't wait for the result - let it run in background
-    # The thread will handle the execution and update the database
-    background_tasks.add_task(lambda: future.result())
+    # Queue manager will pick up and execute automatically (Sprint 3 Day 2)
+    # No need to manually start execution - it's now handled by the queue
+    
+    # Determine message based on queue status
+    if queue_position == 0 and queue.is_under_limit():
+        message = f"Test execution starting now for test case '{test_case.title}'"
+    else:
+        message = f"Test execution queued (position {queue_position}) for test case '{test_case.title}'"
     
     return ExecutionStartResponse(
         id=execution.id,
         test_case_id=execution.test_case_id,
         status=execution.status,
-        message=f"Test execution started in background. Use GET /executions/{execution.id} to check progress."
+        message=message
     )
 
 
@@ -308,7 +262,7 @@ def get_test_executions(
     )
 
 
-@router.get("/executions", response_model=TestExecutionListResponse)
+@router.get("/", response_model=TestExecutionListResponse)
 def list_all_executions(
     test_case_id: Optional[int] = Query(None, description="Filter by test case"),
     status_filter: Optional[ExecutionStatus] = Query(None, alias="status", description="Filter by status"),
@@ -377,7 +331,7 @@ def list_all_executions(
 # Statistics (MUST be before /executions/{execution_id} to avoid route conflict)
 # ============================================================================
 
-@router.get("/executions/stats", response_model=ExecutionStatistics)
+@router.get("/stats", response_model=ExecutionStatistics)
 def get_execution_statistics(
     current_user: User = Depends(deps.get_current_user),
     db: Session = Depends(deps.get_db)
@@ -396,7 +350,7 @@ def get_execution_statistics(
     return ExecutionStatistics(**stats)
 
 
-@router.get("/executions/{execution_id}", response_model=TestExecutionDetailResponse)
+@router.get("/{execution_id}", response_model=TestExecutionDetailResponse)
 def get_execution(
     execution_id: int,
     current_user: User = Depends(deps.get_current_user),
@@ -428,7 +382,7 @@ def get_execution(
     return execution
 
 
-@router.delete("/executions/{execution_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{execution_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_execution(
     execution_id: int,
     current_user: User = Depends(deps.get_current_user),
@@ -459,4 +413,93 @@ def delete_execution(
     
     crud_executions.delete_execution(db, execution_id)
     return None
+
+
+# ============================================================================
+# Queue Management (Sprint 3 Day 2)
+# ============================================================================
+
+@router.get("/queue/status")
+def get_queue_status(
+    current_user: User = Depends(deps.get_current_user)
+):
+    """
+    Get current queue status.
+    
+    **Authentication required**
+    
+    Returns information about active and queued executions.
+    
+    **Response:**
+    - `active_count`: Number of currently running executions
+    - `queued_count`: Number of executions waiting in queue
+    - `max_concurrent`: Maximum concurrent executions allowed
+    - `is_under_limit`: Whether more executions can start
+    - `queue`: List of queued executions
+    - `active`: List of active executions
+    """
+    queue = get_execution_queue()
+    return queue.get_queue_status()
+
+
+@router.get("/queue/statistics")
+def get_queue_statistics(
+    current_user: User = Depends(deps.get_current_user)
+):
+    """
+    Get queue manager statistics.
+    
+    **Authentication required**
+    
+    Returns statistics about the queue manager and execution queue.
+    """
+    manager = get_queue_manager()
+    return manager.get_statistics()
+
+
+@router.post("/queue/clear")
+def clear_queue(
+    current_user: User = Depends(deps.get_current_user)
+):
+    """
+    Clear all queued executions.
+    
+    **Authentication required** (Admin only)
+    
+    Removes all queued executions (does not affect running ones).
+    Use with caution!
+    """
+    # Admin only
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can clear the queue"
+        )
+    
+    queue = get_execution_queue()
+    count = queue.clear_queue()
+    
+    return {
+        "message": f"Queue cleared successfully",
+        "removed_count": count
+    }
+
+
+@router.get("/queue/active")
+def get_active_executions(
+    current_user: User = Depends(deps.get_current_user)
+):
+    """
+    Get list of active (running) executions.
+    
+    **Authentication required**
+    
+    Returns list of executions currently being executed.
+    """
+    queue = get_execution_queue()
+    return {
+        "active_count": queue.get_active_count(),
+        "max_concurrent": queue.max_concurrent,
+        "executions": queue.get_active_executions()
+    }
 

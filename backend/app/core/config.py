@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str | None = None  # Optional for now
     OPENROUTER_MODEL: str = "mistralai/mixtral-8x7b-instruct"  # Default: Free, high-quality model
     
+    # Queue System (for Sprint 3 Day 2)
+    MAX_CONCURRENT_EXECUTIONS: int = 5  # Maximum concurrent test executions
+    QUEUE_CHECK_INTERVAL: int = 2  # How often to check queue (seconds)
+    EXECUTION_TIMEOUT: int = 300  # Execution timeout (seconds)
+    
     class Config:
         env_file = ".env"
         case_sensitive = True
