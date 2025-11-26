@@ -125,12 +125,12 @@ class ExecutionService {
     test_case_id?: number;
   }): Promise<TestExecutionListResponse> {
     if (apiHelpers.useMockData()) {
-      // Mock implementation
-      const mockItems = Array.from({ length: 5 }, (_, i) => ({
+      // Mock implementation - Generate diverse test data
+      const allMockItems = Array.from({ length: 20 }, (_, i) => ({
         id: i + 1,
         test_case_id: Math.floor(Math.random() * 10) + 1,
-        status: (['completed', 'failed', 'running'] as const)[Math.floor(Math.random() * 3)],
-        result: (['pass', 'fail'] as const)[Math.floor(Math.random() * 2)],
+        status: (['pending', 'running', 'completed', 'failed', 'cancelled'] as const)[Math.floor(Math.random() * 5)],
+        result: (['pass', 'fail', 'error', 'skip'] as const)[Math.floor(Math.random() * 4)],
         started_at: new Date(Date.now() - Math.random() * 86400000).toISOString(),
         completed_at: new Date().toISOString(),
         duration_seconds: Math.random() * 100,
@@ -144,11 +144,31 @@ class ExecutionService {
         created_at: new Date(Date.now() - Math.random() * 86400000).toISOString(),
       }));
 
+      // Apply filters
+      let filteredItems = allMockItems;
+      
+      if (params?.status) {
+        filteredItems = filteredItems.filter(item => item.status === params.status);
+      }
+      
+      if (params?.result) {
+        filteredItems = filteredItems.filter(item => item.result === params.result);
+      }
+      
+      if (params?.test_case_id) {
+        filteredItems = filteredItems.filter(item => item.test_case_id === params.test_case_id);
+      }
+
+      // Apply pagination
+      const skip = params?.skip || 0;
+      const limit = params?.limit || 20;
+      const paginatedItems = filteredItems.slice(skip, skip + limit);
+
       return {
-        items: mockItems,
-        total: mockItems.length,
-        skip: params?.skip || 0,
-        limit: params?.limit || 20,
+        items: paginatedItems,
+        total: filteredItems.length,
+        skip,
+        limit,
       };
     }
 
