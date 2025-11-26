@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
+import { ScreenshotGallery } from '../components/execution/ScreenshotGallery';
 import executionService from '../services/executionService';
 import type { TestExecutionDetail, ExecutionStatus, ExecutionResult } from '../types/execution';
 
@@ -162,6 +163,9 @@ export function ExecutionProgressPage() {
           </div>
         </Card>
 
+        {/* Screenshot Gallery */}
+        <ScreenshotGallery steps={execution.steps} />
+
         {/* Error Message (if any) */}
         {execution.error_message && (
           <Card className="border-red-200 bg-red-50">
@@ -270,18 +274,6 @@ function StepCard({ step }: StepCardProps) {
             </div>
           )}
         </div>
-        
-        {/* Screenshot Thumbnail */}
-        {step.screenshot_after && (
-          <div className="ml-4">
-            <img
-              src={executionService.getScreenshotUrl(step.screenshot_after)}
-              alt={`Step ${step.step_number} screenshot`}
-              className="w-32 h-20 object-cover rounded border border-gray-300 cursor-pointer hover:opacity-80"
-              onClick={() => window.open(executionService.getScreenshotUrl(step.screenshot_after!), '_blank')}
-            />
-          </div>
-        )}
       </div>
     </div>
   );
