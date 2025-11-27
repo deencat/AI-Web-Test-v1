@@ -56,7 +56,7 @@ class TestCase(Base):
     # Additional fields for categorization
     category_id = Column(Integer, ForeignKey("kb_categories.id"), nullable=True, index=True)
     tags = Column(JSON, nullable=True)  # Array of strings
-    metadata = Column(JSON, nullable=True)  # Additional metadata
+    test_metadata = Column(JSON, nullable=True)  # Additional metadata (renamed from 'metadata' to avoid SQLAlchemy conflict)
     
     # Metadata
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
