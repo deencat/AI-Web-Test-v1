@@ -28,11 +28,11 @@ class TestTemplateToExecutionFlow:
         """Setup: Login and get auth token"""
         global auth_token, user_id
         
-        # Login
+        # Login with correct credentials
         response = requests.post(
             f"{API_V1}/auth/login",
             data={
-                "username": "admin@example.com",
+                "username": "admin@aiwebtest.com",  # Correct email from init_db.py
                 "password": "admin123"
             }
         )
