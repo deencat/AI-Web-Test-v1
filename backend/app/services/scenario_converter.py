@@ -53,7 +53,7 @@ class ScenarioConverter:
             steps=playwright_steps,
             expected_result=scenario.expected_results.get("summary", "Test should pass") if scenario.expected_results else "Test should pass",
             tags=["generated", f"template:{scenario.template_id}"] if scenario.template_id else ["generated"],
-            metadata={
+            test_metadata={
                 "generated_from_scenario": scenario.id,
                 "template_id": scenario.template_id,
                 "template_name": scenario.template.name if scenario.template else None,

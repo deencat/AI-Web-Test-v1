@@ -140,10 +140,10 @@ class TestTemplateToExecutionFlow:
         test_case = response.json()
         test_case_id = test_case["id"]
         
-        # Verify test case has correct metadata
-        assert test_case["metadata"] is not None
-        assert test_case["metadata"]["generated_from_scenario"] == scenario_id
-        assert test_case["metadata"]["template_id"] == template_id
+        # Verify test case has correct test_metadata
+        assert test_case["test_metadata"] is not None
+        assert test_case["test_metadata"]["generated_from_scenario"] == scenario_id
+        assert test_case["test_metadata"]["template_id"] == template_id
         
         # Verify steps are Playwright-compatible
         assert isinstance(test_case["steps"], list)
@@ -204,8 +204,8 @@ class TestTemplateToExecutionFlow:
         test_case = response.json()
         
         # Verify links
-        assert test_case["metadata"]["generated_from_scenario"] == scenario_id
-        assert test_case["metadata"]["template_id"] == template_id
+        assert test_case["test_metadata"]["generated_from_scenario"] == scenario_id
+        assert test_case["test_metadata"]["template_id"] == template_id
         
         # Get scenario
         response = requests.get(
