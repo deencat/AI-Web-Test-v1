@@ -12,10 +12,15 @@ class TestCaseBase(BaseModel):
     description: str = Field(..., min_length=1, description="Test case description")
     test_type: TestType = Field(..., description="Type of test (e2e, unit, integration, api)")
     priority: Priority = Field(default=Priority.MEDIUM, description="Test priority level")
-    steps: List[str] = Field(..., min_items=1, description="List of test steps")
+    steps: List[str | Dict[str, Any]] = Field(..., min_items=1, description="List of test steps (strings or step objects)")
     expected_result: str = Field(..., min_length=1, description="Expected test result")
     preconditions: Optional[str] = Field(None, description="Test preconditions")
     test_data: Optional[Dict[str, Any]] = Field(None, description="Optional test data as JSON")
+    
+    # Day 7 Integration fields
+    category_id: Optional[int] = Field(None, description="Knowledge base category ID")
+    tags: Optional[List[str]] = Field(None, description="Test tags for categorization")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata (template_id, scenario_id, etc.)")
 
 
 # Schema for creating a test case
@@ -43,10 +48,13 @@ class TestCaseUpdate(BaseModel):
     test_type: Optional[TestType] = None
     priority: Optional[Priority] = None
     status: Optional[TestStatus] = None
-    steps: Optional[List[str]] = Field(None, min_items=1)
+    steps: Optional[List[str | Dict[str, Any]]] = Field(None, min_items=1)
     expected_result: Optional[str] = Field(None, min_length=1)
     preconditions: Optional[str] = None
     test_data: Optional[Dict[str, Any]] = None
+    category_id: Optional[int] = None
+    tags: Optional[List[str]] = None
+    metadata: Optional[Dict[str, Any]] = None
     
     @field_validator('test_data')
     @classmethod
@@ -68,6 +76,8 @@ class TestCaseInDB(TestCaseBase):
     created_at: datetime
     updated_at: datetime
     user_id: int
+    scenario_id: Optional[int] = None
+    template_id: Optional[int] = None
     
     class Config:
         from_attributes = True
