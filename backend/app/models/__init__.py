@@ -3,8 +3,9 @@ from app.models.user import User
 from app.models.test_case import TestCase, TestType, Priority, TestStatus
 from app.models.kb_document import KBDocument, KBCategory, FileType
 from app.models.test_execution import TestExecution, TestExecutionStep, ExecutionStatus, ExecutionResult
-from app.models.password_reset import PasswordResetToken
-from app.models.user_session import UserSession
+# Day 6 models not yet created - commenting out for now
+# from app.models.password_reset import PasswordResetToken
+# from app.models.user_session import UserSession
 from app.models.test_template import TestTemplate
 from app.models.test_scenario import TestScenario
 
@@ -13,8 +14,8 @@ __all__ = [
     "TestCase", "TestType", "Priority", "TestStatus",
     "KBDocument", "KBCategory", "FileType",
     "TestExecution", "TestExecutionStep", "ExecutionStatus", "ExecutionResult",
-    "PasswordResetToken",
-    "UserSession",
+    # "PasswordResetToken",
+    # "UserSession",
     "TestTemplate",
     "TestScenario"
 ]
