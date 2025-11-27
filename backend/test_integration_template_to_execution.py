@@ -40,7 +40,15 @@ class TestTemplateToExecutionFlow:
         
         data = response.json()
         auth_token = data["access_token"]
-        user_id = data["user_id"]
+        
+        # Get user info from /auth/me endpoint
+        me_response = requests.get(
+            f"{API_V1}/auth/me",
+            headers={"Authorization": f"Bearer {auth_token}"}
+        )
+        assert me_response.status_code == 200, f"Get user failed: {me_response.text}"
+        user_data = me_response.json()
+        user_id = user_data["id"]
         
         print(f"\n✓ Authenticated as user {user_id}")
     
@@ -58,7 +66,8 @@ class TestTemplateToExecutionFlow:
         )
         assert response.status_code == 200
         
-        templates = response.json()
+        data = response.json()
+        templates = data["templates"]  # Response has {templates: [], total: int}
         assert len(templates) >= 6, "Should have at least 6 system templates"
         
         # Select REST API template
@@ -274,17 +283,23 @@ def test_faker_data_integration():
     )
     assert response.status_code == 200
     
-    fields = response.json()["available_fields"]
-    assert len(fields) >= 40, "Should have at least 40 Faker fields"
+    data = response.json()
+    fields_dict = data["fields"]  # Dict of category -> list of fields
     
-    # Verify key categories
-    categories = {field.split(".")[0] for field in fields}
-    assert "user" in categories
-    assert "address" in categories
-    assert "product" in categories
-    assert "company" in categories
+    # Flatten to get all field names
+    all_fields = []
+    for category_fields in fields_dict.values():
+        all_fields.extend(category_fields)
     
-    print(f"\n✓ Faker integration: {len(fields)} fields across {len(categories)} categories")
+    assert len(all_fields) >= 40, "Should have at least 40 Faker fields"
+    
+    # Verify key categories exist
+    assert "user" in fields_dict
+    assert "address" in fields_dict
+    assert "product" in fields_dict
+    assert "company" in fields_dict
+    
+    print(f"\n✓ Faker integration: {len(all_fields)} fields across {len(fields_dict)} categories")
 
 
 if __name__ == "__main__":
