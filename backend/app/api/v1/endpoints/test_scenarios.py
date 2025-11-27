@@ -24,6 +24,8 @@ from app.schemas.test_scenario import (
 )
 from app.services.scenario_generator_service import ScenarioGeneratorService
 from app.services.test_validation_service import TestValidationService
+from app.services.scenario_converter import ScenarioConverter
+from app.schemas.test_case import TestCaseResponse
 
 router = APIRouter()
 
@@ -336,3 +338,91 @@ def generate_faker_data(
     return {
         "data": data
     }
+
+
+@router.post("/{scenario_id}/convert-to-test", response_model=TestCaseResponse, status_code=status.HTTP_201_CREATED)
+def convert_scenario_to_test(
+    scenario_id: int,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user)
+):
+    """
+    Convert a validated scenario to an executable test case
+    
+    **This is the BRIDGE between Day 7 template/scenario system and Sprint 3 execution system.**
+    
+    Process:
+    1. Retrieves validated scenario
+    2. Maps scenario steps to Playwright actions
+    3. Creates TestCase ready for execution
+    4. Links test to original scenario/template
+    
+    The created test can then be:
+    - Executed via POST /api/v1/tests/{id}/execute (Sprint 3)
+    - Queued via POST /api/v1/tests/{id}/run (Sprint 3 queue)
+    - Managed via standard test endpoints
+    
+    Requirements:
+    - Scenario must have status "validated"
+    - User must own the scenario
+    
+    Returns:
+        TestCase ready for execution with Stagehand/Playwright
+    """
+    from app.crud import test_scenario as crud_scenarios
+    
+    # Get scenario
+    scenario = crud_scenarios.get_scenario(db, scenario_id)
+    if not scenario:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Scenario not found"
+        )
+    
+    # Verify status
+    if scenario.status != "validated":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Scenario must be validated before conversion. Current status: {scenario.status}"
+        )
+    
+    # Convert to test case
+    try:
+        test_case = ScenarioConverter.convert_scenario_to_test(
+            scenario=scenario,
+            user_id=current_user.id,
+            db=db
+        )
+        
+        # Update scenario execution count
+        scenario.execution_count = (scenario.execution_count or 0) + 1
+        db.commit()
+        
+        return test_case
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to convert scenario to test: {str(e)}"
+        )
+
+
+@router.post("/batch-convert", response_model=List[TestCaseResponse], status_code=status.HTTP_201_CREATED)
+def batch_convert_scenarios(
+    scenario_ids: List[int],
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user)
+):
+    """
+    Convert multiple validated scenarios to test cases
+    
+    Useful for batch test generation workflows.
+    Only converts scenarios with status "validated".
+    """
+    test_cases = ScenarioConverter.batch_convert_scenarios(
+        scenario_ids=scenario_ids,
+        user_id=current_user.id,
+        db=db
+    )
+    
+    return test_cases
