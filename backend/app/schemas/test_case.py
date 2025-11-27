@@ -20,7 +20,7 @@ class TestCaseBase(BaseModel):
     # Day 7 Integration fields
     category_id: Optional[int] = Field(None, description="Knowledge base category ID")
     tags: Optional[List[str]] = Field(None, description="Test tags for categorization")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata (template_id, scenario_id, etc.)")
+    test_metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata (template_id, scenario_id, etc.)")
 
 
 # Schema for creating a test case
@@ -54,7 +54,7 @@ class TestCaseUpdate(BaseModel):
     test_data: Optional[Dict[str, Any]] = None
     category_id: Optional[int] = None
     tags: Optional[List[str]] = None
-    metadata: Optional[Dict[str, Any]] = None
+    test_metadata: Optional[Dict[str, Any]] = None
     
     @field_validator('test_data')
     @classmethod
