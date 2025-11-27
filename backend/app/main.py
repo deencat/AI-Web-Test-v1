@@ -28,8 +28,7 @@ Base.metadata.create_all(bind=engine)
 db = SessionLocal()
 try:
     init_db(db)
-    # TODO: Re-enable after fixing async startup issue
-    # seed_system_templates(db)  # Seed built-in templates (Day 7)
+    seed_system_templates(db)  # Seed built-in templates (Day 7)
 finally:
     db.close()
 
