@@ -4,15 +4,17 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from datetime import datetime
+# from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 from app.core.exceptions import APIException
+# from app.core.rate_limit import limiter, rate_limit_exceeded_handler  # Temporarily disabled
 from app.middleware.timing import add_timing_middleware
 from app.api.v1.api import api_router
 from app.db.base import Base
 from app.db.session import engine, SessionLocal
 from app.db.init_db import init_db
 from app.services.queue_manager import start_queue_manager
-from app.core.config import settings
+from app.db.init_templates import seed_system_templates
 
 # Fix for Windows: Set event loop policy to support subprocess
 # This is required for Playwright to work on Windows
@@ -26,6 +28,7 @@ Base.metadata.create_all(bind=engine)
 db = SessionLocal()
 try:
     init_db(db)
+    seed_system_templates(db)  # Seed built-in templates (Day 7)
 finally:
     db.close()
 
@@ -37,8 +40,13 @@ start_queue_manager(
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json"
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    docs_url=f"{settings.API_V1_STR}/docs",
+    redoc_url=f"{settings.API_V1_STR}/redoc"
 )
+
+# Add rate limiter state (temporarily disabled due to .env encoding issue)
+# app.state.limiter = limiter
 
 # Add timing middleware
 add_timing_middleware(app)
@@ -55,6 +63,12 @@ app.add_middleware(
 
 
 # Exception handlers
+# @app.exception_handler(RateLimitExceeded)  # Temporarily disabled
+# async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+#     """Handle rate limit exceeded errors."""
+#     return rate_limit_exceeded_handler(request, exc)
+
+
 @app.exception_handler(APIException)
 async def api_exception_handler(request: Request, exc: APIException):
     """Handle custom API exceptions."""
