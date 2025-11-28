@@ -64,3 +64,15 @@ def update_user(db: Session, user_id: int, user_update: UserUpdate) -> Optional[
     db.refresh(db_user)
     return db_user
 
+
+def update_user_password(db: Session, user_id: int, new_password: str) -> Optional[User]:
+    """Update user password (for password reset)."""
+    db_user = get_user(db, user_id)
+    if not db_user:
+        return None
+    
+    db_user.hashed_password = get_password_hash(new_password)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
