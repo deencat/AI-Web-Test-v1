@@ -369,10 +369,10 @@ def convert_scenario_to_test(
     Returns:
         TestCase ready for execution with Stagehand/Playwright
     """
-    from app.crud import test_scenario as crud_scenarios
+    from app.services.scenario_generator_service import ScenarioGeneratorService
     
     # Get scenario
-    scenario = crud_scenarios.get_scenario(db, scenario_id)
+    scenario = ScenarioGeneratorService.get_scenario(db, scenario_id)
     if not scenario:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
