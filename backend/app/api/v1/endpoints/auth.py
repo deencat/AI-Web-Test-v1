@@ -3,9 +3,12 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from app.api.deps import get_db, get_current_active_user
 from app.core.config import settings
 from app.core.security import create_access_token
+from app.core.rate_limit import limiter, STRICT_LIMITS, NORMAL_LIMITS
 from app.crud.user import authenticate_user, create_user, get_user_by_username, get_user_by_email, update_user_password
 from app.crud.password_reset import (
     create_password_reset_token, 
@@ -33,7 +36,9 @@ router = APIRouter()
 
 
 @router.post("/login", response_model=Token)
+@limiter.limit(STRICT_LIMITS)
 def login(
+    request: Request,
     db: Session = Depends(get_db),
     form_data: OAuth2PasswordRequestForm = Depends()
 ):
@@ -43,6 +48,8 @@ def login(
     Frontend should send:
     - username: string
     - password: string
+    
+    Rate limited to 10 requests per minute.
     """
     user = authenticate_user(db, form_data.username, form_data.password)
     if not user:
@@ -92,9 +99,12 @@ def read_users_me(current_user: User = Depends(get_current_active_user)):
 
 
 @router.post("/register", response_model=User, status_code=status.HTTP_201_CREATED)
-def register(user: UserCreate, db: Session = Depends(get_db)):
+@limiter.limit(STRICT_LIMITS)
+def register(request: Request, user: UserCreate, db: Session = Depends(get_db)):
     """
     Register new user.
+    
+    Rate limited to 10 requests per minute.
     """
     # Check if user already exists
     db_user = get_user_by_username(db, username=user.username)
@@ -109,6 +119,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
+@limiter.limit(STRICT_LIMITS)
 def forgot_password(
     request_data: ForgotPasswordRequest,
     request: Request,
@@ -119,6 +130,8 @@ def forgot_password(
     
     Sends password reset email if user exists.
     Returns success message regardless to prevent email enumeration.
+    
+    Rate limited to 10 requests per minute.
     """
     user = get_user_by_email(db, email=request_data.email)
     
@@ -151,7 +164,9 @@ def forgot_password(
 
 
 @router.post("/reset-password", response_model=ResetPasswordResponse)
+@limiter.limit(STRICT_LIMITS)
 def reset_password(
+    request: Request,
     request_data: ResetPasswordRequest,
     db: Session = Depends(get_db)
 ):
@@ -159,6 +174,8 @@ def reset_password(
     Reset password using token.
     
     Validates token and updates user password.
+    
+    Rate limited to 10 requests per minute.
     """
     # Validate token
     reset_token = get_valid_password_reset_token(db, request_data.token)
