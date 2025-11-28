@@ -208,12 +208,12 @@ class ScenarioConverter:
         
         Useful for batch generation workflows.
         """
-        from app.crud import test_scenario as crud_scenarios
+        from app.services.scenario_generator_service import ScenarioGeneratorService
         
         test_cases = []
         
         for scenario_id in scenario_ids:
-            scenario = crud_scenarios.get_scenario(db, scenario_id)
+            scenario = ScenarioGeneratorService.get_scenario(db, scenario_id)
             if scenario and scenario.status == "validated":
                 test_case = ScenarioConverter.convert_scenario_to_test(
                     scenario, user_id, db
