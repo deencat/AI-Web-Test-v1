@@ -28,6 +28,7 @@ class KBCategory(Base):
     
     # Relationships
     documents = relationship("KBDocument", back_populates="category", cascade="all, delete-orphan")
+    test_templates = relationship("TestTemplate", back_populates="category")
     
     def __repr__(self):
         return f"<KBCategory(id={self.id}, name='{self.name}')>"
