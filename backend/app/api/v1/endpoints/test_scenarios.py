@@ -401,6 +401,8 @@ def convert_scenario_to_test(
         return test_case
         
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to convert scenario to test: {str(e)}"

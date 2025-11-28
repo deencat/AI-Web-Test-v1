@@ -48,7 +48,7 @@ class TestScenario(Base):
     def mark_validated(self, is_valid: bool, errors: list = None):
         """Mark scenario as validated or invalid"""
         if is_valid:
-            self.status = "ready"
+            self.status = "validated"
             self.validation_errors = None
         else:
             self.status = "validation_failed"
