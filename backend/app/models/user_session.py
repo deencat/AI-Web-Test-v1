@@ -2,6 +2,7 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime, timedelta
+from typing import Optional
 import secrets
 
 from app.db.base import Base
@@ -38,9 +39,9 @@ class UserSession(Base):
         cls, 
         user_id: int, 
         expires_in_days: int = 30,
-        device_name: str = None,
-        ip_address: str = None,
-        user_agent: str = None
+        device_name: Optional[str] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
     ) -> "UserSession":
         """Create a new user session."""
         return cls(
