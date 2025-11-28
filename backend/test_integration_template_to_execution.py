@@ -182,10 +182,16 @@ class TestTemplateToExecutionFlow:
         
         # Note: This will queue the test for execution
         response = requests.post(
-            f"{API_V1}/tests/{test_case_id}/run",
-            headers=self.get_headers()
+            f"{API_V1}/executions/tests/{test_case_id}/run",
+            headers=self.get_headers(),
+            json={
+                "browser": "chromium",
+                "environment": "test",
+                "base_url": "http://localhost:3000",
+                "triggered_by": "integration_test"
+            }
         )
-        assert response.status_code == 200, f"Execution failed: {response.text}"
+        assert response.status_code == 201, f"Execution failed: {response.text}"
         
         result = response.json()
         execution_id = result.get("execution_id")
