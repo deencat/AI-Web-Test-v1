@@ -68,7 +68,15 @@ class ScenarioConverter:
         )
         
         # Create test case using existing CRUD
-        test_case = crud_tests.create_test_case(db, test_data, user_id)
+        try:
+            test_case = crud_tests.create_test_case(db, test_data, user_id)
+        except Exception as e:
+            import traceback
+            error_msg = f"ERROR in crud_tests.create_test_case: {e}\nTest data: {test_data}\n{traceback.format_exc()}"
+            with open("conversion_error.log", "a") as f:
+                f.write(f"\n\n{'='*80}\n{error_msg}")
+            print(error_msg)
+            raise
         
         # Set scenario and template IDs (foreign keys)
         test_case.scenario_id = scenario.id
