@@ -29,6 +29,9 @@ def create_test_case(db: Session, test_case: TestCaseCreate, user_id: int) -> Te
         expected_result=test_case.expected_result,
         preconditions=test_case.preconditions,
         test_data=test_case.test_data,
+        category_id=test_case.category_id,
+        tags=test_case.tags,
+        test_metadata=test_case.test_metadata,
         user_id=user_id
     )
     db.add(db_test_case)

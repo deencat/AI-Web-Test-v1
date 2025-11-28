@@ -89,7 +89,9 @@ async def api_exception_handler(request: Request, exc: APIException):
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     """Handle unexpected exceptions."""
+    import traceback
     print(f"Unexpected error: {exc}")
+    traceback.print_exc()
     return JSONResponse(
         status_code=500,
         content={

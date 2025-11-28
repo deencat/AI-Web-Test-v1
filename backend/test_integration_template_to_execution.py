@@ -90,9 +90,13 @@ class TestTemplateToExecutionFlow:
             json={
                 "template_id": template_id,
                 "context_variables": {
-                    "api_endpoint": "/api/v1/users",
-                    "http_method": "GET",
-                    "expected_status": 200
+                    "method": "GET",
+                    "endpoint": "/api/v1/users",
+                    "headers": {"Content-Type": "application/json"},
+                    "request_body": None,
+                    "expected_status": 200,
+                    "schema": {"type": "array"},
+                    "validation_rule": "response.length > 0"
                 },
                 "use_faker_data": True
             }
@@ -144,6 +148,9 @@ class TestTemplateToExecutionFlow:
             f"{API_V1}/scenarios/{scenario_id}/convert-to-test",
             headers=self.get_headers()
         )
+        if response.status_code != 201:
+            print(f"\\nConversion error: {response.status_code}")
+            print(f"Response: {response.text}")
         assert response.status_code == 201, f"Conversion failed: {response.text}"
         
         test_case = response.json()
@@ -243,8 +250,13 @@ class TestTemplateToExecutionFlow:
                 json={
                     "template_id": template_id,
                     "context_variables": {
-                        "api_endpoint": f"/api/v1/test{i}",
-                        "http_method": "POST"
+                        "method": "POST",
+                        "endpoint": f"/api/v1/test{i}",
+                        "headers": {"Content-Type": "application/json"},
+                        "request_body": {"test": "data"},
+                        "expected_status": 201,
+                        "schema": {"type": "object"},
+                        "validation_rule": "response.id != null"
                     },
                     "use_faker_data": True
                 }

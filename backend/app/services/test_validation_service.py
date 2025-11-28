@@ -90,8 +90,10 @@ class TestValidationService:
                 errors.append(f"Step {step_index}: 'fill' action requires 'value' field")
         
         elif action == "assert" or action == "assert_element":
-            if 'selector' not in step and 'target' not in step:
-                errors.append(f"Step {step_index}: 'assert' action requires 'selector' or 'target'")
+            # For UI assertions, need selector/target
+            # For API assertions, can use condition
+            if 'selector' not in step and 'target' not in step and 'condition' not in step:
+                errors.append(f"Step {step_index}: 'assert' action requires 'selector', 'target', or 'condition'")
         
         elif action == "wait":
             if 'timeout' not in step and 'condition' not in step:

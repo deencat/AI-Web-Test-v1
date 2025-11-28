@@ -40,8 +40,12 @@ class ScenarioConverter:
         # Determine test type from template
         test_type = ScenarioConverter._get_test_type(scenario)
         
-        # Extract category from template
-        category_id = scenario.template.category_id if scenario.template else None
+        # Extract category from template (may be None)
+        try:
+            category_id = scenario.template.category_id if scenario.template else None
+        except Exception as e:
+            print(f"Warning: Could not get category_id from template: {e}")
+            category_id = None
         
         # Build test case data
         test_data = TestCaseCreate(
@@ -65,6 +69,12 @@ class ScenarioConverter:
         
         # Create test case using existing CRUD
         test_case = crud_tests.create_test_case(db, test_data, user_id)
+        
+        # Set scenario and template IDs (foreign keys)
+        test_case.scenario_id = scenario.id
+        test_case.template_id = scenario.template_id
+        db.commit()
+        db.refresh(test_case)
         
         return test_case
     
