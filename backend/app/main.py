@@ -4,11 +4,12 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from datetime import datetime
-# from slowapi.errors import RateLimitExceeded
+from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 from app.core.exceptions import APIException
-# from app.core.rate_limit import limiter, rate_limit_exceeded_handler  # Temporarily disabled
+from app.core.rate_limit import limiter, rate_limit_exceeded_handler
 from app.middleware.timing import add_timing_middleware
+from app.middleware.security import add_security_middleware
 from app.api.v1.api import api_router
 from app.db.base import Base
 from app.db.session import engine, SessionLocal
@@ -45,8 +46,11 @@ app = FastAPI(
     redoc_url=f"{settings.API_V1_STR}/redoc"
 )
 
-# Add rate limiter state (temporarily disabled due to .env encoding issue)
-# app.state.limiter = limiter
+# Add rate limiter state
+app.state.limiter = limiter
+
+# Add security middleware
+add_security_middleware(app)
 
 # Add timing middleware
 add_timing_middleware(app)
@@ -63,10 +67,10 @@ app.add_middleware(
 
 
 # Exception handlers
-# @app.exception_handler(RateLimitExceeded)  # Temporarily disabled
-# async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
-#     """Handle rate limit exceeded errors."""
-#     return rate_limit_exceeded_handler(request, exc)
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    """Handle rate limit exceeded errors."""
+    return rate_limit_exceeded_handler(request, exc)
 
 
 @app.exception_handler(APIException)
