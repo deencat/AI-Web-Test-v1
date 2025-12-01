@@ -49,6 +49,15 @@ class TestCase(Base):
     preconditions = Column(Text, nullable=True)
     test_data = Column(JSON, nullable=True)  # Optional test data as JSON
     
+    # Day 7 Integration: Link to templates and scenarios
+    scenario_id = Column(Integer, ForeignKey("test_scenarios.id"), nullable=True, index=True)
+    template_id = Column(Integer, ForeignKey("test_templates.id"), nullable=True, index=True)
+    
+    # Additional fields for categorization
+    category_id = Column(Integer, ForeignKey("kb_categories.id"), nullable=True, index=True)
+    tags = Column(JSON, nullable=True)  # Array of strings
+    test_metadata = Column(JSON, nullable=True)  # Additional metadata (renamed from 'metadata' to avoid SQLAlchemy conflict)
+    
     # Metadata
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -56,6 +65,13 @@ class TestCase(Base):
     # User association
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     user = relationship("User", back_populates="test_cases")
+    
+    # Category relationship
+    category = relationship("KBCategory", backref="test_cases")
+    
+    # Template/Scenario relationships (Day 7 integration)
+    scenario = relationship("TestScenario", backref="generated_tests", foreign_keys=[scenario_id])
+    template = relationship("TestTemplate", backref="generated_tests", foreign_keys=[template_id])
     
     # Executions
     executions = relationship("TestExecution", back_populates="test_case", cascade="all, delete-orphan")
