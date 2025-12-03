@@ -3,12 +3,15 @@ import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { TestCaseCard } from '../components/tests/TestCaseCard';
+import { RunTestButton } from '../components/RunTestButton';
 import { mockTests } from '../mock/tests';
 import testsService from '../services/testsService';
 import { GeneratedTestCase } from '../types/api';
 import { Sparkles, Loader2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 export const TestsPage: React.FC = () => {
+  const navigate = useNavigate();
   const [filter, setFilter] = useState('all');
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
@@ -23,6 +26,10 @@ export const TestsPage: React.FC = () => {
     expected_result: '',
     priority: 'medium' as 'high' | 'medium' | 'low',
   });
+
+  const handleExecutionStart = (executionId: number) => {
+    navigate(`/executions/${executionId}`);
+  };
 
   const handleGenerateTests = async () => {
     if (!prompt.trim()) {
@@ -183,6 +190,7 @@ export const TestsPage: React.FC = () => {
                   onSave={handleSaveTest}
                   onEdit={handleEditTest}
                   onDelete={handleDeleteTest}
+                  onExecutionStart={handleExecutionStart}
                 />
               ))}
             </div>
@@ -400,6 +408,10 @@ export const TestsPage: React.FC = () => {
                             : `${test.execution_time}s`}
                         </p>
                       </div>
+                      <RunTestButton
+                        testCaseId={parseInt(test.id.replace('test-', ''))}
+                        onExecutionStart={handleExecutionStart}
+                      />
                       <Button
                         variant="secondary"
                         size="sm"
