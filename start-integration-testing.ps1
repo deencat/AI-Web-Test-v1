@@ -30,10 +30,20 @@ if (Test-Path "backend\.env") {
 # Check frontend .env
 if (Test-Path "frontend\.env") {
     Write-Host "✅ Frontend .env file exists" -ForegroundColor Green
+    # Verify it has the VITE_USE_MOCK=false setting
+    $envContent = Get-Content "frontend\.env" -Raw
+    if ($envContent -notmatch "VITE_USE_MOCK=false") {
+        Write-Host "⚠️  Adding VITE_USE_MOCK=false to frontend/.env..." -ForegroundColor Yellow
+        Add-Content -Path "frontend\.env" -Value "VITE_USE_MOCK=false"
+        Write-Host "✅ Updated frontend/.env to disable mock data" -ForegroundColor Green
+    }
 } else {
     Write-Host "⚠️  Frontend .env file missing - creating it..." -ForegroundColor Yellow
-    Set-Content -Path "frontend\.env" -Value "VITE_API_URL=http://localhost:8000"
-    Write-Host "✅ Created frontend/.env with VITE_API_URL=http://localhost:8000" -ForegroundColor Green
+    @"
+VITE_API_URL=http://localhost:8000
+VITE_USE_MOCK=false
+"@ | Set-Content -Path "frontend\.env"
+    Write-Host "✅ Created frontend/.env with API URL and mock data disabled" -ForegroundColor Green
 }
 
 echo ""
