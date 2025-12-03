@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str | None = None  # Optional for now
     OPENROUTER_MODEL: str = "mistralai/mixtral-8x7b-instruct"  # Default: Free, high-quality model
     
+    # OpenAI API compatibility (for Stagehand/LiteLLM)
+    # These can be set to use OpenRouter as a drop-in replacement
+    OPENAI_API_KEY: str | None = None
+    OPENAI_API_BASE: str | None = None
+    
     # Queue System (for Sprint 3 Day 2)
     MAX_CONCURRENT_EXECUTIONS: int = 5  # Maximum concurrent test executions
     QUEUE_CHECK_INTERVAL: int = 2  # How often to check queue (seconds)
@@ -33,6 +38,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"  # Allow extra fields in .env without errors
 
 
 settings = Settings()

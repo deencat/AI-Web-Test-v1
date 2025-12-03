@@ -1,5 +1,13 @@
 """
-Advanced test for three.com.hk - 5G Broadband plan selection.
+Advanced test for three.com.hk - 5G Broadba        "Find and click the checkbox that says 'I confirm that I have reviewed details and agree to the'",
+        "Find and click the 'Subscribe Now' button to proceed to the next page",
+        "Wait 3 seconds for the page to load",
+        "Find the Email Address input field and type 'pmo.andrewchan+010@gmail.com'",
+        "Find and click the 'Login' button to proceed to password screen",
+        "Wait 3 seconds for the password field to appear",
+        "Find the Password input field and type 'cA8mn49&'",
+        "Find and click the 'Login' button to submit the credentials and authenticate",
+        "Wait 5 seconds for authentication to complete and next page to load",tion.
 Tests navigation, element identification, clicking, and form interaction.
 """
 import requests
@@ -29,26 +37,55 @@ print("✅ Logged in successfully")
 # Step 2: Create test case for 5G Broadband page
 print_section("[Step 2] Create Test Case")
 test_data = {
-    "title": "Three.com.hk - 5G Broadband Plan Selection",
-    "description": "Navigate to 5G broadband page, identify plans, select 30 months option, and click Subscribe Now",
+    "title": "Three.com.hk - 5G Broadband Complete Subscription Flow",
+    "description": "Complete end-to-end flow: select plan, verify details, proceed through checkout pages with full validation, login and select service date",
     "test_type": "e2e",
     "priority": "high",
     "steps": [
-        "Navigate to https://www.three.com.hk/website/appmanager/three/home?_nfpb=true&_pageLabel=P200470391315433531600",
-        "Wait for 5G broadband page to load completely",
-        "Identify and list available broadband plans on the page",
-        "Find and verify the 30 months option box exists",
-        "Click on the 30 months option box to select it",
-        "Wait for the option to be selected (visual feedback)",
-        "Find the 'Subscribe Now' button",
-        "Click the 'Subscribe Now' button",
-        "Verify navigation to the next page (subscription page)"
+        "Scroll down the page slowly to see all the 5G Broadband plans with contract period options",
+        "Find and click the button that says exactly '30 months' under 'Please select contract period' - make sure to click directly on the text '30 months'",
+        "Verify that the '30 months' button now has a purple/colored border around it showing it is selected",
+        "Find and click the 'Subscribe Now' button that appears under the selected plan",
+        "Wait for the customer notice popup to appear",
+        "Find and click the checkbox that says 'Don't show this again' at the bottom left of the notice",
+        "Find and click the 'X' button to close the customer notice popup",
+        "Verify that the popup is closed and the subscription form is visible",
+        "Verify page shows: plan price $135/month, original price $198 strikethrough, FREE 6-month promotion, 5G Broadband Wi-Fi 6 Service Plan name, Infinite 5G Data, Waived $28 Admin Fee, and 30 months contract",
+        "Find and click the 'Next' button to proceed to the next page",
+        "Wait for the Service Plan Details section to load and verify it shows: 5G Broadband Wi-Fi 6 Service Plan, average monthly fee $135/month, waived admin fee, waived Wi-Fi 6 5G Router Rental Fee, and 30 months contract",
+        "Verify the payment breakdown shows: Prepayment SIM Card Fee $100, Deposit $0, First Month Payment $0, and Total Amount Due $100",
+        "Find and click the checkbox that says 'I confirm that I have reviewed details and agree to the'",
+        "Find and click the 'Subscribe Now' button to proceed to the next page",
+        "Wait 3 seconds for the page to load",
+        "Click the 'Login' button to open the login form",
+        "Wait 2 seconds for the login form to appear",
+        "Find the email input field and type 'pmo.andrewchan+010@gmail.com'",
+        "Click the 'Login' button to proceed to password screen",
+        "Wait 2 seconds for the password field to appear",
+        "Find the password input field and type 'cA8mn49&'",
+        "Click the 'Login' button to submit credentials",
+        "Wait 5 seconds for authentication to complete",
+        "Find the service effective date field and select a date 3 days from today",
+        "Click the 'Confirm' button to proceed to the next step"
     ],
-    "expected_result": "Successfully navigate to 5G broadband page, select 30 months plan, click Subscribe Now, and reach subscription page",
+    "expected_result": "Successfully complete full subscription flow including login and service date selection",
     "test_data": {
-        "base_url": "https://www.three.com.hk/website/appmanager/three/home?_nfpb=true&_pageLabel=P200470391315433531600",
-        "plan_option": "30 months",
-        "action": "Subscribe Now"
+        "base_url": "https://web.three.com.hk/5gbroadband/plan-hsbc-en.html",
+        "contract_period": "30 Months",
+        "monthly_price": "$135",
+        "original_price": "$198",
+        "plan_name": "5G Broadband Wi-Fi 6 Service Plan",
+        "data_plan": "Infinite 5G Data",
+        "admin_fee": "Waived",
+        "router_fee": "Waived",
+        "free_months": "6 months",
+        "sim_card_fee": "$100",
+        "deposit": "$0",
+        "first_month": "$0",
+        "total_due": "$100",
+        "email": "pmo.andrewchan+010@gmail.com",
+        "password": "cA8mn49&",
+        "service_date_offset": "3 days"
     }
 }
 
@@ -68,15 +105,15 @@ print_section("[Step 3] Execute Test")
 run_data = {
     "browser": "chromium",
     "environment": "production",
-    "base_url": "https://www.three.com.hk/website/appmanager/three/home?_nfpb=true&_pageLabel=P200470391315433531600",
+    "base_url": "https://web.three.com.hk/5gbroadband/plan-hsbc-en.html",
     "triggered_by": "manual"
 }
 
-print(f"🌐 Target: three.com.hk 5G Broadband Page")
+print(f"🌐 Target: https://web.three.com.hk/5gbroadband/plan-hsbc-en.html")
 print(f"🎯 Action: Select 30 months plan and click Subscribe Now")
 print(f"🖥️  Browser: Chromium (headless)")
 
-response = requests.post(f"{BASE_URL}/tests/{test_id}/run", headers=headers, json=run_data)
+response = requests.post(f"{BASE_URL}/executions/tests/{test_id}/run", headers=headers, json=run_data)
 if response.status_code != 201:
     print(f"❌ Failed to start execution: {response.status_code}")
     print(response.text)
@@ -88,14 +125,14 @@ print(f"⏳ Test running in background...")
 
 # Step 4: Monitor execution
 print_section("[Step 4] Monitor Execution Progress")
-print(f"📊 Polling every 3 seconds (max 2 minutes)...")
+print(f"📊 Polling every 3 seconds (max 5 minutes)...")
 print()
 
 start_time = time.time()
 last_status = None
 last_step_count = 0
 
-for i in range(40):  # 40 * 3 = 120 seconds max
+for i in range(100):  # 100 * 3 = 300 seconds (5 minutes) max
     elapsed = int(time.time() - start_time)
     
     response = requests.get(f"{BASE_URL}/executions/{execution_id}", headers=headers)
@@ -190,7 +227,7 @@ for i in range(40):  # 40 * 3 = 120 seconds max
 # Timeout
 print()
 print("=" * 70)
-print("⏱️  TIMEOUT: Test still running after 2 minutes")
+print("⏱️  TIMEOUT: Test still running after 5 minutes")
 print("   The test may still be executing in the background.")
 print("   Check execution ID", execution_id, "for final results.")
 print("=" * 70)
