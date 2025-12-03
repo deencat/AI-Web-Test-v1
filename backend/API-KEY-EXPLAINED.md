@@ -4,7 +4,7 @@
 
 Your `.env` file already contains an **OpenRouter API key**:
 ```
-OPENROUTER_API_KEY=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
+OPENROUTER_API_KEY=sk-or-v1-xxxxx (YOUR KEY HERE - NEVER COMMIT THIS!)
 ```
 
 ## What is OpenRouter?
@@ -20,7 +20,7 @@ OPENROUTER_API_KEY=sk-or-v1-a06703f94dbbdc5fd2cf8f1133a51dc63dff113944a200ef249b
 Stagehand was looking for `OPENAI_API_KEY` instead of `OPENROUTER_API_KEY`. I've now added:
 
 ```env
-OPENAI_API_KEY=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
+OPENAI_API_KEY=sk-or-v1-xxxxx (YOUR KEY HERE - NEVER COMMIT THIS!)
 OPENAI_API_BASE=https://openrouter.ai/api/v1
 ```
 
