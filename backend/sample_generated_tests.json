@@ -1,21 +1,18 @@
 {
   "test_cases": [
     {
-      "title": "POST /api/v1/tests - Valid Request with Expected Response",
+      "title": "API Test - Create Test Case with Valid Data",
       "description": "Verify that a valid request with all necessary fields creates a new test case successfully.",
       "test_type": "api",
       "priority": "high",
       "steps": [
-        "Send a POST request to /api/v1/tests with valid JSON containing all required fields.",
-        "Check the response status code.",
-        "Verify the returned JSON contains the correct test case details."
+        "Send a POST request to /api/v1/tests with valid test case data including title, description, test_type, priority, steps, expected_result, preconditions, and test_data.",
+        "Include valid authentication headers."
       ],
-      "expected_result": "Response status code 201 Created, JSON containing the created test case details.",
-      "preconditions": "User must be authenticated with a valid token.",
+      "expected_result": "The API should respond with a status code of 201 Created and return the created test case object with all provided fields.",
       "test_data": {
-        "token": "valid_token",
-        "title": "Test Case Title",
-        "description": "Test Case Description",
+        "title": "Sample Test Case",
+        "description": "This is a sample test case.",
         "test_type": "unit",
         "priority": "medium",
         "steps": [
@@ -23,40 +20,39 @@
           "Step 2: Next action",
           "Step 3: Final action"
         ],
-        "expected_result": "Expected result of the test case"
+        "expected_result": "Expected outcome of the test case.",
+        "preconditions": "All preconditions are met.",
+        "test_data": {
+          "key": "value"
+        }
       }
     },
     {
-      "title": "POST /api/v1/tests - Missing Fields in Request Body",
-      "description": "Verify that sending a request with missing fields returns a 400 Bad Request.",
-      "test_type": "api",
-      "priority": "medium",
-      "steps": [
-        "Send a POST request to /api/v1/tests with a JSON request body missing one or more required fields.",
-        "Check the response status code.",
-        "Verify the response includes error message indicating missing fields."
-      ],
-      "expected_result": "Response status code 400 Bad Request, JSON with error message indicating missing fields.",
-      "preconditions": "User must be authenticated with a valid token.",
-      "test_data": {
-        "token": "valid_token",
-        "title": "Test Case Title",
-        "description": "Test Case Description"
-      }
-    },
-    {
-      "title": "POST /api/v1/tests - Unauthorized Access",
-      "description": "Verify that unauthenticated users cannot create a new test case.",
+      "title": "API Test - Create Test Case with Missing Fields",
+      "description": "Verify that sending a request without required fields returns a 400 Bad Request.",
       "test_type": "api",
       "priority": "high",
       "steps": [
-        "Send a POST request to /api/v1/tests without a valid token.",
-        "Check the response status code.",
-        "Verify the response includes error message indicating unauthorized access."
+        "Send a POST request to /api/v1/tests with valid authentication headers.",
+        "Omit one of the required fields from the request body."
       ],
-      "expected_result": "Response status code 401 Unauthorized, JSON with error message indicating unauthorized access.",
-      "preconditions": "User is not authenticated.",
-      "test_data": {}
+      "expected_result": "The API should respond with a status code of 400 Bad Request and an error message indicating which field is missing.",
+      "test_data": {
+        "title": ""
+      }
+    },
+    {
+      "title": "API Test - Unauthorized Access",
+      "description": "Verify that an unauthorized user cannot create a test case.",
+      "test_type": "api",
+      "priority": "high",
+      "steps": [
+        "Send a POST request to /api/v1/tests with invalid authentication headers."
+      ],
+      "expected_result": "The API should respond with a status code of 401 Unauthorized.",
+      "test_data": {
+        "invalid_auth_header": "Invalid token"
+      }
     }
   ],
   "metadata": {
@@ -65,6 +61,6 @@
     "num_requested": 3,
     "num_generated": 3,
     "model": "qwen/qwen-2.5-7b-instruct",
-    "tokens": 927
+    "tokens": 868
   }
 }

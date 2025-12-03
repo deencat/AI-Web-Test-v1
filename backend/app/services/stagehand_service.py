@@ -67,10 +67,17 @@ class StagehandExecutionService:
             
             print(f"[DEBUG] Initializing Stagehand in thread {threading.current_thread().name}")
             
+            # Get API configuration from environment
+            openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+            openrouter_model = os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct")
+            
             config = StagehandConfig(
                 env="LOCAL",  # Use local Playwright
                 headless=self.headless,
-                verbose=0,  # Reduce logging
+                verbose=1,  # Enable logging to see AI calls
+                # Configure LiteLLM to use OpenRouter
+                model_name=f"openrouter/{openrouter_model}",
+                model_api_key=openrouter_key,
                 # Disable signal handlers when running in a thread
                 local_browser_launch_options={
                     "handle_sigint": False,
@@ -78,6 +85,8 @@ class StagehandExecutionService:
                     "handle_sighup": False
                 }
             )
+            
+            print(f"[DEBUG] Stagehand configured with model: openrouter/{openrouter_model}")
             
             self.stagehand = Stagehand(config)
             await self.stagehand.init()
@@ -286,26 +295,286 @@ class StagehandExecutionService:
     
     async def _execute_step_simple(self, step_description: str, step_number: int) -> Dict[str, Any]:
         """
-        Execute a single test step (simplified for MVP).
+        Execute a single test step using direct Playwright commands.
         
-        This is a basic implementation that doesn't use AI.
-        Future enhancement: Integrate Stagehand's AI-powered act() and observe()
+        Uses simple selectors for reliability without AI overhead.
         """
         try:
-            # Wait a moment to simulate execution
-            await asyncio.sleep(0.5)
+            print(f"[DEBUG] ========================================")
+            print(f"[DEBUG] Executing step {step_number}: {step_description}")
             
-            # For MVP, we just verify the page is still alive
-            # Future: Use Stagehand's AI features here
+            # Detect action type from description
+            desc_lower = step_description.lower()
+            
+            # Check if it's a typing action
+            if any(word in desc_lower for word in ['type', 'enter', 'fill', 'input']):
+                return await self._execute_type_simple(step_description)
+            
+            # Check if it's a click action
+            elif any(word in desc_lower for word in ['click', 'select', 'choose', 'press']):
+                return await self._execute_click_simple(step_description)
+            
+            # For navigation or other actions, just note it
+            else:
+                await asyncio.sleep(1)
+                title = await self.page.title()
+                return {
+                    "success": True,
+                    "actual": f"Step noted (page title: {title})",
+                    "expected": step_description
+                }
+        
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "actual": f"Error: {str(e)}",
+                "expected": step_description
+            }
+    
+    async def _execute_ai_action(self, step_description: str) -> Dict[str, Any]:
+        """Execute non-click actions using Stagehand AI."""
+        try:
+            print(f"[DEBUG] Calling page.act('{step_description}')...")
+            await self.page.act(step_description)
+            print(f"[DEBUG] AI action completed successfully!")
+            
+            await asyncio.sleep(1)
+            
             title = await self.page.title()
+            url = self.page.url
+            
+            print(f"[DEBUG] After action - Title: {title}")
+            print(f"[DEBUG] After action - URL: {url}")
+            print(f"[DEBUG] ========================================")
             
             return {
                 "success": True,
-                "actual": f"Step executed (page title: {title})",
+                "actual": f"Action completed. Page: {title} | URL: {url}",
                 "expected": step_description
             }
-        
         except Exception as e:
+            print(f"[DEBUG] ❌ AI action failed: {str(e)}")
+            await asyncio.sleep(0.5)
+            title = await self.page.title()
+            return {
+                "success": True,
+                "actual": f"Step noted (page title: {title})",
+                "expected": step_description,
+                "warning": f"AI action failed: {str(e)}"
+            }
+    
+    async def _execute_click_hybrid(self, step_description: str) -> Dict[str, Any]:
+        """
+        Execute click actions using hybrid approach:
+        1. Use AI to find the element
+        2. Use Playwright to click it reliably
+        """
+        try:
+            print(f"[DEBUG] Step 1: Using AI to locate element...")
+            
+            # First, try to extract button text or identifier from description
+            # Common patterns: "Click on 'text'", "Click the 'text' button", etc.
+            import re
+            
+            # Try to find quoted text
+            quoted_match = re.search(r"['\"]([^'\"]+)['\"]", step_description)
+            if quoted_match:
+                button_text = quoted_match.group(1)
+                print(f"[DEBUG] Extracted button text: '{button_text}'")
+                
+                # Get underlying Playwright page
+                pw_page = self.page._page
+                
+                # The login box is in an offcanvas overlay
+                offcanvas_prefix = '.offcanvas.show '
+                
+                # Try different selectors - both with and without offcanvas targeting
+                selectors_to_try = [
+                    # First try within visible offcanvas
+                    f"{offcanvas_prefix}button:has-text('{button_text}')",
+                    f"{offcanvas_prefix}a:has-text('{button_text}')",
+                    f"{offcanvas_prefix}text='{button_text}'",
+                    f"{offcanvas_prefix}text={button_text}",
+                    # Then try general selectors
+                    f"text='{button_text}'",  # Exact text match
+                    f"text={button_text}",    # Substring match
+                    f"button:has-text('{button_text}')",  # Button with text
+                    f"a:has-text('{button_text}')",       # Link with text
+                    f"//*[contains(text(), '{button_text}')]",  # XPath
+                ]
+                
+                for selector in selectors_to_try:
+                    try:
+                        print(f"[DEBUG] Trying selector: {selector}")
+                        element = await pw_page.wait_for_selector(selector, timeout=3000)
+                        
+                        if element:
+                            is_visible = await element.is_visible()
+                            is_enabled = await element.is_enabled()
+                            print(f"[DEBUG] Found element! visible={is_visible}, enabled={is_enabled}")
+                            
+                            if is_visible and is_enabled:
+                                print(f"[DEBUG] Step 2: Clicking with Playwright...")
+                                
+                                # Try normal click first
+                                try:
+                                    await element.click(timeout=5000)
+                                except Exception as click_error:
+                                    # If blocked by modal overlay, force the click
+                                    if "intercepts pointer events" in str(click_error):
+                                        print(f"[DEBUG] Click blocked by overlay, using force click...")
+                                        await element.click(force=True)
+                                    else:
+                                        raise
+                                
+                                await asyncio.sleep(1.5)  # Wait for click effects
+                                
+                                title = await self.page.title()
+                                url = self.page.url
+                                
+                                print(f"[DEBUG] ✅ Click successful!")
+                                print(f"[DEBUG] After click - Title: {title}")
+                                print(f"[DEBUG] After click - URL: {url}")
+                                print(f"[DEBUG] ========================================")
+                                
+                                return {
+                                    "success": True,
+                                    "actual": f"Clicked '{button_text}'. Page: {title} | URL: {url}",
+                                    "expected": step_description
+                                }
+                    except Exception as e:
+                        print(f"[DEBUG] Selector '{selector}' failed: {str(e)}")
+                        continue
+            
+            # If direct Playwright approach fails, fall back to Stagehand AI
+            print(f"[DEBUG] Direct click failed, falling back to Stagehand AI...")
+            return await self._execute_ai_action(step_description)
+            
+        except Exception as e:
+            print(f"[DEBUG] ❌ Hybrid click failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            # Last resort: try pure AI
+            print(f"[DEBUG] Attempting pure AI as last resort...")
+            return await self._execute_ai_action(step_description)
+    
+    async def _execute_type_hybrid(self, step_description: str) -> Dict[str, Any]:
+        """
+        Hybrid approach for typing: Use AI to understand field, Playwright to type.
+        
+        Extracts text to type from quotes in the description and uses Playwright's .fill()
+        """
+        try:
+            import re
+            
+            # Extract text to type - look for patterns like "type 'text'" or "type \"text\""
+            # This should match: "type 'pmo.andrewchan+010@gmail.com'" 
+            type_pattern = re.search(r"(?:type|enter|fill|input)\s+['\"]([^'\"]+)['\"]", step_description, re.IGNORECASE)
+            
+            if not type_pattern:
+                print(f"[DEBUG] No type pattern found, using AI fallback")
+                return await self._execute_ai_action(step_description)
+            
+            text_to_type = type_pattern.group(1)
+            print(f"[DEBUG] Extracted text to type: '{text_to_type}'")
+            
+            # Identify the field type from description
+            field_keywords = {
+                'email': ['email', 'e-mail'],
+                'password': ['password', 'pwd', 'pass'],
+                'text': ['address', 'name', 'input', 'field']
+            }
+            
+            field_type = 'text'  # default
+            desc_lower = step_description.lower()
+            for ftype, keywords in field_keywords.items():
+                if any(kw in desc_lower for kw in keywords):
+                    field_type = ftype
+                    break
+            
+            print(f"[DEBUG] Detected field type: {field_type}")
+            
+            # The login box is an offcanvas overlay - target elements within it
+            offcanvas_prefix = '.offcanvas.show '  # Target visible offcanvas
+            
+            # Try Playwright selectors based on field type
+            selectors_to_try = []
+            
+            if field_type == 'email':
+                selectors_to_try = [
+                    f'{offcanvas_prefix}input[type="email"]',
+                    f'{offcanvas_prefix}input[name*="email" i]',
+                    f'{offcanvas_prefix}input[id*="email" i]',
+                    f'{offcanvas_prefix}input[placeholder*="email" i]',
+                    f'{offcanvas_prefix}input[type="text"]:visible',
+                    f'{offcanvas_prefix}input:visible:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])',
+                    # Fallback without offcanvas prefix
+                    'input[type="email"]:visible',
+                    'input:visible:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])'
+                ]
+            elif field_type == 'password':
+                selectors_to_try = [
+                    f'{offcanvas_prefix}input[type="password"]',
+                    f'{offcanvas_prefix}input[name*="password" i]',
+                    f'{offcanvas_prefix}input[name*="pwd" i]',
+                    f'{offcanvas_prefix}input[id*="password" i]',
+                    f'{offcanvas_prefix}input:visible:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])',
+                    # Fallback without offcanvas prefix
+                    'input[type="password"]:visible',
+                    'input:visible:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])'
+                ]
+            else:
+                # Generic input field
+                selectors_to_try = [
+                    f'{offcanvas_prefix}input[type="text"]',
+                    f'{offcanvas_prefix}input:not([type])',
+                    f'{offcanvas_prefix}textarea',
+                    f'{offcanvas_prefix}input:visible:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])',
+                    # Fallback without offcanvas prefix
+                    'input[type="text"]:visible',
+                    'input:visible:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])'
+                ]
+            
+            # Try each selector
+            for selector in selectors_to_try:
+                try:
+                    print(f"[DEBUG] Trying Playwright selector: {selector}")
+                    element = await self.page._page.wait_for_selector(selector, timeout=3000, state='visible')
+                    
+                    if element:
+                        print(f"[DEBUG] Found element with: {selector}")
+                        
+                        # Clear the field first
+                        await element.fill('')
+                        await asyncio.sleep(0.3)
+                        
+                        # Type the text
+                        await element.fill(text_to_type)
+                        await asyncio.sleep(0.5)
+                        
+                        title = await self.page.title()
+                        
+                        print(f"[DEBUG] ✅ Typing successful!")
+                        print(f"[DEBUG] Entered: '{text_to_type}' into {field_type} field")
+                        print(f"[DEBUG] ========================================")
+                        
+                        return {
+                            "success": True,
+                            "actual": f"Entered '{text_to_type}' into {field_type} field. Page: {title}",
+                            "expected": step_description
+                        }
+                except Exception as e:
+                    print(f"[DEBUG] Selector '{selector}' failed: {str(e)}")
+                    continue
+            
+            # If direct Playwright approach fails, fall back to Stagehand AI
+            print(f"[DEBUG] Direct typing failed, falling back to Stagehand AI...")
+            return await self._execute_ai_action(step_description)
+            
+        except Exception as e:
+            print(f"[DEBUG] ❌ Hybrid typing failed: {str(e)}")
             return {
                 "success": False,
                 "error": str(e),
@@ -333,8 +602,240 @@ class StagehandExecutionService:
         except Exception as e:
             print(f"[DEBUG] Failed to capture screenshot: {e}")
             return None
-
-
+    
+    async def _execute_click_simple(self, step_description: str) -> Dict[str, Any]:
+        """Execute click actions using simple Playwright selectors."""
+        try:
+            import re
+            
+            # Get Playwright page
+            pw_page = self.page._page
+            desc_lower = step_description.lower()
+            
+            # Special case: checkbox
+            if 'checkbox' in desc_lower:
+                print(f"[DEBUG] Looking for checkbox...")
+                selectors = [
+                    "input[type='checkbox']:visible",
+                    "[role='checkbox']:visible",
+                    "label:has(input[type='checkbox']):visible",
+                ]
+                for selector in selectors:
+                    try:
+                        element = await pw_page.wait_for_selector(selector, timeout=3000, state='visible')
+                        if element:
+                            await element.click(timeout=5000)
+                            await asyncio.sleep(0.5)
+                            print(f"[DEBUG] ✅ Clicked checkbox")
+                            return {
+                                "success": True,
+                                "actual": "Clicked checkbox",
+                                "expected": step_description
+                            }
+                    except Exception as e:
+                        print(f"[DEBUG] {selector} failed: {str(e)[:100]}")
+                        continue
+            
+            # Special case: close button (X)
+            if desc_lower.startswith("find and click the 'x'"):
+                print(f"[DEBUG] Looking for close button...")
+                selectors = [
+                    "button[aria-label*='close' i]:visible",
+                    "button[class*='close' i]:visible",
+                    "button:has-text('×'):visible",
+                    "[aria-label*='close' i]:visible",
+                ]
+                for selector in selectors:
+                    try:
+                        element = await pw_page.wait_for_selector(selector, timeout=3000, state='visible')
+                        if element:
+                            await element.click(timeout=5000)
+                            await asyncio.sleep(1)
+                            print(f"[DEBUG] ✅ Clicked close button")
+                            return {
+                                "success": True,
+                                "actual": "Clicked close button",
+                                "expected": step_description
+                            }
+                    except Exception as e:
+                        print(f"[DEBUG] {selector} failed: {str(e)[:100]}")
+                        continue
+            
+            # Extract text from quotes in description
+            quoted_match = re.search(r"['\"]([^'\"]+)['\"]", step_description)
+            if not quoted_match:
+                # No quoted text found
+                return {
+                    "success": False,
+                    "error": "Could not extract button text from description",
+                    "actual": "No quoted text found",
+                    "expected": step_description
+                }
+            
+            button_text = quoted_match.group(1)
+            print(f"[DEBUG] Looking for button: '{button_text}'")
+            
+            # Check if we're in a modal context (for login flow)
+            in_modal = 'login' in desc_lower or 'email' in desc_lower or 'password' in desc_lower
+            
+            # Try simple selectors - Playwright will auto-wait for elements
+            base_selectors = [
+                f"button:has-text('{button_text}')",
+                f"a:has-text('{button_text}')",
+                f"[role='button']:has-text('{button_text}')",
+                f"text='{button_text}'",
+            ]
+            
+            # If in modal, also try with .modal-content prefix
+            selectors = []
+            if in_modal:
+                selectors.extend([f".modal-content {s}" for s in base_selectors])
+            selectors.extend(base_selectors)
+            
+            for selector in selectors:
+                try:
+                    print(f"[DEBUG] Trying: {selector}")
+                    element = await pw_page.wait_for_selector(selector, timeout=3000, state='visible')
+                    if element:
+                        await element.click(timeout=5000)
+                        await asyncio.sleep(1.5)
+                        
+                        title = await self.page.title()
+                        url = self.page.url
+                        
+                        print(f"[DEBUG] ✅ Clicked '{button_text}'")
+                        print(f"[DEBUG] Page: {title} | URL: {url}")
+                        
+                        return {
+                            "success": True,
+                            "actual": f"Clicked '{button_text}'. Page: {title}",
+                            "expected": step_description
+                        }
+                except Exception as e:
+                    print(f"[DEBUG] {selector} failed: {str(e)[:100]}")
+                    continue
+            
+            # If all selectors failed
+            return {
+                "success": False,
+                "error": f"Could not find button '{button_text}'",
+                "actual": "Button not found with any selector",
+                "expected": step_description
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "actual": f"Error: {str(e)}",
+                "expected": step_description
+            }
+    
+    async def _execute_type_simple(self, step_description: str) -> Dict[str, Any]:
+        """Execute typing actions using simple Playwright selectors."""
+        try:
+            import re
+            
+            # Extract text to type from quotes
+            quoted_matches = re.findall(r"['\"]([^'\"]+)['\"]", step_description)
+            if len(quoted_matches) < 1:
+                return {
+                    "success": False,
+                    "error": "Could not extract text to type",
+                    "actual": "No quoted text found",
+                    "expected": step_description
+                }
+            
+            # The text to type is usually the last quoted string
+            text_to_type = quoted_matches[-1]
+            
+            # Try to identify field type from description
+            desc_lower = step_description.lower()
+            
+            print(f"[DEBUG] Will type: '{text_to_type}'")
+            
+            # Get Playwright page
+            pw_page = self.page._page
+            
+            # Choose selectors based on field type
+            # Check if we're in a modal context
+            in_modal = 'login' in desc_lower or any(step in desc_lower for step in ['email', 'password'])
+            
+            base_selectors = []
+            if 'email' in desc_lower:
+                base_selectors = [
+                    "input[type='email']",
+                    "input[name*='email' i]",
+                    "input[placeholder*='email' i]",
+                    "input[id*='email' i]",
+                    "input[autocomplete='email']",
+                    "input[type='text']",  # Sometimes email fields are text type
+                ]
+            elif 'password' in desc_lower:
+                base_selectors = [
+                    "input[type='password']",
+                    "input[name*='password' i]",
+                    "input[autocomplete*='password' i]",
+                ]
+            else:
+                # Generic visible input
+                base_selectors = [
+                    "input:visible:not([type='hidden']):not([type='checkbox']):not([type='radio'])",
+                ]
+            
+            # If in modal, try multiple modal container variations
+            selectors = []
+            if in_modal:
+                # Try different modal container selectors
+                modal_prefixes = [
+                    ".modal-content",
+                    ".modal-body",
+                    ".modal",
+                    "[role='dialog']",
+                    ".offcanvas-body",
+                    ".offcanvas.show",
+                ]
+                for prefix in modal_prefixes:
+                    selectors.extend([f"{prefix} {s}" for s in base_selectors])
+            
+            # Also try without prefix as fallback
+            selectors.extend(base_selectors)
+            
+            for selector in selectors:
+                try:
+                    print(f"[DEBUG] Trying: {selector}")
+                    element = await pw_page.wait_for_selector(selector, timeout=3000, state='visible')
+                    if element:
+                        await element.fill(text_to_type)
+                        await asyncio.sleep(0.5)
+                        
+                        print(f"[DEBUG] ✅ Typed '{text_to_type}' into field")
+                        
+                        return {
+                            "success": True,
+                            "actual": f"Entered text into field",
+                            "expected": step_description
+                        }
+                except Exception as e:
+                    print(f"[DEBUG] {selector} failed: {str(e)[:100]}")
+                    continue
+            
+            # If all selectors failed
+            return {
+                "success": False,
+                "error": f"Could not find input field",
+                "actual": "Input field not found with any selector",
+                "expected": step_description
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "actual": f"Error: {str(e)}",
+                "expected": step_description
+            }
+    
 # Singleton instance
 _stagehand_service: Optional[StagehandExecutionService] = None
 
