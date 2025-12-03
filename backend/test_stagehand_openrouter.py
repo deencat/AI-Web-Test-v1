@@ -56,18 +56,33 @@ async def test_stagehand_with_openrouter():
         print("\n[TEST 2] AI-Powered Observation")
         print("-" * 60)
         print("[INFO] Using AI to observe the main heading...")
-        result = await page.observe("find the main heading")
+        result = await stagehand.page.observe("find the main heading")
         print(f"[OK] Observation result: {result}")
         
         if result and len(result) > 0:
-            print(f"[OK] Found heading: {result[0].get('description', 'N/A')}")
+            print(f"[OK] Found heading: {result[0].description}")
+        
+        # Test 2.5: AI-powered action (act)
+        print("\n[TEST 2.5] AI-Powered Action (act)")
+        print("-" * 60)
+        print("[INFO] Testing page.act() to click 'More information...' link...")
+        try:
+            await stagehand.page.act("click on the 'More information...' link")
+            await asyncio.sleep(2)
+            new_url = stagehand.page.url
+            new_title = await stagehand.page.title()
+            print(f"[OK] Action completed!")
+            print(f"    New URL: {new_url}")
+            print(f"    New Title: {new_title}")
+        except Exception as e:
+            print(f"[WARN] Act test failed: {str(e)}")
         
         # Test 3: AI-powered extraction
         print("\n[TEST 3] AI-Powered Extraction")
         print("-" * 60)
         print("[INFO] Extracting page title using AI...")
         try:
-            title_data = await page.extract("the main heading text")
+            title_data = await stagehand.page.extract("the main heading text")
             print(f"[OK] Extracted data: {title_data}")
         except Exception as e:
             print(f"[WARN] Extraction test skipped: {str(e)}")
