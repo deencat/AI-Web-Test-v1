@@ -36,9 +36,9 @@
 
 ### Pre-Test Setup
 - [ ] Backend dependencies installed (`pip install -r requirements.txt`)
-- [ ] Frontend dependencies installed (`npm install`)
+- [x] Frontend dependencies installed (`npm install`) ✅
 - [ ] Backend `.env` has new OpenRouter API key
-- [ ] Frontend `.env` created with `VITE_API_URL=http://localhost:8000`
+- [x] Frontend `.env` created with `VITE_API_URL=http://localhost:8000` and `VITE_USE_MOCK=false` ✅
 
 ### Backend Verification
 - [ ] Backend server starts: `cd backend && python start_server.py`
@@ -47,8 +47,8 @@
 - [ ] 11 execution endpoints visible in Swagger UI
 
 ### Frontend Verification  
-- [ ] Frontend server starts: `cd frontend && npm run dev`
-- [ ] App accessible: http://localhost:5173
+- [x] Frontend server starts: `cd frontend && npm run dev` ✅
+- [x] App accessible: http://localhost:5173 ✅
 - [ ] No console errors on load
 - [ ] No build errors
 
