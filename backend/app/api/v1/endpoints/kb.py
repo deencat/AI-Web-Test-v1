@@ -9,6 +9,7 @@ from app.models.user import User
 from app.models.kb_document import FileType
 from app.schemas.kb_document import (
     KBCategoryCreate,
+    KBCategoryUpdate,
     KBCategoryResponse,
     KBDocumentCreate,
     KBDocumentUpdate,
@@ -73,6 +74,38 @@ def create_category(
         )
     
     return crud.create_category(db, category)
+
+
+@router.put("/categories/{category_id}", response_model=KBCategoryResponse)
+def update_category(
+    category_id: int,
+    updates: KBCategoryUpdate,
+    current_user: User = Depends(deps.get_current_user),
+    db: Session = Depends(deps.get_db)
+):
+    """
+    Update a KB category.
+    
+    **Admin only**
+    
+    Updates an existing category's properties.
+    """
+    # Check if user is admin
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can update categories"
+        )
+    
+    # Update category
+    updated_category = crud.update_category(db, category_id, updates)
+    if not updated_category:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Category with ID {category_id} not found"
+        )
+    
+    return updated_category
 
 
 # ============================================================================
