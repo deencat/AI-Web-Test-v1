@@ -117,26 +117,46 @@ export interface GenerateTestsResponse {
 
 // Knowledge Base types
 export interface KBDocument {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  document_type: 'system_guide' | 'product' | 'process' | 'reference';
-  file_size: string;
-  file_url?: string;
-  uploaded_by: string;
-  uploaded_at: string;
-  tags: string[];
+  id: number;
+  title: string;
+  description: string | null;
+  filename: string;
+  file_path: string;
+  file_type: 'pdf' | 'docx' | 'txt' | 'md';
+  file_size: number;
   referenced_count: number;
-  version?: number;
+  content: string | null;
+  created_at: string;
+  updated_at: string;
+  category: KBCategory;
 }
 
 export interface KBCategory {
-  id: string;
+  id: number;
   name: string;
-  count: number;
-  color?: string;
-  description?: string;
+  description: string | null;
+  color: string;
+  icon: string | null;
+}
+
+export interface KBDocumentListResponse {
+  items: KBDocument[];
+  total: number;
+  skip: number;
+  limit: number;
+}
+
+export interface KBStatistics {
+  total_documents: number;
+  total_size_bytes: number;
+  total_size_mb: number;
+  by_category: Record<string, number>;
+  by_file_type: Record<string, number>;
+  most_referenced?: Array<{
+    id: number;
+    title: string;
+    referenced_count: number;
+  }>;
 }
 
 export interface UploadDocumentRequest {
@@ -146,9 +166,7 @@ export interface UploadDocumentRequest {
   category_id: string;
   document_type: 'system_guide' | 'product' | 'process' | 'reference';
   tags?: string[];
-}
-
-export interface CreateCategoryRequest {
+}export interface CreateCategoryRequest {
   name: string;
   description?: string;
   color?: string;
