@@ -1,10 +1,11 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Home, FileText, Database, Settings, PlayCircle } from 'lucide-react';
+import { Home, FileText, Database, Settings, PlayCircle, FolderOpen } from 'lucide-react';
 
 const navItems = [
   { path: '/dashboard', icon: Home, label: 'Dashboard' },
   { path: '/tests', icon: FileText, label: 'Tests' },
+  { path: '/test-suites', icon: FolderOpen, label: 'Test Suites' },
   { path: '/executions', icon: PlayCircle, label: 'Executions' },
   { path: '/knowledge-base', icon: Database, label: 'Knowledge Base' },
   { path: '/settings', icon: Settings, label: 'Settings' },
