@@ -7,6 +7,7 @@ from app.models.password_reset import PasswordResetToken
 from app.models.user_session import UserSession
 from app.models.test_template import TestTemplate
 from app.models.test_scenario import TestScenario
+from app.models.test_suite import TestSuite, TestSuiteItem, SuiteExecution
 
 __all__ = [
     "User",
@@ -16,6 +17,7 @@ __all__ = [
     "PasswordResetToken",
     "UserSession",
     "TestTemplate",
-    "TestScenario"
+    "TestScenario",
+    "TestSuite", "TestSuiteItem", "SuiteExecution"
 ]
 
