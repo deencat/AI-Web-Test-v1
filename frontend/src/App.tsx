@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { TestsPage } from './pages/TestsPage';
+import { TestDetailPage } from './pages/TestDetailPage';
+import TestSuitesPage from './pages/TestSuitesPage';
 import { KnowledgeBasePage } from './pages/KnowledgeBasePage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ExecutionProgressPage } from './pages/ExecutionProgressPage';
@@ -37,6 +39,22 @@ function App() {
           element={
             <ProtectedRoute>
               <TestsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/tests/:testId"
+          element={
+            <ProtectedRoute>
+              <TestDetailPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/test-suites"
+          element={
+            <ProtectedRoute>
+              <TestSuitesPage />
             </ProtectedRoute>
           }
         />

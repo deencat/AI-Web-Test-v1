@@ -3,6 +3,7 @@ Stagehand-based Test Execution Service
 Uses Stagehand for browser automation with Playwright under the hood.
 """
 import asyncio
+import json
 import os
 import sys
 import threading
@@ -37,11 +38,13 @@ class StagehandExecutionService:
     
     def __init__(
         self,
+        browser: str = "chromium",
         headless: bool = True,
         screenshot_dir: str = "artifacts/screenshots",
         video_dir: str = "artifacts/videos"
     ):
         """Initialize Stagehand execution service."""
+        self.browser = browser
         self.headless = headless
         self.screenshot_dir = Path(screenshot_dir)
         self.video_dir = Path(video_dir)
@@ -95,6 +98,10 @@ class StagehandExecutionService:
             if not self.page:
                 raise RuntimeError("Stagehand initialization failed: page is None")
             
+            # Set longer default timeout for complex flows (2 minutes)
+            if hasattr(self.page, '_page'):
+                self.page._page.set_default_timeout(120000)  # 120 seconds
+            
             print(f"[DEBUG] Stagehand initialized successfully, page={self.page}")
     
     async def cleanup(self):
@@ -115,7 +122,8 @@ class StagehandExecutionService:
         user_id: int,
         base_url: str,
         environment: str = "dev",
-        progress_callback: Optional[Callable] = None
+        progress_callback: Optional[Callable] = None,
+        skip_navigation: bool = False
     ):
         """
         Execute a test case and track results.
@@ -128,6 +136,7 @@ class StagehandExecutionService:
             base_url: Base URL for the application under test
             environment: Environment name (dev, staging, production)
             progress_callback: Optional callback for progress updates
+            skip_navigation: If True, skip navigating to base_url (for suite continuation)
             
         Returns:
             TestExecution object with results
@@ -151,13 +160,26 @@ class StagehandExecutionService:
             # Initialize browser
             await self.initialize()
             
-            # Navigate to base URL
-            print(f"[DEBUG] Navigating to {base_url}")
-            await self.page.goto(base_url)
-            await asyncio.sleep(1)  # Wait for page to stabilize
+            # Navigate to base URL (skip if continuing from previous test in suite)
+            if not skip_navigation:
+                print(f"[DEBUG] Navigating to {base_url}")
+                await self.page.goto(base_url)
+                await asyncio.sleep(1)  # Wait for page to stabilize
+            else:
+                print(f"[DEBUG] Skipping navigation (continuing from previous test in suite)")
+                current_url = self.page.url
+                print(f"[DEBUG] Current URL: {current_url}")
             
             # Execute steps
-            steps = test_case.steps if isinstance(test_case.steps, list) else []
+            steps = test_case.steps
+            if isinstance(steps, str):
+                try:
+                    steps = json.loads(steps)
+                except:
+                    steps = [steps]  # Treat as single step if JSON parse fails
+            elif not isinstance(steps, list):
+                steps = []
+            
             total_steps = len(steps)
             passed_steps = 0
             failed_steps = 0
@@ -407,7 +429,7 @@ class StagehandExecutionService:
                 for selector in selectors_to_try:
                     try:
                         print(f"[DEBUG] Trying selector: {selector}")
-                        element = await pw_page.wait_for_selector(selector, timeout=3000)
+                        element = await pw_page.wait_for_selector(selector, timeout=30000)  # 30 seconds for slow pages
                         
                         if element:
                             is_visible = await element.is_visible()
@@ -419,7 +441,7 @@ class StagehandExecutionService:
                                 
                                 # Try normal click first
                                 try:
-                                    await element.click(timeout=5000)
+                                    await element.click(timeout=60000)  # 60 seconds for click to complete
                                 except Exception as click_error:
                                     # If blocked by modal overlay, force the click
                                     if "intercepts pointer events" in str(click_error):
@@ -541,7 +563,7 @@ class StagehandExecutionService:
             for selector in selectors_to_try:
                 try:
                     print(f"[DEBUG] Trying Playwright selector: {selector}")
-                    element = await self.page._page.wait_for_selector(selector, timeout=3000, state='visible')
+                    element = await self.page._page.wait_for_selector(selector, timeout=30000, state='visible')  # 30 seconds
                     
                     if element:
                         print(f"[DEBUG] Found element with: {selector}")
@@ -622,9 +644,9 @@ class StagehandExecutionService:
                 ]
                 for selector in selectors:
                     try:
-                        element = await pw_page.wait_for_selector(selector, timeout=3000, state='visible')
+                        element = await pw_page.wait_for_selector(selector, timeout=30000, state='visible')  # 30 seconds
                         if element:
-                            await element.click(timeout=5000)
+                            await element.click(timeout=60000)  # 60 seconds
                             await asyncio.sleep(0.5)
                             print(f"[DEBUG] ✅ Clicked checkbox")
                             return {
@@ -647,9 +669,9 @@ class StagehandExecutionService:
                 ]
                 for selector in selectors:
                     try:
-                        element = await pw_page.wait_for_selector(selector, timeout=3000, state='visible')
+                        element = await pw_page.wait_for_selector(selector, timeout=30000, state='visible')  # 30 seconds
                         if element:
-                            await element.click(timeout=5000)
+                            await element.click(timeout=60000)  # 60 seconds
                             await asyncio.sleep(1)
                             print(f"[DEBUG] ✅ Clicked close button")
                             return {
@@ -695,9 +717,9 @@ class StagehandExecutionService:
             for selector in selectors:
                 try:
                     print(f"[DEBUG] Trying: {selector}")
-                    element = await pw_page.wait_for_selector(selector, timeout=3000, state='visible')
+                    element = await pw_page.wait_for_selector(selector, timeout=30000, state='visible')  # 30 seconds
                     if element:
-                        await element.click(timeout=5000)
+                        await element.click(timeout=60000)  # 60 seconds
                         await asyncio.sleep(1.5)
                         
                         title = await self.page.title()
@@ -804,7 +826,7 @@ class StagehandExecutionService:
             for selector in selectors:
                 try:
                     print(f"[DEBUG] Trying: {selector}")
-                    element = await pw_page.wait_for_selector(selector, timeout=3000, state='visible')
+                    element = await pw_page.wait_for_selector(selector, timeout=30000, state='visible')  # 30 seconds
                     if element:
                         await element.fill(text_to_type)
                         await asyncio.sleep(0.5)
