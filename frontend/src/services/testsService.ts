@@ -236,11 +236,11 @@ class TestsService {
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
       // Generate mock test cases
-      const count = data.count || 5;
+      const count = data.num_tests || 5;
       const test_cases = Array.from({ length: count }, (_, i) => ({
         id: `GENERATED-${Date.now()}-${i + 1}`,
-        title: `Test Case ${i + 1}: ${data.prompt.substring(0, 50)}`,
-        description: `Verify that ${data.prompt.toLowerCase()} works correctly as expected`,
+        title: `Test Case ${i + 1}: ${data.requirement.substring(0, 50)}`,
+        description: `Verify that ${data.requirement.toLowerCase()} works correctly as expected`,
         steps: [
           'Navigate to the application homepage',
           'Locate and click on the target element',
@@ -254,7 +254,7 @@ class TestsService {
 
       return {
         test_cases,
-        prompt: data.prompt,
+        prompt: data.requirement,
         generated_at: new Date().toISOString(),
       };
     }
