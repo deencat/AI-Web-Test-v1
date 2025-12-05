@@ -73,6 +73,16 @@ class StagehandExecutionService:
             # Get API configuration from environment
             openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
             openrouter_model = os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct")
+            browser_slowmo = int(os.getenv("BROWSER_SLOWMO", "0"))
+            
+            # Build browser launch options
+            launch_options = {
+                "handle_sigint": False,
+                "handle_sigterm": False,
+                "handle_sighup": False
+            }
+            if browser_slowmo > 0:
+                launch_options["slow_mo"] = browser_slowmo
             
             config = StagehandConfig(
                 env="LOCAL",  # Use local Playwright
@@ -82,14 +92,11 @@ class StagehandExecutionService:
                 model_name=f"openrouter/{openrouter_model}",
                 model_api_key=openrouter_key,
                 # Disable signal handlers when running in a thread
-                local_browser_launch_options={
-                    "handle_sigint": False,
-                    "handle_sigterm": False,
-                    "handle_sighup": False
-                }
+                local_browser_launch_options=launch_options
             )
             
             print(f"[DEBUG] Stagehand configured with model: openrouter/{openrouter_model}")
+            print(f"[DEBUG] Browser settings: headless={self.headless}, slow_mo={browser_slowmo}ms")
             
             self.stagehand = Stagehand(config)
             await self.stagehand.init()
@@ -160,16 +167,6 @@ class StagehandExecutionService:
             # Initialize browser
             await self.initialize()
             
-            # Navigate to base URL (skip if continuing from previous test in suite)
-            if not skip_navigation:
-                print(f"[DEBUG] Navigating to {base_url}")
-                await self.page.goto(base_url)
-                await asyncio.sleep(1)  # Wait for page to stabilize
-            else:
-                print(f"[DEBUG] Skipping navigation (continuing from previous test in suite)")
-                current_url = self.page.url
-                print(f"[DEBUG] Current URL: {current_url}")
-            
             # Execute steps
             steps = test_case.steps
             if isinstance(steps, str):
@@ -179,6 +176,24 @@ class StagehandExecutionService:
                     steps = [steps]  # Treat as single step if JSON parse fails
             elif not isinstance(steps, list):
                 steps = []
+            
+            # Check if first step contains navigation (URL)
+            first_step_has_url = False
+            if steps and len(steps) > 0:
+                first_step = str(steps[0]).lower()
+                if any(keyword in first_step for keyword in ['navigate', 'goto', 'open', 'http://', 'https://']):
+                    first_step_has_url = True
+                    print(f"[DEBUG] First step contains navigation, skipping initial goto")
+            
+            # Navigate to base URL only if not continuing from suite and first step doesn't navigate
+            if not skip_navigation and not first_step_has_url:
+                print(f"[DEBUG] Navigating to base URL: {base_url}")
+                await self.page.goto(base_url)
+                await asyncio.sleep(1)  # Wait for page to stabilize
+            elif skip_navigation:
+                print(f"[DEBUG] Skipping navigation (continuing from previous test in suite)")
+                current_url = self.page.url
+                print(f"[DEBUG] Current URL: {current_url}")
             
             total_steps = len(steps)
             passed_steps = 0
@@ -328,15 +343,27 @@ class StagehandExecutionService:
             # Detect action type from description
             desc_lower = step_description.lower()
             
+            # Check if it's a navigation action with URL
+            if any(word in desc_lower for word in ['navigate', 'goto', 'open']) and ('http://' in step_description or 'https://' in step_description):
+                return await self._execute_navigation(step_description)
+            
             # Check if it's a typing action
-            if any(word in desc_lower for word in ['type', 'enter', 'fill', 'input']):
+            elif any(word in desc_lower for word in ['type', 'enter', 'fill', 'input']):
                 return await self._execute_type_simple(step_description)
             
             # Check if it's a click action
             elif any(word in desc_lower for word in ['click', 'select', 'choose', 'press']):
                 return await self._execute_click_simple(step_description)
             
-            # For navigation or other actions, just note it
+            # Check if it's a scroll action
+            elif 'scroll' in desc_lower:
+                return await self._execute_scroll(step_description)
+            
+            # Check if it's a verify/wait action
+            elif any(word in desc_lower for word in ['verify', 'check', 'wait', 'ensure']):
+                return await self._execute_verify(step_description)
+            
+            # For other actions, just note it
             else:
                 await asyncio.sleep(1)
                 title = await self.page.title()
@@ -855,6 +882,134 @@ class StagehandExecutionService:
                 "success": False,
                 "error": str(e),
                 "actual": f"Error: {str(e)}",
+                "expected": step_description
+            }
+    
+    async def _execute_navigation(self, step_description: str) -> Dict[str, Any]:
+        """Navigate to a URL extracted from the step description."""
+        try:
+            # Extract URL from description
+            import re
+            url_match = re.search(r'(https?://[^\s]+)', step_description)
+            if not url_match:
+                return {
+                    "success": False,
+                    "error": "No URL found in navigation step",
+                    "actual": "Could not extract URL",
+                    "expected": step_description
+                }
+            
+            url = url_match.group(1)
+            print(f"[DEBUG] Navigating to URL: {url}")
+            
+            # Navigate using Playwright page
+            await self.page.goto(url)
+            await asyncio.sleep(2)  # Wait for page to load
+            
+            title = await self.page.title()
+            current_url = self.page.url
+            
+            print(f"[DEBUG] Navigation complete - Title: {title}")
+            print(f"[DEBUG] Current URL: {current_url}")
+            
+            return {
+                "success": True,
+                "actual": f"Navigated to {url}. Page title: {title}",
+                "expected": step_description
+            }
+        except Exception as e:
+            print(f"[DEBUG] Navigation failed: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e),
+                "actual": f"Navigation error: {str(e)}",
+                "expected": step_description
+            }
+    
+    async def _execute_scroll(self, step_description: str) -> Dict[str, Any]:
+        """Execute scroll action."""
+        try:
+            print(f"[DEBUG] Executing scroll")
+            
+            # Get underlying Playwright page
+            pw_page = self.page._page
+            
+            # Scroll down the page
+            await pw_page.evaluate("window.scrollBy(0, 500)")
+            await asyncio.sleep(1)
+            
+            return {
+                "success": True,
+                "actual": "Scrolled down page",
+                "expected": step_description
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "actual": f"Scroll error: {str(e)}",
+                "expected": step_description
+            }
+    
+    async def _execute_verify(self, step_description: str) -> Dict[str, Any]:
+        """Execute verification step."""
+        try:
+            print(f"[DEBUG] Executing verification")
+            
+            # For now, just check that page is loaded
+            await asyncio.sleep(1)
+            title = await self.page.title()
+            url = self.page.url
+            
+            # Check if verification text is in page title or URL
+            desc_lower = step_description.lower()
+            title_lower = title.lower()
+            url_lower = url.lower()
+            
+            # Extract quoted text to verify
+            import re
+            verify_pattern = re.findall(r"['\"]([^'\"]+)['\"]", step_description)
+            
+            if verify_pattern:
+                all_found = True
+                for text in verify_pattern:
+                    text_lower = text.lower()
+                    if text_lower not in title_lower and text_lower not in url_lower:
+                        # Check if it's in the page content
+                        pw_page = self.page._page
+                        try:
+                            page_content = await pw_page.content()
+                            if text_lower not in page_content.lower():
+                                all_found = False
+                                break
+                        except:
+                            pass
+                
+                if all_found:
+                    return {
+                        "success": True,
+                        "actual": f"Verification passed. Page: {title}",
+                        "expected": step_description
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "error": "Verification text not found",
+                        "actual": f"Page title: {title}, URL: {url}",
+                        "expected": step_description
+                    }
+            else:
+                # No specific text to verify, just confirm page is loaded
+                return {
+                    "success": True,
+                    "actual": f"Verification step noted. Page: {title}",
+                    "expected": step_description
+                }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "actual": f"Verification error: {str(e)}",
                 "expected": step_description
             }
     

@@ -30,7 +30,6 @@ class ExecutionService {
         test_case_id: testCaseId,
         status: 'pending',
         message: 'Test queued for execution',
-        priority: request.priority || 5,
         queued_at: new Date().toISOString(),
         queue_position: Math.floor(Math.random() * 5) + 1,
       };
@@ -39,7 +38,7 @@ class ExecutionService {
     // Real API call
     try {
       const response = await api.post<ExecutionStartResponse>(
-        `/tests/${testCaseId}/run`,
+        `/executions/tests/${testCaseId}/run`,
         request
       );
       return response.data;

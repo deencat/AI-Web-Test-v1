@@ -3,6 +3,7 @@ import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { TestsPage } from './pages/TestsPage';
 import { TestDetailPage } from './pages/TestDetailPage';
+import { SavedTestsPage } from './pages/SavedTestsPage';
 import TestSuitesPage from './pages/TestSuitesPage';
 import { KnowledgeBasePage } from './pages/KnowledgeBasePage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -39,6 +40,14 @@ function App() {
           element={
             <ProtectedRoute>
               <TestsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/tests/saved"
+          element={
+            <ProtectedRoute>
+              <SavedTestsPage />
             </ProtectedRoute>
           }
         />

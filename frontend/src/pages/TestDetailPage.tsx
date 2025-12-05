@@ -40,7 +40,7 @@ export const TestDetailPage: React.FC = () => {
     setError(null);
 
     try {
-      const testData = await testsService.getTest(testId);
+      const testData = await testsService.getTestById(testId);
       setTest(testData as TestDetail);
     } catch (err) {
       console.error('Failed to load test details:', err);

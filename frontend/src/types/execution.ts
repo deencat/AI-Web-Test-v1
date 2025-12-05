@@ -135,7 +135,6 @@ export interface ExecutionStartRequest {
   environment?: EnvironmentType;
   base_url?: string;
   triggered_by?: TriggerType;
-  priority?: number; // 1=high, 5=medium, 10=low
 }
 
 export interface ExecutionStartResponse {
