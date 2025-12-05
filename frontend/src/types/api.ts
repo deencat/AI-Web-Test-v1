@@ -96,8 +96,10 @@ export interface RunTestResponse {
 
 // Test Generation types
 export interface GenerateTestsRequest {
-  prompt: string;
-  count?: number;
+  requirement: string;  // Changed from 'prompt' to match backend
+  test_type?: 'e2e' | 'unit' | 'integration' | 'api';
+  num_tests?: number;  // Changed from 'count' to match backend
+  model?: string;
 }
 
 export interface GeneratedTestCase {

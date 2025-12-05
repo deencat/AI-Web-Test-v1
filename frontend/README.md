@@ -68,6 +68,7 @@ VITE_USE_MOCK=false
 - Requires backend server running on port 8000
 - Uses real authentication and data
 - **Default credentials:** username: `admin`, password: `admin123`
+- **AI test generation requires:** OpenRouter API key configured in backend
 
 **Option 2: Use Mock Data (Frontend-only Development)**
 ```env
@@ -76,6 +77,7 @@ VITE_USE_MOCK=true
 - No backend required
 - Accepts any username/password
 - Uses static mock data for testing UI
+- AI test generation returns mock tests (no real AI)
 
 ### Starting the Backend Server
 
@@ -90,6 +92,13 @@ python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 Backend will be available at: http://127.0.0.1:8000  
 API Documentation: http://127.0.0.1:8000/docs
+
+**Important:** For AI test generation features to work, the backend needs an OpenRouter API key configured in `backend/.env`:
+```env
+OPENROUTER_API_KEY=sk-or-v1-your-api-key-here
+OPENROUTER_MODEL=mistralai/mixtral-8x7b-instruct
+```
+Get your free API key from: https://openrouter.ai/keys
 
 ---
 
