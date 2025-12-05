@@ -93,8 +93,89 @@ export const TestsPage: React.FC = () => {
     setEditingTest(null);
   };
 
-  const handleSaveTest = (testCase: GeneratedTestCase) => {
-    alert(`Saving test: ${testCase.title}\n\nThis will be implemented when backend is ready.`);
+  const handleSaveTest = async (testCase: GeneratedTestCase) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Create the test case using the API
+      const createRequest: any = {
+        title: testCase.title,
+        description: testCase.description,
+        test_type: 'e2e', // Default to e2e for generated tests
+        priority: testCase.priority || 'medium',
+        status: 'pending',
+        steps: testCase.steps,
+        expected_result: testCase.expected_result
+      };
+      
+      await testsService.createTest(createRequest);
+      
+      // Remove from generated tests after saving
+      setGeneratedTests(generatedTests.filter((t) => t.id !== testCase.id));
+      
+      alert(`✅ Test "${testCase.title}" saved successfully!`);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save test';
+      setError(errorMessage);
+      alert(`❌ Error saving test: ${errorMessage}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveAllTests = async () => {
+    if (generatedTests.length === 0) {
+      alert('No tests to save');
+      return;
+    }
+    
+    if (!confirm(`Save all ${generatedTests.length} test cases?`)) {
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      setError(null);
+      
+      let savedCount = 0;
+      let failedCount = 0;
+      
+      for (const testCase of generatedTests) {
+        try {
+          const createRequest: any = {
+            title: testCase.title,
+            description: testCase.description,
+            test_type: 'e2e', // Default to e2e for generated tests
+            priority: testCase.priority || 'medium',
+            status: 'pending',
+            steps: testCase.steps,
+            expected_result: testCase.expected_result
+          };
+          
+          await testsService.createTest(createRequest);
+          savedCount++;
+        } catch (err) {
+          console.error(`Failed to save test "${testCase.title}":`, err);
+          failedCount++;
+        }
+      }
+      
+      // Clear all generated tests after saving
+      setGeneratedTests([]);
+      
+      if (failedCount === 0) {
+        alert(`✅ Successfully saved all ${savedCount} test cases!`);
+      } else {
+        alert(`⚠️ Saved ${savedCount} tests, but ${failedCount} failed to save.`);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save tests';
+      setError(errorMessage);
+      alert(`❌ Error: ${errorMessage}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDeleteTest = (testCase: GeneratedTestCase) => {
@@ -126,12 +207,24 @@ export const TestsPage: React.FC = () => {
                 : 'Manage and execute your test cases'}
             </p>
           </div>
-          {!showGenerator && (
-            <Button variant="primary" onClick={handleCreateTest}>
-              <Sparkles className="w-5 h-5 mr-2" />
-              Generate New Tests
-            </Button>
-          )}
+          <div className="flex gap-3">
+            {!showGenerator && (
+              <>
+                <Button variant="secondary" onClick={() => navigate('/tests/saved')}>
+                  View Saved Tests
+                </Button>
+                <Button variant="primary" onClick={handleCreateTest}>
+                  <Sparkles className="w-5 h-5 mr-2" />
+                  Generate New Tests
+                </Button>
+              </>
+            )}
+            {showGenerator && (
+              <Button variant="secondary" onClick={() => navigate('/tests/saved')}>
+                View Saved Tests
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Test Generation Form */}
@@ -214,8 +307,8 @@ export const TestsPage: React.FC = () => {
             </div>
 
             <div className="flex gap-3">
-              <Button variant="primary" onClick={() => alert('Save all tests')}>
-                Save All Tests
+              <Button variant="primary" onClick={handleSaveAllTests} disabled={loading}>
+                {loading ? 'Saving...' : 'Save All Tests'}
               </Button>
               <Button variant="secondary" onClick={handleCreateTest}>
                 Generate More Tests

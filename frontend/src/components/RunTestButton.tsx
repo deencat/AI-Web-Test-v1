@@ -5,7 +5,6 @@ import executionService from '../services/executionService';
 interface RunTestButtonProps {
   testCaseId: number;
   testCaseName?: string;
-  priority?: 1 | 5 | 10;
   onExecutionStart?: (executionId: number) => void;
   disabled?: boolean;
   className?: string;
@@ -14,7 +13,6 @@ interface RunTestButtonProps {
 export function RunTestButton({
   testCaseId,
   testCaseName,
-  priority = 5,
   onExecutionStart,
   disabled = false,
   className = '',
@@ -28,8 +26,8 @@ export function RunTestButton({
       const response = await executionService.startExecution(testCaseId, {
         browser: 'chromium',
         environment: 'dev',
+        base_url: 'https://web.three.com.hk', // Base domain (actual URL from test steps)
         triggered_by: 'manual',
-        priority,
       });
 
       // Show success notification

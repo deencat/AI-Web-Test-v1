@@ -71,10 +71,18 @@ export interface TestStep {
 }
 
 export interface CreateTestRequest {
-  name: string;
+  title: string;
   description: string;
+  test_type: 'e2e' | 'unit' | 'integration' | 'api';
   priority?: 'high' | 'medium' | 'low';
-  agent?: string;
+  status?: 'pending' | 'passed' | 'failed' | 'running';
+  steps: string[];
+  expected_result: string;
+  preconditions?: string;
+  test_data?: Record<string, any>;
+  category_id?: number;
+  tags?: string[];
+  test_metadata?: Record<string, any>;
 }
 
 export interface UpdateTestRequest {
