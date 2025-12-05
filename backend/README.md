@@ -71,9 +71,10 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 ### Access the API
 
-- **Swagger UI:** http://127.0.0.1:8000/docs
-- **ReDoc:** http://127.0.0.1:8000/redoc
 - **API Root:** http://127.0.0.1:8000/
+- **Swagger UI:** http://127.0.0.1:8000/api/v1/docs
+- **ReDoc:** http://127.0.0.1:8000/api/v1/redoc
+- **OpenAPI Schema:** http://127.0.0.1:8000/api/v1/openapi.json
 
 ### Test Login
 
@@ -82,7 +83,7 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 - Password: `admin123`
 
 **Test in Swagger UI:**
-1. Open http://127.0.0.1:8000/docs
+1. Open http://127.0.0.1:8000/api/v1/docs
 2. Click on POST `/api/v1/auth/login`
 3. Click "Try it out"
 4. Enter credentials
