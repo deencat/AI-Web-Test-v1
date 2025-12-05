@@ -37,11 +37,26 @@ export const TestsPage: React.FC = () => {
       return;
     }
 
+    // Validate minimum length (backend requires 10 chars)
+    if (prompt.trim().length < 10) {
+      setError('Test requirement must be at least 10 characters long');
+      return;
+    }
+
+    // Validate maximum length (backend allows max 2000 chars)
+    if (prompt.trim().length > 2000) {
+      setError('Test requirement cannot exceed 2000 characters');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
-      const result = await testsService.generateTests({ prompt, count: 5 });
+      const result = await testsService.generateTests({ 
+        requirement: prompt,  // Changed from 'prompt' to 'requirement'
+        num_tests: 5  // Changed from 'count' to 'num_tests'
+      });
       setGeneratedTests(result.test_cases);
       setShowGenerator(false);
     } catch (err) {
@@ -126,6 +141,9 @@ export const TestsPage: React.FC = () => {
               <div>
                 <label className="block text-sm font-semibold text-gray-900 mb-2">
                   Describe the test you want to create:
+                  <span className="text-xs text-gray-500 ml-2 font-normal">
+                    (minimum 10 characters)
+                  </span>
                 </label>
                 <textarea
                   value={prompt}
@@ -136,7 +154,7 @@ export const TestsPage: React.FC = () => {
                 />
                 <p className="text-xs text-gray-500 mt-2">
                   Be specific about what you want to test. Include details like:
-                  user actions, expected outcomes, and test data.
+                  user actions, expected outcomes, and test data. Minimum 10 characters required.
                 </p>
               </div>
 
