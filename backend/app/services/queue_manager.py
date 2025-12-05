@@ -183,7 +183,14 @@ class QueueManager:
                         # Create NEW Stagehand service for THIS thread (not singleton!)
                         # Each thread needs its own instance because Playwright can't be shared across event loops
                         from app.services.stagehand_service import StagehandExecutionService
-                        service = StagehandExecutionService(headless=True)
+                        import os
+                        
+                        # TEMPORARY: Force headless=False to see browser during testing
+                        headless = False  # TODO: Change back to env var after testing
+                        
+                        print(f"[DEBUG] Creating StagehandExecutionService with headless={headless}")
+                        
+                        service = StagehandExecutionService(headless=headless)
                         
                         try:
                             loop.run_until_complete(
