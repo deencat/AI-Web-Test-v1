@@ -86,10 +86,19 @@ export interface CreateTestRequest {
 }
 
 export interface UpdateTestRequest {
-  name?: string;
+  title?: string;
+  name?: string;  // Keep for backward compatibility
   description?: string;
+  test_type?: 'e2e' | 'unit' | 'integration' | 'api';
   status?: 'passed' | 'failed' | 'pending' | 'running';
   priority?: 'high' | 'medium' | 'low';
+  steps?: string[];
+  expected_result?: string;
+  preconditions?: string;
+  test_data?: Record<string, any>;
+  category_id?: number;
+  tags?: string[];
+  test_metadata?: Record<string, any>;
 }
 
 export interface RunTestRequest {
