@@ -215,8 +215,17 @@ class StagehandExecutionService:
                     
                     print(f"[DEBUG] Step {idx}/{total_steps}: {step_desc}")
                     
-                    # Execute the step (simplified for MVP)
-                    result = await self._execute_step_simple(step_desc, idx)
+                    # Hybrid execution strategy:
+                    # 1. Try Playwright selectors first (fast, free, reliable)
+                    # 2. If fails, fallback to Stagehand AI (flexible, handles complex cases)
+                    USE_AI_ONLY = os.getenv("USE_AI_EXECUTION", "false").lower() == "true"
+                    
+                    if USE_AI_ONLY:
+                        # Force AI execution for all steps
+                        result = await self._execute_step_ai(step_desc, idx)
+                    else:
+                        # Try Playwright first, fallback to AI if it fails
+                        result = await self._execute_step_hybrid(step_desc, idx)
                     
                     step_end = datetime.utcnow()
                     duration = (step_end - step_start).total_seconds()
@@ -330,6 +339,111 @@ class StagehandExecutionService:
         
         return execution
     
+    async def _execute_step_hybrid(self, step_description: str, step_number: int) -> Dict[str, Any]:
+        """
+        Hybrid execution: Try Playwright first, fallback to AI if it fails.
+        
+        This provides the best of both worlds:
+        - Fast and free Playwright selectors for common cases
+        - AI fallback for complex or dynamic scenarios
+        
+        IMPORTANT: AI fallback executes ONLY the current step, not all steps from beginning.
+        Browser session is shared, so context from previous steps is preserved.
+        """
+        print(f"[DEBUG] ========================================")
+        print(f"[DEBUG] 🔄 HYBRID Step {step_number}: {step_description}")
+        print(f"[DEBUG] Strategy: Playwright first (10s timeout), then AI fallback if needed")
+        
+        # Try Playwright-based execution first
+        print(f"[DEBUG] 🎭 Attempting with Playwright selectors...")
+        result = await self._execute_step_simple(step_description, step_number)
+        
+        # Check if it succeeded
+        if result.get("success"):
+            print(f"[DEBUG] ✅ Playwright execution succeeded for step {step_number}")
+            return result
+        
+        # If Playwright failed, try AI fallback for THIS STEP ONLY
+        print(f"[DEBUG] ⚠️  Playwright failed for step {step_number}: {result.get('error', 'Unknown error')}")
+        print(f"[DEBUG] 🤖 Attempting AI fallback for step {step_number} ONLY (not restarting from step 1)...")
+        
+        ai_result = await self._execute_step_ai(step_description, step_number)
+        
+        if ai_result.get("success"):
+            print(f"[DEBUG] ✅ AI fallback succeeded for step {step_number}!")
+            # Add note that AI was used
+            ai_result["actual"] = f"[AI Fallback] {ai_result.get('actual', '')}"
+            return ai_result
+        else:
+            print(f"[DEBUG] ❌ Both Playwright and AI failed for step {step_number}")
+            # Return the AI error (usually more informative)
+            return ai_result
+    
+    async def _execute_step_ai(self, step_description: str, step_number: int) -> Dict[str, Any]:
+        """
+        Execute a single test step using Stagehand AI.
+        
+        Uses page.act() for AI-powered natural language execution.
+        More flexible but slower and requires API calls.
+        
+        IMPORTANT: This executes ONLY the specified step, not all steps from the beginning.
+        The browser session is shared with Playwright, so previous step context is preserved.
+        """
+        try:
+            # Get current page state before AI execution
+            url_before = self.page.url
+            title_before = await self.page.title()
+            
+            print(f"[DEBUG] ========================================")
+            print(f"[DEBUG] 🤖 AI Fallback for Step {step_number} ONLY")
+            print(f"[DEBUG] Step Description: {step_description}")
+            print(f"[DEBUG] Browser state BEFORE AI:")
+            print(f"[DEBUG]   - URL: {url_before}")
+            print(f"[DEBUG]   - Title: {title_before}")
+            print(f"[DEBUG] Calling page.act() for THIS STEP ONLY...")
+            
+            # Use Stagehand AI to execute the step
+            await self.page.act(step_description)
+            
+            await asyncio.sleep(1.5)  # Wait for action to complete
+            
+            title_after = await self.page.title()
+            url_after = self.page.url
+            
+            print(f"[DEBUG] ✅ AI action completed successfully!")
+            print(f"[DEBUG] Browser state AFTER AI:")
+            print(f"[DEBUG]   - URL: {url_after}")
+            print(f"[DEBUG]   - Title: {title_after}")
+            print(f"[DEBUG] Changes: URL changed={url_before != url_after}, Title changed={title_before != title_after}")
+            print(f"[DEBUG] ========================================")
+            
+            return {
+                "success": True,
+                "actual": f"AI action completed. Page: {title_after} | URL: {url_after}",
+                "expected": step_description
+            }
+            
+        except Exception as e:
+            print(f"[DEBUG] ❌ AI action failed: {str(e)}")
+            await asyncio.sleep(0.5)
+            
+            # Try to get page state even after error
+            try:
+                title = await self.page.title()
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "actual": f"AI action failed: {str(e)}. Page: {title}",
+                    "expected": step_description
+                }
+            except:
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "actual": f"AI action failed: {str(e)}",
+                    "expected": step_description
+                }
+    
     async def _execute_step_simple(self, step_description: str, step_number: int) -> Dict[str, Any]:
         """
         Execute a single test step using direct Playwright commands.
@@ -337,30 +451,32 @@ class StagehandExecutionService:
         Uses simple selectors for reliability without AI overhead.
         """
         try:
-            print(f"[DEBUG] ========================================")
-            print(f"[DEBUG] Executing step {step_number}: {step_description}")
-            
             # Detect action type from description
             desc_lower = step_description.lower()
             
             # Check if it's a navigation action with URL
             if any(word in desc_lower for word in ['navigate', 'goto', 'open']) and ('http://' in step_description or 'https://' in step_description):
+                print(f"[DEBUG] 🌐 Detected navigation action")
                 return await self._execute_navigation(step_description)
             
             # Check if it's a typing action
             elif any(word in desc_lower for word in ['type', 'enter', 'fill', 'input']):
+                print(f"[DEBUG] ⌨️  Detected typing action")
                 return await self._execute_type_simple(step_description)
             
             # Check if it's a click action
             elif any(word in desc_lower for word in ['click', 'select', 'choose', 'press']):
+                print(f"[DEBUG] 🖱️  Detected click action")
                 return await self._execute_click_simple(step_description)
             
             # Check if it's a scroll action
             elif 'scroll' in desc_lower:
+                print(f"[DEBUG] 📜 Detected scroll action")
                 return await self._execute_scroll(step_description)
             
             # Check if it's a verify/wait action
             elif any(word in desc_lower for word in ['verify', 'check', 'wait', 'ensure']):
+                print(f"[DEBUG] ✓ Detected verify/wait action")
                 return await self._execute_verify(step_description)
             
             # For other actions, just note it
@@ -664,113 +780,135 @@ class StagehandExecutionService:
             # Special case: checkbox
             if 'checkbox' in desc_lower:
                 print(f"[DEBUG] Looking for checkbox...")
-                selectors = [
-                    "input[type='checkbox']:visible",
-                    "[role='checkbox']:visible",
-                    "label:has(input[type='checkbox']):visible",
-                ]
-                for selector in selectors:
-                    try:
-                        element = await pw_page.wait_for_selector(selector, timeout=30000, state='visible')  # 30 seconds
-                        if element:
-                            await element.click(timeout=60000)  # 60 seconds
-                            await asyncio.sleep(0.5)
-                            print(f"[DEBUG] ✅ Clicked checkbox")
-                            return {
-                                "success": True,
-                                "actual": "Clicked checkbox",
-                                "expected": step_description
-                            }
-                    except Exception as e:
-                        print(f"[DEBUG] {selector} failed: {str(e)[:100]}")
-                        continue
+                # Try most common checkbox selector first - fail fast if not found
+                try:
+                    element = await pw_page.wait_for_selector(
+                        "input[type='checkbox']:visible, [role='checkbox']:visible, label:has(input[type='checkbox']):visible",
+                        timeout=10000,  # 10 seconds
+                        state='visible'
+                    )
+                    if element:
+                        await element.click(timeout=10000)  # 10 seconds
+                        await asyncio.sleep(0.5)
+                        print(f"[DEBUG] ✅ Clicked checkbox")
+                        return {
+                            "success": True,
+                            "actual": "Clicked checkbox",
+                            "expected": step_description
+                        }
+                except Exception as e:
+                    print(f"[DEBUG] Checkbox not found: {str(e)[:100]}")
+                    # Don't retry - let AI fallback handle it
+                    return {
+                        "success": False,
+                        "error": f"Checkbox not found: {str(e)}",
+                        "actual": "Checkbox element not visible",
+                        "expected": step_description
+                    }
             
             # Special case: close button (X)
             if desc_lower.startswith("find and click the 'x'"):
                 print(f"[DEBUG] Looking for close button...")
-                selectors = [
-                    "button[aria-label*='close' i]:visible",
-                    "button[class*='close' i]:visible",
-                    "button:has-text('×'):visible",
-                    "[aria-label*='close' i]:visible",
-                ]
-                for selector in selectors:
-                    try:
-                        element = await pw_page.wait_for_selector(selector, timeout=30000, state='visible')  # 30 seconds
-                        if element:
-                            await element.click(timeout=60000)  # 60 seconds
-                            await asyncio.sleep(1)
-                            print(f"[DEBUG] ✅ Clicked close button")
-                            return {
-                                "success": True,
-                                "actual": "Clicked close button",
-                                "expected": step_description
-                            }
-                    except Exception as e:
-                        print(f"[DEBUG] {selector} failed: {str(e)[:100]}")
-                        continue
+                # Combine selectors - fail fast if not found
+                try:
+                    element = await pw_page.wait_for_selector(
+                        "button[aria-label*='close' i]:visible, button[class*='close' i]:visible, button:has-text('×'):visible, [aria-label*='close' i]:visible",
+                        timeout=10000,  # 10 seconds
+                        state='visible'
+                    )
+                    if element:
+                        await element.click(timeout=10000)  # 10 seconds
+                        await asyncio.sleep(1)
+                        print(f"[DEBUG] ✅ Clicked close button")
+                        return {
+                            "success": True,
+                            "actual": "Clicked close button",
+                            "expected": step_description
+                        }
+                except Exception as e:
+                    print(f"[DEBUG] Close button not found: {str(e)[:100]}")
+                    # Don't retry - let AI fallback handle it
+                    return {
+                        "success": False,
+                        "error": f"Close button not found: {str(e)}",
+                        "actual": "Close button not visible",
+                        "expected": step_description
+                    }
             
-            # Extract text from quotes in description
+            # Extract text from quotes in description, or extract from "click on X" pattern
             quoted_match = re.search(r"['\"]([^'\"]+)['\"]", step_description)
-            if not quoted_match:
-                # No quoted text found
-                return {
-                    "success": False,
-                    "error": "Could not extract button text from description",
-                    "actual": "No quoted text found",
-                    "expected": step_description
-                }
             
-            button_text = quoted_match.group(1)
+            if quoted_match:
+                button_text = quoted_match.group(1)
+            else:
+                # Try to extract text after "click on", "click the", "select", etc.
+                click_pattern = re.search(r"(?:click on|click the|select|choose|press)\s+(?:the\s+)?(.+?)(?:\s+button|\s+link|\s+plan|$)", step_description, re.IGNORECASE)
+                if click_pattern:
+                    button_text = click_pattern.group(1).strip()
+                else:
+                    # Last resort: extract everything after the action word
+                    action_pattern = re.search(r"(?:click|select|choose|press)\s+(.+)", step_description, re.IGNORECASE)
+                    if action_pattern:
+                        button_text = action_pattern.group(1).strip()
+                    else:
+                        return {
+                            "success": False,
+                            "error": "Could not extract button text from description",
+                            "actual": "No button text pattern found",
+                            "expected": step_description
+                        }
+            
             print(f"[DEBUG] Looking for button: '{button_text}'")
             
             # Check if we're in a modal context (for login flow)
             in_modal = 'login' in desc_lower or 'email' in desc_lower or 'password' in desc_lower
             
-            # Try simple selectors - Playwright will auto-wait for elements
-            base_selectors = [
+            # Build combined selector - try all patterns at once instead of sequentially
+            # This reduces timeout from N * 30 seconds to just 10 seconds total
+            base_patterns = [
                 f"button:has-text('{button_text}')",
                 f"a:has-text('{button_text}')",
                 f"[role='button']:has-text('{button_text}')",
                 f"text='{button_text}'",
             ]
             
-            # If in modal, also try with .modal-content prefix
-            selectors = []
+            # If in modal, prepend .modal-content to patterns
             if in_modal:
-                selectors.extend([f".modal-content {s}" for s in base_selectors])
-            selectors.extend(base_selectors)
+                combined_selector = ", ".join([f".modal-content {p}" for p in base_patterns] + base_patterns)
+            else:
+                combined_selector = ", ".join(base_patterns)
             
-            for selector in selectors:
-                try:
-                    print(f"[DEBUG] Trying: {selector}")
-                    element = await pw_page.wait_for_selector(selector, timeout=30000, state='visible')  # 30 seconds
-                    if element:
-                        await element.click(timeout=60000)  # 60 seconds
-                        await asyncio.sleep(1.5)
-                        
-                        title = await self.page.title()
-                        url = self.page.url
-                        
-                        print(f"[DEBUG] ✅ Clicked '{button_text}'")
-                        print(f"[DEBUG] Page: {title} | URL: {url}")
-                        
-                        return {
-                            "success": True,
-                            "actual": f"Clicked '{button_text}'. Page: {title}",
-                            "expected": step_description
-                        }
-                except Exception as e:
-                    print(f"[DEBUG] {selector} failed: {str(e)[:100]}")
-                    continue
-            
-            # If all selectors failed
-            return {
-                "success": False,
-                "error": f"Could not find button '{button_text}'",
-                "actual": "Button not found with any selector",
-                "expected": step_description
-            }
+            try:
+                print(f"[DEBUG] Trying combined selector (timeout: 10s)")
+                element = await pw_page.wait_for_selector(
+                    combined_selector, 
+                    timeout=10000,  # 10 seconds total (not per selector)
+                    state='visible'
+                )
+                if element:
+                    await element.click(timeout=10000)  # 10 seconds
+                    await asyncio.sleep(1.5)
+                    
+                    title = await self.page.title()
+                    url = self.page.url
+                    
+                    print(f"[DEBUG] ✅ Clicked '{button_text}'")
+                    print(f"[DEBUG] Page: {title} | URL: {url}")
+                    
+                    return {
+                        "success": True,
+                        "actual": f"Clicked '{button_text}'. Page: {title}",
+                        "expected": step_description
+                    }
+            except Exception as e:
+                print(f"[DEBUG] Click failed: {str(e)[:150]}")
+                # Don't retry - let AI fallback handle it
+                return {
+                    "success": False,
+                    "error": f"Could not find button '{button_text}': {str(e)}",
+                    "actual": "Button not found or not clickable",
+                    "expected": step_description
+                }
             
         except Exception as e:
             return {
