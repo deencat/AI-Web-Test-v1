@@ -5,7 +5,6 @@ import {
   UpdateTestRequest,
   RunTestRequest,
   RunTestResponse,
-  PaginatedResponse,
   GenerateTestsRequest,
   GenerateTestsResponse,
 } from '../types/api';
@@ -118,10 +117,19 @@ class TestsService {
         throw new Error('Test not found');
       }
 
+      // Update the test, handling type conversions
+      const updates: Partial<Test> = {
+        updated_at: new Date().toISOString(),
+      };
+      
+      if (data.name) updates.name = data.name;
+      if (data.description) updates.description = data.description;
+      if (data.status) updates.status = data.status;
+      if (data.priority) updates.priority = data.priority;
+      
       mockTests[testIndex] = {
         ...mockTests[testIndex],
-        ...data,
-        updated_at: new Date().toISOString(),
+        ...updates,
       };
 
       return mockTests[testIndex];
