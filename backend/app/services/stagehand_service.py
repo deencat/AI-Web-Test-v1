@@ -71,8 +71,7 @@ class StagehandExecutionService:
             print(f"[DEBUG] Initializing Stagehand in thread {threading.current_thread().name}")
             
             # Get API configuration from environment
-            openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-            openrouter_model = os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct")
+            use_google_direct = os.getenv("USE_GOOGLE_DIRECT", "false").lower() == "true"
             browser_slowmo = int(os.getenv("BROWSER_SLOWMO", "0"))
             
             # Build browser launch options
@@ -84,18 +83,44 @@ class StagehandExecutionService:
             if browser_slowmo > 0:
                 launch_options["slow_mo"] = browser_slowmo
             
-            config = StagehandConfig(
-                env="LOCAL",  # Use local Playwright
-                headless=self.headless,
-                verbose=1,  # Enable logging to see AI calls
-                # Configure LiteLLM to use OpenRouter
-                model_name=f"openrouter/{openrouter_model}",
-                model_api_key=openrouter_key,
-                # Disable signal handlers when running in a thread
-                local_browser_launch_options=launch_options
-            )
+            # Configure model based on USE_GOOGLE_DIRECT setting
+            if use_google_direct:
+                # Use Google API directly (FREE with Google AI Studio)
+                google_api_key = os.getenv("GOOGLE_API_KEY")
+                google_model = os.getenv("GOOGLE_MODEL", "gemini-1.5-flash")
+                
+                if not google_api_key:
+                    raise ValueError(
+                        "GOOGLE_API_KEY not set in .env file. "
+                        "Get your key from: https://aistudio.google.com/app/apikey"
+                    )
+                
+                config = StagehandConfig(
+                    env="LOCAL",
+                    headless=self.headless,
+                    verbose=1,
+                    # Use Google Gemini directly via LiteLLM
+                    model_name=f"gemini/{google_model}",
+                    model_api_key=google_api_key,
+                    local_browser_launch_options=launch_options
+                )
+                print(f"[DEBUG] ✅ Using Google API directly with model: {google_model}")
+                print(f"[DEBUG] This will use your Google AI Studio free tier (no OpenRouter credits needed)")
+            else:
+                # Use OpenRouter (original behavior)
+                openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+                openrouter_model = os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct")
+                
+                config = StagehandConfig(
+                    env="LOCAL",
+                    headless=self.headless,
+                    verbose=1,
+                    model_name=f"openrouter/{openrouter_model}",
+                    model_api_key=openrouter_key,
+                    local_browser_launch_options=launch_options
+                )
+                print(f"[DEBUG] Using OpenRouter with model: {openrouter_model}")
             
-            print(f"[DEBUG] Stagehand configured with model: openrouter/{openrouter_model}")
             print(f"[DEBUG] Browser settings: headless={self.headless}, slow_mo={browser_slowmo}ms")
             
             self.stagehand = Stagehand(config)
