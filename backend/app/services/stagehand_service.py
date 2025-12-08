@@ -890,7 +890,8 @@ class StagehandExecutionService:
         try:
             # Extract URL from description
             import re
-            url_match = re.search(r'(https?://[^\s]+)', step_description)
+            # Match URL but stop at quotes, whitespace, or other delimiters
+            url_match = re.search(r'(https?://[^\s\'"<>]+)', step_description)
             if not url_match:
                 return {
                     "success": False,
