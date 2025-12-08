@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
@@ -8,10 +8,11 @@ import { mockTests } from '../mock/tests';
 import testsService from '../services/testsService';
 import { GeneratedTestCase } from '../types/api';
 import { Sparkles, Loader2 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 export const TestsPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [filter, setFilter] = useState('all');
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
@@ -19,6 +20,7 @@ export const TestsPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showGenerator, setShowGenerator] = useState(true);
   const [editingTest, setEditingTest] = useState<GeneratedTestCase | null>(null);
+  const [editingSavedTest, setEditingSavedTest] = useState(false);
   const [editForm, setEditForm] = useState({
     title: '',
     description: '',
@@ -26,6 +28,53 @@ export const TestsPage: React.FC = () => {
     expected_result: '',
     priority: 'medium' as 'high' | 'medium' | 'low',
   });
+
+  // Handle edit parameter from URL
+  useEffect(() => {
+    const editId = searchParams.get('edit');
+    if (editId) {
+      loadAndEditTest(editId);
+    }
+  }, [searchParams]);
+
+  const loadAndEditTest = async (testId: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const test = await testsService.getTestById(testId);
+      
+      // Convert saved test to GeneratedTestCase format for editing
+      // Backend returns: { id, title, description, steps, expected_result, priority, ... }
+      const testCase: GeneratedTestCase = {
+        id: test.id?.toString() || testId,
+        title: (test as any).title || test.name || '',
+        description: test.description || '',
+        steps: Array.isArray((test as any).steps) 
+          ? (test as any).steps.map((step: any) => typeof step === 'string' ? step : step.description || '')
+          : [],
+        expected_result: (test as any).expected_result || '',
+        priority: test.priority as 'high' | 'medium' | 'low',
+      };
+      
+      setEditingTest(testCase);
+      setEditingSavedTest(true);
+      setShowGenerator(false);
+      setEditForm({
+        title: testCase.title,
+        description: testCase.description,
+        steps: [...testCase.steps],
+        expected_result: testCase.expected_result,
+        priority: testCase.priority,
+      });
+    } catch (err) {
+      console.error('Failed to load test:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load test');
+      alert('Failed to load test for editing. Redirecting to saved tests page.');
+      navigate('/tests/saved');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleExecutionStart = (executionId: number) => {
     navigate(`/executions/${executionId}`);
@@ -68,6 +117,7 @@ export const TestsPage: React.FC = () => {
 
   const handleEditTest = (testCase: GeneratedTestCase) => {
     setEditingTest(testCase);
+    setEditingSavedTest(false); // This is a generated test
     setEditForm({
       title: testCase.title,
       description: testCase.description,
@@ -77,20 +127,52 @@ export const TestsPage: React.FC = () => {
     });
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editingTest) return;
 
-    const updatedTests = generatedTests.map((test) =>
-      test.id === editingTest.id
-        ? { ...editingTest, ...editForm }
-        : test
-    );
-    setGeneratedTests(updatedTests);
-    setEditingTest(null);
+    // If editing a saved test, update it in the database
+    if (editingSavedTest) {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        await testsService.updateTest(editingTest.id!, {
+          title: editForm.title,
+          description: editForm.description,
+          priority: editForm.priority,
+          steps: editForm.steps,
+          expected_result: editForm.expected_result,
+        });
+        
+        alert(`✅ Test "${editForm.title}" updated successfully!`);
+        navigate('/tests/saved');
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to update test';
+        setError(errorMessage);
+        alert(`❌ Error updating test: ${errorMessage}`);
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      // Editing a generated test (not yet saved)
+      const updatedTests = generatedTests.map((test) =>
+        test.id === editingTest.id
+          ? { ...editingTest, ...editForm }
+          : test
+      );
+      setGeneratedTests(updatedTests);
+      setEditingTest(null);
+      setEditingSavedTest(false);
+    }
   };
 
   const handleCancelEdit = () => {
+    if (editingSavedTest) {
+      // If was editing a saved test, go back to saved tests page
+      navigate('/tests/saved');
+    }
     setEditingTest(null);
+    setEditingSavedTest(false);
   };
 
   const handleSaveTest = async (testCase: GeneratedTestCase) => {
