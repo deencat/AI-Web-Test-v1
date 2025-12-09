@@ -539,15 +539,11 @@ class StagehandExecutionService:
                 print(f"[DEBUG] ✓ Detected verify/wait action")
                 return await self._execute_verify(step_description)
             
-            # For other actions, just note it
+            # For unrecognized actions, use Stagehand AI instead of just noting
             else:
-                await asyncio.sleep(1)
-                title = await self.page.title()
-                return {
-                    "success": True,
-                    "actual": f"Step noted (page title: {title})",
-                    "expected": step_description
-                }
+                print(f"[DEBUG] ⚠️  Unrecognized action type, using Stagehand AI fallback")
+                print(f"[DEBUG] Step: {step_description}")
+                return await self._execute_ai_action(step_description)
         
         except Exception as e:
             return {
