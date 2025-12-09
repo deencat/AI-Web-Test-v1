@@ -70,8 +70,7 @@ class StagehandExecutionService:
             
             print(f"[DEBUG] Initializing Stagehand in thread {threading.current_thread().name}")
             
-            # Get API configuration from environment
-            use_google_direct = os.getenv("USE_GOOGLE_DIRECT", "false").lower() == "true"
+            # Get browser configuration
             browser_slowmo = int(os.getenv("BROWSER_SLOWMO", "0"))
             
             # Build browser launch options
@@ -83,8 +82,42 @@ class StagehandExecutionService:
             if browser_slowmo > 0:
                 launch_options["slow_mo"] = browser_slowmo
             
-            # Configure model based on USE_GOOGLE_DIRECT setting
-            if use_google_direct:
+            # Determine which provider to use (priority order)
+            model_provider = os.getenv("MODEL_PROVIDER", "openrouter").lower()
+            use_google_direct = os.getenv("USE_GOOGLE_DIRECT", "false").lower() == "true"
+            use_cerebras = os.getenv("USE_CEREBRAS", "false").lower() == "true"
+            
+            # Legacy support: USE_GOOGLE_DIRECT and USE_CEREBRAS override MODEL_PROVIDER
+            if use_cerebras:
+                model_provider = "cerebras"
+            elif use_google_direct:
+                model_provider = "google"
+            
+            # Configure model based on provider
+            if model_provider == "cerebras":
+                # Use Cerebras API (fast inference)
+                cerebras_api_key = os.getenv("CEREBRAS_API_KEY")
+                cerebras_model = os.getenv("CEREBRAS_MODEL", "llama3.1-8b")
+                
+                if not cerebras_api_key:
+                    raise ValueError(
+                        "CEREBRAS_API_KEY not set in .env file. "
+                        "Get your key from: https://cloud.cerebras.ai/"
+                    )
+                
+                config = StagehandConfig(
+                    env="LOCAL",
+                    headless=self.headless,
+                    verbose=1,
+                    # Use Cerebras via LiteLLM
+                    model_name=f"cerebras/{cerebras_model}",
+                    model_api_key=cerebras_api_key,
+                    local_browser_launch_options=launch_options
+                )
+                print(f"[DEBUG] ✅ Using Cerebras API with model: {cerebras_model}")
+                print(f"[DEBUG] Cerebras provides ultra-fast inference speeds")
+                
+            elif model_provider == "google":
                 # Use Google API directly (FREE with Google AI Studio)
                 google_api_key = os.getenv("GOOGLE_API_KEY")
                 google_model = os.getenv("GOOGLE_MODEL", "gemini-1.5-flash")
@@ -106,7 +139,8 @@ class StagehandExecutionService:
                 )
                 print(f"[DEBUG] ✅ Using Google API directly with model: {google_model}")
                 print(f"[DEBUG] This will use your Google AI Studio free tier (no OpenRouter credits needed)")
-            else:
+                
+            else:  # default to openrouter
                 # Use OpenRouter (original behavior)
                 openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
                 openrouter_model = os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct")
@@ -119,7 +153,8 @@ class StagehandExecutionService:
                     model_api_key=openrouter_key,
                     local_browser_launch_options=launch_options
                 )
-                print(f"[DEBUG] Using OpenRouter with model: {openrouter_model}")
+                print(f"[DEBUG] ✅ Using OpenRouter with model: {openrouter_model}")
+
             
             print(f"[DEBUG] Browser settings: headless={self.headless}, slow_mo={browser_slowmo}ms")
             

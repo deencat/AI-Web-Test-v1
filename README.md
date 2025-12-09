@@ -124,8 +124,12 @@ npm run dev
 - Role-based access control
 
 **AI/LLM:**
-- OpenRouter API
-- Free models (qwen/qwen-2.5-7b-instruct)
+- Multiple providers supported:
+  - **Google Gemini** (FREE with AI Studio)
+  - **Cerebras** (Ultra-fast inference)
+  - **OpenRouter** (50+ models including Claude, GPT-4)
+- Configurable model selection
+- See [Model Provider Comparison](./MODEL-PROVIDER-COMPARISON.md)
 
 ---
 
