@@ -6,8 +6,9 @@ import { TestCaseCard } from '../components/tests/TestCaseCard';
 import { RunTestButton } from '../components/RunTestButton';
 import { mockTests } from '../mock/tests';
 import testsService from '../services/testsService';
-import { GeneratedTestCase } from '../types/api';
-import { Sparkles, Loader2, Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
+import knowledgeBaseService from '../services/knowledgeBaseService';
+import { GeneratedTestCase, KBCategory } from '../types/api';
+import { Sparkles, Loader2, Plus, Trash2, ChevronUp, ChevronDown, BookOpen } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 export const TestsPage: React.FC = () => {
@@ -28,6 +29,12 @@ export const TestsPage: React.FC = () => {
     expected_result: '',
     priority: 'medium' as 'high' | 'medium' | 'low',
   });
+  
+  // KB Integration State (Sprint 2 Day 11)
+  const [kbCategories, setKbCategories] = useState<KBCategory[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
+  const [useKBContext, setUseKBContext] = useState(true);
+  const [loadingCategories, setLoadingCategories] = useState(false);
 
   // Handle edit parameter from URL
   useEffect(() => {
@@ -36,6 +43,24 @@ export const TestsPage: React.FC = () => {
       loadAndEditTest(editId);
     }
   }, [searchParams]);
+  
+  // Load KB categories on mount (Sprint 2 Day 11)
+  useEffect(() => {
+    loadKBCategories();
+  }, []);
+  
+  const loadKBCategories = async () => {
+    try {
+      setLoadingCategories(true);
+      const categories = await knowledgeBaseService.getAllCategories();
+      setKbCategories(categories);
+    } catch (err) {
+      console.error('Failed to load KB categories:', err);
+      // Don't show error to user - KB categories are optional
+    } finally {
+      setLoadingCategories(false);
+    }
+  };
 
   const loadAndEditTest = async (testId: string) => {
     try {
@@ -103,8 +128,12 @@ export const TestsPage: React.FC = () => {
 
     try {
       const result = await testsService.generateTests({ 
-        requirement: prompt,  // Changed from 'prompt' to 'requirement'
-        num_tests: 5  // Changed from 'count' to 'num_tests'
+        requirement: prompt,
+        num_tests: 5,
+        // KB Integration (Sprint 2 Day 11)
+        category_id: selectedCategory || undefined,
+        use_kb_context: useKBContext,
+        max_kb_docs: 10
       });
       setGeneratedTests(result.test_cases);
       setShowGenerator(false);
@@ -358,6 +387,66 @@ export const TestsPage: React.FC = () => {
                   Be specific about what you want to test. Include details like:
                   user actions, expected outcomes, and test data. Minimum 10 characters required.
                 </p>
+              </div>
+              
+              {/* KB Integration Options (Sprint 2 Day 11) */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+                <div className="flex items-start gap-2">
+                  <BookOpen className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1">
+                    <h3 className="text-sm font-semibold text-gray-900 mb-1">
+                      Knowledge Base Context
+                    </h3>
+                    <p className="text-xs text-gray-600 mb-3">
+                      Use uploaded KB documents to generate more accurate, domain-specific tests
+                      with proper field names and workflows.
+                    </p>
+                    
+                    {/* Use KB Context Toggle */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <input
+                        type="checkbox"
+                        id="use-kb-context"
+                        checked={useKBContext}
+                        onChange={(e) => setUseKBContext(e.target.checked)}
+                        disabled={loading}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <label htmlFor="use-kb-context" className="text-sm text-gray-700 cursor-pointer">
+                        Use Knowledge Base context (recommended)
+                      </label>
+                    </div>
+                    
+                    {/* Category Selection */}
+                    {useKBContext && (
+                      <div>
+                        <label htmlFor="kb-category" className="block text-xs font-medium text-gray-700 mb-1">
+                          KB Category (optional)
+                        </label>
+                        <select
+                          id="kb-category"
+                          value={selectedCategory || ''}
+                          onChange={(e) => setSelectedCategory(e.target.value ? Number(e.target.value) : null)}
+                          disabled={loading || loadingCategories}
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        >
+                          <option value="">No specific category (use all KB documents)</option>
+                          {kbCategories.map((category) => (
+                            <option key={category.id} value={category.id}>
+                              {category.name} - {category.description}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {selectedCategory 
+                            ? 'Tests will reference specific KB documents from this category'
+                            : 'Tests will use general knowledge without KB context'
+                          }
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {error && (
