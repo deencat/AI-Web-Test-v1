@@ -204,11 +204,12 @@ Deliver a **fully functional test automation platform** that QA engineers can us
 ---
 
 #### Sprint 2 (Week 3-4): Generation Agent + KB Foundation + Auth + Security
-**Goal:** Users can generate test cases from natural language, manage auth sessions, with production-grade security  
-**Status:** 🎉 **100% COMPLETE** - All critical features delivered and tested  
-**Completion Date:** November 28, 2025  
+**Goal:** Users can generate test cases from natural language using KB context, manage auth sessions, with production-grade security  
+**Status:** ⚠️ **NEEDS COMPLETION** - Core features delivered, KB integration pending (3-5 days)  
+**Completion Date (Original):** November 28, 2025  
+**Revised Target:** December 15, 2025 (with KB integration)  
 **Actual Team:** 1 Backend Developer + 1 Frontend Developer (Parallel development)  
-**Strategy:** Pragmatic completion - Days 1-6 + Day 10 done, Days 7-8 merged to Sprint 3, Day 9 deferred
+**Strategy:** Pragmatic completion - Days 1-6 + Day 10 done, Days 7-8 merged to Sprint 3, Day 9 deferred, **Day 11 added for KB integration**
 
 **Team Split:**
 - **Backend Developer (Cursor):** ✅ COMPLETE - All backend features delivered
@@ -219,6 +220,11 @@ Deliver a **fully functional test automation platform** that QA engineers can us
   - ✅ OpenRouter API integration (14 free models)
   - ✅ Test generation service with prompt templates
   - ✅ 3 generation endpoints (generic, page, API)
+  - ⚠️ **KB Context Integration:** NOT YET IMPLEMENTED (planned for Phase 2 Sprint 5)
+    - Test generation currently works WITHOUT KB document context
+    - KB documents are uploaded and stored, but NOT used in test generation prompts
+    - Category-aware test generation (filtering KB by category) planned but not implemented
+    - KB citation in generated tests not yet available
   - ✅ Verification: 2/2 tests passing
 - ✅ **Day 3:** Test Management System
   - ✅ TestCase model + 3 enums
@@ -234,6 +240,11 @@ Deliver a **fully functional test automation platform** that QA engineers can us
   - ✅ 9 KB endpoints
   - ✅ 8 predefined categories
   - ✅ Verification: 11/11 tests passing
+  - ⚠️ **KB-Test Generation Integration:** NOT YET IMPLEMENTED
+    - KB system is fully functional for document management
+    - KB documents can be uploaded, categorized, searched, and retrieved
+    - **BUT:** Test generation service does not yet use KB documents as context
+    - Integration planned for Phase 2 Sprint 5 (Week 9-10)
 - ✅ **Day 5:** Backend Enhancements
   - ✅ Custom exception handling (9 types)
   - ✅ Response wrapper schemas
@@ -271,11 +282,23 @@ Deliver a **fully functional test automation platform** that QA engineers can us
   - ✅ Path traversal protection
   - ✅ Custom rate limit error handling
   - ✅ Production-ready security posture
+- 🎯 **Day 11 (NEW - ADDED):** KB-Test Generation Integration
+  - 🎯 Create KBContextService for retrieving relevant KB documents
+  - 🎯 Update TestGenerationService to accept category_id parameter
+  - 🎯 Enhance system/user prompts with KB context injection
+  - 🎯 Update TestGenerationRequest schema (add category_id, use_kb_context)
+  - 🎯 Modify test generation endpoints to pass KB context
+  - 🎯 Implement KB citation formatting in generated tests
+  - 🎯 Create integration tests for KB-aware generation
+  - 🎯 Measure quality improvement (target: 10-15% accuracy increase)
+  - 🎯 **Effort:** 3-5 days (can run parallel with frontend work)
+  - 🎯 **Priority:** HIGH - Completes Sprint 2's core objective
+  - 🎯 **Dependencies:** None (both KB and test generation already work)
 
-**Backend Progress - SPRINT 2 COMPLETE:**
-- **Files Created:** 50+ files (~7,000 lines of code)
+**Backend Progress - SPRINT 2 (REVISED):**
+- **Files Created:** 50+ files (~7,000 lines of code) + 2 new for KB integration
 - **API Endpoints:** 50+ production endpoints (100% documented ✅)
-  - 3 test generation endpoints
+  - 3 test generation endpoints (🎯 KB context integration in progress)
   - 6 test management endpoints
   - 9 KB endpoints (upload, CRUD, categories)
   - 22 scenario endpoints (generation, validation, conversion)
@@ -286,10 +309,10 @@ Deliver a **fully functional test automation platform** that QA engineers can us
   - 4 category endpoints
 - **Database:** 9 models (User, TestCase, KBDocument, KBCategory, PasswordResetToken, UserSession, TestTemplate, TestScenario, plus Sprint 3 TestExecution)
 - **Features:**
-  - Test generation (5-8 seconds, 14 free models)
+  - Test generation (5-8 seconds, 14 free models) ⚠️ **WITHOUT KB context (yet)**
   - Test management (full CRUD + search)
   - KB upload (multi-format + text extraction)
-  - KB categorization (8 predefined + custom)
+  - KB categorization (8 predefined + custom) ⚠️ **Not yet used in test generation**
   - Template-based test generation with AI enhancement
   - Scenario generation with Faker data (40+ field types)
   - Validation system (syntax, dependencies, completeness)
@@ -381,16 +404,162 @@ Deliver a **fully functional test automation platform** that QA engineers can us
 - ✅ Auto-generated Swagger UI + ReDoc
 - ✅ Performance monitoring (request timing + IDs)
 
-**Progress:** 🎉 **100% COMPLETE** - All Sprint 2 backend features delivered, tested, secured, and production-ready!
+**Progress:** ⚠️ **95% COMPLETE** - Core features delivered. KB integration (Day 11) added to complete Sprint 2's original vision!
 
-**Branch:** `integration/sprint-3` (Sprint 2 + Sprint 3 complete, merged to main)
+**Revised Sprint 2 Completion Plan:**
+- **Original Sprint 2 (Days 1-10):** ✅ 100% Complete
+- **Day 11 - KB Integration (NEW):** 🎯 3-5 days to implement
+- **Total Sprint 2 Duration:** ~5 weeks (includes KB integration)
+- **Rationale:** KB and test generation were both built in Sprint 2; integration is the natural completion
+
+**Branch:** `integration/sprint-3` (Sprint 2 + Sprint 3 complete, KB integration to be added)
 
 **Next Steps:**
 1. ✅ Sprint 3 backend + frontend integration complete
 2. ✅ Test Suites feature fully implemented
 3. ✅ Multi-provider model support (Google, Cerebras, OpenRouter)
 4. ✅ Production deployment preparation
-5. 🎯 User acceptance testing and feedback collection
+5. 🎯 **Sprint 2 Day 11:** Implement KB-Test Generation Integration (3-5 days) - **HIGH PRIORITY**
+6. 🎯 User acceptance testing and feedback collection
+
+---
+
+## 📊 Current Implementation Status Summary (as of December 10, 2025)
+
+### ⚠️ SPRINT 2 REVISION: KB Integration Added as Day 11
+
+**Decision Rationale:**
+- Sprint 2 built BOTH test generation (Day 1-2) AND KB system (Day 4)
+- Not integrating them leaves the sprint incomplete
+- Low effort (3-5 days) for high value
+- PRD assumes this works in Phase 1
+- Better user experience with complete feature
+
+**New Sprint 2 Timeline:**
+- Days 1-10: ✅ Complete (as documented)
+- **Day 11 (NEW):** KB-Test Generation Integration (🎯 3-5 days)
+- **Total Duration:** ~5 weeks (original 4 weeks + 1 week for integration)
+
+---
+
+### ✅ Fully Implemented Features (Phase 1 Current)
+
+**1. Test Generation Service**
+- ✅ Natural language to test case generation
+- ✅ 3 generation endpoints (generic, page-specific, API)
+- ✅ Multiple model support (14 free models via OpenRouter, Google Gemini, Cerebras)
+- ✅ 5-8 second generation time
+- ✅ Structured JSON output with validation
+- ❌ **NOT USING KB DOCUMENTS AS CONTEXT** (yet)
+
+**2. Knowledge Base System**
+- ✅ Document upload (PDF, DOCX, TXT, MD)
+- ✅ Text extraction (PyPDF2, python-docx)
+- ✅ 8 predefined categories (CRM, Billing, Network, etc.)
+- ✅ Custom category creation
+- ✅ Full CRUD operations (9 endpoints)
+- ✅ Category filtering and statistics
+- ✅ Document search capabilities
+- ❌ **NOT INTEGRATED WITH TEST GENERATION** (yet)
+
+**3. Test Execution System**
+- ✅ Stagehand + Playwright integration
+- ✅ Real browser automation (Chromium, Firefox, WebKit)
+- ✅ Screenshot capture per step
+- ✅ Execution queue with priority management
+- ✅ Concurrent execution support (max 5)
+- ✅ Execution history tracking
+- ✅ Complete execution lifecycle management
+
+**4. Test Management**
+- ✅ Test case CRUD operations
+- ✅ Test templates (6 built-in + custom)
+- ✅ Test scenarios with AI generation
+- ✅ Test suites with parallel execution
+- ✅ Full search and filtering
+- ✅ Test statistics and analytics
+
+**5. Authentication & Security**
+- ✅ JWT authentication
+- ✅ Password reset flow
+- ✅ Session management
+- ✅ Rate limiting
+- ✅ Security headers
+- ✅ Input validation
+
+### 🎯 PLANNED FOR SPRINT 2 DAY 11 (Current Priority)
+
+**KB-Test Generation Integration:**
+- 🎯 KB context retrieval service (`KBContextService`)
+- 🎯 Category-based document filtering for test generation
+- 🎯 KB content injection into LLM prompts
+- 🎯 KB citation in generated test steps
+- 🎯 `category_id` parameter in test generation requests
+- 🎯 Enhanced system prompt for KB-aware generation
+- 🎯 KB reference tracking in generated tests
+- 🎯 Test quality improvement metrics with KB context
+
+**Implementation Details:**
+- **Effort:** 3-5 days
+- **Files to create:** 2 (`kb_context.py`, `test_kb_context_generation.py`)
+- **Files to modify:** 3 (`test_generation.py`, `test_case.py`, endpoints)
+- **Expected improvement:** 10-15% test accuracy, 20-30% faster processing
+- **Risk:** LOW (both systems work independently)
+- **Dependencies:** None (everything needed already exists)
+
+**Why Sprint 2 Instead of Phase 2:**
+1. ✅ Sprint 2 already built both pieces (KB + test generation)
+2. ✅ Low effort for high value (natural completion of sprint)
+3. ✅ PRD assumes this works in Phase 1
+4. ✅ Better user experience (complete, cohesive feature)
+5. ✅ Early user feedback on KB-aware generation
+6. ✅ Aligns with Sprint 2's title: "Generation Agent + KB Foundation"
+
+### ⚠️ DEFERRED (Original Plan - Now Moving to Sprint 2)
+
+~~**KB-Test Generation Integration (Originally Planned for Phase 2 Sprint 5):**~~
+- **Status:** MOVED TO SPRINT 2 DAY 11 (see above)
+- **Reason:** Natural completion of Sprint 2's work
+
+---
+
+### 🔮 Still Planned for Phase 2
+
+---
+
+### Current System Architecture (Phase 1)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    User Interface                        │
+│  (React + TypeScript + TailwindCSS)                      │
+└───────────────────────┬─────────────────────────────────┘
+                        │
+┌───────────────────────▼─────────────────────────────────┐
+│                  Backend API (FastAPI)                   │
+├──────────────────────────────────────────────────────────┤
+│                                                           │
+│  ┌─────────────────┐        ┌─────────────────┐         │
+│  │ Test Generation │        │  Knowledge Base │         │
+│  │    Service      │        │     Service     │         │
+│  │                 │        │                 │         │
+│  │ • LLM prompts   │   ❌   │ • Doc upload    │         │
+│  │ • OpenRouter    │   NO   │ • Categories    │         │
+│  │ • Google Gemini │ LINK  │ • Text extract  │         │
+│  │ • Cerebras      │        │ • CRUD ops      │         │
+│  └─────────────────┘        └─────────────────┘         │
+│           │                          │                   │
+│           ▼                          ▼                   │
+│  ┌─────────────────┐        ┌─────────────────┐         │
+│  │  Test Execution │        │   PostgreSQL    │         │
+│  │  (Stagehand +   │        │   Database      │         │
+│  │   Playwright)   │        │                 │         │
+│  └─────────────────┘        └─────────────────┘         │
+│                                                           │
+└───────────────────────────────────────────────────────────┘
+
+❌ MISSING: KB Context Service bridging KB → Test Generation
+```
 
 **Note on Sprint 2 Day Numbering:**
 - Days 1-6 completed as planned
@@ -982,12 +1151,20 @@ cd backend/artifacts/screenshots
 - ✅ Users can upload and categorize KB documents
 - ✅ 5+ predefined KB categories available
 - ✅ System handles 10 concurrent test executions
+- ⚠️ **KB-Test Generation Integration:** NOT YET IMPLEMENTED (deferred to Phase 2)
 
 **Performance Requirements:**
 - ✅ Test generation completes in < 30 seconds
 - ✅ Test execution completes in < 5 minutes (5-step test)
 - ✅ Dashboard loads in < 2 seconds
 - ✅ System supports 50+ concurrent users
+
+**Known Limitations (Phase 1 MVP):**
+- ⚠️ Test generation does NOT yet use KB documents as context
+- ⚠️ KB system is fully functional but operates independently from test generation
+- ⚠️ Generated tests do NOT cite KB sources
+- ⚠️ Category-aware test generation (using only relevant KB docs) not implemented
+- ✅ All above features planned for Phase 2 Sprint 5 (KB-Test Generation Integration)
 
 **Quality Requirements:**
 - ✅ 80%+ test case accuracy (user rating)
@@ -1036,7 +1213,7 @@ Add **intelligent agent features** including self-healing, advanced analysis, an
 ### Phase 2 Sprint Breakdown
 
 #### Sprint 5 (Week 9-10): Requirements Agent + Advanced Agents
-**Goal:** Agents can analyze requirements and collaborate
+**Goal:** Agents can analyze requirements and collaborate for comprehensive test coverage
 
 **Tasks:**
 - Implement Requirements Agent (LLM-powered PRD analysis)
@@ -1045,11 +1222,13 @@ Add **intelligent agent features** including self-healing, advanced analysis, an
 - Create agent orchestrator service
 - Implement agent health monitoring
 - Build agent activity dashboard UI
+- Enhance KB-aware test generation with semantic search (optional improvement)
 
 **Deliverables:**
 - User uploads PRD → Requirements Agent generates test scenarios
 - Failed tests → Analysis Agent suggests root cause
 - All 4 agents (Requirements, Generation, Execution, Analysis) working
+- KB integration already complete from Sprint 2 (now being enhanced)
 
 **Team:** 3 Backend + 1 Frontend + 1 AI Engineer
 

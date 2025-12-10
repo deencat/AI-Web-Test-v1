@@ -13,15 +13,25 @@ AI Web Test is a multi-agent test automation platform that reduces test creation
 
 ### Key Features (Current)
 - ✅ **AI Test Generation** - Natural language to automated tests (3 providers)
+  - ⚠️ **Note:** KB integration with test generation planned for Phase 2
 - ✅ **Browser Automation** - Real browser execution with Stagehand + Playwright
 - ✅ **Queue System** - Concurrent execution management (max 5 simultaneous)
 - ✅ **Screenshot Capture** - Every test step documented with visual proof
 - ✅ **Knowledge Base** - Document upload and categorization
+  - ⚠️ **Limitation:** KB documents not yet used as context in test generation
 - ✅ **Real-time Monitoring** - Live execution progress tracking
 - ✅ **Test Suites** - Group and execute multiple tests together
 - ✅ **Multi-Provider AI** - Google Gemini, Cerebras, OpenRouter support
 - ✅ **Execution History** - Complete audit trail with filtering and search
 - ✅ **Template System** - Pre-built templates for common test scenarios
+
+### Planned for Phase 2 (Sprint 5)
+- 🎯 **KB-Aware Test Generation** - Use uploaded documents as context
+- 🎯 **Category-Filtered Generation** - Use only relevant KB docs per test type
+- 🎯 **KB Citation in Tests** - Generated tests reference KB sources
+- 🎯 **Requirements Agent** - Analyze PRDs automatically
+- 🎯 **Analysis Agent** - Root cause analysis for failures
+- 🎯 **Self-Healing Tests** - Automatic selector updates
 
 ---
 
