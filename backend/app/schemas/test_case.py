@@ -97,6 +97,22 @@ class TestGenerationRequest(BaseModel):
     num_tests: int = Field(default=3, ge=1, le=10, description="Number of test cases to generate (1-10)")
     model: Optional[str] = Field(None, description="Optional: Specific model to use for generation")
     
+    # KB Integration fields (Sprint 2 Day 11)
+    category_id: Optional[int] = Field(
+        None, 
+        description="KB category ID for context (e.g., 1=System Guide, 2=Product Info). When provided, KB documents from this category will be used as context for test generation."
+    )
+    use_kb_context: bool = Field(
+        True, 
+        description="Whether to include KB documents in generation context (default: True if category_id is provided)"
+    )
+    max_kb_docs: int = Field(
+        10, 
+        ge=1, 
+        le=20, 
+        description="Maximum number of KB documents to include in context (1-20)"
+    )
+    
     @field_validator('requirement')
     @classmethod
     def validate_requirement(cls, v):

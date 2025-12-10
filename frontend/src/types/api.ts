@@ -117,6 +117,10 @@ export interface GenerateTestsRequest {
   test_type?: 'e2e' | 'unit' | 'integration' | 'api';
   num_tests?: number;  // Changed from 'count' to match backend
   model?: string;
+  // KB Integration (Sprint 2 Day 11)
+  category_id?: number;      // KB category ID for context
+  use_kb_context?: boolean;  // Whether to use KB context (default: true)
+  max_kb_docs?: number;      // Max KB documents to include (default: 10)
 }
 
 export interface GeneratedTestCase {
