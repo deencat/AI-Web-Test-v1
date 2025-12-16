@@ -734,6 +734,225 @@ Deliver a **fully functional test automation platform** that QA engineers can us
 
 ---
 
+### 🔄 IN PROGRESS: Settings Page Dynamic Configuration (December 16, 2025)
+
+**Status:** 🔄 **IMPLEMENTATION STARTED**  
+**Branch:** `integration/sprint-3`  
+**Estimated Completion:** December 16, 2025 (4-6 hours)  
+**Priority:** HIGH - Improves user experience significantly
+
+#### Objective
+Enable users to configure AI model provider and model selection from the Settings page UI, making changes take effect immediately without editing backend `.env` files. API keys remain secure in backend environment variables.
+
+#### Current Limitation
+- Settings page shows provider/model selection as "reference only"
+- Users must edit `backend/.env` and restart server to change models
+- No per-user preferences - all users share same MODEL_PROVIDER setting
+- Settings changes don't persist or take effect
+
+#### Proposed Solution: Hybrid Security Model
+
+**What Users CAN Configure (Frontend → Database):**
+- ✅ Preferred AI provider (Google/Cerebras/OpenRouter)
+- ✅ Preferred model per provider
+- ✅ Temperature and max tokens
+- ✅ Other user preferences
+
+**What Stays Secure (Backend .env Only):**
+- 🔒 API keys (GOOGLE_API_KEY, CEREBRAS_API_KEY, OPENROUTER_API_KEY)
+- 🔒 System configuration (DATABASE_URL, SECRET_KEY, etc.)
+
+**Benefits:**
+- ✅ User-friendly: No backend file editing required
+- ✅ Immediate effect: Changes apply to next test generation/execution
+- ✅ Per-user preferences: Different users can use different models
+- ✅ Secure: API keys never exposed to frontend
+- ✅ No restart needed: Settings apply dynamically
+
+#### Implementation Tasks
+
+**1. Database Schema (30 minutes)**
+```sql
+-- New table: user_settings
+CREATE TABLE user_settings (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider VARCHAR(50) NOT NULL DEFAULT 'openrouter',
+    model VARCHAR(100) NOT NULL,
+    temperature FLOAT DEFAULT 0.7,
+    max_tokens INTEGER DEFAULT 4096,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id)
+);
+```
+
+**2. Backend API Endpoints (2 hours)**
+
+New endpoints in `backend/app/api/v1/endpoints/settings.py`:
+- `GET /api/v1/settings/provider` - Get current user's provider settings
+- `PUT /api/v1/settings/provider` - Update user's provider settings
+- `GET /api/v1/settings/available-providers` - List configured providers with available models
+
+**Service Layer Updates:**
+- Modify `TestGenerationService` to load user settings
+- Modify `StagehandService` to load user settings
+- Add `UserSettingsService` for CRUD operations
+- Fallback to .env MODEL_PROVIDER if no user settings exist
+
+**3. Frontend Integration (1.5 hours)**
+
+Update `frontend/src/pages/SettingsPage.tsx`:
+- Load user's current settings on page mount
+- Save settings via API call (not localStorage)
+- Show success toast: "Settings saved! Using Google Gemini 2.5 Flash"
+- Remove "Reference Only" labels
+- Update info banner to reflect actual functionality
+
+**4. Testing (1 hour)**
+- Unit tests for UserSettingsService
+- Integration tests for settings endpoints
+- E2E tests for Settings page functionality
+- Verify test generation uses user's provider/model
+- Update existing Settings page tests (17 tests)
+
+**5. Documentation (30 minutes)**
+- Update API documentation
+- Update Settings page user guide
+- Update SETTINGS-API-KEY-SECURITY.md
+- Create migration guide for existing .env configurations
+
+#### Implementation Details
+
+**Backend - User Settings Model:**
+```python
+class UserSetting(Base):
+    __tablename__ = "user_settings"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    provider = Column(String(50), nullable=False, default="openrouter")
+    model = Column(String(100), nullable=False)
+    temperature = Column(Float, default=0.7)
+    max_tokens = Column(Integer, default=4096)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    user = relationship("User", back_populates="settings")
+```
+
+**Backend - Settings Service:**
+```python
+async def get_user_provider_config(user_id: int, db: Session) -> dict:
+    """Get user's provider settings, fallback to .env"""
+    user_settings = db.query(UserSetting).filter_by(user_id=user_id).first()
+    
+    if user_settings:
+        # Use user's preferences
+        return {
+            "provider": user_settings.provider,
+            "model": user_settings.model,
+            "api_key": os.getenv(f"{user_settings.provider.upper()}_API_KEY"),
+            "temperature": user_settings.temperature,
+            "max_tokens": user_settings.max_tokens
+        }
+    else:
+        # Fallback to .env MODEL_PROVIDER
+        provider = os.getenv("MODEL_PROVIDER", "openrouter")
+        return {
+            "provider": provider,
+            "model": os.getenv(f"{provider.upper()}_MODEL"),
+            "api_key": os.getenv(f"{provider.upper()}_API_KEY"),
+            "temperature": 0.7,
+            "max_tokens": 4096
+        }
+```
+
+**Frontend - Save Settings:**
+```typescript
+const handleSaveSettings = async () => {
+  try {
+    const response = await fetch('/api/v1/settings/provider', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        provider: modelProvider,
+        model: selectedModel,
+        temperature: parseFloat(temperature),
+        max_tokens: parseInt(maxTokens)
+      })
+    });
+    
+    if (response.ok) {
+      toast.success(`✅ Settings saved! Your tests will now use ${modelProvider} ${selectedModel}`);
+    }
+  } catch (error) {
+    toast.error('Failed to save settings');
+  }
+};
+```
+
+#### Security Considerations
+
+**What This DOES:**
+- ✅ Stores user preferences (provider, model) in database
+- ✅ API keys stay in backend .env file
+- ✅ Frontend never sees or handles API keys
+- ✅ Settings are user-specific (isolation)
+
+**What This DOES NOT Do:**
+- ❌ Allow users to input API keys via frontend
+- ❌ Store API keys in database
+- ❌ Expose API keys in API responses
+- ❌ Change admin-level configuration
+
+**Threat Model:**
+- **XSS Attack:** No sensitive data in frontend to steal
+- **SQL Injection:** Protected by SQLAlchemy ORM
+- **Unauthorized Access:** Protected by JWT authentication
+- **API Key Exposure:** Keys never leave backend server
+
+#### Rollback Plan
+
+If issues arise:
+1. Revert Settings page to "reference only" mode
+2. Fall back to .env MODEL_PROVIDER for all users
+3. User settings table remains but unused
+4. No data loss or security impact
+
+#### Success Criteria
+
+**Must Have:**
+- ✅ Users can save provider/model preferences via Settings UI
+- ✅ Test generation uses user's saved preferences
+- ✅ Test execution uses user's saved preferences
+- ✅ API keys never exposed to frontend
+- ✅ All existing tests pass
+- ✅ New Settings functionality tested (E2E)
+
+**Nice to Have:**
+- ✅ Real-time validation (API key exists for selected provider)
+- ✅ Default settings for new users
+- ✅ Settings reset to defaults option
+- ✅ Provider availability indicator (green = API key configured)
+
+#### Timeline
+
+**December 16, 2025:**
+- 9:00 AM - 9:30 AM: Database schema creation and migration
+- 9:30 AM - 11:30 AM: Backend API endpoints and service layer
+- 11:30 AM - 1:00 PM: Frontend integration and UI updates
+- 1:00 PM - 2:00 PM: Testing (unit + integration + E2E)
+- 2:00 PM - 2:30 PM: Documentation updates
+- 2:30 PM - 3:00 PM: Final verification and deployment
+
+**Status:** 🔄 IN PROGRESS
+
+---
+
 ### Current System Architecture (Phase 1) - UPDATED WITH KB INTEGRATION
 
 ```
@@ -978,7 +1197,7 @@ Deliver a **fully functional test automation platform** that QA engineers can us
 
 ### Sprint 3: Final Deliverables
 
-**Backend (11 Execution Endpoints):**
+**Backend (14 Sprint 3 Endpoints):**
 1. ✅ POST `/api/v1/tests/{id}/run` - Queue test execution
 2. ✅ GET `/api/v1/executions/{id}` - Get execution details
 3. ✅ GET `/api/v1/executions` - List executions (with filtering)
@@ -990,13 +1209,16 @@ Deliver a **fully functional test automation platform** that QA engineers can us
 9. ✅ POST `/api/v1/executions/queue/clear` - Clear queue
 10. ✅ GET `/artifacts/screenshots/{filename}` - Screenshot access
 11. ✅ 7 Test Suite endpoints (create, read, update, delete, run, history)
+12. 🔄 GET `/api/v1/settings/provider` - Get user provider settings
+13. 🔄 PUT `/api/v1/settings/provider` - Update user provider settings
+14. 🔄 GET `/api/v1/settings/available-providers` - List configured providers
 
 **Frontend (5 New Pages + Enhancements):**
 1. ✅ Test Execution Progress Page (`/executions/{id}`)
 2. ✅ Execution History Page (`/executions`)
 3. ✅ Test Suites Page (`/test-suites`)
 4. ✅ Enhanced Test Detail Page (with Run button)
-5. ✅ Enhanced Settings Page (model configuration)
+5. 🔄 Enhanced Settings Page (model configuration - now fully functional)
 6. ✅ Queue Status Widget (global component)
 7. ✅ Screenshot lightbox viewer
 
@@ -1006,6 +1228,7 @@ Deliver a **fully functional test automation platform** that QA engineers can us
 - ✅ test_suites table
 - ✅ test_suite_items table
 - ✅ suite_executions table
+- 🔄 user_settings table (provider preferences per user)
 
 **Documentation:**
 - ✅ API documentation (Swagger/ReDoc)
@@ -1016,13 +1239,13 @@ Deliver a **fully functional test automation platform** that QA engineers can us
 - ✅ Comprehensive testing guides
 
 **Technical Metrics:**
-- 📊 **Total API Endpoints:** 68+ endpoints
-- 📊 **Database Models:** 14 models
+- 📊 **Total API Endpoints:** 71 endpoints (68 complete + 3 in progress)
+- 📊 **Database Models:** 15 models (14 complete + 1 in progress)
 - 📊 **Frontend Pages:** 10 pages
 - 📊 **Test Coverage:** 100% (84+ tests passing)
 - 📊 **Code Quality:** Zero TypeScript errors, clean build
 - 📊 **Performance:** Queue response <50ms, test generation <90s
-- 📊 **Documentation:** 25+ comprehensive guides
+- 📊 **Documentation:** 27+ comprehensive guides
 
 **Progress:** 🎉 **SPRINT 3 100% COMPLETE** - Full-stack MVP ready for production deployment!
 
@@ -1119,12 +1342,17 @@ Deliver a **fully functional test automation platform** that QA engineers can us
 #### 🚀 Next Steps for Integration Completion
 
 **Immediate (Week of Dec 16-20):**
-1. ⏳ Complete manual verification checklist (2-3 days)
-2. ⏳ Obtain sign-off from both developers
-3. ⏳ Update integration test documentation
-4. ⏳ Run final automated test suite
-5. ⏳ Performance testing under load
-6. ⏳ Security audit review
+1. 🔄 **IN PROGRESS:** Settings Page Dynamic Configuration (Dec 16, 2025)
+   - Enable user-configurable model provider/model selection
+   - Implement backend API for settings persistence
+   - Keep API keys secure in backend .env (never exposed to frontend)
+   - Estimated: 4-6 hours
+2. ⏳ Complete manual verification checklist (2-3 days)
+3. ⏳ Obtain sign-off from both developers
+4. ⏳ Update integration test documentation
+5. ⏳ Run final automated test suite
+6. ⏳ Performance testing under load
+7. ⏳ Security audit review
 
 **UAT Preparation (Week of Dec 23-27):**
 1. ⏳ Prepare UAT environment (staging)
