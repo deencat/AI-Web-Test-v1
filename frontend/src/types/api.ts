@@ -250,6 +250,49 @@ export interface UpdateSettingsRequest {
   slack_channel?: string;
 }
 
+// AI Provider Settings Types (Sprint 3 - Settings Page Dynamic Configuration)
+export interface AvailableProvider {
+  name: string;
+  display_name: string;
+  is_configured: boolean;
+  models: string[];
+  recommended_model: string | null;
+}
+
+export interface AvailableProvidersResponse {
+  providers: AvailableProvider[];
+  default_generation_provider: string;
+  default_generation_model: string;
+  default_execution_provider: string;
+  default_execution_model: string;
+}
+
+export interface UserSettings {
+  id: number;
+  user_id: number;
+  generation_provider: string;
+  generation_model: string;
+  generation_temperature: number;
+  generation_max_tokens: number;
+  execution_provider: string;
+  execution_model: string;
+  execution_temperature: number;
+  execution_max_tokens: number;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface UpdateUserSettingsRequest {
+  generation_provider?: string;
+  generation_model?: string;
+  generation_temperature?: number;
+  generation_max_tokens?: number;
+  execution_provider?: string;
+  execution_model?: string;
+  execution_temperature?: number;
+  execution_max_tokens?: number;
+}
+
 // Agent Activity types
 export interface AgentActivity {
   id: string;

@@ -56,8 +56,14 @@ class StagehandExecutionService:
         self.stagehand: Optional[Stagehand] = None
         self.page = None
     
-    async def initialize(self):
-        """Initialize Stagehand browser."""
+    async def initialize(self, user_config: Optional[Dict[str, Any]] = None):
+        """
+        Initialize Stagehand browser.
+        
+        Args:
+            user_config: Optional user configuration dict with provider, model, temperature, max_tokens.
+                        If provided, uses user's settings. Otherwise falls back to .env defaults.
+        """
         if not self.stagehand:
             # Ensure Windows event loop policy is set
             if sys.platform == 'win32':
@@ -82,22 +88,31 @@ class StagehandExecutionService:
             if browser_slowmo > 0:
                 launch_options["slow_mo"] = browser_slowmo
             
-            # Determine which provider to use (priority order)
-            model_provider = os.getenv("MODEL_PROVIDER", "openrouter").lower()
-            use_google_direct = os.getenv("USE_GOOGLE_DIRECT", "false").lower() == "true"
-            use_cerebras = os.getenv("USE_CEREBRAS", "false").lower() == "true"
-            
-            # Legacy support: USE_GOOGLE_DIRECT and USE_CEREBRAS override MODEL_PROVIDER
-            if use_cerebras:
-                model_provider = "cerebras"
-            elif use_google_direct:
-                model_provider = "google"
+            # Determine which provider to use
+            # Priority: user_config > .env MODEL_PROVIDER > legacy flags
+            if user_config:
+                # Use user's settings from database
+                model_provider = user_config.get("provider", "openrouter").lower()
+                print(f"[DEBUG] 🎯 Using user's configured provider: {model_provider}")
+            else:
+                # Fall back to .env configuration
+                model_provider = os.getenv("MODEL_PROVIDER", "openrouter").lower()
+                use_google_direct = os.getenv("USE_GOOGLE_DIRECT", "false").lower() == "true"
+                use_cerebras = os.getenv("USE_CEREBRAS", "false").lower() == "true"
+                
+                # Legacy support: USE_GOOGLE_DIRECT and USE_CEREBRAS override MODEL_PROVIDER
+                if use_cerebras:
+                    model_provider = "cerebras"
+                elif use_google_direct:
+                    model_provider = "google"
+                print(f"[DEBUG] 📋 Using .env default provider: {model_provider}")
             
             # Configure model based on provider
             if model_provider == "cerebras":
                 # Use Cerebras API (fast inference)
                 cerebras_api_key = os.getenv("CEREBRAS_API_KEY")
-                cerebras_model = os.getenv("CEREBRAS_MODEL", "llama3.1-8b")
+                # Use user's model selection if available, otherwise use .env default
+                cerebras_model = user_config.get("model") if user_config else os.getenv("CEREBRAS_MODEL", "llama3.1-8b")
                 
                 if not cerebras_api_key:
                     raise ValueError(
@@ -115,12 +130,14 @@ class StagehandExecutionService:
                     local_browser_launch_options=launch_options
                 )
                 print(f"[DEBUG] ✅ Using Cerebras API with model: {cerebras_model}")
-                print(f"[DEBUG] Cerebras provides ultra-fast inference speeds")
+                if user_config:
+                    print(f"[DEBUG] 🎯 User configured: temp={user_config.get('temperature', 0.7)}, max_tokens={user_config.get('max_tokens', 4096)}")
                 
             elif model_provider == "google":
                 # Use Google API directly (FREE with Google AI Studio)
                 google_api_key = os.getenv("GOOGLE_API_KEY")
-                google_model = os.getenv("GOOGLE_MODEL", "gemini-1.5-flash")
+                # Use user's model selection if available, otherwise use .env default
+                google_model = user_config.get("model") if user_config else os.getenv("GOOGLE_MODEL", "gemini-1.5-flash")
                 
                 if not google_api_key:
                     raise ValueError(
@@ -138,12 +155,14 @@ class StagehandExecutionService:
                     local_browser_launch_options=launch_options
                 )
                 print(f"[DEBUG] ✅ Using Google API directly with model: {google_model}")
-                print(f"[DEBUG] This will use your Google AI Studio free tier (no OpenRouter credits needed)")
+                if user_config:
+                    print(f"[DEBUG] 🎯 User configured: temp={user_config.get('temperature', 0.7)}, max_tokens={user_config.get('max_tokens', 4096)}")
                 
             else:  # default to openrouter
                 # Use OpenRouter (original behavior)
                 openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-                openrouter_model = os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct")
+                # Use user's model selection if available, otherwise use .env default
+                openrouter_model = user_config.get("model") if user_config else os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct")
                 
                 config = StagehandConfig(
                     env="LOCAL",
@@ -154,6 +173,8 @@ class StagehandExecutionService:
                     local_browser_launch_options=launch_options
                 )
                 print(f"[DEBUG] ✅ Using OpenRouter with model: {openrouter_model}")
+                if user_config:
+                    print(f"[DEBUG] 🎯 User configured: temp={user_config.get('temperature', 0.7)}, max_tokens={user_config.get('max_tokens', 4096)}")
 
             
             print(f"[DEBUG] Browser settings: headless={self.headless}, slow_mo={browser_slowmo}ms")
