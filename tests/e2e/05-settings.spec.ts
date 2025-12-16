@@ -11,7 +11,7 @@ test.describe('Settings Page', () => {
     // Navigate and login
     await page.goto('/');
     await page.getByPlaceholder(/username/i).fill('admin');
-    await page.getByPlaceholder(/password/i).fill('password123');
+    await page.getByPlaceholder(/password/i).fill('admin123');
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/dashboard');
     
@@ -44,12 +44,16 @@ test.describe('Settings Page', () => {
     await expect(page.getByText(/test failure alerts/i)).toBeVisible();
   });
 
-  test('should display agent configuration section', async ({ page }) => {
-    // Verify section heading
-    await expect(page.getByRole('heading', { name: /agent configuration/i })).toBeVisible();
+  test('should display AI model provider section', async ({ page }) => {
+    // Verify section heading (updated to "AI Model Provider")
+    await expect(page.getByRole('heading', { name: /ai model provider/i })).toBeVisible();
     
-    // Verify AI configuration fields (using text matching)
-    await expect(page.getByText(/ai model/i).first()).toBeVisible();
+    // Verify provider selection buttons
+    await expect(page.getByText(/google/i).first()).toBeVisible();
+    await expect(page.getByText(/cerebras/i).first()).toBeVisible();
+    await expect(page.getByText(/openrouter/i).first()).toBeVisible();
+    
+    // Verify advanced settings are present
     await expect(page.getByText(/temperature/i).first()).toBeVisible();
     await expect(page.getByText(/max tokens/i).first()).toBeVisible();
   });
@@ -88,14 +92,25 @@ test.describe('Settings Page', () => {
     expect(await allCheckboxes.count()).toBeGreaterThan(0);
   });
 
-  test('should have toggle switches for agents', async ({ page }) => {
-    // Our implementation has AI model dropdown, temperature slider, max tokens input
-    // Not individual agent toggles - verify these exist instead
-    const modelSelect = page.locator('select').first();
-    await expect(modelSelect).toBeVisible();
+  test('should allow switching between model providers', async ({ page }) => {
+    // Click Cerebras provider button
+    await page.getByRole('button', { name: /cerebras/i }).click();
     
-    const temperatureLabel = page.getByText(/temperature/i).first();
-    await expect(temperatureLabel).toBeVisible();
+    // Verify Cerebras configuration appears (backend config guide)
+    await expect(page.getByText(/CEREBRAS_API_KEY/i)).toBeVisible();
+    await expect(page.getByText(/llama.*70b.*latest/i)).toBeVisible();
+    
+    // Click OpenRouter provider button
+    await page.getByRole('button', { name: /openrouter/i }).click();
+    
+    // Verify OpenRouter configuration appears (backend config guide)
+    await expect(page.getByText(/OPENROUTER_API_KEY/i)).toBeVisible();
+    
+    // Click Google provider button
+    await page.getByRole('button', { name: /google/i }).click();
+    
+    // Verify Google configuration appears (backend config guide)
+    await expect(page.getByText(/GOOGLE_API_KEY/i)).toBeVisible();
   });
 
   test('should display save changes button', async ({ page }) => {
@@ -103,28 +118,52 @@ test.describe('Settings Page', () => {
     await expect(page.getByRole('button', { name: /save settings/i })).toBeVisible();
   });
 
-  test('should show alert when clicking save changes', async ({ page }) => {
-    // Setup dialog handler (matching our actual alert text)
-    page.on('dialog', dialog => {
-      expect(dialog.message()).toContain('Settings saved successfully');
-      dialog.accept();
+  test('should show backend configuration instructions', async ({ page }) => {
+    // Verify Google provider shows backend configuration guide
+    await page.getByRole('button', { name: /google/i }).click();
+    await expect(page.getByText(/Configuration Required in Backend/i)).toBeVisible();
+    await expect(page.getByText(/GOOGLE_API_KEY=your-key-here/i)).toBeVisible();
+    await expect(page.getByText(/GOOGLE_MODEL=gemini-2.5-flash/i)).toBeVisible();
+    
+    // Verify link to get API key is present
+    const googleLink = page.getByRole('link', { name: /Google AI Studio/i });
+    await expect(googleLink).toBeVisible();
+    await expect(googleLink).toHaveAttribute('href', 'https://aistudio.google.com/app/apikey');
+  });
+
+  test('should show reference message when saving preferences', async ({ page }) => {
+    // Setup dialog handler (expecting reference message)
+    page.once('dialog', async dialog => {
+      expect(dialog.message()).toContain('Preferences Noted');
+      expect(dialog.message()).toContain('reference selections only');
+      expect(dialog.message()).toContain('backend/.env');
+      await dialog.accept();
     });
     
-    // Click save button (our actual button text is "Save Settings")
+    // Click save button
     await page.getByRole('button', { name: /save settings/i }).click();
   });
 
-  test('should display API endpoint configuration', async ({ page }) => {
-    // Verify API endpoint section (our implementation shows it as read-only display, not input)
-    await expect(page.getByRole('heading', { name: /api endpoint/i })).toBeVisible();
+  test('should display system information section', async ({ page }) => {
+    // Verify section heading (updated to "System Information")
+    await expect(page.getByRole('heading', { name: /system information/i })).toBeVisible();
     await expect(page.getByText(/http:\/\/localhost:8000\/api/i)).toBeVisible();
+    
+    // Verify API documentation links
+    await expect(page.getByRole('link', { name: /swagger ui/i })).toBeVisible();
+    await expect(page.getByRole('link', { name: /redoc/i })).toBeVisible();
   });
 
-  test('should allow updating API endpoint', async ({ page }) => {
-    // Our implementation shows API endpoint as read-only (not editable in MVP)
-    // This test should verify the endpoint is displayed but not editable
-    await expect(page.getByRole('heading', { name: /api endpoint/i })).toBeVisible();
-    await expect(page.getByText(/http:\/\/localhost:8000\/api/i)).toBeVisible();
+  test('should display version information', async ({ page }) => {
+    // Verify version information section exists
+    await expect(page.getByText(/version information/i)).toBeVisible();
+    
+    // Verify the version info grid container with 2 columns
+    const versionGrid = page.locator('.grid.grid-cols-2.gap-4');
+    await expect(versionGrid).toBeVisible();
+    
+    // Verify version numbers are displayed (at least one v1.0.0 visible)
+    await expect(page.locator('text=v1.0.0').first()).toBeVisible();
   });
 
   test('should maintain layout on mobile', async ({ page }) => {
@@ -148,9 +187,44 @@ test.describe('Settings Page', () => {
     // Verify page is scrollable (all sections visible)
     await expect(page.getByRole('heading', { name: /general settings/i })).toBeVisible();
     
-    // Scroll to agent configuration
-    await page.getByRole('heading', { name: /agent configuration/i }).scrollIntoViewIfNeeded();
-    await expect(page.getByRole('heading', { name: /agent configuration/i })).toBeVisible();
+    // Scroll to AI Model Provider section
+    await page.getByRole('heading', { name: /ai model provider/i }).scrollIntoViewIfNeeded();
+    await expect(page.getByRole('heading', { name: /ai model provider/i })).toBeVisible();
+    
+    // Scroll to System Information section
+    await page.getByRole('heading', { name: /system information/i }).scrollIntoViewIfNeeded();
+    await expect(page.getByRole('heading', { name: /system information/i })).toBeVisible();
+  });
+
+  test('should reset settings to defaults', async ({ page }) => {
+    // Change some settings first
+    const projectNameInput = page.getByPlaceholder(/enter project name/i);
+    await projectNameInput.clear();
+    await projectNameInput.fill('Custom Project');
+    
+    // Setup dialog handlers (confirmation then success)
+    let dialogCount = 0;
+    page.on('dialog', async dialog => {
+      dialogCount++;
+      if (dialogCount === 1) {
+        // First dialog: confirmation
+        expect(dialog.message()).toContain('reset all preferences');
+        await dialog.accept();
+      } else if (dialogCount === 2) {
+        // Second dialog: success message
+        expect(dialog.message()).toContain('Preferences reset');
+        await dialog.accept();
+      }
+    });
+    
+    // Click reset button
+    await page.getByRole('button', { name: /reset to defaults/i }).click();
+    
+    // Wait a bit for the reset to complete
+    await page.waitForTimeout(100);
+    
+    // Verify project name is back to default
+    await expect(projectNameInput).toHaveValue('AI Web Test v1.0');
   });
 });
 
