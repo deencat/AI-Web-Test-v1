@@ -750,12 +750,27 @@ Enable users to configure AI model provider and model selection from the Setting
 - No per-user preferences - all users share same MODEL_PROVIDER setting
 - Settings changes don't persist or take effect
 
-#### Proposed Solution: Hybrid Security Model
+#### Proposed Solution: Hybrid Security Model with Dual Configuration
+
+**Why Separate Generation vs Execution Models?**
+
+Different AI models have different strengths:
+- **Generation Models:** Text creation, logical reasoning, test case structuring
+- **Execution Models:** Visual understanding, page element detection, interaction reliability
+
+**Real-World Use Cases:**
+
+| User Profile | Generation Model | Execution Model | Rationale |
+|--------------|------------------|-----------------|-----------|
+| Speed-focused Dev | Cerebras Llama 3.3 70B | Google Gemini 2.5 Flash | Ultra-fast generation (5-8s) + reliable execution |
+| Quality-focused QA | OpenRouter GPT-4 Turbo | OpenRouter Claude Opus | Maximum quality for both phases |
+| Cost-conscious Team | OpenRouter Llama 3.2 3B (free) | Google Gemini 2.0 Flash (free) | Zero API costs |
+| Balanced Approach | Google Gemini 2.5 Flash | Google Gemini 2.5 Flash | Single provider, good balance |
 
 **What Users CAN Configure (Frontend → Database):**
-- ✅ Preferred AI provider (Google/Cerebras/OpenRouter)
-- ✅ Preferred model per provider
-- ✅ Temperature and max tokens
+- ✅ **Test Generation** AI provider and model (Google/Cerebras/OpenRouter)
+- ✅ **Test Execution** AI provider and model (Google/Cerebras/OpenRouter)
+- ✅ Temperature and max tokens (separate for generation vs execution)
 - ✅ Other user preferences
 
 **What Stays Secure (Backend .env Only):**
@@ -768,19 +783,33 @@ Enable users to configure AI model provider and model selection from the Setting
 - ✅ Per-user preferences: Different users can use different models
 - ✅ Secure: API keys never exposed to frontend
 - ✅ No restart needed: Settings apply dynamically
+- ✅ **Separate control:** Different models for generation vs execution
+- ✅ **Speed optimization:** Fast generation (Cerebras) + reliable execution (Google)
+- ✅ **Cost optimization:** Use free models strategically
+- ✅ **Quality tuning:** Match model to task complexity
 
 #### Implementation Tasks
 
 **1. Database Schema (30 minutes)**
 ```sql
 -- New table: user_settings
+-- Supports SEPARATE configurations for generation vs execution
 CREATE TABLE user_settings (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    provider VARCHAR(50) NOT NULL DEFAULT 'openrouter',
-    model VARCHAR(100) NOT NULL,
-    temperature FLOAT DEFAULT 0.7,
-    max_tokens INTEGER DEFAULT 4096,
+    
+    -- Test Generation Settings (NEW: User-configurable)
+    generation_provider VARCHAR(50) NOT NULL DEFAULT 'openrouter',
+    generation_model VARCHAR(100) NOT NULL,
+    generation_temperature FLOAT DEFAULT 0.7,
+    generation_max_tokens INTEGER DEFAULT 4096,
+    
+    -- Test Execution Settings (Stagehand/Playwright)
+    execution_provider VARCHAR(50) NOT NULL DEFAULT 'openrouter',
+    execution_model VARCHAR(100) NOT NULL,
+    execution_temperature FLOAT DEFAULT 0.7,
+    execution_max_tokens INTEGER DEFAULT 4096,
+    
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id)
@@ -831,10 +860,19 @@ class UserSetting(Base):
     
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
-    provider = Column(String(50), nullable=False, default="openrouter")
-    model = Column(String(100), nullable=False)
-    temperature = Column(Float, default=0.7)
-    max_tokens = Column(Integer, default=4096)
+    
+    # Test Generation Configuration
+    generation_provider = Column(String(50), nullable=False, default="openrouter")
+    generation_model = Column(String(100), nullable=False)
+    generation_temperature = Column(Float, default=0.7)
+    generation_max_tokens = Column(Integer, default=4096)
+    
+    # Test Execution Configuration
+    execution_provider = Column(String(50), nullable=False, default="openrouter")
+    execution_model = Column(String(100), nullable=False)
+    execution_temperature = Column(Float, default=0.7)
+    execution_max_tokens = Column(Integer, default=4096)
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -843,18 +881,33 @@ class UserSetting(Base):
 
 **Backend - Settings Service:**
 ```python
-async def get_user_provider_config(user_id: int, db: Session) -> dict:
-    """Get user's provider settings, fallback to .env"""
+async def get_user_provider_config(
+    user_id: int, 
+    db: Session, 
+    config_type: str = "generation"  # or "execution"
+) -> dict:
+    """Get user's provider settings for generation or execution, fallback to .env"""
     user_settings = db.query(UserSetting).filter_by(user_id=user_id).first()
     
     if user_settings:
-        # Use user's preferences
+        # Use user's preferences (separate for generation vs execution)
+        if config_type == "generation":
+            provider = user_settings.generation_provider
+            model = user_settings.generation_model
+            temperature = user_settings.generation_temperature
+            max_tokens = user_settings.generation_max_tokens
+        else:  # execution
+            provider = user_settings.execution_provider
+            model = user_settings.execution_model
+            temperature = user_settings.execution_temperature
+            max_tokens = user_settings.execution_max_tokens
+            
         return {
-            "provider": user_settings.provider,
-            "model": user_settings.model,
-            "api_key": os.getenv(f"{user_settings.provider.upper()}_API_KEY"),
-            "temperature": user_settings.temperature,
-            "max_tokens": user_settings.max_tokens
+            "provider": provider,
+            "model": model,
+            "api_key": os.getenv(f"{provider.upper()}_API_KEY"),
+            "temperature": temperature,
+            "max_tokens": max_tokens
         }
     else:
         # Fallback to .env MODEL_PROVIDER
@@ -879,15 +932,26 @@ const handleSaveSettings = async () => {
         'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify({
-        provider: modelProvider,
-        model: selectedModel,
-        temperature: parseFloat(temperature),
-        max_tokens: parseInt(maxTokens)
+        // Test Generation Settings
+        generation_provider: generationProvider,
+        generation_model: generationModel,
+        generation_temperature: parseFloat(generationTemperature),
+        generation_max_tokens: parseInt(generationMaxTokens),
+        
+        // Test Execution Settings
+        execution_provider: executionProvider,
+        execution_model: executionModel,
+        execution_temperature: parseFloat(executionTemperature),
+        execution_max_tokens: parseInt(executionMaxTokens)
       })
     });
     
     if (response.ok) {
-      toast.success(`✅ Settings saved! Your tests will now use ${modelProvider} ${selectedModel}`);
+      toast.success(
+        `✅ Settings saved!\n` +
+        `Generation: ${generationProvider} ${generationModel}\n` +
+        `Execution: ${executionProvider} ${executionModel}`
+      );
     }
   } catch (error) {
     toast.error('Failed to save settings');
