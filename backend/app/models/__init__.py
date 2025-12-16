@@ -8,6 +8,7 @@ from app.models.user_session import UserSession
 from app.models.test_template import TestTemplate
 from app.models.test_scenario import TestScenario
 from app.models.test_suite import TestSuite, TestSuiteItem, SuiteExecution
+from app.models.user_settings import UserSetting
 
 __all__ = [
     "User",
@@ -18,6 +19,7 @@ __all__ = [
     "UserSession",
     "TestTemplate",
     "TestScenario",
-    "TestSuite", "TestSuiteItem", "SuiteExecution"
+    "TestSuite", "TestSuiteItem", "SuiteExecution",
+    "UserSetting"
 ]
 

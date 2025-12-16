@@ -1,8 +1,8 @@
-"""Test generation service using OpenRouter LLM."""
+"""Test generation service using Universal LLM (supports Google, Cerebras, OpenRouter)."""
 from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
 
-from app.services.openrouter import OpenRouterService
+from app.services.universal_llm import UniversalLLMService
 from app.services.kb_context import KBContextService
 
 
@@ -10,7 +10,7 @@ class TestGenerationService:
     """Service for generating test cases using LLM."""
     
     def __init__(self):
-        self.openrouter = OpenRouterService()
+        self.llm = UniversalLLMService()
         self.kb_context = KBContextService()
         
     def _build_system_prompt(self) -> str:
@@ -105,7 +105,8 @@ IMPORTANT: Return ONLY valid JSON, no additional text or explanation."""
         category_id: Optional[int] = None,
         db: Optional[Session] = None,
         use_kb_context: bool = True,
-        max_kb_docs: int = 10
+        max_kb_docs: int = 10,
+        user_id: Optional[int] = None
     ) -> Dict:
         """
         Generate test cases based on a requirement.
@@ -119,6 +120,7 @@ IMPORTANT: Return ONLY valid JSON, no additional text or explanation."""
             db: Optional database session for KB context retrieval
             use_kb_context: Whether to use KB context if available
             max_kb_docs: Maximum number of KB documents to include
+            user_id: Optional user ID to load generation settings from
             
         Returns:
             Dict with generated test cases and metadata
@@ -126,6 +128,22 @@ IMPORTANT: Return ONLY valid JSON, no additional text or explanation."""
         Raises:
             Exception: If generation fails
         """
+        # Load user's generation settings if user_id provided
+        user_config = None
+        if db and user_id:
+            try:
+                from app.services.user_settings_service import user_settings_service
+                user_config = user_settings_service.get_provider_config(
+                    db=db,
+                    user_id=user_id,
+                    config_type="generation"
+                )
+                if user_config:
+                    print(f"[DEBUG] 🎯 Loaded user generation config: provider={user_config.get('provider')}, model={user_config.get('model')}")
+            except Exception as e:
+                print(f"[DEBUG] ⚠️ Could not load user generation settings: {str(e)}")
+                user_config = None
+        
         # Retrieve KB context if requested
         kb_context = ""
         kb_docs_used = 0
@@ -151,13 +169,30 @@ IMPORTANT: Return ONLY valid JSON, no additional text or explanation."""
             {"role": "user", "content": self._build_user_prompt(requirement, test_type, num_tests, kb_context)}
         ]
         
-        # Call OpenRouter
+        # Determine provider/model/temperature/max_tokens from user config or defaults
+        if user_config:
+            # Use user's generation settings
+            provider = user_config.get("provider", "openrouter")
+            generation_model = user_config.get("model") if not model else model  # Explicit model param takes precedence
+            temperature = user_config.get("temperature", 0.7)
+            max_tokens_val = user_config.get("max_tokens", 2000)
+            print(f"[DEBUG] 🎯 Using user's generation config: {provider}/{generation_model} (temp={temperature}, max_tokens={max_tokens_val})")
+        else:
+            # Fall back to .env defaults
+            provider = "openrouter"
+            generation_model = model  # Use explicit model param or None (will use settings default)
+            temperature = 0.7
+            max_tokens_val = 2000
+            print(f"[DEBUG] 📋 Using .env defaults: {provider} (temp={temperature}, max_tokens={max_tokens_val})")
+        
+        # Call Universal LLM service (supports Google, Cerebras, OpenRouter)
         try:
-            response = await self.openrouter.chat_completion(
+            response = await self.llm.chat_completion(
                 messages=messages,
-                model=model,
-                temperature=0.7,
-                max_tokens=2000
+                provider=provider,
+                model=generation_model,
+                temperature=temperature,
+                max_tokens=max_tokens_val
             )
             
             # Extract content
@@ -213,7 +248,8 @@ IMPORTANT: Return ONLY valid JSON, no additional text or explanation."""
         category_id: Optional[int] = None,
         db: Optional[Session] = None,
         use_kb_context: bool = True,
-        max_kb_docs: int = 10
+        max_kb_docs: int = 10,
+        user_id: Optional[int] = None
     ) -> Dict:
         """
         Generate E2E test cases for a specific page.
@@ -227,6 +263,7 @@ IMPORTANT: Return ONLY valid JSON, no additional text or explanation."""
             db: Optional database session for KB context
             use_kb_context: Whether to use KB context if available
             max_kb_docs: Maximum number of KB documents to include
+            user_id: Optional user ID to load generation settings from
             
         Returns:
             Dict with generated test cases
@@ -252,7 +289,8 @@ Generate comprehensive E2E test cases for this page including:
             category_id=category_id,
             db=db,
             use_kb_context=use_kb_context,
-            max_kb_docs=max_kb_docs
+            max_kb_docs=max_kb_docs,
+            user_id=user_id
         )
     
     async def generate_api_tests(
@@ -265,7 +303,8 @@ Generate comprehensive E2E test cases for this page including:
         category_id: Optional[int] = None,
         db: Optional[Session] = None,
         use_kb_context: bool = True,
-        max_kb_docs: int = 10
+        max_kb_docs: int = 10,
+        user_id: Optional[int] = None
     ) -> Dict:
         """
         Generate API test cases for an endpoint.
@@ -280,6 +319,7 @@ Generate comprehensive E2E test cases for this page including:
             db: Optional database session for KB context
             use_kb_context: Whether to use KB context if available
             max_kb_docs: Maximum number of KB documents to include
+            user_id: Optional user ID to load generation settings from
             
         Returns:
             Dict with generated test cases
@@ -305,6 +345,7 @@ Generate API test cases including:
             category_id=category_id,
             db=db,
             use_kb_context=use_kb_context,
-            max_kb_docs=max_kb_docs
+            max_kb_docs=max_kb_docs,
+            user_id=user_id
         )
 

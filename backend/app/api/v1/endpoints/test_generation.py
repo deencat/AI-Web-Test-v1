@@ -63,7 +63,7 @@ async def generate_test_cases(
         # Initialize test generation service
         service = TestGenerationService()
         
-        # Generate tests (with optional KB context)
+        # Generate tests (with optional KB context and user settings)
         result = await service.generate_tests(
             requirement=request.requirement,
             test_type=request.test_type.value if request.test_type else None,
@@ -72,7 +72,8 @@ async def generate_test_cases(
             category_id=request.category_id,
             db=db,
             use_kb_context=request.use_kb_context,
-            max_kb_docs=request.max_kb_docs
+            max_kb_docs=request.max_kb_docs,
+            user_id=current_user.id  # Pass user ID to load generation settings
         )
         
         return result
@@ -130,7 +131,8 @@ async def generate_page_tests(
             category_id=category_id,
             db=db,
             use_kb_context=use_kb_context,
-            max_kb_docs=max_kb_docs
+            max_kb_docs=max_kb_docs,
+            user_id=current_user.id  # Pass user ID to load generation settings
         )
         
         return result
@@ -186,7 +188,8 @@ async def generate_api_tests(
             category_id=category_id,
             db=db,
             use_kb_context=use_kb_context,
-            max_kb_docs=max_kb_docs
+            max_kb_docs=max_kb_docs,
+            user_id=current_user.id  # Pass user ID to load generation settings
         )
         
         return result

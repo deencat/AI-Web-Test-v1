@@ -180,6 +180,15 @@ class QueueManager:
                         # Get base URL from test case or execution
                         base_url = execution.base_url or test_case.test_data.get("base_url", "https://example.com")
                         
+                        # Load user's execution provider settings (Sprint 3 - Settings Page Dynamic Configuration)
+                        from app.services.user_settings_service import user_settings_service
+                        user_config = user_settings_service.get_provider_config(
+                            db=bg_db,
+                            user_id=queued_execution.user_id,
+                            config_type="execution"
+                        )
+                        print(f"[DEBUG] 🎯 Loaded user execution config: provider={user_config['provider']}, model={user_config['model']}")
+                        
                         # Create NEW Stagehand service for THIS thread (not singleton!)
                         # Each thread needs its own instance because Playwright can't be shared across event loops
                         from app.services.stagehand_service import StagehandExecutionService
@@ -191,6 +200,9 @@ class QueueManager:
                         print(f"[DEBUG] Creating StagehandExecutionService with headless={headless}")
                         
                         service = StagehandExecutionService(headless=headless)
+                        
+                        # Initialize with user's config (pass to initialize method)
+                        loop.run_until_complete(service.initialize(user_config=user_config))
                         
                         try:
                             loop.run_until_complete(

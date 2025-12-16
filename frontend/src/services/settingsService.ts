@@ -171,6 +171,56 @@ class SettingsService {
       errors,
     };
   }
+
+  /**
+   * Get user's AI provider settings (Sprint 3)
+   */
+  async getUserProviderSettings(): Promise<any> {
+    // Real API call (no mock for Sprint 3 feature)
+    try {
+      const response = await api.get('/settings/provider');
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  /**
+   * Update user's AI provider settings (Sprint 3)
+   */
+  async updateUserProviderSettings(data: any): Promise<any> {
+    // Real API call (no mock for Sprint 3 feature)
+    try {
+      const response = await api.put('/settings/provider', data);
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  /**
+   * Get available AI providers (Sprint 3)
+   */
+  async getAvailableProviders(): Promise<any> {
+    // Real API call (no mock for Sprint 3 feature)
+    try {
+      const response = await api.get('/settings/available-providers');
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  /**
+   * Delete user provider settings (reset to defaults)
+   */
+  async deleteUserProviderSettings(): Promise<void> {
+    try {
+      await api.delete('/settings/provider');
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
 }
 
 export default new SettingsService();
