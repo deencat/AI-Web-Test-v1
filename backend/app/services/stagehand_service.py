@@ -202,6 +202,155 @@ class StagehandExecutionService:
             self.stagehand = None
             self.page = None
     
+    async def initialize_persistent(
+        self,
+        user_data_dir: str,
+        user_config: Optional[Dict[str, Any]] = None,
+        devtools: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Initialize Stagehand browser with persistent session (for debug mode).
+        
+        Args:
+            user_data_dir: Path to userDataDir for session persistence (cookies, localStorage, sessions)
+            user_config: Optional user configuration dict with provider, model, temperature, max_tokens
+            devtools: Whether to open DevTools (default: True for debugging)
+            
+        Returns:
+            Dict with browser_pid, devtools_url (if available), and other metadata
+        """
+        if not self.stagehand:
+            # Ensure Windows event loop policy is set
+            if sys.platform == 'win32':
+                loop = asyncio.get_event_loop()
+                if not isinstance(loop, asyncio.ProactorEventLoop):
+                    try:
+                        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+                    except:
+                        pass
+            
+            print(f"[DEBUG] Initializing persistent Stagehand browser with userDataDir: {user_data_dir}")
+            
+            # Get browser configuration
+            browser_slowmo = int(os.getenv("BROWSER_SLOWMO", "0"))
+            
+            # Build browser launch options with persistence
+            launch_options = {
+                "handle_sigint": False,
+                "handle_sigterm": False,
+                "handle_sighup": False,
+                "user_data_dir": user_data_dir,  # Enable session persistence
+                "devtools": devtools,  # Open DevTools for visual debugging
+                "headless": False  # Always visible for debug mode
+            }
+            if browser_slowmo > 0:
+                launch_options["slow_mo"] = browser_slowmo
+            
+            # Determine which provider to use (same logic as initialize())
+            if user_config:
+                model_provider = user_config.get("provider", "openrouter").lower()
+                print(f"[DEBUG] 🎯 Using user's configured provider: {model_provider}")
+            else:
+                model_provider = os.getenv("MODEL_PROVIDER", "openrouter").lower()
+                use_google_direct = os.getenv("USE_GOOGLE_DIRECT", "false").lower() == "true"
+                use_cerebras = os.getenv("USE_CEREBRAS", "false").lower() == "true"
+                
+                if use_cerebras:
+                    model_provider = "cerebras"
+                elif use_google_direct:
+                    model_provider = "google"
+                print(f"[DEBUG] 📋 Using .env default provider: {model_provider}")
+            
+            # Configure model based on provider (same logic as initialize())
+            if model_provider == "cerebras":
+                cerebras_api_key = os.getenv("CEREBRAS_API_KEY")
+                cerebras_model = user_config.get("model") if user_config else os.getenv("CEREBRAS_MODEL", "llama3.1-8b")
+                
+                if not cerebras_api_key:
+                    raise ValueError("CEREBRAS_API_KEY not set in .env file")
+                
+                config = StagehandConfig(
+                    env="LOCAL",
+                    headless=False,  # Always visible for debug mode
+                    verbose=1,
+                    model_name=f"cerebras/{cerebras_model}",
+                    model_api_key=cerebras_api_key,
+                    local_browser_launch_options=launch_options
+                )
+                print(f"[DEBUG] ✅ Using Cerebras API with model: {cerebras_model} (Debug Mode)")
+                
+            elif model_provider == "google":
+                google_api_key = os.getenv("GOOGLE_API_KEY")
+                google_model = user_config.get("model") if user_config else os.getenv("GOOGLE_MODEL", "gemini-1.5-flash")
+                
+                if not google_api_key:
+                    raise ValueError("GOOGLE_API_KEY not set in .env file")
+                
+                config = StagehandConfig(
+                    env="LOCAL",
+                    headless=False,  # Always visible for debug mode
+                    verbose=1,
+                    model_name=f"gemini/{google_model}",
+                    model_api_key=google_api_key,
+                    local_browser_launch_options=launch_options
+                )
+                print(f"[DEBUG] ✅ Using Google API directly with model: {google_model} (Debug Mode)")
+                
+            else:  # OpenRouter
+                openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+                openrouter_model = user_config.get("model") if user_config else os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct")
+                
+                config = StagehandConfig(
+                    env="LOCAL",
+                    headless=False,  # Always visible for debug mode
+                    verbose=1,
+                    model_name=f"openrouter/{openrouter_model}",
+                    model_api_key=openrouter_key,
+                    local_browser_launch_options=launch_options
+                )
+                print(f"[DEBUG] ✅ Using OpenRouter with model: {openrouter_model} (Debug Mode)")
+            
+            print(f"[DEBUG] Persistent browser settings: headless=False (debug mode), devtools={devtools}")
+            
+            self.stagehand = Stagehand(config)
+            await self.stagehand.init()
+            self.page = self.stagehand.page
+            
+            if not self.page:
+                raise RuntimeError("Stagehand initialization failed: page is None")
+            
+            # Set longer default timeout for complex flows
+            if hasattr(self.page, '_page'):
+                self.page._page.set_default_timeout(120000)  # 120 seconds
+            
+            # Extract browser metadata
+            browser_metadata = {
+                "user_data_dir": user_data_dir,
+                "devtools_enabled": devtools,
+                "browser_pid": None,
+                "devtools_url": None
+            }
+            
+            # Try to get browser PID and DevTools URL (Playwright-specific)
+            try:
+                if hasattr(self.page, '_page') and hasattr(self.page._page, 'context'):
+                    context = self.page._page.context
+                    if hasattr(context, 'browser') and context.browser:
+                        browser = context.browser
+                        # Get browser process (if available)
+                        if hasattr(browser, '_browser_type'):
+                            browser_metadata["browser_pid"] = os.getpid()  # Fallback to current process
+                        # DevTools URL typically available via CDP
+                        if devtools:
+                            browser_metadata["devtools_url"] = "chrome://inspect (browser DevTools opened automatically)"
+            except Exception as e:
+                print(f"[DEBUG] Could not extract browser metadata: {e}")
+            
+            print(f"[DEBUG] Persistent Stagehand initialized successfully, page={self.page}")
+            print(f"[DEBUG] Browser metadata: {browser_metadata}")
+            
+            return browser_metadata
+    
     async def execute_test(
         self,
         db: Session,
@@ -1227,6 +1376,90 @@ class StagehandExecutionService:
                 "error": str(e),
                 "actual": f"Verification error: {str(e)}",
                 "expected": step_description
+            }
+    
+    async def execute_single_step(
+        self,
+        step_description: str,
+        step_number: int,
+        execution_id: int
+    ) -> Dict[str, Any]:
+        """
+        Execute a single step for debug mode.
+        
+        Args:
+            step_description: Step description to execute
+            step_number: Step number (for logging/screenshots)
+            execution_id: Execution ID (for screenshot naming)
+            
+        Returns:
+            Dict with:
+                - success: bool
+                - error: Optional[str]
+                - actual: str (what happened)
+                - expected: str (what should happen)
+                - screenshot_path: Optional[str]
+                - duration_seconds: float
+                - tokens_used: int (estimated)
+        """
+        start_time = datetime.utcnow()
+        
+        try:
+            print(f"[DEBUG] Executing single step #{step_number}: {step_description}")
+            
+            # Use hybrid execution strategy
+            USE_AI_ONLY = os.getenv("USE_AI_EXECUTION", "false").lower() == "true"
+            
+            if USE_AI_ONLY:
+                result = await self._execute_step_ai(step_description, step_number)
+            else:
+                result = await self._execute_step_hybrid(step_description, step_number)
+            
+            # Capture screenshot
+            screenshot_path = await self._capture_screenshot(
+                execution_id,
+                step_number,
+                ExecutionResult.PASS if result["success"] else ExecutionResult.FAIL
+            )
+            
+            end_time = datetime.utcnow()
+            duration = (end_time - start_time).total_seconds()
+            
+            # Estimate tokens used (AI execution typically uses ~100 tokens per step)
+            tokens_estimate = 100 if result.get("used_ai", False) else 0
+            
+            return {
+                "success": result["success"],
+                "error": result.get("error"),
+                "actual": result.get("actual", ""),
+                "expected": result.get("expected", step_description),
+                "screenshot_path": screenshot_path,
+                "duration_seconds": duration,
+                "tokens_used": tokens_estimate
+            }
+            
+        except Exception as e:
+            end_time = datetime.utcnow()
+            duration = (end_time - start_time).total_seconds()
+            
+            # Capture error screenshot
+            try:
+                screenshot_path = await self._capture_screenshot(
+                    execution_id,
+                    step_number,
+                    ExecutionResult.ERROR
+                )
+            except:
+                screenshot_path = None
+            
+            return {
+                "success": False,
+                "error": str(e),
+                "actual": f"Step execution failed: {str(e)}",
+                "expected": step_description,
+                "screenshot_path": screenshot_path,
+                "duration_seconds": duration,
+                "tokens_used": 0
             }
     
 # Singleton instance
