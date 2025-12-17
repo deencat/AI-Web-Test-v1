@@ -9,6 +9,7 @@ from app.models.test_template import TestTemplate
 from app.models.test_scenario import TestScenario
 from app.models.test_suite import TestSuite, TestSuiteItem, SuiteExecution
 from app.models.user_settings import UserSetting
+from app.models.debug_session import DebugSession, DebugStepExecution, DebugMode, DebugSessionStatus
 
 __all__ = [
     "User",
@@ -20,6 +21,7 @@ __all__ = [
     "TestTemplate",
     "TestScenario",
     "TestSuite", "TestSuiteItem", "SuiteExecution",
-    "UserSetting"
+    "UserSetting",
+    "DebugSession", "DebugStepExecution", "DebugMode", "DebugSessionStatus"
 ]
 
