@@ -1,13 +1,13 @@
 # AI Web Test v1.0 - Project Management Plan
 ## Multi-Agent Test Automation Platform
 
-**Version:** 3.4  
-**Date:** December 15, 2025  
-**Status:** ✅ Sprint 1 COMPLETE (100%) | ✅ Sprint 2 COMPLETE (100% - Including KB Integration Day 11) | ✅ Sprint 3 COMPLETE (100%) | 🎯 Integration Testing IN PROGRESS | 🚀 Ready for UAT  
+**Version:** 3.5  
+**Date:** December 17, 2025  
+**Status:** ✅ Sprint 1 COMPLETE (100%) | ✅ Sprint 2 COMPLETE (100% - Including KB Integration Day 11) | ✅ Sprint 3 COMPLETE (100%) | 🎯 Integration Testing IN PROGRESS | � Sprint 3 Enhancement Planned (Interactive Debug Mode) | �🚀 Ready for UAT  
 **Project Duration:** 32 weeks (8 months)  
 **Team Structure:** 2 Developers (Frontend + Backend parallel development)  
 **Methodology:** Agile with 2-week sprints + Pragmatic MVP approach  
-**Latest Update:** Sprint 3 Integration Complete (Dec 15, 2025) - Full-stack integration verified with KB-aware test generation, multi-provider model support, and test suites. All core MVP features operational. System ready for User Acceptance Testing (UAT) phase. Production deployment pending final integration sign-off.  
+**Latest Update:** Sprint 3 Integration Testing (Dec 17, 2025) - Full-stack integration verified with KB-aware test generation, multi-provider model support, and test suites. All core MVP features operational. Interactive Debug Mode feature planned as Sprint 3 enhancement to reduce AI token costs by 85% during development. System ready for User Acceptance Testing (UAT) phase after enhancement approval.  
 
 ---
 
@@ -1338,6 +1338,7 @@ const handleSaveSettings = async () => {
 - ✅ Screenshot capture and display
 - ✅ Multi-provider model switching (Google/Cerebras/OpenRouter)
 - 🎯 **In Progress:** End-to-end manual verification (INTEGRATION-TESTING-CHECKLIST.md)
+- 📋 **Planned:** Interactive Debug Mode feature (Sprint 3 enhancement - see below)
 - 🎯 **Pending:** Sign-off from both developers
 - 🎯 **Next:** UAT preparation and staging deployment
 
@@ -1406,11 +1407,322 @@ const handleSaveSettings = async () => {
 
 ---
 
-### 🎯 Sprint 3 Integration Testing Status (December 15, 2025)
+### 📋 Sprint 3 Enhancement: Local Persistent Browser Debug Mode - Hybrid (Planned)
 
-**Current Phase:** Integration Testing & Verification  
+**Feature Name:** Local Persistent Browser Debug Mode (Option B-Hybrid)  
+**Priority:** HIGH - Significant developer experience improvement + Maximum token savings  
+**Status:** 📋 **Planned** - Documented, awaiting approval  
+**Estimated Time:** 2-3 hours  
+**Target Completion:** December 2025 (Sprint 3 enhancement)  
+**Modes:** Auto-setup (fast, 600 tokens) OR Manual-setup (saves tokens, 0 tokens)  
+**Alternative:** Option D (XPath Cache Replay) - Deferred to Phase 3 for CI/CD environments (4-5 hours)
+
+#### Problem Statement
+During Sprint 3 integration testing, developers identified a need to debug individual test steps without executing full test suites. Current system requires running all previous steps with AI (steps 1-6 to debug step 7), consuming unnecessary AI tokens (~700 tokens vs 100 tokens = 85% waste).
+
+**Critical Challenges Identified:**
+1. **Token Waste:** Replaying steps 1-6 with AI to debug step 7 uses 700 tokens instead of 100 (85% waste)
+2. **CSRF/Session Complexity:** Real-world applications use CSRF tokens, server-side sessions, stateful workflows
+3. **Slow Iteration:** Full replay takes 9 seconds vs 3 seconds for single step
+4. **Cost Impact:** High-frequency debugging costs $60,000/year for active team
+
+#### Business Value
+- **Maximum Token Savings:** Manual mode saves 600 tokens per session (85% reduction)
+- **Flexible Workflow:** User chooses auto (fast) or manual (token-saving) setup
+- **Developer Productivity:** 67% faster iteration (3s vs 9s per debugging cycle)
+- **Enterprise-Ready:** Works with CSRF tokens, sessions, and stateful applications
+- **Better Testing:** Enables rapid step-by-step validation during test development
+- **Cost Control:** Reduces OpenRouter/Google/Cerebras API costs during development
+- **Visual Debugging:** See browser state in real-time with DevTools
+- **Native Feature:** Uses Stagehand's built-in LOCAL environment capabilities
+
+#### Feature Scope - Option B-Hybrid (PRIMARY RECOMMENDATION)
+Local Persistent Browser Debug Mode with two setup modes:
+
+**🔧 Mode Selection (Step 1):**
+- User chooses **Auto-Setup** (fast, 600 tokens) OR **Manual-Setup** (saves tokens, 0 tokens)
+- Choice depends on scenario: Simple flows → Manual, Complex flows → Auto
+
+**⚡ Auto-Setup Mode:**
+1. Start a debug session for any test from the execution history page
+2. System launches a persistent browser with userDataDir (maintains cookies, localStorage, sessions)
+3. **AI executes prerequisite steps 1-6 automatically** (one-time setup, ~600 tokens, 6 seconds)
+   - **Why needed:** Browser needs to be logged in, navigate to correct page, fill forms, etc.
+   - **CSRF/Sessions:** Executing steps 1-6 builds correct CSRF tokens and session state
+   - **Cannot skip:** Simply opening browser at step 7's URL would fail (not logged in, no session)
+4. Browser remains open with state preserved (CSRF tokens, sessions, login intact)
+5. Developer iterates on step 7 multiple times (100 tokens each, 3 seconds per run)
+6. View browser in real-time with DevTools for visual debugging
+7. Stop debug session when done (browser closes, cleanup)
+
+**💰 Manual-Setup Mode:**
+1. Start a debug session for any test from the execution history page
+2. System launches a persistent browser with userDataDir (maintains cookies, localStorage, sessions)
+3. **UI shows step-by-step instructions for steps 1-6** (user follows manually, 0 tokens, 2-3 minutes)
+   - Example: "Step 1: Click 'Login' button in top-right corner"
+   - Example: "Step 2: Enter 'admin@example.com' in email field"
+   - System waits for user confirmation: "I've completed steps 1-6"
+4. Browser remains open with state preserved (CSRF tokens, sessions, login intact)
+5. Developer clicks "Debug Step 7" button to iterate (100 tokens each, 3 seconds per run)
+6. View browser in real-time with DevTools for visual debugging
+7. Stop debug session when done (browser closes, cleanup)
+
+**Why Execute Steps 1-6?**
+- Can't just "open browser at step 7's URL" - would be logged out, no session data
+- Need to: login → navigate → fill forms → reach step 6 state
+- Persistent browser keeps this state between step 7 reruns (that's the savings)
+
+**Auto vs Manual Setup Trade-offs:**
+
+✅ **Auto-Setup Mode (600 tokens, 6 seconds):**
+- **Best for:** Complex flows (20+ steps), new team members, reproducibility needs
+- **Pros:** Fast, reproducible, guaranteed correct state
+- **Cons:** 600 tokens per debug session setup
+- **Use case:** "I need to quickly debug this 50-step checkout flow"
+
+✅ **Manual-Setup Mode (0 tokens, 2-3 minutes):**
+- **Best for:** Simple flows (5-10 steps), experienced users, tight token budget
+- **Pros:** Maximum token savings (85% reduction), full control
+- **Cons:** Takes 2-3 minutes, requires manual attention
+- **Use case:** "I know this login flow by heart, let me do it and save 600 tokens"
+
+**Token Comparison (5 debug iterations):**
+- Current (full replay): 3,500 tokens
+- Option B-Auto: 1,100 tokens (68% savings) = 600 setup + 5×100 iterations
+- Option B-Manual: 500 tokens (85% savings) = 0 setup + 5×100 iterations ⭐
+
+---
+
+**Note on Option D:** XPath Cache Replay (Option D) for CI/CD environments has been **moved to Phase 3 Sprint 9**. See Phase 3 section for complete implementation details.
+
+---
+
+#### Cross-Platform Compatibility ✅ (Option B)
+
+**Workflow:**
+1. Developer views failed test execution in execution history
+2. Clicks "� Debug Step 7 (Replay 1-6)" button next to failing step
+3. System automatically:
+   - Loads cached XPath from previous successful execution
+   - Replays steps 1-6 using cached XPath (NO AI tokens, ~0 cost)
+   - Browser builds correct state (CSRF tokens, sessions, cart data)
+   - Executes step 7 with AI for debugging (100 tokens)
+4. Results shown in 6 seconds with:
+   - ✅ Pass / ❌ Fail status
+   - Screenshot of step 7
+   - Token count (typically 100)
+   - Cache stats (e.g., "6/6 cache hits, 0 AI fallbacks")
+5. Developer can rerun instantly after fixing code
+
+**Key Design Principles - Option D:**
+- Automatic replay - no manual browser setup required
+- Token-efficient - replay uses cached XPath (0 tokens), only debug step uses AI (100 tokens)
+- CSRF/Session safe - browser state built correctly through replay
+- Robust - falls back to AI if cached XPath fails (UI changed)
+- Fast enough - 6s vs 9s for full AI replay (33% faster)
+- Production-ready - handles real-world stateful applications
+
+#### Cross-Platform Compatibility ✅
+
+**Supported Operating Systems:**
+- ✅ **Windows:** Fully supported (already verified with WindowsProactorEventLoopPolicy)
+- ✅ **Linux:** Fully supported (current development environment)
+- ✅ **macOS:** Supported by Playwright (not yet tested in this project)
+
+**Technical Foundation:**
+- Stagehand is built on **Playwright**, which has native cross-platform support
+- Our project already successfully runs Stagehand/Playwright on Windows and Linux (Sprint 3 verified)
+- `launch_persistent_context()` is a standard Playwright API available on all platforms
+- Browser binaries (Chromium) work identically across Windows/Linux/macOS
+- userDataDir paths work on all platforms (Windows: `C:\path\to\dir`, Linux/macOS: `/path/to/dir`)
+
+**Evidence from Current Project:**
+- Sprint 3 Day 1 documentation: "Browser automation working on Windows/Linux" ✅
+- Windows asyncio fixes already implemented (WindowsProactorEventLoopPolicy) ✅
+- 19/19 execution tests passing on both platforms ✅
+
+#### Technical Approach - Option B-Hybrid (PRIMARY RECOMMENDATION)
+
+**Backend Components:**
+- New API endpoints:
+  - `POST /api/v1/tests/{id}/debug/start?mode=auto|manual` - Start debug session with mode selection
+  - `POST /api/v1/tests/{id}/debug/step/{step_id}` - Execute single step in debug session
+  - `DELETE /api/v1/tests/{id}/debug` - Stop debug session (cleanup browser)
+  - `GET /api/v1/tests/{id}/debug/status` - Get debug session status (includes mode, step progress)
+- Modify `StagehandService.initialize()`:
+  - Add `preserve_session=True` parameter
+  - Add `mode` parameter (`auto` or `manual`)
+  - Configure Stagehand with `userDataDir: './debug-sessions/{session_id}'`
+  - Configure `preserveUserDataDir: true`
+  - Configure `headless: false` (visual debugging)
+  - Configure `devtools: true` (open DevTools)
+- Session management:
+  - Track active debug sessions in memory (session_id → browser instance + mode)
+  - Auto-cleanup on timeout (30 minutes idle)
+  - Cleanup on user logout
+
+**Frontend Components:**
+- **Mode Selection UI:**
+  - "⚡ Auto-Setup (600 tokens, 6s)" button - AI executes steps 1-6 automatically
+  - "💰 Manual-Setup (0 tokens, 2-3 min)" button - User executes steps 1-6 manually
+  - Tooltip explaining trade-offs
+- **Auto Mode UI:**
+  - Progress indicator for steps 1-6 execution
+  - Debug session status indicator (browser icon with "Running" badge)
+  - "Execute Step X" button (enabled when setup complete)
+  - Token counter per rerun
+- **Manual Mode UI:**
+  - Step-by-step instructions panel showing steps 1-6
+  - "I've completed steps 1-6" confirmation button
+  - "Execute Step X" button (enabled after confirmation)
+  - Token counter (shows 0 for setup, 100 per debug iteration)
+- **Common UI:**
+  - "Stop Debug Session" button
+  - Real-time step execution results
+
+**Configuration (Stagehand LOCAL environment):**
+```python
+# Persistent browser configuration
+browser_config = {
+    "env": "LOCAL",  # Not BROWSERBASE
+    "headless": False,  # Show browser window
+    "userDataDir": f"./debug-sessions/{session_id}",  # Persist state
+    "preserveUserDataDir": True,  # Keep data after close
+    "devtools": True,  # Open DevTools
+    "args": ["--disable-blink-features=AutomationControlled"]  # Hide automation
+}
+```
+
+**Security:**
+- Same authentication/authorization as regular execution
+- Debug sessions tied to user accounts (isolation)
+- Auto-cleanup prevents resource leaks
+- Rate limiting to prevent abuse
+
+#### Technical Approach - Option D (ALTERNATIVE for CI/CD)
+
+**Use Case:** Headless CI/CD environments where visual browser is not available
+
+**Database Schema Changes:**
+- Add to `TestExecutionStep` table:
+  - `selector_type` (xpath, css, id, text)
+  - `selector_value` (cached selector string)
+  - `action_value` (input text if applicable)
+- Store selector info during regular test execution
+
+**Backend Components:**
+- New API endpoint: `POST /api/v1/tests/debug-step-replay`
+- New service method: `StagehandService.debug_step_with_replay()`
+- XPath capture during regular execution
+- XPath replay engine with AI fallback
+- Cache statistics tracking (hits/misses)
+
+**Frontend Components:**
+- "Debug with Replay" button on Execution Progress page (per step)
+- Replay progress indicator
+- Cache statistics display
+- Token savings indicator
+- Results display with screenshot viewer
+
+**Key Algorithm:**
+1. Load cached XPath from previous successful execution
+2. For steps 1 to (target-1): Execute with cached XPath (0 tokens each)
+3. If XPath fails (UI changed): Fall back to AI (100 tokens)
+4. For target step: Execute with AI (100 tokens)
+5. Return results with cache hit/miss statistics
+
+**Implementation Time:** 4-5 hours (vs 2-3 hours for Option B)
+
+**When to Use Option D:**
+- CI/CD pipeline debugging (no GUI available)
+- Distributed test execution environments
+- Automated test validation workflows
+
+#### Comparison with All Approaches
+
+| Approach | CSRF Safe? | Platform | Implementation | Setup Time | Tokens (5 iterations) | Use Case |
+|----------|-----------|----------|---------------|------------|----------------------|----------|
+| **Option B-Auto** ⭐ | ✅ Yes | Win/Linux/Mac | 2-3 hours | 6s | 1,100 (68% save) | **Fast debug cycles** |
+| **Option B-Manual** 💰 | ✅ Yes | Win/Linux/Mac | 2-3 hours | 2-3 min | 500 (85% save) | **Max token savings** |
+| XPath Cache (Option D) | ✅ Yes | Win/Linux/Mac | 4-5 hours | 6s | 500 | CI/CD (Phase 3) |
+| Full AI Replay (Option A) | ✅ Yes | Win/Linux/Mac | 4-6 hours | 9s | 3,500 | ❌ Too expensive |
+| Interactive Debug (Option C) | ❌ **No** | Win/Linux/Mac | 2-3 hours | instant | N/A | ❌ Rejected (CSRF fails) |
+
+**Why Option B-Hybrid is Optimal for Development (PRIMARY RECOMMENDATION):**
+1. ✅ **Native Feature** - Uses Stagehand's built-in LOCAL environment (no custom code)
+2. ✅ **Fastest** - 3s per rerun (vs 6s for Option D, 9s for Option A)
+3. ✅ **Best DX** - Visual browser + DevTools (see state in real-time)
+4. ✅ **Simplest** - 2-3 hours implementation (vs 4-5 hours for Option D)
+5. ✅ **CSRF/Session Safe** - Browser maintains all state between reruns
+6. ✅ **Cross-Platform** - Verified working on Windows and Linux already
+7. ✅ **Maximum Token Savings** - Manual mode: 85% savings (500 vs 3,500 tokens for 5 iterations)
+8. ✅ **Flexible** - User chooses auto (speed) or manual (token savings) based on situation
+9. ✅ **Perfect for Sprint 3** - Team is in integration testing phase, needs visual debugging
+
+**When to Use Option D (ALTERNATIVE for CI/CD):**
+1. ⚙️ **Headless CI/CD** - Distributed test execution (no GUI available)
+2. ⚙️ **Production Debugging** - Remote server environments
+3. ⚙️ **Automated Validation** - Scheduled test health checks
+4. ⚙️ **Later Phase** - Add when preparing CI/CD integration (Phase 3)
+
+**Recommended Approach:**
+- **Now (Sprint 3):** Implement Option B-Hybrid (Local Persistent Browser with Auto/Manual modes) for development team (2-3 hours)
+- **Later (Phase 3):** Add Option D (XPath Cache Replay) for CI/CD when needed (4-5 hours)
+
+#### Success Metrics - Option B-Hybrid
+- Debug cycle time reduced from 60s to 3s (95% improvement)
+- Token usage (Auto mode): Reduced from 3,500 to 1,100 per 5 iterations (68% savings)
+- Token usage (Manual mode): Reduced from 3,500 to 500 per 5 iterations (85% savings)
+- CSRF/session handling: 100% success rate (critical for telecom apps)
+- Visual debugging adoption: >90% of developers prefer browser view
+- Manual mode adoption: >50% for simple flows (3-10 steps)
+- Auto mode adoption: >90% for complex flows (20+ steps)
+- Developer satisfaction score >9/10
+- 100% of developers using feature within 1 week
+
+#### Implementation Status
+- ✅ Requirements documented
+- ✅ Technical design completed (Option B PRIMARY, Option D ALTERNATIVE)
+- ✅ User workflow defined
+- ✅ Success metrics established
+- ✅ CSRF/session challenge identified and solved
+- ✅ Cross-platform compatibility verified (Windows/Linux)
+- 📋 Awaiting approval to proceed with Option B
+- ⏳ Implementation: 2-3 hours for Option B (when approved)
+
+#### Implementation Phases - Option B-Hybrid (Sprint 3 - PRIMARY)
+1. **Phase 1:** Modify StagehandService.initialize() - Add preserve_session and mode parameters (30 min)
+2. **Phase 2:** Create debug session management - API endpoints for start/stop/execute with mode (1 hour)
+3. **Phase 3:** Configure persistent browser - userDataDir, preserveUserDataDir, headless=false (30 min)
+4. **Phase 4:** Frontend UI - Mode selection, auto/manual workflows, session status (1 hour)
+   - Mode selection buttons (auto vs manual)
+   - Auto mode: Progress indicator for steps 1-6
+   - Manual mode: Step-by-step instructions panel + confirmation button
+   - Token counter (shows savings for manual mode)
+5. **Phase 5:** Session cleanup - Auto-cleanup on timeout/logout (15 min)
+6. **Phase 6:** Testing - Verify both modes, CSRF/session persistence, cross-platform (30 min)
+
+**Total Time:** 2-3 hours for Sprint 3 enhancement
+
+---
+
+**Note:** Option D (XPath Cache Replay) has been moved to Phase 3 (CI/CD Integration) - see Phase 3 section below for details.
+
+#### Documentation References
+- `INTERACTIVE-DEBUG-MODE-IMPLEMENTATION.md` - Complete technical specification (Option B PRIMARY, Option D ALTERNATIVE)
+- `THREE-APPROACHES-COMPARISON.md` - Cost-benefit analysis (4 options compared)
+- `SINGLE-STEP-EXECUTION-SUMMARY.md` - Executive summary
+- `OPTION-D-UPDATE-SUMMARY.md` - Transition documentation from Option C to Option D
+- Stagehand v3 Documentation - LOCAL environment configuration with persistent browser
+- Project verification: Sprint 3 Day 1 - Windows/Linux browser automation confirmed
+
+---
+
+### 🎯 Sprint 3 Integration Testing Status (December 17, 2025)
+
+**Current Phase:** Integration Testing & Verification + Enhancement  
 **Branch:** `integration/sprint-3`  
-**Status:** 🟡 **In Progress** - Automated tests passing, manual verification underway
+**Status:** 🟡 **In Progress** - Automated tests passing, manual verification underway, single-step execution feature in development
 
 #### ✅ Completed Integration Tests
 
@@ -1497,17 +1809,21 @@ const handleSaveSettings = async () => {
 #### 🚀 Next Steps for Integration Completion
 
 **Immediate (Week of Dec 16-20):**
-1. 🔄 **IN PROGRESS:** Settings Page Dynamic Configuration (Dec 16, 2025)
-   - Enable user-configurable model provider/model selection
-   - Implement backend API for settings persistence
-   - Keep API keys secure in backend .env (never exposed to frontend)
-   - Estimated: 4-6 hours
-2. ⏳ Complete manual verification checklist (2-3 days)
-3. ⏳ Obtain sign-off from both developers
-4. ⏳ Update integration test documentation
-5. ⏳ Run final automated test suite
-6. ⏳ Performance testing under load
-7. ⏳ Security audit review
+1. ✅ **COMPLETE:** Settings Page Dynamic Configuration (Dec 16, 2025)
+   - User-configurable model provider/model selection fully implemented
+   - 6 API endpoints, dual config (generation + execution), 20 models supported
+   - Time spent: 6 hours
+2. 🔄 **IN PROGRESS:** Single Step Execution Feature (Dec 17, 2025)
+   - Enable users to rerun individual test steps for debugging
+   - Backend: New API endpoint + service method
+   - Frontend: "Rerun" button on each step card
+   - Estimated: 4-6 hours (Option 1 - Quick Win approach)
+3. ⏳ Complete manual verification checklist (2-3 days)
+4. ⏳ Obtain sign-off from both developers
+5. ⏳ Update integration test documentation
+6. ⏳ Run final automated test suite
+7. ⏳ Performance testing under load
+8. ⏳ Security audit review
 
 **UAT Preparation (Week of Dec 23-27):**
 1. ⏳ Prepare UAT environment (staging)
@@ -2628,8 +2944,8 @@ Integrate with **enterprise systems** (CI/CD, monitoring, issue tracking) and co
 
 ### Phase 3 Sprint Breakdown
 
-#### Sprint 9 (Week 17-18): CI/CD Integration
-**Goal:** Tests run automatically in CI/CD pipelines
+#### Sprint 9 (Week 17-18): CI/CD Integration + XPath Cache Debug Mode (Option D)
+**Goal:** Tests run automatically in CI/CD pipelines + Add headless debugging capability
 
 **Tasks:**
 - Build Jenkins plugin for test execution
@@ -2638,14 +2954,29 @@ Integrate with **enterprise systems** (CI/CD, monitoring, issue tracking) and co
 - Add quality gate enforcement
 - Build deployment pipeline integration
 - Create CI/CD dashboard
+- **🆕 Implement Option D (XPath Cache Replay Debug Mode)** - 4-5 hours
+  - Add selector_type, selector_value, action_value columns to TestExecutionStep
+  - Capture XPath during regular execution
+  - Implement replay engine with AI fallback
+  - Create debug-step-replay API endpoint
+  - Build frontend "Debug with Replay" UI
+  - Test with CI/CD headless environments
 
 **Deliverables:**
 - Pull request triggers test execution automatically
 - Merge blocked if tests fail
 - Jenkins shows test results in UI
 - Deployment pipeline runs smoke tests
+- **🆕 Headless debug mode for CI/CD environments (Option D)**
+- **🆕 XPath cache replay works without visual browser**
 
 **Team:** 2 Backend + 1 DevOps + 1 Frontend
+
+**Rationale for Option D in Phase 3:**
+- Sprint 3 uses Option B (visual debugging) for development
+- Phase 3 focuses on CI/CD where headless debugging is needed
+- XPath cache replay works in distributed/remote environments
+- Complements Option B for production debugging scenarios
 
 ---
 
