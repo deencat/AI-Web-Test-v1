@@ -4,8 +4,12 @@ import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { ScreenshotGallery } from '../components/execution/ScreenshotGallery';
+import { DebugModeModal } from '../components/debug/DebugModeModal';
+import { DebugSessionView } from '../components/debug/DebugSessionView';
 import executionService from '../services/executionService';
+import debugService from '../services/debugService';
 import type { TestExecutionDetail, ExecutionStatus, ExecutionResult } from '../types/execution';
+import type { DebugMode } from '../types/debug';
 
 export function ExecutionProgressPage() {
   const { executionId } = useParams<{ executionId: string }>();
@@ -13,6 +17,10 @@ export function ExecutionProgressPage() {
   const [execution, setExecution] = useState<TestExecutionDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Debug mode state
+  const [showDebugModal, setShowDebugModal] = useState(false);
+  const [activeDebugSession, setActiveDebugSession] = useState<string | null>(null);
 
   const fetchExecutionDetail = async () => {
     if (!executionId) return;
@@ -26,6 +34,27 @@ export function ExecutionProgressPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Start debug session
+  const handleStartDebug = async (mode: DebugMode, targetStepNumber: number) => {
+    try {
+      const response = await debugService.startSession({
+        execution_id: Number(executionId),
+        mode,
+        target_step_number: targetStepNumber,
+      });
+      
+      setActiveDebugSession(response.session_id);
+      setShowDebugModal(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to start debug session');
+    }
+  };
+
+  // Close debug session
+  const handleCloseDebug = () => {
+    setActiveDebugSession(null);
   };
 
   useEffect(() => {
@@ -70,6 +99,32 @@ export function ExecutionProgressPage() {
     );
   }
 
+  // Show debug session if active
+  if (activeDebugSession) {
+    return (
+      <Layout>
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleCloseDebug}
+                className="mb-2"
+              >
+                ← Back to Execution
+              </Button>
+              <h1 className="text-3xl font-bold text-gray-900">
+                🐛 Debug Mode - Execution #{execution?.id}
+              </h1>
+            </div>
+          </div>
+          <DebugSessionView sessionId={activeDebugSession} onClose={handleCloseDebug} />
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -89,7 +144,17 @@ export function ExecutionProgressPage() {
             </h1>
             <p className="text-gray-600 mt-1">Test Case ID: {execution.test_case_id}</p>
           </div>
-          <ExecutionStatusBadge status={execution.status} result={execution.result} />
+          <div className="flex items-center gap-3">
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => setShowDebugModal(true)}
+              disabled={execution.status === 'running' || execution.status === 'pending'}
+            >
+              🐛 Debug Step
+            </Button>
+            <ExecutionStatusBadge status={execution.status} result={execution.result} />
+          </div>
         </div>
 
         {/* Execution Overview */}
@@ -178,6 +243,15 @@ export function ExecutionProgressPage() {
           </Card>
         )}
       </div>
+
+      {/* Debug Mode Modal */}
+      <DebugModeModal
+        isOpen={showDebugModal}
+        onClose={() => setShowDebugModal(false)}
+        onStart={handleStartDebug}
+        totalSteps={execution.total_steps}
+        executionId={execution.id}
+      />
     </Layout>
   );
 }
