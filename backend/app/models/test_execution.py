@@ -115,6 +115,10 @@ class TestExecutionStep(Base):
     screenshot_before = Column(String(500), nullable=True)  # Before action
     screenshot_after = Column(String(500), nullable=True)  # After action
     
+    # Selector/XPath tracking (Sprint 3+)
+    selector_used = Column(String(1000), nullable=True)  # XPath or CSS selector used for this action
+    action_method = Column(String(50), nullable=True)  # 'playwright', 'stagehand_ai', 'manual', etc.
+    
     # Metadata
     retry_count = Column(Integer, default=0)  # Number of retries
     is_critical = Column(Boolean, default=False)  # If this step fails, stop execution
