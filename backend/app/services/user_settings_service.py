@@ -16,12 +16,12 @@ class UserSettingsService:
         "google": {
             "display_name": "Google Gemini",
             "models": [
-                "gemini-2.0-flash-exp",
+                "gemini-2.0-flash",
                 "gemini-2.5-flash",
                 "gemini-1.5-flash",
                 "gemini-1.5-pro",
                 "gemini-2.0-flash-thinking-exp-01-21",
-                "gemini-3-flash",
+                "gemini-3-flash-preview",
             ],
             "recommended": "gemini-2.0-flash-exp",
             "api_key_env": "GOOGLE_API_KEY"

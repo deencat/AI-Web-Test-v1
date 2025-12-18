@@ -480,7 +480,9 @@ class StagehandExecutionService:
                         actual_result=result.get("actual", ""),
                         error_message=result.get("error"),
                         screenshot_path=screenshot_path,
-                        duration_seconds=duration
+                        duration_seconds=duration,
+                        selector_used=result.get("selector_used"),
+                        action_method=result.get("action_method")
                     )
                     
                     if result["success"]:
@@ -632,15 +634,25 @@ class StagehandExecutionService:
             print(f"[DEBUG]   - Title: {title_before}")
             print(f"[DEBUG] Calling page.act() for THIS STEP ONLY...")
             
-            # Use Stagehand AI to execute the step
-            await self.page.act(step_description)
+            # Use Stagehand AI to execute the step - CAPTURE RETURN VALUE
+            act_result = await self.page.act(step_description)
             
             await asyncio.sleep(1.5)  # Wait for action to complete
             
             title_after = await self.page.title()
             url_after = self.page.url
             
+            # Extract XPath from act_result
+            xpath_used = None
+            if act_result and hasattr(act_result, 'message') and act_result.message:
+                # Parse xpath from message like: "Action [click] performed successfully on selector: xpath=/html/body[1]/div[1]..."
+                import re
+                xpath_match = re.search(r'selector:\s*(xpath=[^\s]+)', act_result.message)
+                if xpath_match:
+                    xpath_used = xpath_match.group(1)
+            
             print(f"[DEBUG] ✅ AI action completed successfully!")
+            print(f"[DEBUG] XPath used by Stagehand: {xpath_used}")
             print(f"[DEBUG] Browser state AFTER AI:")
             print(f"[DEBUG]   - URL: {url_after}")
             print(f"[DEBUG]   - Title: {title_after}")
@@ -649,8 +661,10 @@ class StagehandExecutionService:
             
             return {
                 "success": True,
-                "actual": f"AI action completed. Page: {title_after} | URL: {url_after}",
-                "expected": step_description
+                "actual": f"AI action: {act_result.action if act_result else 'completed'}. XPath: {xpath_used}. Page: {title_after} | URL: {url_after}",
+                "expected": step_description,
+                "selector_used": xpath_used,
+                "action_method": "stagehand_ai"
             }
             
         except Exception as e:
@@ -727,7 +741,7 @@ class StagehandExecutionService:
         """Execute non-click actions using Stagehand AI."""
         try:
             print(f"[DEBUG] Calling page.act('{step_description}')...")
-            await self.page.act(step_description)
+            act_result = await self.page.act(step_description)
             print(f"[DEBUG] AI action completed successfully!")
             
             await asyncio.sleep(1)
@@ -735,14 +749,25 @@ class StagehandExecutionService:
             title = await self.page.title()
             url = self.page.url
             
+            # Extract XPath from act_result
+            xpath_used = None
+            if act_result and hasattr(act_result, 'message') and act_result.message:
+                import re
+                xpath_match = re.search(r'selector:\s*(xpath=[^\s]+)', act_result.message)
+                if xpath_match:
+                    xpath_used = xpath_match.group(1)
+            
+            print(f"[DEBUG] XPath used by Stagehand: {xpath_used}")
             print(f"[DEBUG] After action - Title: {title}")
             print(f"[DEBUG] After action - URL: {url}")
             print(f"[DEBUG] ========================================")
             
             return {
                 "success": True,
-                "actual": f"Action completed. Page: {title} | URL: {url}",
-                "expected": step_description
+                "actual": f"AI action: {act_result.action if act_result else 'completed'}. XPath: {xpath_used}. Page: {title} | URL: {url}",
+                "expected": step_description,
+                "selector_used": xpath_used,
+                "action_method": "stagehand_ai"
             }
         except Exception as e:
             print(f"[DEBUG] ❌ AI action failed: {str(e)}")
@@ -1017,10 +1042,13 @@ class StagehandExecutionService:
                         await element.click(timeout=10000)  # 10 seconds
                         await asyncio.sleep(0.5)
                         print(f"[DEBUG] ✅ Clicked checkbox")
+                        checkbox_selector = "input[type='checkbox']:visible, [role='checkbox']:visible, label:has(input[type='checkbox']):visible"
                         return {
                             "success": True,
                             "actual": "Clicked checkbox",
-                            "expected": step_description
+                            "expected": step_description,
+                            "selector_used": checkbox_selector,
+                            "action_method": "playwright"
                         }
                 except Exception as e:
                     print(f"[DEBUG] Checkbox not found: {str(e)[:100]}")
@@ -1046,10 +1074,13 @@ class StagehandExecutionService:
                         await element.click(timeout=10000)  # 10 seconds
                         await asyncio.sleep(1)
                         print(f"[DEBUG] ✅ Clicked close button")
+                        close_selector = "button[aria-label*='close' i]:visible, button[class*='close' i]:visible, button:has-text('×'):visible, [aria-label*='close' i]:visible"
                         return {
                             "success": True,
                             "actual": "Clicked close button",
-                            "expected": step_description
+                            "expected": step_description,
+                            "selector_used": close_selector,
+                            "action_method": "playwright"
                         }
                 except Exception as e:
                     print(f"[DEBUG] Close button not found: {str(e)[:100]}")
@@ -1124,7 +1155,9 @@ class StagehandExecutionService:
                     return {
                         "success": True,
                         "actual": f"Clicked '{button_text}'. Page: {title}",
-                        "expected": step_description
+                        "expected": step_description,
+                        "selector_used": combined_selector,
+                        "action_method": "playwright"
                     }
             except Exception as e:
                 print(f"[DEBUG] Click failed: {str(e)[:150]}")
@@ -1222,12 +1255,14 @@ class StagehandExecutionService:
                         await element.fill(text_to_type)
                         await asyncio.sleep(0.5)
                         
-                        print(f"[DEBUG] ✅ Typed '{text_to_type}' into field")
+                        print(f"[DEBUG] ✅ Typed '{text_to_type}' into field using selector: {selector}")
                         
                         return {
                             "success": True,
-                            "actual": f"Entered text into field",
-                            "expected": step_description
+                            "actual": f"Entered text into field using {selector}",
+                            "expected": step_description,
+                            "selector_used": selector,
+                            "action_method": "playwright"
                         }
                 except Exception as e:
                     print(f"[DEBUG] {selector} failed: {str(e)[:100]}")
