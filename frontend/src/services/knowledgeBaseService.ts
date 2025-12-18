@@ -2,11 +2,11 @@ import api, { apiHelpers } from './api';
 import {
   KBDocument,
   KBCategory,
+  KBDocumentListResponse,
+  KBStatistics,
   CreateCategoryRequest,
   SearchDocumentsRequest,
-  PaginatedResponse,
 } from '../types/api';
-import { mockKBDocuments, mockKBCategories } from '../mock/knowledgeBase';
 
 /**
  * Knowledge Base Service
@@ -18,35 +18,31 @@ class KnowledgeBaseService {
    * Get all documents
    */
   async getAllDocuments(params?: {
-    category_id?: string;
-    document_type?: string;
-    page?: number;
-    per_page?: number;
+    category_id?: number;
+    file_type?: string;
+    search?: string;
+    skip?: number;
+    limit?: number;
   }): Promise<KBDocument[]> {
     // Use mock data if configured
     if (apiHelpers.useMockData()) {
-      let filtered = [...mockKBDocuments];
-
-      // Apply filters
-      if (params?.category_id) {
-        const category = mockKBCategories.find((c) => c.id === params.category_id);
-        if (category) {
-          filtered = filtered.filter((doc) => doc.category === category.name);
-        }
-      }
-      if (params?.document_type) {
-        filtered = filtered.filter((doc) => doc.document_type === params.document_type);
-      }
-
-      return filtered;
+      // Mock data is outdated, return empty array
+      console.warn('Mock data for KB is not implemented with new schema');
+      return [];
     }
 
     // Real API call
     try {
-      const response = await api.get<PaginatedResponse<KBDocument>>('/kb/documents', {
-        params,
+      const response = await api.get<KBDocumentListResponse>('/kb', {
+        params: {
+          category_id: params?.category_id,
+          file_type: params?.file_type,
+          search: params?.search,
+          skip: params?.skip || 0,
+          limit: params?.limit || 100
+        },
       });
-      return response.data.data;
+      return response.data.items;
     } catch (error) {
       throw new Error(apiHelpers.getErrorMessage(error));
     }
@@ -58,16 +54,12 @@ class KnowledgeBaseService {
   async getDocumentById(id: string): Promise<KBDocument> {
     // Use mock data if configured
     if (apiHelpers.useMockData()) {
-      const doc = mockKBDocuments.find((d) => d.id === id);
-      if (!doc) {
-        throw new Error('Document not found');
-      }
-      return doc;
+      throw new Error('Mock data not supported for KB - please use real API');
     }
 
     // Real API call
     try {
-      const response = await api.get<KBDocument>(`/kb/documents/${id}`);
+      const response = await api.get<KBDocument>(`/kb/${id}`);
       return response.data;
     } catch (error) {
       throw new Error(apiHelpers.getErrorMessage(error));
@@ -85,46 +77,20 @@ class KnowledgeBaseService {
     document_type: 'system_guide' | 'product' | 'process' | 'reference';
     tags?: string[];
   }): Promise<KBDocument> {
-    // Use mock data if configured
+    // Mock data not supported
     if (apiHelpers.useMockData()) {
-      const category = mockKBCategories.find((c) => c.id === data.category_id);
-      
-      const newDoc: KBDocument = {
-        id: `KB-${String(mockKBDocuments.length + 1).padStart(3, '0')}`,
-        name: data.name,
-        description: data.description,
-        category: category?.name || 'Uncategorized',
-        document_type: data.document_type,
-        file_size: `${(data.file.size / (1024 * 1024)).toFixed(1)} MB`,
-        uploaded_by: 'Current User',
-        uploaded_at: new Date().toISOString(),
-        tags: data.tags || [],
-        referenced_count: 0,
-      };
-
-      mockKBDocuments.push(newDoc);
-      
-      // Update category count
-      if (category) {
-        category.count = (category.count || 0) + 1;
-      }
-
-      return newDoc;
+      throw new Error('Mock data not supported for KB - please use real API');
     }
 
     // Real API call
     try {
       const formData = new FormData();
       formData.append('file', data.file);
-      formData.append('name', data.name);
+      formData.append('title', data.name);
       formData.append('description', data.description);
       formData.append('category_id', data.category_id);
-      formData.append('document_type', data.document_type);
-      if (data.tags) {
-        formData.append('tags', JSON.stringify(data.tags));
-      }
 
-      const response = await api.post<KBDocument>('/kb/documents/upload', formData, {
+      const response = await api.post<KBDocument>('/kb/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -139,9 +105,9 @@ class KnowledgeBaseService {
    * Get all categories
    */
   async getAllCategories(): Promise<KBCategory[]> {
-    // Use mock data if configured
+    // Mock data not supported
     if (apiHelpers.useMockData()) {
-      return [...mockKBCategories];
+      return [];
     }
 
     // Real API call
@@ -157,13 +123,9 @@ class KnowledgeBaseService {
    * Get category by ID
    */
   async getCategoryById(id: string): Promise<KBCategory> {
-    // Use mock data if configured
+    // Mock data not supported
     if (apiHelpers.useMockData()) {
-      const category = mockKBCategories.find((c) => c.id === id);
-      if (!category) {
-        throw new Error('Category not found');
-      }
-      return category;
+      throw new Error('Mock data not supported for KB - please use real API');
     }
 
     // Real API call
@@ -179,18 +141,9 @@ class KnowledgeBaseService {
    * Create category
    */
   async createCategory(data: CreateCategoryRequest): Promise<KBCategory> {
-    // Use mock data if configured
+    // Mock data not supported
     if (apiHelpers.useMockData()) {
-      const newCategory: KBCategory = {
-        id: String(mockKBCategories.length + 1),
-        name: data.name,
-        count: 0,
-        ...(data.color && { color: data.color }),
-        ...(data.description && { description: data.description }),
-      };
-
-      mockKBCategories.push(newCategory);
-      return newCategory;
+      throw new Error('Mock data not supported for KB - please use real API');
     }
 
     // Real API call
@@ -203,53 +156,60 @@ class KnowledgeBaseService {
   }
 
   /**
-   * Search documents
+   * Update category
    */
-  async searchDocuments(params: SearchDocumentsRequest): Promise<KBDocument[]> {
-    // Use mock data if configured
+  async updateCategory(id: number, data: Partial<CreateCategoryRequest>): Promise<KBCategory> {
+    // Mock data not supported
     if (apiHelpers.useMockData()) {
-      let results = [...mockKBDocuments];
-
-      // Search in name and description
-      if (params.query) {
-        const query = params.query.toLowerCase();
-        results = results.filter(
-          (doc) =>
-            doc.name.toLowerCase().includes(query) ||
-            doc.description.toLowerCase().includes(query) ||
-            doc.tags.some((tag) => tag.toLowerCase().includes(query))
-        );
-      }
-
-      // Filter by category
-      if (params.category_id) {
-        const category = mockKBCategories.find((c) => c.id === params.category_id);
-        if (category) {
-          results = results.filter((doc) => doc.category === category.name);
-        }
-      }
-
-      // Filter by document type
-      if (params.document_type) {
-        results = results.filter((doc) => doc.document_type === params.document_type);
-      }
-
-      // Filter by tags
-      if (params.tags && params.tags.length > 0) {
-        results = results.filter((doc) =>
-          params.tags!.some((tag) => doc.tags.includes(tag))
-        );
-      }
-
-      return results;
+      throw new Error('Mock data not supported for KB - please use real API');
     }
 
     // Real API call
     try {
-      const response = await api.get<PaginatedResponse<KBDocument>>('/kb/documents/search', {
+      const response = await api.put<KBCategory>(`/kb/categories/${id}`, data);
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  /**
+   * Update document
+   */
+  async updateDocument(id: number, data: {
+    title?: string;
+    description?: string;
+    category_id?: number;
+  }): Promise<KBDocument> {
+    // Mock data not supported
+    if (apiHelpers.useMockData()) {
+      throw new Error('Mock data not supported for KB - please use real API');
+    }
+
+    // Real API call
+    try {
+      const response = await api.put<KBDocument>(`/kb/${id}`, data);
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  /**
+   * Search documents
+   */
+  async searchDocuments(params: SearchDocumentsRequest): Promise<KBDocument[]> {
+    // Mock data not supported
+    if (apiHelpers.useMockData()) {
+      return [];
+    }
+
+    // Real API call
+    try {
+      const response = await api.get<KBDocumentListResponse>('/kb', {
         params,
       });
-      return response.data.data;
+      return response.data.items;
     } catch (error) {
       throw new Error(apiHelpers.getErrorMessage(error));
     }
@@ -259,30 +219,14 @@ class KnowledgeBaseService {
    * Delete document
    */
   async deleteDocument(id: string): Promise<void> {
-    // Use mock data if configured
+    // Mock data not supported
     if (apiHelpers.useMockData()) {
-      const docIndex = mockKBDocuments.findIndex((d) => d.id === id);
-      if (docIndex === -1) {
-        throw new Error('Document not found');
-      }
-
-      const doc = mockKBDocuments[docIndex];
-      const category = mockKBCategories.find((c) => c.name === doc.category);
-      
-      // Remove document
-      mockKBDocuments.splice(docIndex, 1);
-
-      // Update category count
-      if (category && category.count > 0) {
-        category.count -= 1;
-      }
-
-      return;
+      throw new Error('Mock data not supported for KB - please use real API');
     }
 
     // Real API call
     try {
-      await api.delete(`/kb/documents/${id}`);
+      await api.delete(`/kb/${id}`);
     } catch (error) {
       throw new Error(apiHelpers.getErrorMessage(error));
     }
@@ -291,23 +235,21 @@ class KnowledgeBaseService {
   /**
    * Get KB statistics
    */
-  async getStats(): Promise<{
-    total_documents: number;
-    total_size: string;
-    categories_count: number;
-  }> {
-    // Use mock data if configured
+  async getStats(): Promise<KBStatistics> {
+    // Mock data not supported
     if (apiHelpers.useMockData()) {
       return {
-        total_documents: mockKBDocuments.length,
-        total_size: '38.8 MB',
-        categories_count: mockKBCategories.length,
+        total_documents: 0,
+        total_size_bytes: 0,
+        total_size_mb: 0,
+        by_category: {},
+        by_file_type: {},
       };
     }
 
     // Real API call
     try {
-      const response = await api.get('/kb/stats');
+      const response = await api.get<KBStatistics>('/kb/stats');
       return response.data;
     } catch (error) {
       throw new Error(apiHelpers.getErrorMessage(error));

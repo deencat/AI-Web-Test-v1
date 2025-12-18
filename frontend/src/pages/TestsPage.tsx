@@ -1,14 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { TestCaseCard } from '../components/tests/TestCaseCard';
+import { RunTestButton } from '../components/RunTestButton';
 import { mockTests } from '../mock/tests';
 import testsService from '../services/testsService';
-import { GeneratedTestCase } from '../types/api';
-import { Sparkles, Loader2 } from 'lucide-react';
+import knowledgeBaseService from '../services/knowledgeBaseService';
+import { GeneratedTestCase, KBCategory } from '../types/api';
+import { Sparkles, Loader2, Plus, Trash2, ChevronUp, ChevronDown, BookOpen } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 export const TestsPage: React.FC = () => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [filter, setFilter] = useState('all');
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
@@ -16,6 +21,7 @@ export const TestsPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showGenerator, setShowGenerator] = useState(true);
   const [editingTest, setEditingTest] = useState<GeneratedTestCase | null>(null);
+  const [editingSavedTest, setEditingSavedTest] = useState(false);
   const [editForm, setEditForm] = useState({
     title: '',
     description: '',
@@ -23,6 +29,81 @@ export const TestsPage: React.FC = () => {
     expected_result: '',
     priority: 'medium' as 'high' | 'medium' | 'low',
   });
+  
+  // KB Integration State (Sprint 2 Day 11)
+  const [kbCategories, setKbCategories] = useState<KBCategory[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
+  const [useKBContext, setUseKBContext] = useState(true);
+  const [loadingCategories, setLoadingCategories] = useState(false);
+
+  // Handle edit parameter from URL
+  useEffect(() => {
+    const editId = searchParams.get('edit');
+    if (editId) {
+      loadAndEditTest(editId);
+    }
+  }, [searchParams]);
+  
+  // Load KB categories on mount (Sprint 2 Day 11)
+  useEffect(() => {
+    loadKBCategories();
+  }, []);
+  
+  const loadKBCategories = async () => {
+    try {
+      setLoadingCategories(true);
+      const categories = await knowledgeBaseService.getAllCategories();
+      setKbCategories(categories);
+    } catch (err) {
+      console.error('Failed to load KB categories:', err);
+      // Don't show error to user - KB categories are optional
+    } finally {
+      setLoadingCategories(false);
+    }
+  };
+
+  const loadAndEditTest = async (testId: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const test = await testsService.getTestById(testId);
+      
+      // Convert saved test to GeneratedTestCase format for editing
+      // Backend returns: { id, title, description, steps, expected_result, priority, ... }
+      const testCase: GeneratedTestCase = {
+        id: test.id?.toString() || testId,
+        title: (test as any).title || test.name || '',
+        description: test.description || '',
+        steps: Array.isArray((test as any).steps) 
+          ? (test as any).steps.map((step: any) => typeof step === 'string' ? step : step.description || '')
+          : [],
+        expected_result: (test as any).expected_result || '',
+        priority: test.priority as 'high' | 'medium' | 'low',
+      };
+      
+      setEditingTest(testCase);
+      setEditingSavedTest(true);
+      setShowGenerator(false);
+      setEditForm({
+        title: testCase.title,
+        description: testCase.description,
+        steps: [...testCase.steps],
+        expected_result: testCase.expected_result,
+        priority: testCase.priority,
+      });
+    } catch (err) {
+      console.error('Failed to load test:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load test');
+      alert('Failed to load test for editing. Redirecting to saved tests page.');
+      navigate('/tests/saved');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleExecutionStart = (executionId: number) => {
+    navigate(`/executions/${executionId}`);
+  };
 
   const handleGenerateTests = async () => {
     if (!prompt.trim()) {
@@ -30,11 +111,30 @@ export const TestsPage: React.FC = () => {
       return;
     }
 
+    // Validate minimum length (backend requires 10 chars)
+    if (prompt.trim().length < 10) {
+      setError('Test requirement must be at least 10 characters long');
+      return;
+    }
+
+    // Validate maximum length (backend allows max 2000 chars)
+    if (prompt.trim().length > 2000) {
+      setError('Test requirement cannot exceed 2000 characters');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
-      const result = await testsService.generateTests({ prompt, count: 5 });
+      const result = await testsService.generateTests({ 
+        requirement: prompt,
+        num_tests: 5,
+        // KB Integration (Sprint 2 Day 11)
+        category_id: selectedCategory || undefined,
+        use_kb_context: useKBContext,
+        max_kb_docs: 10
+      });
       setGeneratedTests(result.test_cases);
       setShowGenerator(false);
     } catch (err) {
@@ -46,6 +146,7 @@ export const TestsPage: React.FC = () => {
 
   const handleEditTest = (testCase: GeneratedTestCase) => {
     setEditingTest(testCase);
+    setEditingSavedTest(false); // This is a generated test
     setEditForm({
       title: testCase.title,
       description: testCase.description,
@@ -55,24 +156,164 @@ export const TestsPage: React.FC = () => {
     });
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editingTest) return;
 
-    const updatedTests = generatedTests.map((test) =>
-      test.id === editingTest.id
-        ? { ...editingTest, ...editForm }
-        : test
-    );
-    setGeneratedTests(updatedTests);
-    setEditingTest(null);
+    // If editing a saved test, update it in the database
+    if (editingSavedTest) {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        await testsService.updateTest(editingTest.id!, {
+          title: editForm.title,
+          description: editForm.description,
+          priority: editForm.priority,
+          steps: editForm.steps,
+          expected_result: editForm.expected_result,
+        });
+        
+        alert(`✅ Test "${editForm.title}" updated successfully!`);
+        navigate('/tests/saved');
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to update test';
+        setError(errorMessage);
+        alert(`❌ Error updating test: ${errorMessage}`);
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      // Editing a generated test (not yet saved)
+      const updatedTests = generatedTests.map((test) =>
+        test.id === editingTest.id
+          ? { ...editingTest, ...editForm }
+          : test
+      );
+      setGeneratedTests(updatedTests);
+      setEditingTest(null);
+      setEditingSavedTest(false);
+    }
   };
 
   const handleCancelEdit = () => {
+    if (editingSavedTest) {
+      // If was editing a saved test, go back to saved tests page
+      navigate('/tests/saved');
+    }
     setEditingTest(null);
+    setEditingSavedTest(false);
   };
 
-  const handleSaveTest = (testCase: GeneratedTestCase) => {
-    alert(`Saving test: ${testCase.title}\n\nThis will be implemented when backend is ready.`);
+  // Step management handlers
+  const handleAddStep = () => {
+    setEditForm({ 
+      ...editForm, 
+      steps: [...editForm.steps, ''] 
+    });
+  };
+
+  const handleDeleteStep = (index: number) => {
+    const newSteps = editForm.steps.filter((_, i) => i !== index);
+    setEditForm({ ...editForm, steps: newSteps });
+  };
+
+  const handleMoveStepUp = (index: number) => {
+    if (index === 0) return;
+    const newSteps = [...editForm.steps];
+    [newSteps[index - 1], newSteps[index]] = [newSteps[index], newSteps[index - 1]];
+    setEditForm({ ...editForm, steps: newSteps });
+  };
+
+  const handleMoveStepDown = (index: number) => {
+    if (index === editForm.steps.length - 1) return;
+    const newSteps = [...editForm.steps];
+    [newSteps[index], newSteps[index + 1]] = [newSteps[index + 1], newSteps[index]];
+    setEditForm({ ...editForm, steps: newSteps });
+  };
+
+  const handleSaveTest = async (testCase: GeneratedTestCase) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Create the test case using the API
+      const createRequest: any = {
+        title: testCase.title,
+        description: testCase.description,
+        test_type: 'e2e', // Default to e2e for generated tests
+        priority: testCase.priority || 'medium',
+        status: 'pending',
+        steps: testCase.steps,
+        expected_result: testCase.expected_result
+      };
+      
+      await testsService.createTest(createRequest);
+      
+      // Remove from generated tests after saving
+      setGeneratedTests(generatedTests.filter((t) => t.id !== testCase.id));
+      
+      alert(`✅ Test "${testCase.title}" saved successfully!`);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save test';
+      setError(errorMessage);
+      alert(`❌ Error saving test: ${errorMessage}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveAllTests = async () => {
+    if (generatedTests.length === 0) {
+      alert('No tests to save');
+      return;
+    }
+    
+    if (!confirm(`Save all ${generatedTests.length} test cases?`)) {
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      setError(null);
+      
+      let savedCount = 0;
+      let failedCount = 0;
+      
+      for (const testCase of generatedTests) {
+        try {
+          const createRequest: any = {
+            title: testCase.title,
+            description: testCase.description,
+            test_type: 'e2e', // Default to e2e for generated tests
+            priority: testCase.priority || 'medium',
+            status: 'pending',
+            steps: testCase.steps,
+            expected_result: testCase.expected_result
+          };
+          
+          await testsService.createTest(createRequest);
+          savedCount++;
+        } catch (err) {
+          console.error(`Failed to save test "${testCase.title}":`, err);
+          failedCount++;
+        }
+      }
+      
+      // Clear all generated tests after saving
+      setGeneratedTests([]);
+      
+      if (failedCount === 0) {
+        alert(`✅ Successfully saved all ${savedCount} test cases!`);
+      } else {
+        alert(`⚠️ Saved ${savedCount} tests, but ${failedCount} failed to save.`);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save tests';
+      setError(errorMessage);
+      alert(`❌ Error: ${errorMessage}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDeleteTest = (testCase: GeneratedTestCase) => {
@@ -104,12 +345,24 @@ export const TestsPage: React.FC = () => {
                 : 'Manage and execute your test cases'}
             </p>
           </div>
-          {!showGenerator && (
-            <Button variant="primary" onClick={handleCreateTest}>
-              <Sparkles className="w-5 h-5 mr-2" />
-              Generate New Tests
-            </Button>
-          )}
+          <div className="flex gap-3">
+            {!showGenerator && (
+              <>
+                <Button variant="secondary" onClick={() => navigate('/tests/saved')}>
+                  View Saved Tests
+                </Button>
+                <Button variant="primary" onClick={handleCreateTest}>
+                  <Sparkles className="w-5 h-5 mr-2" />
+                  Generate New Tests
+                </Button>
+              </>
+            )}
+            {showGenerator && (
+              <Button variant="secondary" onClick={() => navigate('/tests/saved')}>
+                View Saved Tests
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Test Generation Form */}
@@ -119,6 +372,9 @@ export const TestsPage: React.FC = () => {
               <div>
                 <label className="block text-sm font-semibold text-gray-900 mb-2">
                   Describe the test you want to create:
+                  <span className="text-xs text-gray-500 ml-2 font-normal">
+                    (minimum 10 characters)
+                  </span>
                 </label>
                 <textarea
                   value={prompt}
@@ -129,8 +385,68 @@ export const TestsPage: React.FC = () => {
                 />
                 <p className="text-xs text-gray-500 mt-2">
                   Be specific about what you want to test. Include details like:
-                  user actions, expected outcomes, and test data.
+                  user actions, expected outcomes, and test data. Minimum 10 characters required.
                 </p>
+              </div>
+              
+              {/* KB Integration Options (Sprint 2 Day 11) */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+                <div className="flex items-start gap-2">
+                  <BookOpen className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1">
+                    <h3 className="text-sm font-semibold text-gray-900 mb-1">
+                      Knowledge Base Context
+                    </h3>
+                    <p className="text-xs text-gray-600 mb-3">
+                      Use uploaded KB documents to generate more accurate, domain-specific tests
+                      with proper field names and workflows.
+                    </p>
+                    
+                    {/* Use KB Context Toggle */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <input
+                        type="checkbox"
+                        id="use-kb-context"
+                        checked={useKBContext}
+                        onChange={(e) => setUseKBContext(e.target.checked)}
+                        disabled={loading}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <label htmlFor="use-kb-context" className="text-sm text-gray-700 cursor-pointer">
+                        Use Knowledge Base context (recommended)
+                      </label>
+                    </div>
+                    
+                    {/* Category Selection */}
+                    {useKBContext && (
+                      <div>
+                        <label htmlFor="kb-category" className="block text-xs font-medium text-gray-700 mb-1">
+                          KB Category (optional)
+                        </label>
+                        <select
+                          id="kb-category"
+                          value={selectedCategory || ''}
+                          onChange={(e) => setSelectedCategory(e.target.value ? Number(e.target.value) : null)}
+                          disabled={loading || loadingCategories}
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        >
+                          <option value="">No specific category (use all KB documents)</option>
+                          {kbCategories.map((category) => (
+                            <option key={category.id} value={category.id}>
+                              {category.name} - {category.description}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {selectedCategory 
+                            ? 'Tests will reference specific KB documents from this category'
+                            : 'Tests will use general knowledge without KB context'
+                          }
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {error && (
@@ -183,13 +499,14 @@ export const TestsPage: React.FC = () => {
                   onSave={handleSaveTest}
                   onEdit={handleEditTest}
                   onDelete={handleDeleteTest}
+                  onExecutionStart={handleExecutionStart}
                 />
               ))}
             </div>
 
             <div className="flex gap-3">
-              <Button variant="primary" onClick={() => alert('Save all tests')}>
-                Save All Tests
+              <Button variant="primary" onClick={handleSaveAllTests} disabled={loading}>
+                {loading ? 'Saving...' : 'Save All Tests'}
               </Button>
               <Button variant="secondary" onClick={handleCreateTest}>
                 Generate More Tests
@@ -267,27 +584,76 @@ export const TestsPage: React.FC = () => {
 
                   {/* Test Steps */}
                   <div>
-                    <label className="block text-sm font-semibold text-gray-900 mb-2">
-                      Test Steps
-                    </label>
-                    {editForm.steps.map((step, index) => (
-                      <div key={index} className="flex gap-2 mb-2">
-                        <span className="flex-shrink-0 w-6 h-6 bg-blue-700 text-white rounded-full flex items-center justify-center text-xs font-semibold mt-2">
-                          {index + 1}
-                        </span>
-                        <input
-                          id={`edit-step-${index}`}
-                          type="text"
-                          value={step}
-                          onChange={(e) => {
-                            const newSteps = [...editForm.steps];
-                            newSteps[index] = e.target.value;
-                            setEditForm({ ...editForm, steps: newSteps });
-                          }}
-                          className="flex-1 px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-blue-700 bg-white"
-                        />
+                    <div className="flex justify-between items-center mb-2">
+                      <label className="block text-sm font-semibold text-gray-900">
+                        Test Steps
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleAddStep}
+                        className="flex items-center gap-1 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="Add new step"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Add Step
+                      </button>
+                    </div>
+                    
+                    {editForm.steps.length === 0 ? (
+                      <div className="text-center py-4 text-gray-500 border-2 border-dashed border-gray-300 rounded-lg">
+                        No steps yet. Click "Add Step" to create one.
                       </div>
-                    ))}
+                    ) : (
+                      <div className="space-y-2">
+                        {editForm.steps.map((step, index) => (
+                          <div key={index} className="flex gap-2 items-start">
+                            <span className="flex-shrink-0 w-8 h-8 bg-blue-700 text-white rounded-full flex items-center justify-center text-xs font-semibold mt-1">
+                              {index + 1}
+                            </span>
+                            <input
+                              id={`edit-step-${index}`}
+                              type="text"
+                              value={step}
+                              onChange={(e) => {
+                                const newSteps = [...editForm.steps];
+                                newSteps[index] = e.target.value;
+                                setEditForm({ ...editForm, steps: newSteps });
+                              }}
+                              placeholder={`Step ${index + 1} description...`}
+                              className="flex-1 px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-blue-700 bg-white"
+                            />
+                            <div className="flex flex-col gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleMoveStepUp(index)}
+                                disabled={index === 0}
+                                className="p-1 text-gray-600 hover:text-blue-700 hover:bg-blue-50 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                title="Move up"
+                              >
+                                <ChevronUp className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleMoveStepDown(index)}
+                                disabled={index === editForm.steps.length - 1}
+                                className="p-1 text-gray-600 hover:text-blue-700 hover:bg-blue-50 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                title="Move down"
+                              >
+                                <ChevronDown className="w-4 h-4" />
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteStep(index)}
+                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors mt-1"
+                              title="Delete step"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* Expected Result */}
@@ -400,6 +766,10 @@ export const TestsPage: React.FC = () => {
                             : `${test.execution_time}s`}
                         </p>
                       </div>
+                      <RunTestButton
+                        testCaseId={parseInt(test.id.replace('test-', ''))}
+                        onExecutionStart={handleExecutionStart}
+                      />
                       <Button
                         variant="secondary"
                         size="sm"

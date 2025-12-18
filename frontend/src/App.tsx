@@ -2,8 +2,13 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { TestsPage } from './pages/TestsPage';
+import { TestDetailPage } from './pages/TestDetailPage';
+import { SavedTestsPage } from './pages/SavedTestsPage';
+import TestSuitesPage from './pages/TestSuitesPage';
 import { KnowledgeBasePage } from './pages/KnowledgeBasePage';
 import { SettingsPage } from './pages/SettingsPage';
+import { ExecutionProgressPage } from './pages/ExecutionProgressPage';
+import { ExecutionHistoryPage } from './pages/ExecutionHistoryPage';
 import './index.css';
 
 // Protected Route wrapper
@@ -39,6 +44,30 @@ function App() {
           }
         />
         <Route
+          path="/tests/saved"
+          element={
+            <ProtectedRoute>
+              <SavedTestsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/tests/:testId"
+          element={
+            <ProtectedRoute>
+              <TestDetailPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/test-suites"
+          element={
+            <ProtectedRoute>
+              <TestSuitesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/knowledge-base"
           element={
             <ProtectedRoute>
@@ -51,6 +80,22 @@ function App() {
           element={
             <ProtectedRoute>
               <SettingsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/executions"
+          element={
+            <ProtectedRoute>
+              <ExecutionHistoryPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/executions/:executionId"
+          element={
+            <ProtectedRoute>
+              <ExecutionProgressPage />
             </ProtectedRoute>
           }
         />

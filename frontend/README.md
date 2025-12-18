@@ -4,10 +4,10 @@
 
 ## 📋 Project Overview
 
-This is the frontend application for AI Web Test v1.0, built in **Design Mode** (prototyping phase). The application is a complete UI mockup with dummy data, designed to demonstrate the user interface and user experience before backend integration.
+This is the frontend application for AI Web Test v1.0, a React-based web application that connects to a FastAPI backend for intelligent test automation.
 
-**Status:** ✅ Sprint 1 - Day 1 Complete  
-**Mode:** 🎨 Prototyping (No Backend Connection)  
+**Status:** ✅ Backend Integration Complete  
+**Mode:** 🔗 Connected to Backend API (configurable)  
 **Framework:** React 18 + TypeScript + Vite  
 
 ---
@@ -17,14 +17,20 @@ This is the frontend application for AI Web Test v1.0, built in **Design Mode** 
 ### Prerequisites
 - Node.js 18+ installed
 - npm or yarn package manager
+- Backend server running (for real API mode)
 
-### Installation & Run
+### Installation & Setup
 
 ```bash
-# Install dependencies
+# 1. Install dependencies
 npm install
 
-# Start development server
+# 2. Create .env file from example
+cp .env.example .env
+
+# 3. Configure your .env file (see Configuration section below)
+
+# 4. Start development server
 npm run dev
 
 # Build for production
@@ -35,6 +41,64 @@ npm run preview
 ```
 
 **Application will be available at:** http://localhost:5173/
+
+---
+
+## ⚙️ Configuration
+
+### Environment Variables
+
+Create a `.env` file in the `frontend/` directory (copy from `.env.example`):
+
+```env
+# Backend API URL
+VITE_API_URL=http://127.0.0.1:8000/api/v1
+
+# Use mock data (true) or real API (false)
+VITE_USE_MOCK=false
+```
+
+### Configuration Modes
+
+**Option 1: Connect to Real Backend (Recommended)**
+```env
+VITE_API_URL=http://127.0.0.1:8000/api/v1
+VITE_USE_MOCK=false
+```
+- Requires backend server running on port 8000
+- Uses real authentication and data
+- **Default credentials:** username: `admin`, password: `admin123`
+- **AI test generation requires:** OpenRouter API key configured in backend
+
+**Option 2: Use Mock Data (Frontend-only Development)**
+```env
+VITE_USE_MOCK=true
+```
+- No backend required
+- Accepts any username/password
+- Uses static mock data for testing UI
+- AI test generation returns mock tests (no real AI)
+
+### Starting the Backend Server
+
+If using real API mode, start the backend first:
+
+```bash
+# In a separate terminal
+cd ../backend
+source venv/bin/activate
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Backend will be available at: http://127.0.0.1:8000  
+API Documentation: http://127.0.0.1:8000/docs
+
+**Important:** For AI test generation features to work, the backend needs an OpenRouter API key configured in `backend/.env`:
+```env
+OPENROUTER_API_KEY=sk-or-v1-your-api-key-here
+OPENROUTER_MODEL=mistralai/mixtral-8x7b-instruct
+```
+Get your free API key from: https://openrouter.ai/keys
 
 ---
 
@@ -156,7 +220,36 @@ frontend/
 
 ---
 
-## 🔐 Authentication Flow (Mock)
+## 🔐 Authentication Flow
+
+### With Real Backend (VITE_USE_MOCK=false)
+
+```
+Login Page
+    ↓
+Enter credentials (admin / admin123)
+    ↓
+POST /api/v1/auth/login
+    ↓
+Receive JWT access token
+    ↓
+GET /api/v1/auth/me (fetch user data)
+    ↓
+Store token + user in localStorage
+    ↓
+Redirect to Dashboard
+    ↓
+Protected routes check for token
+    ↓
+Logout → DELETE token → Redirect to Login
+```
+
+**Default Credentials:**
+- **Username:** `admin`
+- **Password:** `admin123`
+- **Role:** admin
+
+### With Mock Data (VITE_USE_MOCK=true)
 
 ```
 Login Page
@@ -165,7 +258,7 @@ Enter any username/password
     ↓
 Mock authentication (always succeeds)
     ↓
-Store JWT token in localStorage
+Store mock JWT token in localStorage
     ↓
 Redirect to Dashboard
     ↓
@@ -174,7 +267,7 @@ Protected routes check for token
 Logout clears token → Redirect to Login
 ```
 
-**Demo Credentials:**
+**Demo Credentials (Mock Mode):**
 - Any username works (e.g., `admin`, `qa_engineer`)
 - Any password works (e.g., `password`)
 

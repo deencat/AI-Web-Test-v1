@@ -54,8 +54,8 @@ class OpenRouterService:
         if max_tokens:
             payload["max_tokens"] = max_tokens
         
-        # Make API call with timeout
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        # Make API call with extended timeout for AI generation
+        async with httpx.AsyncClient(timeout=90.0) as client:  # 90 seconds for complex generations
             try:
                 response = await client.post(
                     f"{self.base_url}/chat/completions",
@@ -71,7 +71,7 @@ class OpenRouterService:
                 return response.json()
                 
             except httpx.TimeoutException:
-                raise Exception("OpenRouter API request timed out (60s)")
+                raise Exception("OpenRouter API request timed out (90s)")
             except httpx.HTTPStatusError as e:
                 error_detail = e.response.text if e.response else "Unknown error"
                 raise Exception(f"OpenRouter API error ({e.response.status_code}): {error_detail}")

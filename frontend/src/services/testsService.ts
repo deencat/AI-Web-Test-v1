@@ -5,7 +5,6 @@ import {
   UpdateTestRequest,
   RunTestRequest,
   RunTestResponse,
-  PaginatedResponse,
   GenerateTestsRequest,
   GenerateTestsResponse,
 } from '../types/api';
@@ -47,8 +46,10 @@ class TestsService {
 
     // Real API call
     try {
-      const response = await api.get<PaginatedResponse<Test>>('/tests', { params });
-      return response.data.data;
+      const response = await api.get<any>('/tests', { params });
+      // Backend returns { items, total, skip, limit }
+      // We need to extract items array
+      return response.data.items || response.data.data || [];
     } catch (error) {
       throw new Error(apiHelpers.getErrorMessage(error));
     }
@@ -84,11 +85,11 @@ class TestsService {
     if (apiHelpers.useMockData()) {
       const newTest: Test = {
         id: `T-${Date.now()}`,
-        name: data.name,
+        name: data.title,  // Use title instead of name
         description: data.description,
-        status: 'pending',
+        status: data.status || 'pending',
         priority: data.priority || 'medium',
-        agent: data.agent || 'Orchestrator',
+        agent: 'Orchestrator',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -116,10 +117,19 @@ class TestsService {
         throw new Error('Test not found');
       }
 
+      // Update the test, handling type conversions
+      const updates: Partial<Test> = {
+        updated_at: new Date().toISOString(),
+      };
+      
+      if (data.name) updates.name = data.name;
+      if (data.description) updates.description = data.description;
+      if (data.status) updates.status = data.status;
+      if (data.priority) updates.priority = data.priority;
+      
       mockTests[testIndex] = {
         ...mockTests[testIndex],
-        ...data,
-        updated_at: new Date().toISOString(),
+        ...updates,
       };
 
       return mockTests[testIndex];
@@ -236,11 +246,11 @@ class TestsService {
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
       // Generate mock test cases
-      const count = data.count || 5;
+      const count = data.num_tests || 5;
       const test_cases = Array.from({ length: count }, (_, i) => ({
         id: `GENERATED-${Date.now()}-${i + 1}`,
-        title: `Test Case ${i + 1}: ${data.prompt.substring(0, 50)}`,
-        description: `Verify that ${data.prompt.toLowerCase()} works correctly as expected`,
+        title: `Test Case ${i + 1}: ${data.requirement.substring(0, 50)}`,
+        description: `Verify that ${data.requirement.toLowerCase()} works correctly as expected`,
         steps: [
           'Navigate to the application homepage',
           'Locate and click on the target element',
@@ -254,7 +264,7 @@ class TestsService {
 
       return {
         test_cases,
-        prompt: data.prompt,
+        prompt: data.requirement,
         generated_at: new Date().toISOString(),
       };
     }

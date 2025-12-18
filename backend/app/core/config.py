@@ -25,6 +25,20 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str | None = None  # Optional for now
     OPENROUTER_MODEL: str = "mistralai/mixtral-8x7b-instruct"  # Default: Free, high-quality model
     
+    # Google AI Studio (Direct API - FREE alternative to OpenRouter)
+    USE_GOOGLE_DIRECT: bool = False  # Set to True to use Google API directly
+    GOOGLE_API_KEY: str | None = None  # Get from: https://aistudio.google.com/app/apikey
+    GOOGLE_MODEL: str = "gemini-1.5-flash"  # gemini-1.5-flash, gemini-1.5-pro, gemini-2.0-flash-exp
+    
+    # Cerebras (Fast inference - https://cerebras.ai/)
+    USE_CEREBRAS: bool = False  # Set to True to use Cerebras
+    CEREBRAS_API_KEY: str | None = None  # Get from: https://cloud.cerebras.ai/
+    CEREBRAS_MODEL: str = "llama3.1-8b"  # llama3.1-8b, llama3.1-70b
+    
+    # Model Provider Selection (new unified approach)
+    # Options: "openrouter", "google", "cerebras"
+    MODEL_PROVIDER: str = "openrouter"  # Default provider
+    
     # OpenAI API compatibility (for Stagehand/LiteLLM)
     # These can be set to use OpenRouter as a drop-in replacement
     OPENAI_API_KEY: str | None = None
