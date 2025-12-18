@@ -21,6 +21,7 @@ class UserSettingsService:
                 "gemini-1.5-flash",
                 "gemini-1.5-pro",
                 "gemini-2.0-flash-thinking-exp-01-21",
+                "gemini-3-flash",
             ],
             "recommended": "gemini-2.0-flash-exp",
             "api_key_env": "GOOGLE_API_KEY"
@@ -30,7 +31,9 @@ class UserSettingsService:
             "models": [
                 "llama3.1-8b",
                 "llama3.1-70b",
-                "llama3.3-70b"
+                "llama3.3-70b",
+                "gpt-oss-120b",
+                "qwen-3-32b"
             ],
             "recommended": "llama3.3-70b",
             "api_key_env": "CEREBRAS_API_KEY"
