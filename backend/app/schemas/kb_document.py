@@ -22,6 +22,14 @@ class KBCategoryCreate(KBCategoryBase):
     pass
 
 
+class KBCategoryUpdate(BaseModel):
+    """Schema for updating a KB category."""
+    name: Optional[str] = Field(None, min_length=1, max_length=100, description="Category name")
+    description: Optional[str] = Field(None, description="Category description")
+    color: Optional[str] = Field(None, pattern=r"^#[0-9A-Fa-f]{6}$", description="Hex color code")
+    icon: Optional[str] = Field(None, max_length=50, description="Icon name")
+
+
 class KBCategoryResponse(KBCategoryBase):
     """Schema for KB category response."""
     id: int

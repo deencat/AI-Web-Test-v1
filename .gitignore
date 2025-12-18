@@ -70,10 +70,6 @@ htmlcov/
 backend/venv/
 backend/env/
 backend/.env
-backend/*.db
-backend/*.sqlite
-backend/*.sqlite3
-backend/aiwebtest.db
 
 # Test artifacts and screenshots
 backend/artifacts/

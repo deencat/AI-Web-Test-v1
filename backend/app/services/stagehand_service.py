@@ -3,6 +3,7 @@ Stagehand-based Test Execution Service
 Uses Stagehand for browser automation with Playwright under the hood.
 """
 import asyncio
+import json
 import os
 import sys
 import threading
@@ -37,11 +38,13 @@ class StagehandExecutionService:
     
     def __init__(
         self,
+        browser: str = "chromium",
         headless: bool = True,
         screenshot_dir: str = "artifacts/screenshots",
         video_dir: str = "artifacts/videos"
     ):
         """Initialize Stagehand execution service."""
+        self.browser = browser
         self.headless = headless
         self.screenshot_dir = Path(screenshot_dir)
         self.video_dir = Path(video_dir)
@@ -53,8 +56,14 @@ class StagehandExecutionService:
         self.stagehand: Optional[Stagehand] = None
         self.page = None
     
-    async def initialize(self):
-        """Initialize Stagehand browser."""
+    async def initialize(self, user_config: Optional[Dict[str, Any]] = None):
+        """
+        Initialize Stagehand browser.
+        
+        Args:
+            user_config: Optional user configuration dict with provider, model, temperature, max_tokens.
+                        If provided, uses user's settings. Otherwise falls back to .env defaults.
+        """
         if not self.stagehand:
             # Ensure Windows event loop policy is set
             if sys.platform == 'win32':
@@ -67,26 +76,108 @@ class StagehandExecutionService:
             
             print(f"[DEBUG] Initializing Stagehand in thread {threading.current_thread().name}")
             
-            # Get API configuration from environment
-            openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-            openrouter_model = os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct")
+            # Get browser configuration
+            browser_slowmo = int(os.getenv("BROWSER_SLOWMO", "0"))
             
-            config = StagehandConfig(
-                env="LOCAL",  # Use local Playwright
-                headless=self.headless,
-                verbose=1,  # Enable logging to see AI calls
-                # Configure LiteLLM to use OpenRouter
-                model_name=f"openrouter/{openrouter_model}",
-                model_api_key=openrouter_key,
-                # Disable signal handlers when running in a thread
-                local_browser_launch_options={
-                    "handle_sigint": False,
-                    "handle_sigterm": False,
-                    "handle_sighup": False
-                }
-            )
+            # Build browser launch options
+            launch_options = {
+                "handle_sigint": False,
+                "handle_sigterm": False,
+                "handle_sighup": False
+            }
+            if browser_slowmo > 0:
+                launch_options["slow_mo"] = browser_slowmo
             
-            print(f"[DEBUG] Stagehand configured with model: openrouter/{openrouter_model}")
+            # Determine which provider to use
+            # Priority: user_config > .env MODEL_PROVIDER > legacy flags
+            if user_config:
+                # Use user's settings from database
+                model_provider = user_config.get("provider", "openrouter").lower()
+                print(f"[DEBUG] 🎯 Using user's configured provider: {model_provider}")
+            else:
+                # Fall back to .env configuration
+                model_provider = os.getenv("MODEL_PROVIDER", "openrouter").lower()
+                use_google_direct = os.getenv("USE_GOOGLE_DIRECT", "false").lower() == "true"
+                use_cerebras = os.getenv("USE_CEREBRAS", "false").lower() == "true"
+                
+                # Legacy support: USE_GOOGLE_DIRECT and USE_CEREBRAS override MODEL_PROVIDER
+                if use_cerebras:
+                    model_provider = "cerebras"
+                elif use_google_direct:
+                    model_provider = "google"
+                print(f"[DEBUG] 📋 Using .env default provider: {model_provider}")
+            
+            # Configure model based on provider
+            if model_provider == "cerebras":
+                # Use Cerebras API (fast inference)
+                cerebras_api_key = os.getenv("CEREBRAS_API_KEY")
+                # Use user's model selection if available, otherwise use .env default
+                cerebras_model = user_config.get("model") if user_config else os.getenv("CEREBRAS_MODEL", "llama3.1-8b")
+                
+                if not cerebras_api_key:
+                    raise ValueError(
+                        "CEREBRAS_API_KEY not set in .env file. "
+                        "Get your key from: https://cloud.cerebras.ai/"
+                    )
+                
+                config = StagehandConfig(
+                    env="LOCAL",
+                    headless=self.headless,
+                    verbose=1,
+                    # Use Cerebras via LiteLLM
+                    model_name=f"cerebras/{cerebras_model}",
+                    model_api_key=cerebras_api_key,
+                    local_browser_launch_options=launch_options
+                )
+                print(f"[DEBUG] ✅ Using Cerebras API with model: {cerebras_model}")
+                if user_config:
+                    print(f"[DEBUG] 🎯 User configured: temp={user_config.get('temperature', 0.7)}, max_tokens={user_config.get('max_tokens', 4096)}")
+                
+            elif model_provider == "google":
+                # Use Google API directly (FREE with Google AI Studio)
+                google_api_key = os.getenv("GOOGLE_API_KEY")
+                # Use user's model selection if available, otherwise use .env default
+                google_model = user_config.get("model") if user_config else os.getenv("GOOGLE_MODEL", "gemini-1.5-flash")
+                
+                if not google_api_key:
+                    raise ValueError(
+                        "GOOGLE_API_KEY not set in .env file. "
+                        "Get your key from: https://aistudio.google.com/app/apikey"
+                    )
+                
+                config = StagehandConfig(
+                    env="LOCAL",
+                    headless=self.headless,
+                    verbose=1,
+                    # Use Google Gemini directly via LiteLLM
+                    model_name=f"gemini/{google_model}",
+                    model_api_key=google_api_key,
+                    local_browser_launch_options=launch_options
+                )
+                print(f"[DEBUG] ✅ Using Google API directly with model: {google_model}")
+                if user_config:
+                    print(f"[DEBUG] 🎯 User configured: temp={user_config.get('temperature', 0.7)}, max_tokens={user_config.get('max_tokens', 4096)}")
+                
+            else:  # default to openrouter
+                # Use OpenRouter (original behavior)
+                openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+                # Use user's model selection if available, otherwise use .env default
+                openrouter_model = user_config.get("model") if user_config else os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct")
+                
+                config = StagehandConfig(
+                    env="LOCAL",
+                    headless=self.headless,
+                    verbose=1,
+                    model_name=f"openrouter/{openrouter_model}",
+                    model_api_key=openrouter_key,
+                    local_browser_launch_options=launch_options
+                )
+                print(f"[DEBUG] ✅ Using OpenRouter with model: {openrouter_model}")
+                if user_config:
+                    print(f"[DEBUG] 🎯 User configured: temp={user_config.get('temperature', 0.7)}, max_tokens={user_config.get('max_tokens', 4096)}")
+
+            
+            print(f"[DEBUG] Browser settings: headless={self.headless}, slow_mo={browser_slowmo}ms")
             
             self.stagehand = Stagehand(config)
             await self.stagehand.init()
@@ -94,6 +185,10 @@ class StagehandExecutionService:
             
             if not self.page:
                 raise RuntimeError("Stagehand initialization failed: page is None")
+            
+            # Set longer default timeout for complex flows (2 minutes)
+            if hasattr(self.page, '_page'):
+                self.page._page.set_default_timeout(120000)  # 120 seconds
             
             print(f"[DEBUG] Stagehand initialized successfully, page={self.page}")
     
@@ -107,6 +202,155 @@ class StagehandExecutionService:
             self.stagehand = None
             self.page = None
     
+    async def initialize_persistent(
+        self,
+        user_data_dir: str,
+        user_config: Optional[Dict[str, Any]] = None,
+        devtools: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Initialize Stagehand browser with persistent session (for debug mode).
+        
+        Args:
+            user_data_dir: Path to userDataDir for session persistence (cookies, localStorage, sessions)
+            user_config: Optional user configuration dict with provider, model, temperature, max_tokens
+            devtools: Whether to open DevTools (default: True for debugging)
+            
+        Returns:
+            Dict with browser_pid, devtools_url (if available), and other metadata
+        """
+        if not self.stagehand:
+            # Ensure Windows event loop policy is set
+            if sys.platform == 'win32':
+                loop = asyncio.get_event_loop()
+                if not isinstance(loop, asyncio.ProactorEventLoop):
+                    try:
+                        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+                    except:
+                        pass
+            
+            print(f"[DEBUG] Initializing persistent Stagehand browser with userDataDir: {user_data_dir}")
+            
+            # Get browser configuration
+            browser_slowmo = int(os.getenv("BROWSER_SLOWMO", "0"))
+            
+            # Build browser launch options with persistence
+            launch_options = {
+                "handle_sigint": False,
+                "handle_sigterm": False,
+                "handle_sighup": False,
+                "user_data_dir": user_data_dir,  # Enable session persistence
+                "devtools": devtools,  # Open DevTools for visual debugging
+                "headless": False  # Always visible for debug mode
+            }
+            if browser_slowmo > 0:
+                launch_options["slow_mo"] = browser_slowmo
+            
+            # Determine which provider to use (same logic as initialize())
+            if user_config:
+                model_provider = user_config.get("provider", "openrouter").lower()
+                print(f"[DEBUG] 🎯 Using user's configured provider: {model_provider}")
+            else:
+                model_provider = os.getenv("MODEL_PROVIDER", "openrouter").lower()
+                use_google_direct = os.getenv("USE_GOOGLE_DIRECT", "false").lower() == "true"
+                use_cerebras = os.getenv("USE_CEREBRAS", "false").lower() == "true"
+                
+                if use_cerebras:
+                    model_provider = "cerebras"
+                elif use_google_direct:
+                    model_provider = "google"
+                print(f"[DEBUG] 📋 Using .env default provider: {model_provider}")
+            
+            # Configure model based on provider (same logic as initialize())
+            if model_provider == "cerebras":
+                cerebras_api_key = os.getenv("CEREBRAS_API_KEY")
+                cerebras_model = user_config.get("model") if user_config else os.getenv("CEREBRAS_MODEL", "llama3.1-8b")
+                
+                if not cerebras_api_key:
+                    raise ValueError("CEREBRAS_API_KEY not set in .env file")
+                
+                config = StagehandConfig(
+                    env="LOCAL",
+                    headless=False,  # Always visible for debug mode
+                    verbose=1,
+                    model_name=f"cerebras/{cerebras_model}",
+                    model_api_key=cerebras_api_key,
+                    local_browser_launch_options=launch_options
+                )
+                print(f"[DEBUG] ✅ Using Cerebras API with model: {cerebras_model} (Debug Mode)")
+                
+            elif model_provider == "google":
+                google_api_key = os.getenv("GOOGLE_API_KEY")
+                google_model = user_config.get("model") if user_config else os.getenv("GOOGLE_MODEL", "gemini-1.5-flash")
+                
+                if not google_api_key:
+                    raise ValueError("GOOGLE_API_KEY not set in .env file")
+                
+                config = StagehandConfig(
+                    env="LOCAL",
+                    headless=False,  # Always visible for debug mode
+                    verbose=1,
+                    model_name=f"gemini/{google_model}",
+                    model_api_key=google_api_key,
+                    local_browser_launch_options=launch_options
+                )
+                print(f"[DEBUG] ✅ Using Google API directly with model: {google_model} (Debug Mode)")
+                
+            else:  # OpenRouter
+                openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+                openrouter_model = user_config.get("model") if user_config else os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct")
+                
+                config = StagehandConfig(
+                    env="LOCAL",
+                    headless=False,  # Always visible for debug mode
+                    verbose=1,
+                    model_name=f"openrouter/{openrouter_model}",
+                    model_api_key=openrouter_key,
+                    local_browser_launch_options=launch_options
+                )
+                print(f"[DEBUG] ✅ Using OpenRouter with model: {openrouter_model} (Debug Mode)")
+            
+            print(f"[DEBUG] Persistent browser settings: headless=False (debug mode), devtools={devtools}")
+            
+            self.stagehand = Stagehand(config)
+            await self.stagehand.init()
+            self.page = self.stagehand.page
+            
+            if not self.page:
+                raise RuntimeError("Stagehand initialization failed: page is None")
+            
+            # Set longer default timeout for complex flows
+            if hasattr(self.page, '_page'):
+                self.page._page.set_default_timeout(120000)  # 120 seconds
+            
+            # Extract browser metadata
+            browser_metadata = {
+                "user_data_dir": user_data_dir,
+                "devtools_enabled": devtools,
+                "browser_pid": None,
+                "devtools_url": None
+            }
+            
+            # Try to get browser PID and DevTools URL (Playwright-specific)
+            try:
+                if hasattr(self.page, '_page') and hasattr(self.page._page, 'context'):
+                    context = self.page._page.context
+                    if hasattr(context, 'browser') and context.browser:
+                        browser = context.browser
+                        # Get browser process (if available)
+                        if hasattr(browser, '_browser_type'):
+                            browser_metadata["browser_pid"] = os.getpid()  # Fallback to current process
+                        # DevTools URL typically available via CDP
+                        if devtools:
+                            browser_metadata["devtools_url"] = "chrome://inspect (browser DevTools opened automatically)"
+            except Exception as e:
+                print(f"[DEBUG] Could not extract browser metadata: {e}")
+            
+            print(f"[DEBUG] Persistent Stagehand initialized successfully, page={self.page}")
+            print(f"[DEBUG] Browser metadata: {browser_metadata}")
+            
+            return browser_metadata
+    
     async def execute_test(
         self,
         db: Session,
@@ -115,7 +359,8 @@ class StagehandExecutionService:
         user_id: int,
         base_url: str,
         environment: str = "dev",
-        progress_callback: Optional[Callable] = None
+        progress_callback: Optional[Callable] = None,
+        skip_navigation: bool = False
     ):
         """
         Execute a test case and track results.
@@ -128,6 +373,7 @@ class StagehandExecutionService:
             base_url: Base URL for the application under test
             environment: Environment name (dev, staging, production)
             progress_callback: Optional callback for progress updates
+            skip_navigation: If True, skip navigating to base_url (for suite continuation)
             
         Returns:
             TestExecution object with results
@@ -151,13 +397,34 @@ class StagehandExecutionService:
             # Initialize browser
             await self.initialize()
             
-            # Navigate to base URL
-            print(f"[DEBUG] Navigating to {base_url}")
-            await self.page.goto(base_url)
-            await asyncio.sleep(1)  # Wait for page to stabilize
-            
             # Execute steps
-            steps = test_case.steps if isinstance(test_case.steps, list) else []
+            steps = test_case.steps
+            if isinstance(steps, str):
+                try:
+                    steps = json.loads(steps)
+                except:
+                    steps = [steps]  # Treat as single step if JSON parse fails
+            elif not isinstance(steps, list):
+                steps = []
+            
+            # Check if first step contains navigation (URL)
+            first_step_has_url = False
+            if steps and len(steps) > 0:
+                first_step = str(steps[0]).lower()
+                if any(keyword in first_step for keyword in ['navigate', 'goto', 'open', 'http://', 'https://']):
+                    first_step_has_url = True
+                    print(f"[DEBUG] First step contains navigation, skipping initial goto")
+            
+            # Navigate to base URL only if not continuing from suite and first step doesn't navigate
+            if not skip_navigation and not first_step_has_url:
+                print(f"[DEBUG] Navigating to base URL: {base_url}")
+                await self.page.goto(base_url)
+                await asyncio.sleep(1)  # Wait for page to stabilize
+            elif skip_navigation:
+                print(f"[DEBUG] Skipping navigation (continuing from previous test in suite)")
+                current_url = self.page.url
+                print(f"[DEBUG] Current URL: {current_url}")
+            
             total_steps = len(steps)
             passed_steps = 0
             failed_steps = 0
@@ -178,8 +445,17 @@ class StagehandExecutionService:
                     
                     print(f"[DEBUG] Step {idx}/{total_steps}: {step_desc}")
                     
-                    # Execute the step (simplified for MVP)
-                    result = await self._execute_step_simple(step_desc, idx)
+                    # Hybrid execution strategy:
+                    # 1. Try Playwright selectors first (fast, free, reliable)
+                    # 2. If fails, fallback to Stagehand AI (flexible, handles complex cases)
+                    USE_AI_ONLY = os.getenv("USE_AI_EXECUTION", "false").lower() == "true"
+                    
+                    if USE_AI_ONLY:
+                        # Force AI execution for all steps
+                        result = await self._execute_step_ai(step_desc, idx)
+                    else:
+                        # Try Playwright first, fallback to AI if it fails
+                        result = await self._execute_step_hybrid(step_desc, idx)
                     
                     step_end = datetime.utcnow()
                     duration = (step_end - step_start).total_seconds()
@@ -204,7 +480,9 @@ class StagehandExecutionService:
                         actual_result=result.get("actual", ""),
                         error_message=result.get("error"),
                         screenshot_path=screenshot_path,
-                        duration_seconds=duration
+                        duration_seconds=duration,
+                        selector_used=result.get("selector_used"),
+                        action_method=result.get("action_method")
                     )
                     
                     if result["success"]:
@@ -293,6 +571,123 @@ class StagehandExecutionService:
         
         return execution
     
+    async def _execute_step_hybrid(self, step_description: str, step_number: int) -> Dict[str, Any]:
+        """
+        Hybrid execution: Try Playwright first, fallback to AI if it fails.
+        
+        This provides the best of both worlds:
+        - Fast and free Playwright selectors for common cases
+        - AI fallback for complex or dynamic scenarios
+        
+        IMPORTANT: AI fallback executes ONLY the current step, not all steps from beginning.
+        Browser session is shared, so context from previous steps is preserved.
+        """
+        print(f"[DEBUG] ========================================")
+        print(f"[DEBUG] 🔄 HYBRID Step {step_number}: {step_description}")
+        print(f"[DEBUG] Strategy: Playwright first (10s timeout), then AI fallback if needed")
+        
+        # Try Playwright-based execution first
+        print(f"[DEBUG] 🎭 Attempting with Playwright selectors...")
+        result = await self._execute_step_simple(step_description, step_number)
+        
+        # Check if it succeeded
+        if result.get("success"):
+            print(f"[DEBUG] ✅ Playwright execution succeeded for step {step_number}")
+            return result
+        
+        # If Playwright failed, try AI fallback for THIS STEP ONLY
+        print(f"[DEBUG] ⚠️  Playwright failed for step {step_number}: {result.get('error', 'Unknown error')}")
+        print(f"[DEBUG] 🤖 Attempting AI fallback for step {step_number} ONLY (not restarting from step 1)...")
+        
+        ai_result = await self._execute_step_ai(step_description, step_number)
+        
+        if ai_result.get("success"):
+            print(f"[DEBUG] ✅ AI fallback succeeded for step {step_number}!")
+            # Add note that AI was used
+            ai_result["actual"] = f"[AI Fallback] {ai_result.get('actual', '')}"
+            return ai_result
+        else:
+            print(f"[DEBUG] ❌ Both Playwright and AI failed for step {step_number}")
+            # Return the AI error (usually more informative)
+            return ai_result
+    
+    async def _execute_step_ai(self, step_description: str, step_number: int) -> Dict[str, Any]:
+        """
+        Execute a single test step using Stagehand AI.
+        
+        Uses page.act() for AI-powered natural language execution.
+        More flexible but slower and requires API calls.
+        
+        IMPORTANT: This executes ONLY the specified step, not all steps from the beginning.
+        The browser session is shared with Playwright, so previous step context is preserved.
+        """
+        try:
+            # Get current page state before AI execution
+            url_before = self.page.url
+            title_before = await self.page.title()
+            
+            print(f"[DEBUG] ========================================")
+            print(f"[DEBUG] 🤖 AI Fallback for Step {step_number} ONLY")
+            print(f"[DEBUG] Step Description: {step_description}")
+            print(f"[DEBUG] Browser state BEFORE AI:")
+            print(f"[DEBUG]   - URL: {url_before}")
+            print(f"[DEBUG]   - Title: {title_before}")
+            print(f"[DEBUG] Calling page.act() for THIS STEP ONLY...")
+            
+            # Use Stagehand AI to execute the step - CAPTURE RETURN VALUE
+            act_result = await self.page.act(step_description)
+            
+            await asyncio.sleep(1.5)  # Wait for action to complete
+            
+            title_after = await self.page.title()
+            url_after = self.page.url
+            
+            # Extract XPath from act_result
+            xpath_used = None
+            if act_result and hasattr(act_result, 'message') and act_result.message:
+                # Parse xpath from message like: "Action [click] performed successfully on selector: xpath=/html/body[1]/div[1]..."
+                import re
+                xpath_match = re.search(r'selector:\s*(xpath=[^\s]+)', act_result.message)
+                if xpath_match:
+                    xpath_used = xpath_match.group(1)
+            
+            print(f"[DEBUG] ✅ AI action completed successfully!")
+            print(f"[DEBUG] XPath used by Stagehand: {xpath_used}")
+            print(f"[DEBUG] Browser state AFTER AI:")
+            print(f"[DEBUG]   - URL: {url_after}")
+            print(f"[DEBUG]   - Title: {title_after}")
+            print(f"[DEBUG] Changes: URL changed={url_before != url_after}, Title changed={title_before != title_after}")
+            print(f"[DEBUG] ========================================")
+            
+            return {
+                "success": True,
+                "actual": f"AI action: {act_result.action if act_result else 'completed'}. XPath: {xpath_used}. Page: {title_after} | URL: {url_after}",
+                "expected": step_description,
+                "selector_used": xpath_used,
+                "action_method": "stagehand_ai"
+            }
+            
+        except Exception as e:
+            print(f"[DEBUG] ❌ AI action failed: {str(e)}")
+            await asyncio.sleep(0.5)
+            
+            # Try to get page state even after error
+            try:
+                title = await self.page.title()
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "actual": f"AI action failed: {str(e)}. Page: {title}",
+                    "expected": step_description
+                }
+            except:
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "actual": f"AI action failed: {str(e)}",
+                    "expected": step_description
+                }
+    
     async def _execute_step_simple(self, step_description: str, step_number: int) -> Dict[str, Any]:
         """
         Execute a single test step using direct Playwright commands.
@@ -300,29 +695,39 @@ class StagehandExecutionService:
         Uses simple selectors for reliability without AI overhead.
         """
         try:
-            print(f"[DEBUG] ========================================")
-            print(f"[DEBUG] Executing step {step_number}: {step_description}")
-            
             # Detect action type from description
             desc_lower = step_description.lower()
             
+            # Check if it's a navigation action with URL
+            if any(word in desc_lower for word in ['navigate', 'goto', 'open']) and ('http://' in step_description or 'https://' in step_description):
+                print(f"[DEBUG] 🌐 Detected navigation action")
+                return await self._execute_navigation(step_description)
+            
             # Check if it's a typing action
-            if any(word in desc_lower for word in ['type', 'enter', 'fill', 'input']):
+            elif any(word in desc_lower for word in ['type', 'enter', 'fill', 'input']):
+                print(f"[DEBUG] ⌨️  Detected typing action")
                 return await self._execute_type_simple(step_description)
             
             # Check if it's a click action
             elif any(word in desc_lower for word in ['click', 'select', 'choose', 'press']):
+                print(f"[DEBUG] 🖱️  Detected click action")
                 return await self._execute_click_simple(step_description)
             
-            # For navigation or other actions, just note it
+            # Check if it's a scroll action
+            elif 'scroll' in desc_lower:
+                print(f"[DEBUG] 📜 Detected scroll action")
+                return await self._execute_scroll(step_description)
+            
+            # Check if it's a verify/wait action
+            elif any(word in desc_lower for word in ['verify', 'check', 'wait', 'ensure']):
+                print(f"[DEBUG] ✓ Detected verify/wait action")
+                return await self._execute_verify(step_description)
+            
+            # For unrecognized actions, use Stagehand AI instead of just noting
             else:
-                await asyncio.sleep(1)
-                title = await self.page.title()
-                return {
-                    "success": True,
-                    "actual": f"Step noted (page title: {title})",
-                    "expected": step_description
-                }
+                print(f"[DEBUG] ⚠️  Unrecognized action type, using Stagehand AI fallback")
+                print(f"[DEBUG] Step: {step_description}")
+                return await self._execute_ai_action(step_description)
         
         except Exception as e:
             return {
@@ -336,7 +741,7 @@ class StagehandExecutionService:
         """Execute non-click actions using Stagehand AI."""
         try:
             print(f"[DEBUG] Calling page.act('{step_description}')...")
-            await self.page.act(step_description)
+            act_result = await self.page.act(step_description)
             print(f"[DEBUG] AI action completed successfully!")
             
             await asyncio.sleep(1)
@@ -344,14 +749,25 @@ class StagehandExecutionService:
             title = await self.page.title()
             url = self.page.url
             
+            # Extract XPath from act_result
+            xpath_used = None
+            if act_result and hasattr(act_result, 'message') and act_result.message:
+                import re
+                xpath_match = re.search(r'selector:\s*(xpath=[^\s]+)', act_result.message)
+                if xpath_match:
+                    xpath_used = xpath_match.group(1)
+            
+            print(f"[DEBUG] XPath used by Stagehand: {xpath_used}")
             print(f"[DEBUG] After action - Title: {title}")
             print(f"[DEBUG] After action - URL: {url}")
             print(f"[DEBUG] ========================================")
             
             return {
                 "success": True,
-                "actual": f"Action completed. Page: {title} | URL: {url}",
-                "expected": step_description
+                "actual": f"AI action: {act_result.action if act_result else 'completed'}. XPath: {xpath_used}. Page: {title} | URL: {url}",
+                "expected": step_description,
+                "selector_used": xpath_used,
+                "action_method": "stagehand_ai"
             }
         except Exception as e:
             print(f"[DEBUG] ❌ AI action failed: {str(e)}")
@@ -407,7 +823,7 @@ class StagehandExecutionService:
                 for selector in selectors_to_try:
                     try:
                         print(f"[DEBUG] Trying selector: {selector}")
-                        element = await pw_page.wait_for_selector(selector, timeout=3000)
+                        element = await pw_page.wait_for_selector(selector, timeout=30000)  # 30 seconds for slow pages
                         
                         if element:
                             is_visible = await element.is_visible()
@@ -419,7 +835,7 @@ class StagehandExecutionService:
                                 
                                 # Try normal click first
                                 try:
-                                    await element.click(timeout=5000)
+                                    await element.click(timeout=60000)  # 60 seconds for click to complete
                                 except Exception as click_error:
                                     # If blocked by modal overlay, force the click
                                     if "intercepts pointer events" in str(click_error):
@@ -541,7 +957,7 @@ class StagehandExecutionService:
             for selector in selectors_to_try:
                 try:
                     print(f"[DEBUG] Trying Playwright selector: {selector}")
-                    element = await self.page._page.wait_for_selector(selector, timeout=3000, state='visible')
+                    element = await self.page._page.wait_for_selector(selector, timeout=30000, state='visible')  # 30 seconds
                     
                     if element:
                         print(f"[DEBUG] Found element with: {selector}")
@@ -615,113 +1031,143 @@ class StagehandExecutionService:
             # Special case: checkbox
             if 'checkbox' in desc_lower:
                 print(f"[DEBUG] Looking for checkbox...")
-                selectors = [
-                    "input[type='checkbox']:visible",
-                    "[role='checkbox']:visible",
-                    "label:has(input[type='checkbox']):visible",
-                ]
-                for selector in selectors:
-                    try:
-                        element = await pw_page.wait_for_selector(selector, timeout=3000, state='visible')
-                        if element:
-                            await element.click(timeout=5000)
-                            await asyncio.sleep(0.5)
-                            print(f"[DEBUG] ✅ Clicked checkbox")
-                            return {
-                                "success": True,
-                                "actual": "Clicked checkbox",
-                                "expected": step_description
-                            }
-                    except Exception as e:
-                        print(f"[DEBUG] {selector} failed: {str(e)[:100]}")
-                        continue
+                # Try most common checkbox selector first - fail fast if not found
+                try:
+                    element = await pw_page.wait_for_selector(
+                        "input[type='checkbox']:visible, [role='checkbox']:visible, label:has(input[type='checkbox']):visible",
+                        timeout=10000,  # 10 seconds
+                        state='visible'
+                    )
+                    if element:
+                        await element.click(timeout=10000)  # 10 seconds
+                        await asyncio.sleep(0.5)
+                        print(f"[DEBUG] ✅ Clicked checkbox")
+                        checkbox_selector = "input[type='checkbox']:visible, [role='checkbox']:visible, label:has(input[type='checkbox']):visible"
+                        return {
+                            "success": True,
+                            "actual": "Clicked checkbox",
+                            "expected": step_description,
+                            "selector_used": checkbox_selector,
+                            "action_method": "playwright"
+                        }
+                except Exception as e:
+                    print(f"[DEBUG] Checkbox not found: {str(e)[:100]}")
+                    # Don't retry - let AI fallback handle it
+                    return {
+                        "success": False,
+                        "error": f"Checkbox not found: {str(e)}",
+                        "actual": "Checkbox element not visible",
+                        "expected": step_description
+                    }
             
             # Special case: close button (X)
             if desc_lower.startswith("find and click the 'x'"):
                 print(f"[DEBUG] Looking for close button...")
-                selectors = [
-                    "button[aria-label*='close' i]:visible",
-                    "button[class*='close' i]:visible",
-                    "button:has-text('×'):visible",
-                    "[aria-label*='close' i]:visible",
-                ]
-                for selector in selectors:
-                    try:
-                        element = await pw_page.wait_for_selector(selector, timeout=3000, state='visible')
-                        if element:
-                            await element.click(timeout=5000)
-                            await asyncio.sleep(1)
-                            print(f"[DEBUG] ✅ Clicked close button")
-                            return {
-                                "success": True,
-                                "actual": "Clicked close button",
-                                "expected": step_description
-                            }
-                    except Exception as e:
-                        print(f"[DEBUG] {selector} failed: {str(e)[:100]}")
-                        continue
+                # Combine selectors - fail fast if not found
+                try:
+                    element = await pw_page.wait_for_selector(
+                        "button[aria-label*='close' i]:visible, button[class*='close' i]:visible, button:has-text('×'):visible, [aria-label*='close' i]:visible",
+                        timeout=10000,  # 10 seconds
+                        state='visible'
+                    )
+                    if element:
+                        await element.click(timeout=10000)  # 10 seconds
+                        await asyncio.sleep(1)
+                        print(f"[DEBUG] ✅ Clicked close button")
+                        close_selector = "button[aria-label*='close' i]:visible, button[class*='close' i]:visible, button:has-text('×'):visible, [aria-label*='close' i]:visible"
+                        return {
+                            "success": True,
+                            "actual": "Clicked close button",
+                            "expected": step_description,
+                            "selector_used": close_selector,
+                            "action_method": "playwright"
+                        }
+                except Exception as e:
+                    print(f"[DEBUG] Close button not found: {str(e)[:100]}")
+                    # Don't retry - let AI fallback handle it
+                    return {
+                        "success": False,
+                        "error": f"Close button not found: {str(e)}",
+                        "actual": "Close button not visible",
+                        "expected": step_description
+                    }
             
-            # Extract text from quotes in description
+            # Extract text from quotes in description, or extract from "click on X" pattern
             quoted_match = re.search(r"['\"]([^'\"]+)['\"]", step_description)
-            if not quoted_match:
-                # No quoted text found
-                return {
-                    "success": False,
-                    "error": "Could not extract button text from description",
-                    "actual": "No quoted text found",
-                    "expected": step_description
-                }
             
-            button_text = quoted_match.group(1)
+            if quoted_match:
+                button_text = quoted_match.group(1)
+            else:
+                # Try to extract text after "click on", "click the", "select", etc.
+                click_pattern = re.search(r"(?:click on|click the|select|choose|press)\s+(?:the\s+)?(.+?)(?:\s+button|\s+link|\s+plan|$)", step_description, re.IGNORECASE)
+                if click_pattern:
+                    button_text = click_pattern.group(1).strip()
+                else:
+                    # Last resort: extract everything after the action word
+                    action_pattern = re.search(r"(?:click|select|choose|press)\s+(.+)", step_description, re.IGNORECASE)
+                    if action_pattern:
+                        button_text = action_pattern.group(1).strip()
+                    else:
+                        return {
+                            "success": False,
+                            "error": "Could not extract button text from description",
+                            "actual": "No button text pattern found",
+                            "expected": step_description
+                        }
+            
             print(f"[DEBUG] Looking for button: '{button_text}'")
             
             # Check if we're in a modal context (for login flow)
             in_modal = 'login' in desc_lower or 'email' in desc_lower or 'password' in desc_lower
             
-            # Try simple selectors - Playwright will auto-wait for elements
-            base_selectors = [
+            # Build combined selector - try all patterns at once instead of sequentially
+            # This reduces timeout from N * 30 seconds to just 10 seconds total
+            base_patterns = [
                 f"button:has-text('{button_text}')",
                 f"a:has-text('{button_text}')",
                 f"[role='button']:has-text('{button_text}')",
                 f"text='{button_text}'",
             ]
             
-            # If in modal, also try with .modal-content prefix
-            selectors = []
+            # If in modal, prepend .modal-content to patterns
             if in_modal:
-                selectors.extend([f".modal-content {s}" for s in base_selectors])
-            selectors.extend(base_selectors)
+                combined_selector = ", ".join([f".modal-content {p}" for p in base_patterns] + base_patterns)
+            else:
+                combined_selector = ", ".join(base_patterns)
             
-            for selector in selectors:
-                try:
-                    print(f"[DEBUG] Trying: {selector}")
-                    element = await pw_page.wait_for_selector(selector, timeout=3000, state='visible')
-                    if element:
-                        await element.click(timeout=5000)
-                        await asyncio.sleep(1.5)
-                        
-                        title = await self.page.title()
-                        url = self.page.url
-                        
-                        print(f"[DEBUG] ✅ Clicked '{button_text}'")
-                        print(f"[DEBUG] Page: {title} | URL: {url}")
-                        
-                        return {
-                            "success": True,
-                            "actual": f"Clicked '{button_text}'. Page: {title}",
-                            "expected": step_description
-                        }
-                except Exception as e:
-                    print(f"[DEBUG] {selector} failed: {str(e)[:100]}")
-                    continue
-            
-            # If all selectors failed
-            return {
-                "success": False,
-                "error": f"Could not find button '{button_text}'",
-                "actual": "Button not found with any selector",
-                "expected": step_description
-            }
+            try:
+                print(f"[DEBUG] Trying combined selector (timeout: 10s)")
+                element = await pw_page.wait_for_selector(
+                    combined_selector, 
+                    timeout=10000,  # 10 seconds total (not per selector)
+                    state='visible'
+                )
+                if element:
+                    await element.click(timeout=10000)  # 10 seconds
+                    await asyncio.sleep(1.5)
+                    
+                    title = await self.page.title()
+                    url = self.page.url
+                    
+                    print(f"[DEBUG] ✅ Clicked '{button_text}'")
+                    print(f"[DEBUG] Page: {title} | URL: {url}")
+                    
+                    return {
+                        "success": True,
+                        "actual": f"Clicked '{button_text}'. Page: {title}",
+                        "expected": step_description,
+                        "selector_used": combined_selector,
+                        "action_method": "playwright"
+                    }
+            except Exception as e:
+                print(f"[DEBUG] Click failed: {str(e)[:150]}")
+                # Don't retry - let AI fallback handle it
+                return {
+                    "success": False,
+                    "error": f"Could not find button '{button_text}': {str(e)}",
+                    "actual": "Button not found or not clickable",
+                    "expected": step_description
+                }
             
         except Exception as e:
             return {
@@ -804,17 +1250,19 @@ class StagehandExecutionService:
             for selector in selectors:
                 try:
                     print(f"[DEBUG] Trying: {selector}")
-                    element = await pw_page.wait_for_selector(selector, timeout=3000, state='visible')
+                    element = await pw_page.wait_for_selector(selector, timeout=30000, state='visible')  # 30 seconds
                     if element:
                         await element.fill(text_to_type)
                         await asyncio.sleep(0.5)
                         
-                        print(f"[DEBUG] ✅ Typed '{text_to_type}' into field")
+                        print(f"[DEBUG] ✅ Typed '{text_to_type}' into field using selector: {selector}")
                         
                         return {
                             "success": True,
-                            "actual": f"Entered text into field",
-                            "expected": step_description
+                            "actual": f"Entered text into field using {selector}",
+                            "expected": step_description,
+                            "selector_used": selector,
+                            "action_method": "playwright"
                         }
                 except Exception as e:
                     print(f"[DEBUG] {selector} failed: {str(e)[:100]}")
@@ -834,6 +1282,219 @@ class StagehandExecutionService:
                 "error": str(e),
                 "actual": f"Error: {str(e)}",
                 "expected": step_description
+            }
+    
+    async def _execute_navigation(self, step_description: str) -> Dict[str, Any]:
+        """Navigate to a URL extracted from the step description."""
+        try:
+            # Extract URL from description
+            import re
+            # Match URL but stop at quotes, whitespace, or other delimiters
+            url_match = re.search(r'(https?://[^\s\'"<>]+)', step_description)
+            if not url_match:
+                return {
+                    "success": False,
+                    "error": "No URL found in navigation step",
+                    "actual": "Could not extract URL",
+                    "expected": step_description
+                }
+            
+            url = url_match.group(1)
+            print(f"[DEBUG] Navigating to URL: {url}")
+            
+            # Navigate using Playwright page
+            await self.page.goto(url)
+            await asyncio.sleep(2)  # Wait for page to load
+            
+            title = await self.page.title()
+            current_url = self.page.url
+            
+            print(f"[DEBUG] Navigation complete - Title: {title}")
+            print(f"[DEBUG] Current URL: {current_url}")
+            
+            return {
+                "success": True,
+                "actual": f"Navigated to {url}. Page title: {title}",
+                "expected": step_description
+            }
+        except Exception as e:
+            print(f"[DEBUG] Navigation failed: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e),
+                "actual": f"Navigation error: {str(e)}",
+                "expected": step_description
+            }
+    
+    async def _execute_scroll(self, step_description: str) -> Dict[str, Any]:
+        """Execute scroll action."""
+        try:
+            print(f"[DEBUG] Executing scroll")
+            
+            # Get underlying Playwright page
+            pw_page = self.page._page
+            
+            # Scroll down the page
+            await pw_page.evaluate("window.scrollBy(0, 500)")
+            await asyncio.sleep(1)
+            
+            return {
+                "success": True,
+                "actual": "Scrolled down page",
+                "expected": step_description
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "actual": f"Scroll error: {str(e)}",
+                "expected": step_description
+            }
+    
+    async def _execute_verify(self, step_description: str) -> Dict[str, Any]:
+        """Execute verification step."""
+        try:
+            print(f"[DEBUG] Executing verification")
+            
+            # For now, just check that page is loaded
+            await asyncio.sleep(1)
+            title = await self.page.title()
+            url = self.page.url
+            
+            # Check if verification text is in page title or URL
+            desc_lower = step_description.lower()
+            title_lower = title.lower()
+            url_lower = url.lower()
+            
+            # Extract quoted text to verify
+            import re
+            verify_pattern = re.findall(r"['\"]([^'\"]+)['\"]", step_description)
+            
+            if verify_pattern:
+                all_found = True
+                for text in verify_pattern:
+                    text_lower = text.lower()
+                    if text_lower not in title_lower and text_lower not in url_lower:
+                        # Check if it's in the page content
+                        pw_page = self.page._page
+                        try:
+                            page_content = await pw_page.content()
+                            if text_lower not in page_content.lower():
+                                all_found = False
+                                break
+                        except:
+                            pass
+                
+                if all_found:
+                    return {
+                        "success": True,
+                        "actual": f"Verification passed. Page: {title}",
+                        "expected": step_description
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "error": "Verification text not found",
+                        "actual": f"Page title: {title}, URL: {url}",
+                        "expected": step_description
+                    }
+            else:
+                # No specific text to verify, just confirm page is loaded
+                return {
+                    "success": True,
+                    "actual": f"Verification step noted. Page: {title}",
+                    "expected": step_description
+                }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "actual": f"Verification error: {str(e)}",
+                "expected": step_description
+            }
+    
+    async def execute_single_step(
+        self,
+        step_description: str,
+        step_number: int,
+        execution_id: int
+    ) -> Dict[str, Any]:
+        """
+        Execute a single step for debug mode.
+        
+        Args:
+            step_description: Step description to execute
+            step_number: Step number (for logging/screenshots)
+            execution_id: Execution ID (for screenshot naming)
+            
+        Returns:
+            Dict with:
+                - success: bool
+                - error: Optional[str]
+                - actual: str (what happened)
+                - expected: str (what should happen)
+                - screenshot_path: Optional[str]
+                - duration_seconds: float
+                - tokens_used: int (estimated)
+        """
+        start_time = datetime.utcnow()
+        
+        try:
+            print(f"[DEBUG] Executing single step #{step_number}: {step_description}")
+            
+            # Use hybrid execution strategy
+            USE_AI_ONLY = os.getenv("USE_AI_EXECUTION", "false").lower() == "true"
+            
+            if USE_AI_ONLY:
+                result = await self._execute_step_ai(step_description, step_number)
+            else:
+                result = await self._execute_step_hybrid(step_description, step_number)
+            
+            # Capture screenshot
+            screenshot_path = await self._capture_screenshot(
+                execution_id,
+                step_number,
+                ExecutionResult.PASS if result["success"] else ExecutionResult.FAIL
+            )
+            
+            end_time = datetime.utcnow()
+            duration = (end_time - start_time).total_seconds()
+            
+            # Estimate tokens used (AI execution typically uses ~100 tokens per step)
+            tokens_estimate = 100 if result.get("used_ai", False) else 0
+            
+            return {
+                "success": result["success"],
+                "error": result.get("error"),
+                "actual": result.get("actual", ""),
+                "expected": result.get("expected", step_description),
+                "screenshot_path": screenshot_path,
+                "duration_seconds": duration,
+                "tokens_used": tokens_estimate
+            }
+            
+        except Exception as e:
+            end_time = datetime.utcnow()
+            duration = (end_time - start_time).total_seconds()
+            
+            # Capture error screenshot
+            try:
+                screenshot_path = await self._capture_screenshot(
+                    execution_id,
+                    step_number,
+                    ExecutionResult.ERROR
+                )
+            except:
+                screenshot_path = None
+            
+            return {
+                "success": False,
+                "error": str(e),
+                "actual": f"Step execution failed: {str(e)}",
+                "expected": step_description,
+                "screenshot_path": screenshot_path,
+                "duration_seconds": duration,
+                "tokens_used": 0
             }
     
 # Singleton instance
