@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card } from '../components/common/Card';
 import { Input } from '../components/common/Input';
 import { Button } from '../components/common/Button';
-import { mockLogin } from '../mock/users';
+import authService from '../services/authService';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -24,24 +24,17 @@ export const LoginPage: React.FC = () => {
 
     setLoading(true);
 
-    // Simulate API delay
-    setTimeout(() => {
-      const user = mockLogin(username, password);
+    try {
+      // Use real authService instead of mock
+      await authService.login(username, password);
       
-      if (user) {
-        // Generate mock token and store in localStorage
-        const token = `mock-token-${Date.now()}`;
-        localStorage.setItem('token', token);
-        localStorage.setItem('user', JSON.stringify(user));
-        
-        // Navigate to dashboard
-        navigate('/dashboard');
-      } else {
-        setError('Invalid credentials');
-      }
-      
+      // Navigate to dashboard on success
+      navigate('/dashboard');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed');
+    } finally {
       setLoading(false);
-    }, 500);
+    }
   };
 
   return (
@@ -94,7 +87,7 @@ export const LoginPage: React.FC = () => {
           </form>
 
           <div className="mt-6 text-center text-sm text-gray-600">
-            <p>Demo credentials: any username/password</p>
+            <p>Demo credentials: admin / admin123</p>
           </div>
         </Card>
       </div>

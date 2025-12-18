@@ -5,6 +5,7 @@ from sqlalchemy import func, or_
 from app.models.kb_document import KBDocument, KBCategory, FileType
 from app.schemas.kb_document import (
     KBCategoryCreate,
+    KBCategoryUpdate,
     KBDocumentCreate,
     KBDocumentUpdate
 )
@@ -36,6 +37,22 @@ def get_category_by_name(db: Session, name: str) -> Optional[KBCategory]:
 def get_categories(db: Session) -> List[KBCategory]:
     """Get all categories."""
     return db.query(KBCategory).order_by(KBCategory.name).all()
+
+
+def update_category(db: Session, category_id: int, updates: KBCategoryUpdate) -> Optional[KBCategory]:
+    """Update a KB category."""
+    category = get_category(db, category_id)
+    if not category:
+        return None
+    
+    # Update only provided fields
+    update_data = updates.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(category, field, value)
+    
+    db.commit()
+    db.refresh(category)
+    return category
 
 
 def delete_category(db: Session, category_id: int) -> bool:

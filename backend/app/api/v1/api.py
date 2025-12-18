@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import health, auth, users, test_generation, tests, kb, executions, test_templates, test_scenarios
+from app.api.v1.endpoints import health, auth, users, test_generation, tests, kb, executions, test_templates, test_scenarios, test_suites, settings, debug
 
 api_router = APIRouter()
 
@@ -12,4 +12,7 @@ api_router.include_router(executions.router, prefix="/executions", tags=["test-e
 api_router.include_router(kb.router, prefix="/kb", tags=["knowledge-base"])
 api_router.include_router(test_templates.router, prefix="/test-templates", tags=["test-templates"])
 api_router.include_router(test_scenarios.router, prefix="/scenarios", tags=["test-scenarios"])
+api_router.include_router(test_suites.router, prefix="/suites", tags=["test-suites"])
+api_router.include_router(settings.router, prefix="/settings", tags=["settings"])
+api_router.include_router(debug.router, tags=["debug"])
 

@@ -2,6 +2,7 @@ import React from 'react';
 import { GeneratedTestCase } from '../../types/api';
 import { Card } from '../common/Card';
 import { Button } from '../common/Button';
+import { RunTestButton } from '../RunTestButton';
 import { Check, Edit, Trash2 } from 'lucide-react';
 
 interface TestCaseCardProps {
@@ -9,6 +10,7 @@ interface TestCaseCardProps {
   onEdit?: (testCase: GeneratedTestCase) => void;
   onDelete?: (testCase: GeneratedTestCase) => void;
   onSave?: (testCase: GeneratedTestCase) => void;
+  onExecutionStart?: (executionId: number) => void;
 }
 
 export const TestCaseCard: React.FC<TestCaseCardProps> = ({
@@ -16,6 +18,7 @@ export const TestCaseCard: React.FC<TestCaseCardProps> = ({
   onEdit,
   onDelete,
   onSave,
+  onExecutionStart,
 }) => {
   const priorityColors = {
     high: 'bg-red-100 text-red-700',
@@ -40,6 +43,12 @@ export const TestCaseCard: React.FC<TestCaseCardProps> = ({
             )}
           </div>
           <div className="flex gap-2">
+            {onExecutionStart && testCase.id && (
+              <RunTestButton
+                testCaseId={parseInt(testCase.id.replace(/\D/g, '')) || 1}
+                onExecutionStart={onExecutionStart}
+              />
+            )}
             {onEdit && (
               <Button
                 variant="secondary"

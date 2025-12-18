@@ -71,17 +71,34 @@ export interface TestStep {
 }
 
 export interface CreateTestRequest {
-  name: string;
+  title: string;
   description: string;
+  test_type: 'e2e' | 'unit' | 'integration' | 'api';
   priority?: 'high' | 'medium' | 'low';
-  agent?: string;
+  status?: 'pending' | 'passed' | 'failed' | 'running';
+  steps: string[];
+  expected_result: string;
+  preconditions?: string;
+  test_data?: Record<string, any>;
+  category_id?: number;
+  tags?: string[];
+  test_metadata?: Record<string, any>;
 }
 
 export interface UpdateTestRequest {
-  name?: string;
+  title?: string;
+  name?: string;  // Keep for backward compatibility
   description?: string;
+  test_type?: 'e2e' | 'unit' | 'integration' | 'api';
   status?: 'passed' | 'failed' | 'pending' | 'running';
   priority?: 'high' | 'medium' | 'low';
+  steps?: string[];
+  expected_result?: string;
+  preconditions?: string;
+  test_data?: Record<string, any>;
+  category_id?: number;
+  tags?: string[];
+  test_metadata?: Record<string, any>;
 }
 
 export interface RunTestRequest {
@@ -96,8 +113,14 @@ export interface RunTestResponse {
 
 // Test Generation types
 export interface GenerateTestsRequest {
-  prompt: string;
-  count?: number;
+  requirement: string;  // Changed from 'prompt' to match backend
+  test_type?: 'e2e' | 'unit' | 'integration' | 'api';
+  num_tests?: number;  // Changed from 'count' to match backend
+  model?: string;
+  // KB Integration (Sprint 2 Day 11)
+  category_id?: number;      // KB category ID for context
+  use_kb_context?: boolean;  // Whether to use KB context (default: true)
+  max_kb_docs?: number;      // Max KB documents to include (default: 10)
 }
 
 export interface GeneratedTestCase {
@@ -117,26 +140,46 @@ export interface GenerateTestsResponse {
 
 // Knowledge Base types
 export interface KBDocument {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  document_type: 'system_guide' | 'product' | 'process' | 'reference';
-  file_size: string;
-  file_url?: string;
-  uploaded_by: string;
-  uploaded_at: string;
-  tags: string[];
+  id: number;
+  title: string;
+  description: string | null;
+  filename: string;
+  file_path: string;
+  file_type: 'pdf' | 'docx' | 'txt' | 'md';
+  file_size: number;
   referenced_count: number;
-  version?: number;
+  content: string | null;
+  created_at: string;
+  updated_at: string;
+  category: KBCategory;
 }
 
 export interface KBCategory {
-  id: string;
+  id: number;
   name: string;
-  count: number;
-  color?: string;
-  description?: string;
+  description: string | null;
+  color: string;
+  icon: string | null;
+}
+
+export interface KBDocumentListResponse {
+  items: KBDocument[];
+  total: number;
+  skip: number;
+  limit: number;
+}
+
+export interface KBStatistics {
+  total_documents: number;
+  total_size_bytes: number;
+  total_size_mb: number;
+  by_category: Record<string, number>;
+  by_file_type: Record<string, number>;
+  most_referenced?: Array<{
+    id: number;
+    title: string;
+    referenced_count: number;
+  }>;
 }
 
 export interface UploadDocumentRequest {
@@ -146,9 +189,7 @@ export interface UploadDocumentRequest {
   category_id: string;
   document_type: 'system_guide' | 'product' | 'process' | 'reference';
   tags?: string[];
-}
-
-export interface CreateCategoryRequest {
+}export interface CreateCategoryRequest {
   name: string;
   description?: string;
   color?: string;
@@ -207,6 +248,49 @@ export interface UpdateSettingsRequest {
   timeout_multiplier?: number;
   github_webhook_url?: string;
   slack_channel?: string;
+}
+
+// AI Provider Settings Types (Sprint 3 - Settings Page Dynamic Configuration)
+export interface AvailableProvider {
+  name: string;
+  display_name: string;
+  is_configured: boolean;
+  models: string[];
+  recommended_model: string | null;
+}
+
+export interface AvailableProvidersResponse {
+  providers: AvailableProvider[];
+  default_generation_provider: string;
+  default_generation_model: string;
+  default_execution_provider: string;
+  default_execution_model: string;
+}
+
+export interface UserSettings {
+  id: number;
+  user_id: number;
+  generation_provider: string;
+  generation_model: string;
+  generation_temperature: number;
+  generation_max_tokens: number;
+  execution_provider: string;
+  execution_model: string;
+  execution_temperature: number;
+  execution_max_tokens: number;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface UpdateUserSettingsRequest {
+  generation_provider?: string;
+  generation_model?: string;
+  generation_temperature?: number;
+  generation_max_tokens?: number;
+  execution_provider?: string;
+  execution_model?: string;
+  execution_temperature?: number;
+  execution_max_tokens?: number;
 }
 
 // Agent Activity types

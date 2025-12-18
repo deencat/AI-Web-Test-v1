@@ -1,10 +1,58 @@
 """CRUD operations for test cases."""
+import json
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_
 
 from app.models.test_case import TestCase, TestType, TestStatus, Priority
 from app.schemas.test_case import TestCaseCreate, TestCaseUpdate
+
+
+def parse_json_field(value: Any) -> Any:
+    """
+    Parse JSON string fields to Python objects.
+    
+    Args:
+        value: Value that might be a JSON string
+        
+    Returns:
+        Parsed value or original value if not a JSON string
+    """
+    if isinstance(value, str):
+        try:
+            # Try to parse as JSON first
+            return json.loads(value)
+        except (json.JSONDecodeError, ValueError):
+            # If it's a comma-separated string, split it into a list
+            if ',' in value:
+                return [item.strip() for item in value.split(',')]
+            return value
+    return value
+
+
+def parse_test_case_json_fields(test_case: TestCase) -> TestCase:
+    """
+    Parse JSON string fields in a test case to Python objects.
+    
+    Args:
+        test_case: Test case with potentially stringified JSON fields
+        
+    Returns:
+        Test case with parsed JSON fields
+    """
+    if test_case.steps and isinstance(test_case.steps, str):
+        test_case.steps = parse_json_field(test_case.steps)
+    
+    if test_case.tags and isinstance(test_case.tags, str):
+        test_case.tags = parse_json_field(test_case.tags)
+    
+    if test_case.test_metadata and isinstance(test_case.test_metadata, str):
+        test_case.test_metadata = parse_json_field(test_case.test_metadata)
+    
+    if test_case.test_data and isinstance(test_case.test_data, str):
+        test_case.test_data = parse_json_field(test_case.test_data)
+    
+    return test_case
 
 
 def create_test_case(db: Session, test_case: TestCaseCreate, user_id: int) -> TestCase:
@@ -51,7 +99,12 @@ def get_test_case(db: Session, test_case_id: int) -> Optional[TestCase]:
     Returns:
         Test case or None if not found
     """
-    return db.query(TestCase).filter(TestCase.id == test_case_id).first()
+    test_case = db.query(TestCase).filter(TestCase.id == test_case_id).first()
+    
+    if test_case:
+        parse_test_case_json_fields(test_case)
+    
+    return test_case
 
 
 def get_test_cases(
@@ -95,6 +148,10 @@ def get_test_cases(
     
     # Apply pagination and ordering
     test_cases = query.order_by(TestCase.created_at.desc()).offset(skip).limit(limit).all()
+    
+    # Parse JSON fields for each test case
+    for test_case in test_cases:
+        parse_test_case_json_fields(test_case)
     
     return test_cases, total
 
@@ -170,6 +227,11 @@ def get_test_cases_by_user(
     query = db.query(TestCase).filter(TestCase.user_id == user_id)
     total = query.count()
     test_cases = query.order_by(TestCase.created_at.desc()).offset(skip).limit(limit).all()
+    
+    # Parse JSON fields for each test case
+    for test_case in test_cases:
+        parse_test_case_json_fields(test_case)
+    
     return test_cases, total
 
 
@@ -194,6 +256,11 @@ def get_test_cases_by_type(
     query = db.query(TestCase).filter(TestCase.test_type == test_type)
     total = query.count()
     test_cases = query.order_by(TestCase.created_at.desc()).offset(skip).limit(limit).all()
+    
+    # Parse JSON fields for each test case
+    for test_case in test_cases:
+        parse_test_case_json_fields(test_case)
+    
     return test_cases, total
 
 
@@ -218,6 +285,11 @@ def get_test_cases_by_status(
     query = db.query(TestCase).filter(TestCase.status == status)
     total = query.count()
     test_cases = query.order_by(TestCase.created_at.desc()).offset(skip).limit(limit).all()
+    
+    # Parse JSON fields for each test case
+    for test_case in test_cases:
+        parse_test_case_json_fields(test_case)
+    
     return test_cases, total
 
 
