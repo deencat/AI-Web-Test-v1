@@ -1,10 +1,10 @@
 # Software Requirements Specification (SRS)  
 ## AI Web Test v1.0  
 
-**Version:** 2.0  
-**Date:** December 16, 2025  
+**Version:** 2.1  
+**Date:** December 18, 2025  
 **Development Environment:** Python-based, On-Premises (Windows 11)  
-**Current Status:** Phase 1 MVP - Integration Testing Complete  
+**Current Status:** Phase 1 MVP + Sprint 3 Enhancement - Integration Testing Complete  
 **Deployment:** Docker (planned), Native Windows (current)
 
 ***
@@ -19,6 +19,12 @@
 - Knowledge Base system
 - Authentication and authorization
 - Full test management CRUD
+- **Local Persistent Browser Debug Mode** (Sprint 3 Enhancement - December 2025)
+  - Two modes: Auto-setup (600 tokens) and Manual-setup (0 tokens)
+  - 85% token savings during test development
+  - Persistent browser sessions with CSRF/session preservation
+  - 7 debug API endpoints + 2 database tables
+  - Real-time DevTools integration
 
 **Future Phases (📋 PLANNED):**
 - Multi-agent architecture with orchestration
@@ -64,16 +70,17 @@
   - Future cloud adaptation possible with containerized architecture
 
 - **Core Modules:**  
-  1. **User Interface Layer:** Dashboard, natural language input, reporting views, agent monitoring interface, KB document upload and management
-  2. **API Layer:** RESTful/GraphQL APIs for UI-backend communication (Python FastAPI)
+  1. **User Interface Layer:** Dashboard, natural language input, reporting views, agent monitoring interface, KB document upload and management, **debug session UI (NEW)**
+  2. **API Layer:** RESTful/GraphQL APIs for UI-backend communication (Python FastAPI), **7 debug mode endpoints (NEW)**
   3. **Agent Orchestration Layer:** Central coordinator managing six specialized AI agents
   4. **Message Bus Layer:** Event-driven communication infrastructure for agent coordination
   5. **AI Agent System:** Six specialized agents (Requirements, Generation, Execution, Observation, Analysis, Evolution)
-  6. **Test Execution Engine:** Stagehand-based executor with Playwright/Selenium fallback
+  6. **Test Execution Engine:** Stagehand-based executor with Playwright/Selenium fallback, **persistent browser debug mode (NEW)**
   7. **AI Integration Layer:** OpenRouter API client with model management and fallback strategies
   8. **Knowledge Base Layer:** Categorized document repository with full-text search, metadata management, and category-aware agent context filtering
-  9. **Data Layer:** PostgreSQL for structured data, Redis for caching, Vector DB for agent memory, S3/MinIO for KB documents
-  10. **Observability Layer:** Prometheus metrics, distributed tracing, centralized logging  
+  9. **Data Layer:** PostgreSQL for structured data (including debug_sessions and debug_step_executions tables), Redis for caching, Vector DB for agent memory, S3/MinIO for KB documents
+  10. **Debug Session Management Layer (NEW):** Persistent browser lifecycle, auto/manual mode orchestration, token tracking, iteration history
+  11. **Observability Layer:** Prometheus metrics, distributed tracing, centralized logging  
 
 ***
 
@@ -457,7 +464,7 @@ Production Incidents + Test Results → Evolution Agent
 - Monitoring: Prometheus + Grafana for circuit breaker dashboards
 
 **Database Stack (Enhanced):**
-- Primary Database: PostgreSQL 15+ with optimized schema (9 core tables: users, projects, test_cases, test_executions, ml_models, predictions, agent_decisions, agent_messages, audit_logs)
+- Primary Database: PostgreSQL 15+ with optimized schema (11 core tables: users, projects, test_cases, test_executions, ml_models, predictions, agent_decisions, agent_messages, audit_logs, **debug_sessions, debug_step_executions (NEW)**)
 - Indexing Strategy: 30+ indexes including Primary key (9), Unique (5), Foreign key (8), Timestamp (4 with DESC), Composite (5 for multi-condition queries), Partial (6 with WHERE clauses), GIN for JSONB (3), GIN for full-text search (1)
 - Connection Pooling: PgBouncer 1.21.0 in transaction mode (25 default pool, 1000 max client connections, 10 min pool, 5 reserve pool) for 50x faster connection overhead
 - Query Optimization: EXPLAIN ANALYZE for performance tuning + materialized views (mv_project_stats refreshed every 15 min) + index monitoring queries (pg_stat_user_indexes, pg_stat_user_tables)
