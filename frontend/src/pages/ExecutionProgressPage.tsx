@@ -4,11 +4,13 @@ import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { ScreenshotGallery } from '../components/execution/ScreenshotGallery';
+import { ExecutionFeedbackViewer } from '../components/execution/ExecutionFeedbackViewer';
+import { CorrectionForm } from '../components/execution/CorrectionForm';
 import { DebugModeModal } from '../components/debug/DebugModeModal';
 import { DebugSessionView } from '../components/debug/DebugSessionView';
 import executionService from '../services/executionService';
 import debugService from '../services/debugService';
-import type { TestExecutionDetail, ExecutionStatus, ExecutionResult } from '../types/execution';
+import type { TestExecutionDetail, ExecutionStatus, ExecutionResult, ExecutionFeedback } from '../types/execution';
 import type { DebugMode } from '../types/debug';
 
 export function ExecutionProgressPage() {
@@ -21,6 +23,10 @@ export function ExecutionProgressPage() {
   // Debug mode state
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [activeDebugSession, setActiveDebugSession] = useState<string | null>(null);
+  
+  // Feedback correction modal state
+  const [showCorrectionModal, setShowCorrectionModal] = useState(false);
+  const [selectedFeedback, setSelectedFeedback] = useState<ExecutionFeedback | null>(null);
 
   const fetchExecutionDetail = async () => {
     if (!executionId) return;
@@ -55,6 +61,24 @@ export function ExecutionProgressPage() {
   // Close debug session
   const handleCloseDebug = () => {
     setActiveDebugSession(null);
+  };
+
+  // Handle correction workflow
+  const handleCorrectClick = (feedback: ExecutionFeedback) => {
+    setSelectedFeedback(feedback);
+    setShowCorrectionModal(true);
+  };
+
+  const handleCorrectionSuccess = () => {
+    setShowCorrectionModal(false);
+    setSelectedFeedback(null);
+    // Optionally refresh execution details to see updated feedback
+    fetchExecutionDetail();
+  };
+
+  const handleCorrectionCancel = () => {
+    setShowCorrectionModal(false);
+    setSelectedFeedback(null);
   };
 
   useEffect(() => {
@@ -231,6 +255,24 @@ export function ExecutionProgressPage() {
         {/* Screenshot Gallery */}
         <ScreenshotGallery steps={execution.steps} />
 
+        {/* Execution Feedback */}
+        {execution.failed_steps > 0 && (
+          <Card>
+            <div className="p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                🔍 Execution Feedback & Learning
+              </h2>
+              <p className="text-sm text-gray-600 mb-4">
+                Review failure details and submit corrections to improve future test execution accuracy.
+              </p>
+              <ExecutionFeedbackViewer
+                executionId={execution.id}
+                onCorrectClick={handleCorrectClick}
+              />
+            </div>
+          </Card>
+        )}
+
         {/* Error Message (if any) */}
         {execution.error_message && (
           <Card className="border-red-200 bg-red-50">
@@ -252,6 +294,32 @@ export function ExecutionProgressPage() {
         totalSteps={execution.total_steps}
         executionId={execution.id}
       />
+
+      {/* Correction Modal */}
+      {showCorrectionModal && selectedFeedback && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-gray-900">
+                  Submit Correction
+                </h2>
+                <button
+                  onClick={handleCorrectionCancel}
+                  className="text-gray-400 hover:text-gray-600 text-2xl"
+                >
+                  ×
+                </button>
+              </div>
+              <CorrectionForm
+                feedback={selectedFeedback}
+                onSuccess={handleCorrectionSuccess}
+                onCancel={handleCorrectionCancel}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }
