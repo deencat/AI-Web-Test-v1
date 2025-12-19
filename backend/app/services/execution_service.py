@@ -19,6 +19,8 @@ from app.models.test_execution import (
     ExecutionResult
 )
 from app.crud import test_execution as crud_execution
+from app.crud import execution_feedback as crud_feedback
+from app.schemas.execution_feedback import ExecutionFeedbackCreate
 
 
 class ExecutionConfig:
@@ -232,6 +234,19 @@ class ExecutionService:
                         passed_steps += 1
                     else:
                         failed_steps += 1
+                        
+                        # Capture execution feedback for failed step
+                        await self._capture_execution_feedback(
+                            db=db,
+                            execution_id=execution.id,
+                            step_index=idx - 1,  # 0-based index
+                            step_description=step_desc,
+                            error_message=result.get("error", "Step failed"),
+                            page=page,
+                            screenshot_path=screenshot_path,
+                            duration_ms=int(duration * 1000)
+                        )
+                        
                         # If step is critical and failed, stop execution
                         if result.get("critical", False):
                             break
@@ -258,6 +273,18 @@ class ExecutionService:
                         error_message=str(e),
                         screenshot_path=screenshot_path,
                         duration_seconds=duration
+                    )
+                    
+                    # Capture execution feedback for exception
+                    await self._capture_execution_feedback(
+                        db=db,
+                        execution_id=execution.id,
+                        step_index=idx - 1,  # 0-based index
+                        step_description=step_desc,
+                        error_message=str(e),
+                        page=page,
+                        screenshot_path=screenshot_path,
+                        duration_ms=int(duration * 1000)
                     )
                     
                     # Critical error, stop execution
@@ -437,6 +464,111 @@ class ExecutionService:
         except:
             pass
         return None
+    
+    async def _capture_execution_feedback(
+        self,
+        db: Session,
+        execution_id: int,
+        step_index: int,
+        step_description: str,
+        error_message: str,
+        page: Page,
+        screenshot_path: Optional[str],
+        duration_ms: int
+    ):
+        """
+        Capture execution feedback for failed steps.
+        This is the foundation of the learning system - collects context for pattern analysis.
+        """
+        try:
+            # Get current page context
+            page_url = page.url
+            
+            # Classify failure type from error message
+            failure_type = self._classify_failure_type(error_message)
+            
+            # Extract failed selector if present in error
+            failed_selector, selector_type = self._extract_selector_from_error(error_message)
+            
+            # Get page HTML snapshot for pattern analysis (limited to first 50KB)
+            page_html_snapshot = None
+            try:
+                html_content = await page.content()
+                if len(html_content) > 50000:
+                    page_html_snapshot = html_content[:50000] + "... [truncated]"
+                else:
+                    page_html_snapshot = html_content
+            except:
+                pass
+            
+            # Get viewport dimensions
+            viewport = page.viewport_size
+            viewport_width = viewport.get("width") if viewport else None
+            viewport_height = viewport.get("height") if viewport else None
+            
+            # Create feedback entry
+            feedback = ExecutionFeedbackCreate(
+                execution_id=execution_id,
+                step_index=step_index,
+                failure_type=failure_type,
+                error_message=error_message[:5000],  # Limit error message size
+                screenshot_url=screenshot_path,
+                page_url=page_url[:2000] if page_url else None,
+                page_html_snapshot=page_html_snapshot,
+                browser_type=self.config.browser,
+                viewport_width=viewport_width,
+                viewport_height=viewport_height,
+                failed_selector=failed_selector,
+                selector_type=selector_type,
+                step_duration_ms=duration_ms
+            )
+            
+            # Save feedback (with minimal overhead)
+            crud_feedback.create_feedback(db=db, feedback=feedback)
+            
+        except Exception as e:
+            # Don't let feedback capture break execution
+            print(f"Warning: Failed to capture execution feedback: {e}")
+    
+    def _classify_failure_type(self, error_message: str) -> Optional[str]:
+        """Classify failure type from error message."""
+        error_lower = error_message.lower()
+        
+        if "timeout" in error_lower or "timed out" in error_lower:
+            return "timeout"
+        elif "not found" in error_lower or "no element" in error_lower:
+            return "selector_not_found"
+        elif "assertion" in error_lower or "expected" in error_lower:
+            return "assertion_failed"
+        elif "network" in error_lower or "connection" in error_lower:
+            return "network_error"
+        elif "permission" in error_lower or "denied" in error_lower:
+            return "permission_error"
+        elif "navigation" in error_lower:
+            return "navigation_error"
+        else:
+            return "unknown_error"
+    
+    def _extract_selector_from_error(self, error_message: str) -> tuple[Optional[str], Optional[str]]:
+        """Extract selector and type from error message."""
+        import re
+        
+        # Try to find CSS selector
+        css_match = re.search(r'selector[:\s]+["\']([^"\']+)["\']', error_message)
+        if css_match:
+            return css_match.group(1), "css"
+        
+        # Try to find XPath
+        xpath_match = re.search(r'xpath[:\s]+["\']([^"\']+)["\']', error_message)
+        if xpath_match:
+            return xpath_match.group(1), "xpath"
+        
+        # Try to find text selector
+        text_match = re.search(r'text[:\s]+["\']([^"\']+)["\']', error_message)
+        if text_match:
+            return text_match.group(1), "text"
+        
+        return None, None
 
 
 # Singleton instance
