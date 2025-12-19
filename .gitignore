@@ -71,6 +71,21 @@ backend/venv/
 backend/env/
 backend/.env
 
+# SQLite databases (each developer has their own local database)
+# Database files are NOT committed (binary files cause conflicts)
+*.db
+*.sqlite
+*.sqlite3
+backend/*.db
+backend/*.sqlite
+backend/*.sqlite3
+
+# BUT we DO commit these database-related files:
+# ✅ migrations/*.py (schema changes - shared via Git)
+# ✅ db_seed.py (seed script - shared via Git)
+# ✅ seed_test_cases.json (seed data - shared via Git)
+# ✅ run_migrations.py (migration runner - shared via Git)
+
 # Test artifacts and screenshots
 backend/artifacts/
 backend/artifacts/screenshots/
