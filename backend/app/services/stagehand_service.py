@@ -708,8 +708,10 @@ class StagehandExecutionService:
                 print(f"[DEBUG] ⌨️  Detected typing action")
                 return await self._execute_type_simple(step_description)
             
-            # Check if it's a click action
-            elif any(word in desc_lower for word in ['click', 'select', 'choose', 'press']):
+            # Check if it's a click action (including tick for checkboxes)
+            # IMPORTANT: Check for 'tick' and 'checkbox' BEFORE checking for 'check' 
+            # to avoid false positive with verify/wait detection
+            elif any(word in desc_lower for word in ['click', 'select', 'choose', 'press', 'tick']) or 'checkbox' in desc_lower:
                 print(f"[DEBUG] 🖱️  Detected click action")
                 return await self._execute_click_simple(step_description)
             
@@ -1192,11 +1194,37 @@ class StagehandExecutionService:
                     "expected": step_description
                 }
             
-            # The text to type is usually the last quoted string
-            text_to_type = quoted_matches[-1]
-            
-            # Try to identify field type from description
+            # Try to identify field type from description FIRST
             desc_lower = step_description.lower()
+            
+            # Smart text extraction: find the quoted text that matches the field type
+            text_to_type = None
+            
+            if 'email' in desc_lower:
+                # Look for email-like text (contains @)
+                for text in quoted_matches:
+                    if '@' in text:
+                        text_to_type = text
+                        break
+            elif 'password' in desc_lower:
+                # Look for password (usually short, no @ or spaces, has special chars)
+                for text in quoted_matches:
+                    if '@' not in text and len(text) < 50 and not text.startswith('http'):
+                        text_to_type = text
+                        break
+            
+            # If still not found, use the first quoted string (not button text like 'Login')
+            if not text_to_type:
+                # Filter out common button texts
+                button_keywords = ['login', 'submit', 'continue', 'next', 'confirm', 'ok', 'cancel', 'close']
+                for text in quoted_matches:
+                    if text.lower() not in button_keywords:
+                        text_to_type = text
+                        break
+            
+            # Last resort: use first quoted string
+            if not text_to_type:
+                text_to_type = quoted_matches[0]
             
             print(f"[DEBUG] Will type: '{text_to_type}'")
             
