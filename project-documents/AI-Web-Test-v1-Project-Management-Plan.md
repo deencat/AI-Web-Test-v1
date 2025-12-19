@@ -1,13 +1,13 @@
 # AI Web Test v1.0 - Project Management Plan
 ## Multi-Agent Test Automation Platform
 
-**Version:** 3.6  
-**Date:** December 18, 2025  
-**Status:** ✅ Sprint 1 COMPLETE (100%) | ✅ Sprint 2 COMPLETE (100% - Including KB Integration Day 11) | ✅ Sprint 3 COMPLETE (100%) | ✅ Sprint 3 Enhancement COMPLETE (Local Persistent Browser Debug Mode) | 🎯 Integration Testing IN PROGRESS | 🚀 Ready for UAT  
+**Version:** 3.7  
+**Date:** December 19, 2025  
+**Status:** ✅ Sprint 1 COMPLETE (100%) | ✅ Sprint 2 COMPLETE (100% - Including KB Integration) | ✅ Sprint 3 COMPLETE (100%) | ✅ Sprint 3 Enhancement COMPLETE (Debug Mode) | 🎯 Sprint 4 IN PROGRESS (Backend ✅ Complete | Frontend ⏳ Pending) | 🚀 Ready for UAT  
 **Project Duration:** 32 weeks (8 months)  
-**Team Structure:** 2 Developers (Frontend + Backend parallel development)  
+**Team Structure:** 2 Developers (Developer A: Full-stack | Developer B: Parallel features)  
 **Methodology:** Agile with 2-week sprints + Pragmatic MVP approach  
-**Latest Update:** Sprint 3 Enhancement Complete (Dec 18, 2025) - Local Persistent Browser Debug Mode (Hybrid) implemented in 2.5 hours. Enables step-by-step debugging with 85% token savings (manual mode) or 68% savings (auto mode). Full-stack integration verified with KB-aware test generation, multi-provider model support, test suites, and now interactive debug mode. All core MVP features + enhancement operational. System ready for User Acceptance Testing (UAT) phase.  
+**Latest Update:** Sprint 4 Infrastructure & Versioning (Dec 19, 2025) - Database collaboration infrastructure complete (migrations + seeds approach, 6 documentation files, tested and committed to main). Test case version control backend complete (5 API endpoints, 718 lines, committed to feature branch). Frontend implementation pending (4 components, 14-21 hours estimated). Developer B can now sync database without conflicts. Industry-standard collaboration workflow operational.  
 
 ---
 
@@ -2910,6 +2910,290 @@ cd backend/artifacts/screenshots
 - Integration testing checklist created
 - Documentation collaboration
 - Git workflow executed smoothly
+
+---
+
+## 🚀 Sprint 4: Infrastructure Enhancement & Test Versioning (Week 7)
+
+### Status: 🎯 **IN PROGRESS** | Developer A: Backend ✅ Complete | Frontend ⏳ Pending
+
+**Sprint Start:** December 19, 2025  
+**Sprint Goal:** Database collaboration + Test case version control  
+**Duration:** 1-2 weeks  
+**Team:** Developer A (Frontend + Backend) | Developer B (Parallel work)
+
+---
+
+### Phase 1: Database Collaboration Infrastructure ✅ **COMPLETE**
+
+**Objective:** Enable two developers to collaborate without database conflicts
+
+**Problem Solved:**
+- ❌ Binary database files can't be merged in Git
+- ❌ Each developer overwriting other's work
+- ❌ Lost test data between developers
+- ✅ Solution: Migrations + seed scripts (industry standard)
+
+**Implementation (December 19, 2025):**
+1. ✅ **Migration Runner** (`run_migrations.py`) - 200 lines
+   - Tracks applied migrations in `migration_history` table
+   - Runs pending migrations in order
+   - Idempotent (safe to run multiple times)
+   - Status display (applied vs. pending)
+
+2. ✅ **Simple Seed Script** (`db_seed_simple.py`) - 80 lines
+   - Creates admin + qa_user (tested and working)
+   - Idempotent user creation
+   - Fast setup for new developers
+
+3. ✅ **Full Seed Script** (`db_seed.py`) - 350+ lines
+   - Seeds users, test cases, KB documents, suites
+   - Export/import test cases via JSON
+   - Reset database functionality
+   - Comprehensive data setup
+
+4. ✅ **Updated .gitignore** - Excludes `*.db` files
+   - Database files never committed (prevents conflicts)
+   - Migrations and seeds are committed (shared structure)
+   - Clear documentation in comments
+
+5. ✅ **Documentation** - 3 comprehensive guides
+   - `DATABASE-COLLABORATION-WORKFLOW.md` (300+ lines)
+   - `DATABASE-QUICK-START.md` (100 lines)
+   - `DATABASE-COLLABORATION-SOLUTION.md` (200+ lines)
+   - `DEVELOPER-B-SYNC-GUIDE.md` (400+ lines)
+   - `WHY-DATABASE-NOT-IN-GIT.md` (300+ lines)
+   - `GIT-COMMIT-SUCCESS.md` (200+ lines)
+
+**Benefits Achieved:**
+- ✅ No Git conflicts from binary files
+- ✅ Both developers have identical schema (via migrations)
+- ✅ Both developers have same test data (via seeds)
+- ✅ Easy reset to clean state
+- ✅ Industry-standard practice (Django/Rails approach)
+
+**Git Workflow:**
+- ✅ Infrastructure committed to `main` branch (commit: 4458e60)
+- ✅ Documentation committed to `main` branch
+- ✅ Ready for Developer B to merge into their feature branch
+
+**Time Investment:**
+- Planning & implementation: 2 hours
+- Testing (db_seed_simple.py): 30 minutes
+- Documentation: 2 hours
+- **Total:** ~4.5 hours
+
+---
+
+### Phase 2: Test Case Version Control ✅ **BACKEND COMPLETE** | ⏳ **FRONTEND PENDING**
+
+**Objective:** Track test case changes with full version history, rollback, and comparison
+
+**Backend Implementation (December 19, 2025):**
+
+1. ✅ **TestCaseVersion Model** (`backend/app/models/test_version.py`) - 65 lines
+   - Fields: id, test_case_id, version_number, steps, expected_result, test_data
+   - Tracking: created_at, created_by, change_reason, parent_version_id
+   - Relationships: TestCase, User, parent versions
+   - Auto-incrementing version numbers
+
+2. ✅ **VersionService** (`backend/app/services/version_service.py`) - 230 lines
+   - `save_version()` - Create new version with auto-increment
+   - `get_version_history()` - Retrieve versions (newest first)
+   - `rollback_to_version()` - Restore old content as new version
+   - `compare_versions()` - Diff two versions
+   - `delete_old_versions()` - Cleanup, keep N recent versions
+
+3. ✅ **Version API Endpoints** (`backend/app/api/v1/endpoints/versions.py`) - 230 lines
+   - PUT `/tests/{id}/steps` - Update test steps, create version
+   - GET `/tests/{id}/versions` - Get version history (limit 50)
+   - GET `/tests/{id}/versions/{version_id}` - Get specific version
+   - POST `/tests/{id}/versions/rollback` - Rollback to version
+   - GET `/tests/{id}/versions/compare/{v1}/{v2}` - Compare versions
+
+4. ✅ **Migration** (`backend/migrations/add_test_versions_table.py`) - 110 lines
+   - Creates `test_versions` table
+   - Idempotent (checks if table exists)
+   - Creates initial versions for existing tests
+
+5. ✅ **Router Integration** (`backend/app/api/v1/api.py`)
+   - Added versions router to API
+
+**Backend Testing:**
+- ✅ All endpoints tested via Swagger UI
+- ✅ Version creation verified
+- ✅ Rollback functionality working
+- ✅ Comparison logic validated
+
+**Git Workflow:**
+- ✅ Backend committed to `feature/sprint-4-test-versioning` branch (commit: c2e7462)
+- ✅ Pushed to GitHub
+- ✅ Pull request ready for review
+
+**Time Investment:**
+- Model + Service: 2 hours
+- API endpoints: 2 hours
+- Migration: 1 hour
+- Testing: 1 hour
+- **Total Backend:** ~6 hours
+
+---
+
+### Phase 3: Frontend Implementation ⏳ **PENDING** (Developer A)
+
+**Goal:** Build UI for version control features
+
+**Components to Build (14-21 hours estimated):**
+
+1. **TestStepEditor.tsx** (4-6 hours)
+   - Rich text editor for test steps
+   - Auto-save (debounced)
+   - Show current version number
+   - "Saving..." indicator
+   - API: PUT `/tests/{id}/steps`
+
+2. **VersionHistoryPanel.tsx** (3-4 hours)
+   - List all versions (newest first)
+   - Show version #, date, author, reason
+   - Actions: View, Rollback, Compare
+   - Pagination (50 versions)
+   - API: GET `/tests/{id}/versions`
+
+3. **VersionCompareDialog.tsx** (2-3 hours)
+   - Side-by-side diff view
+   - Highlighted changes (green/red/yellow)
+   - Field-by-field comparison
+   - API: GET `/tests/{id}/versions/compare/{v1}/{v2}`
+
+4. **RollbackConfirmDialog.tsx** (1-2 hours)
+   - Confirmation before rollback
+   - Input reason for rollback
+   - Show current vs. rollback target
+   - API: POST `/tests/{id}/versions/rollback`
+
+5. **Integration** (2-3 hours)
+   - Update TestDetailPage.tsx
+   - Wire up all components
+   - Add "Version History" button
+   - Show version number in header
+
+**Testing Checklist:**
+- ⏳ Create test → edit steps → verify version created
+- ⏳ View version history → verify all versions listed
+- ⏳ Compare versions → verify diff shown correctly
+- ⏳ Rollback → verify new version created with old content
+- ⏳ Rapid edits → verify multiple versions
+- ⏳ Multiple users → verify created_by tracking
+
+**Timeline:**
+- Estimated: 14-21 hours (~2-3 days)
+- Target completion: December 20-22, 2025
+
+---
+
+### Developer B Parallel Work
+
+**Option 1: Setup Database Collaboration (1 hour)**
+```powershell
+git checkout main
+git pull origin main
+cd backend
+python run_migrations.py
+python db_seed_simple.py
+```
+
+**Option 2: Test Sprint 4 Backend (2 hours)**
+- Pull feature branch
+- Test version control APIs via Swagger
+- Provide feedback on edge cases
+
+**Option 3: Work on Other Features (Varies)**
+- KB integration enhancements
+- Advanced search features
+- Test analytics dashboard
+
+---
+
+### Sprint 4 Success Criteria
+
+**Infrastructure:**
+- ✅ Both developers can work without database conflicts
+- ✅ Migration system tracks schema changes
+- ✅ Seed scripts share test data
+- ✅ Documentation enables smooth onboarding
+
+**Version Control:**
+- ✅ Backend API complete and tested
+- ⏳ Frontend components implemented
+- ⏳ Full integration tested
+- ⏳ User acceptance verified
+
+**Quality:**
+- ✅ No breaking changes to existing features
+- ✅ All existing tests still pass
+- ⏳ New tests added for versioning
+- ⏳ Performance validated (no degradation)
+
+---
+
+### Sprint 4 Deliverables
+
+**Completed:**
+1. ✅ Migration runner with tracking
+2. ✅ Simple seed script (working)
+3. ✅ Full seed script
+4. ✅ Database collaboration documentation (6 files)
+5. ✅ Test versioning backend (5 files)
+6. ✅ Version control API endpoints (5 endpoints)
+7. ✅ Migration for test_versions table
+8. ✅ Git commits properly separated (infrastructure vs. features)
+
+**In Progress:**
+1. ⏳ Frontend version control components
+2. ⏳ Integration testing
+3. ⏳ User documentation
+
+**Pending:**
+1. ⏳ Pull request review
+2. ⏳ Merge to main (after frontend complete)
+3. ⏳ Production deployment
+
+---
+
+### Sprint 4 Timeline
+
+| Date | Activity | Status | Developer |
+|------|----------|--------|-----------|
+| Dec 19 | Database collaboration infrastructure | ✅ Complete | Developer A |
+| Dec 19 | Test versioning backend | ✅ Complete | Developer A |
+| Dec 19 | Git commits and documentation | ✅ Complete | Developer A |
+| Dec 20-22 | Frontend components | ⏳ In Progress | Developer A |
+| Dec 20 | Developer B database setup | ⏳ Pending | Developer B |
+| Dec 23 | Integration testing | ⏳ Pending | Both |
+| Dec 23 | Code review | ⏳ Pending | Both |
+| Dec 24 | Merge to main | ⏳ Pending | Developer A |
+
+---
+
+### Key Learnings (Sprint 4)
+
+**What Went Well:**
+1. ✅ Database collaboration solved real collaboration pain point
+2. ✅ Industry-standard approach (migrations + seeds)
+3. ✅ Proper Git workflow (infrastructure vs. features)
+4. ✅ Comprehensive documentation for onboarding
+5. ✅ Backend implementation smooth and well-tested
+
+**Challenges:**
+1. ⚠️ Need to explain why database files aren't committed
+2. ⚠️ Frontend complexity higher than expected (4 components)
+3. ⚠️ Need better coordination with Developer B
+
+**Next Sprint Improvements:**
+1. 📋 Plan frontend components earlier
+2. 📋 Set up daily sync meetings
+3. 📋 Create shared task board
+4. 📋 Define clearer handoff points
 
 ---
 
