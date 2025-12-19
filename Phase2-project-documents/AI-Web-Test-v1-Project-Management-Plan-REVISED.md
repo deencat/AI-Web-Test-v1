@@ -810,112 +810,122 @@ def train_ml_models():
 
 ---
 
-### Phase 2 Sprint Breakdown (REVISED) - With Developer Task Split
+### Phase 2 Sprint Breakdown (REVISED) - Feature-Based Developer Split
+
+**Developer Assignment Philosophy:**
+- Each developer owns **complete features** (full-stack: backend + frontend)
+- Developers can assist each other, but each feature has a clear owner
+- Both developers are full-stack capable (can work on React + FastAPI/Python)
+
+---
 
 #### Sprint 4 (Week 9-10): Editing + Feedback Collection
 **Goal:** Enable test editing and start collecting execution feedback
 
 **Week 1 Tasks:**
 
-**Backend Developer (5 days):**
-- [ ] Day 1-2: Implement `test_versions` table and model
-  - Create SQLAlchemy model with full change history
-  - Add version_number, created_by, change_reason fields
-  - Implement parent_version_id for rollback tree
-  - Write migration script
-- [ ] Day 2-3: Create `PUT /api/v1/tests/{id}/steps` endpoint
-  - Accept step-level updates
-  - Validate step structure
-  - Create new version on each edit
-  - Return updated test with version info
-- [ ] Day 3-4: Build version control logic
-  - Implement save_version() function
-  - Create retrieve_version() with history
-  - Build rollback_to_version() logic
-  - Add version comparison utility
-- [ ] Day 4-5: Implement `ExecutionFeedback` model
-  - Create database schema with all fields
-  - Add relationships to executions/tests
-  - Implement feedback collection in execution service
-  - Test automatic feedback capture
-
-**Frontend Developer (5 days):**
-- [ ] Day 1-2: Create inline step editor UI component
-  - Build TestStepEditor.tsx with drag-drop reordering
-  - Add step editing modal
-  - Implement step validation
-  - Add save/cancel buttons
-- [ ] Day 2-3: Add version history viewer
+**Developer A - Feature Owner: Test Editing & Versioning (5 days):**
+- [ ] Day 1-2: **Backend** - Implement test versioning system
+  - Create `test_versions` table and SQLAlchemy model
+  - Add version_number, created_by, change_reason, parent_version_id fields
+  - Implement save_version(), retrieve_version(), rollback_to_version()
+  - Create `PUT /api/v1/tests/{id}/steps` endpoint with validation
+- [ ] Day 2-3: **Frontend** - Build inline step editor UI
+  - Create TestStepEditor.tsx with drag-drop reordering
+  - Build step editing modal with validation
+  - Add save/cancel buttons and keyboard shortcuts (Ctrl+S)
+  - Implement unsaved changes warning
+- [ ] Day 3-4: **Frontend** - Add version history viewer
   - Create VersionHistoryPanel.tsx component
-  - Display version timeline
-  - Show diff between versions
-  - Add rollback button
-- [ ] Day 3-4: Build test editing page integration
-  - Update TestDetailPage with edit mode
-  - Add edit/save/cancel workflow
-  - Integrate version selector
-  - Add unsaved changes warning
-- [ ] Day 4-5: Create feedback UI components
-  - Build ExecutionFeedbackViewer.tsx
-  - Display failure context (screenshots, errors)
-  - Add correction input form
-  - Implement submit correction workflow
+  - Display version timeline and diff view
+  - Add rollback button and version comparison
+  - Integrate version selector into TestDetailPage
+- [ ] Day 4-5: **Integration** - Complete editing feature
+  - Add unit tests for version creation and rollback
+  - Test edit → save → version created workflow
+  - Performance testing (<100ms overhead)
+  - Document editing workflow
+
+**Developer B - Feature Owner: Execution Feedback System (5 days):**
+- [ ] Day 1-2: **Backend** - Implement feedback data model
+  - Create `ExecutionFeedback` table schema
+  - Add relationships to executions and tests
+  - Build automatic feedback capture in execution service
+  - Store screenshots, errors, browser state, selector failures
+- [ ] Day 2-3: **Frontend** - Create feedback viewer UI
+  - Build ExecutionFeedbackViewer.tsx component
+  - Display failure context (screenshots, errors, timeline)
+  - Add visual failure indicators and error highlighting
+  - Implement feedback detail modal
+- [ ] Day 3-4: **Backend** - Build correction workflow API
+  - Create POST /api/v1/feedback/{id}/correction endpoint
+  - Link corrections to original failures
+  - Calculate correction confidence scores
+  - Store correction source (human/AI)
+- [ ] Day 4-5: **Frontend** - Complete correction UI
+  - Add correction input form with validation
+  - Create correction history view
+  - Implement filter by failure type
+  - Add bulk correction approval
 
 **Week 2 Tasks:**
 
-**Backend Developer (5 days):**
-- [ ] Day 1-2: Build correction workflow API
-  - Create POST /api/v1/feedback/{id}/correction endpoint
-  - Link corrections to original failures
-  - Calculate correction confidence
-  - Store correction source (human/AI)
-- [ ] Day 2-3: Add unit tests for versioning
-  - Test version creation
-  - Test rollback functionality
-  - Test version comparison
+**Developer A - Test Editing Polish & Testing (5 days):**
+- [ ] Day 1-2: **Backend** - Add version control tests
+  - Unit tests for version comparison
   - Test concurrent edits handling
-- [ ] Day 3-4: Add integration tests
-  - Test full editing workflow
-  - Test feedback collection pipeline
-  - Test correction submission
-  - Performance benchmarks
-- [ ] Day 4-5: Performance testing & optimization
-  - Ensure <100ms feedback overhead
-  - Optimize version queries
-  - Add database indexes
-  - Document API changes
-
-**Frontend Developer (5 days):**
-- [ ] Day 1-2: Complete feedback UI
-  - Add feedback list view
-  - Implement filter by failure type
-  - Create correction history view
-  - Add bulk correction approval
-- [ ] Day 2-3: Add UI polish
-  - Improve edit mode transitions
-  - Add loading states
-  - Add success/error toasts
-  - Implement keyboard shortcuts (Ctrl+S to save)
-- [ ] Day 3-4: Integration testing
-  - Test edit → save → version created
   - Test rollback functionality
-  - Test feedback submission
+  - Add database indexes for performance
+- [ ] Day 2-3: **Frontend** - UI polish for editing
+  - Improve edit mode transitions
+  - Add loading states and success/error toasts
+  - Implement inline validation feedback
   - Cross-browser testing
-- [ ] Day 4-5: Documentation & bug fixes
-  - Write user guide for test editing
-  - Create demo video/screenshots
+- [ ] Day 3-4: **Integration** - End-to-end testing
+  - Test full editing workflow with versioning
+  - Performance benchmarks for version queries
   - Fix reported bugs
-  - Prepare for sprint review
+  - Create user guide screenshots
+- [ ] Day 4-5: **Documentation** - Finalize editing feature
+  - Write API documentation updates
+  - Create demo video for test editing
+  - Update help tooltips
+  - Prepare sprint review demo
+
+**Developer B - Feedback System Polish & Testing (5 days):**
+- [ ] Day 1-2: **Backend** - Feedback system tests
+  - Unit tests for feedback collection
+  - Test correction submission workflow
+  - Ensure <100ms feedback overhead
+  - Integration tests for correction API
+- [ ] Day 2-3: **Frontend** - Feedback UI enhancements
+  - Add feedback list view with sorting
+  - Implement advanced filtering
+  - Add feedback statistics dashboard
+  - Polish correction submission flow
+- [ ] Day 3-4: **Integration** - Complete feedback feature
+  - Test feedback collection pipeline end-to-end
+  - Test correction workflow
+  - Performance testing
+  - Fix reported issues
+- [ ] Day 4-5: **Documentation** - Finalize feedback system
+  - Document feedback data schema
+  - Create correction workflow guide
+  - Prepare metrics dashboard
+  - Sprint review preparation
 
 **Deliverables:**
-- ✅ Users can edit test steps in-place
-- ✅ Version history tracked with rollback capability
-- ✅ Every execution captures detailed feedback
-- ✅ Corrections linked to original failures
+- ✅ **Developer A**: Users can edit test steps in-place with version history
+- ✅ **Developer B**: Every execution captures detailed feedback with corrections
+- ✅ 85%+ reduction in test regenerations
+- ✅ 100% of executions have feedback records
 
-**Team:** 2 developers (1 backend, 1 frontend)
+**Team:** 2 full-stack developers (feature-based ownership)
 
-**Daily Standups:** Both developers sync progress, dependencies, blockers
+**Coordination Points:**
+- Daily 15-min standups to sync progress and blockers
+- Mid-sprint (Day 5) integration checkpoint between editing and feedback features
+- End-of-sprint demo (both developers present their features)
 
 **Success Metrics:**
 - 85%+ reduction in test regenerations
@@ -929,152 +939,108 @@ def train_ml_models():
 
 **Week 1 Tasks:**
 
-**Backend Developer A (Lead - Pattern Analysis, 5 days):**
-- [ ] Day 1-2: Implement `PatternAnalyzer` service core
-  - Create service class structure
-  - Implement failure pattern matching algorithm
-  - Build confidence scoring system
+**Developer A - Feature Owner: Pattern Recognition & Auto-Suggestions (5 days):**
+- [ ] Day 1-2: **Backend** - Implement PatternAnalyzer service core
+  - Create PatternAnalyzer service class structure
+  - Build failure pattern matching algorithm
+  - Implement confidence scoring system (0.0-1.0)
   - Add common pattern extraction logic
-- [ ] Day 2-3: Create pattern matching algorithms
-  - Statistical analysis of failure types
-  - Domain-based pattern grouping
-  - Temporal pattern detection
-  - Build evidence aggregation
-- [ ] Day 3-4: Build auto-fix suggestion engine
-  - Implement suggestion ranking
-  - Create high-confidence auto-apply (>0.85)
-  - Build medium-confidence suggestions (0.6-0.85)
-  - Add suggestion explain ability
-- [ ] Day 4-5: Add anomaly detection
-  - Simple statistical outlier detection
-  - Performance anomaly detection
-  - Failure rate anomalies
-  - Alert threshold configuration
-
-**Backend Developer B (KB & Integration, 5 days):**
-- [ ] Day 1-2: Add new KB categories
-  - Create `test_patterns` category
-  - Create `failure_lessons` category
-  - Create `selector_library` category
-  - Update KB schema if needed
-- [ ] Day 2-3: Implement auto-KB population
-  - Build success pattern extraction
-  - Extract working selectors from passes
-  - Generate failure lessons from failures
-  - Schedule automated population jobs
-- [ ] Day 3-4: Create KB API endpoints
-  - GET /api/v1/kb/patterns
-  - GET /api/v1/kb/lessons
-  - GET /api/v1/kb/selectors/{domain}
-  - POST /api/v1/kb/auto-populate
-- [ ] Day 4-5: Integration with pattern analyzer
-  - Connect analyzer to KB
-  - Implement pattern retrieval in suggestions
-  - Add KB context to auto-fix logic
-  - Test end-to-end flow
-
-**Frontend Developer (5 days):**
-- [ ] Day 1-2: Build suggestions UI
+- [ ] Day 2-3: **Backend** - Build auto-fix suggestion engine
+  - Create statistical analysis of failure types
+  - Implement domain-based pattern grouping
+  - Build suggestion ranking algorithm
+  - Add high-confidence auto-apply (>0.85) and medium-confidence suggestions (0.6-0.85)
+- [ ] Day 3-4: **Frontend** - Build suggestions UI
   - Create SuggestionCard.tsx component
   - Display confidence scores with progress bars
   - Add apply/dismiss buttons
   - Show evidence count and reasoning
-- [ ] Day 2-3: Create pattern library viewer
+- [ ] Day 4-5: **Frontend** - Create pattern library viewer
   - Build PatternLibrary.tsx page
   - Display learned patterns by domain
   - Show pattern usage statistics
-  - Add pattern search/filter
-- [ ] Day 3-4: Enhance test generation UI
-  - Add KB pattern selector
-  - Show KB suggestions during generation
+  - Add pattern search/filter functionality
+
+**Developer B - Feature Owner: Knowledge Base Enhancement (5 days):**
+- [ ] Day 1-2: **Backend** - Add new KB categories
+  - Create `test_patterns` category in KB
+  - Create `failure_lessons` category
+  - Create `selector_library` category
+  - Update KB schema and relationships
+- [ ] Day 2-3: **Backend** - Implement auto-KB population
+  - Build success pattern extraction from passed tests
+  - Extract working selectors from successful executions
+  - Generate failure lessons from failed executions
+  - Create scheduled automated population jobs
+- [ ] Day 3-4: **Backend** - Create KB API endpoints
+  - Implement GET /api/v1/kb/patterns
+  - Create GET /api/v1/kb/lessons
+  - Build GET /api/v1/kb/selectors/{domain}
+  - Add POST /api/v1/kb/auto-populate
+- [ ] Day 4-5: **Frontend** - Enhance test generation UI with KB
+  - Add KB pattern selector in generation form
+  - Show KB suggestions during test generation
   - Display "similar patterns found" notices
-  - Add KB context preview
-- [ ] Day 4-5: Build anomaly alerts UI
-  - Create AnomalyAlertBanner.tsx
-  - Show anomaly details in execution view
-  - Add anomaly history viewer
-  - Implement dismiss/acknowledge actions
+  - Add KB context preview panel
 
 **Week 2 Tasks:**
 
-**Backend Developer A (Pattern & Testing, 5 days):**
-- [ ] Day 1-2: Enhance test generation prompts
-  - Integrate KB patterns into prompts
-  - Add failure lessons as warnings
-  - Include selector library references
-  - Implement context-aware generation
-- [ ] Day 2-3: Unit tests for pattern analyzer
-  - Test pattern matching accuracy
-  - Test confidence calculation
+**Developer A - Pattern System Polish & Integration (5 days):**
+- [ ] Day 1-2: **Backend** - Add anomaly detection
+  - Implement simple statistical outlier detection
+  - Build performance anomaly detection
+  - Add failure rate anomaly tracking
+  - Create alert threshold configuration
+- [ ] Day 2-3: **Frontend** - Build anomaly alerts UI
+  - Create AnomalyAlertBanner.tsx component
+  - Show anomaly details in execution view
+  - Add anomaly history viewer
+  - Implement dismiss/acknowledge actions
+- [ ] Day 3-4: **Testing** - Pattern analyzer tests
+  - Unit tests for pattern matching accuracy
+  - Test confidence calculation correctness
   - Test auto-apply logic
-  - Test anomaly detection
-- [ ] Day 3-4: Performance optimization
-  - Optimize pattern queries (<5s target)
+  - Test anomaly detection triggers
+- [ ] Day 4-5: **Integration** - Complete pattern feature
+  - End-to-end pattern flow testing
+  - Performance optimization (<5s pattern queries)
   - Add caching for common patterns
-  - Implement batch pattern analysis
-  - Profile and optimize bottlenecks
-- [ ] Day 4-5: Integration testing & documentation
-  - End-to-end pattern flow test
-  - Load testing with 1000+ feedbacks
-  - API documentation updates
-  - Deploy to staging
+  - Documentation and demo prep
 
-**Backend Developer B (KB & API, 5 days):**
-- [ ] Day 1-2: Finalize KB integration
+**Developer B - KB Integration & Test Generation Enhancement (5 days):**
+- [ ] Day 1-2: **Backend** - Integrate KB with pattern analyzer
+  - Connect PatternAnalyzer to KB data
+  - Implement pattern retrieval in suggestions
+  - Add KB context to auto-fix logic
+  - Test end-to-end KB → Pattern → Suggestion flow
+- [ ] Day 2-3: **Backend** - Enhance test generation prompts
+  - Integrate KB patterns into generation prompts
+  - Add failure lessons as warnings to LLM
+  - Include selector library references
+  - Implement context-aware test generation
+- [ ] Day 3-4: **Testing** - KB integration tests
   - Test auto-population accuracy
-  - Tune pattern extraction algorithms
-  - Add manual KB curation endpoints
-  - Implement KB versioning
-- [ ] Day 2-3: Create KB analytics
-  - Track pattern usage frequency
-  - Measure pattern effectiveness
-  - Generate KB health metrics
-  - Add KB recommendation engine
-- [ ] Day 3-4: Integration tests for KB
-  - Test pattern retrieval performance
-  - Test auto-population jobs
   - Test KB search across categories
+  - Test pattern retrieval performance
   - Cross-domain pattern tests
-- [ ] Day 4-5: Bug fixes & polish
-  - Fix reported issues
-  - Optimize KB queries
-  - Add missing API validations
-  - Prepare demo data
-
-**Frontend Developer (5 days):**
-- [ ] Day 1-2: Complete suggestions integration
-  - Connect to suggestion API
-  - Handle suggestion application
-  - Add success/failure feedback
-  - Implement suggestion history
-- [ ] Day 2-3: Polish pattern library UI
-  - Add visualizations (charts for usage)
-  - Improve search/filter UX
-  - Add pattern comparison view
-  - Implement pattern export
-- [ ] Day 3-4: Integration testing
-  - Test suggestion workflow
-  - Test KB pattern retrieval
-  - Test anomaly alerts
-  - Cross-browser compatibility
-- [ ] Day 4-5: Documentation & demo prep
-  - Create user guide screenshots
-  - Record demo video
-  - Update help tooltips
-  - Prepare sprint review presentation
+- [ ] Day 4-5: **Backend** - KB analytics & polish
+  - Track pattern usage frequency
+  - Measure pattern effectiveness metrics
+  - Generate KB health dashboard data
+  - Fix reported issues and optimize queries
 
 **Deliverables:**
-- ✅ System suggests fixes based on past corrections
-- ✅ High-confidence fixes applied automatically (>0.85)
-- ✅ KB automatically learns from successful tests
-- ✅ Test generation quality improves 30-40%
+- ✅ **Developer A**: System suggests fixes based on past corrections with auto-apply
+- ✅ **Developer B**: KB automatically learns from tests and enhances generation
+- ✅ 70%+ of suggestions accepted by users
+- ✅ Test generation success rate improves from 60% to 85%
 
-**Team:** 2 developers (1.5 backend, 0.5 frontend)
+**Team:** 2 full-stack developers (feature-based ownership)
 
 **Coordination Points:**
-- Daily syncs between Backend A & B for pattern/KB integration
-- Mid-sprint review (Day 5) to align on API contracts
-- Weekly demo of working suggestions to stakeholders
+- Day 3 mid-sprint sync: Ensure Pattern API and KB API are compatible
+- Day 5 integration checkpoint: Test PatternAnalyzer + KB integration
+- Daily standups to coordinate shared KB data model
 
 **Success Metrics:**
 - 70%+ of suggestions accepted by users
@@ -1088,105 +1054,109 @@ def train_ml_models():
 
 **Week 1 Tasks:**
 
-**Backend Developer (5 days):**
-- [ ] Day 1-2: Create Learning Insights API
+**Developer A - Feature Owner: Learning Insights Dashboard (5 days):**
+- [ ] Day 1-2: **Backend** - Create Learning Insights API
   - Implement `/api/v1/learning/insights` endpoint
-  - Build failure analysis query (top failures, trends)
-  - Create success trend calculation (7/30/90 days)
-  - Build pattern library statistics
-- [ ] Day 2-3: Build suggested improvements query
-  - Identify tests with repeated failures
-  - Find patterns with high success rates
-  - Detect improvement opportunities
-  - Calculate confidence scores
-- [ ] Day 3-4: Implement `PromptTemplate` model
-  - Create database schema
-  - Add performance tracking fields
-  - Implement A/B testing selection logic
-  - Build template versioning
-- [ ] Day 4-5: Create prompt management API
-  - POST /api/v1/prompts/templates
-  - GET /api/v1/prompts/templates
-  - PUT /api/v1/prompts/templates/{id}
-  - POST /api/v1/prompts/ab-test/results
-  - Auto-deactivation logic for underperformers
-
-**Frontend Developer (5 days):**
-- [ ] Day 1-2: Build Learning Insights page
+  - Build failure analysis query (top failures by type)
+  - Create success trend calculation (7/30/90 day windows)
+  - Build pattern library statistics aggregation
+- [ ] Day 2-3: **Backend** - Build suggested improvements query
+  - Identify tests with repeated failures (>3 failures)
+  - Find high-success patterns (>85% success rate)
+  - Detect improvement opportunities using statistical analysis
+  - Calculate confidence scores for suggestions
+- [ ] Day 3-4: **Frontend** - Build Learning Insights page layout
   - Create LearningInsightsPage.tsx
-  - Design dashboard layout (3-column grid)
+  - Design 3-column dashboard grid layout
   - Add section headers and navigation
-  - Implement responsive design
-- [ ] Day 2-3: Add Recharts visualizations
-  - Failure analysis bar chart (top 10 failures)
+  - Implement responsive design (mobile-friendly)
+- [ ] Day 4-5: **Frontend** - Add Recharts visualizations
+  - Failure analysis bar chart (top 10 failure types)
   - Success rate trend line chart (30 days)
   - Pattern usage donut chart
   - Anomaly timeline chart
-- [ ] Day 3-4: Create insights widgets
+
+**Developer B - Feature Owner: Prompt A/B Testing System (5 days):**
+- [ ] Day 1-2: **Backend** - Implement PromptTemplate model
+  - Create `prompt_templates` database schema
+  - Add performance tracking fields (success_rate, avg_duration, usage_count)
+  - Implement A/B testing selection logic (weighted random)
+  - Build template versioning system
+- [ ] Day 2-3: **Backend** - Create prompt management API
+  - POST /api/v1/prompts/templates (create template)
+  - GET /api/v1/prompts/templates (list templates)
+  - PUT /api/v1/prompts/templates/{id} (update template)
+  - POST /api/v1/prompts/ab-test/results (record result)
+  - Auto-deactivation logic for underperformers (<60% success)
+- [ ] Day 3-4: **Frontend** - Build prompt management UI
+  - Create PromptManagementPage.tsx
+  - Display template list with real-time metrics
+  - Add edit template modal with syntax highlighting
+  - Implement traffic allocation sliders (0-100%)
+- [ ] Day 4-5: **Frontend** - Add A/B testing UI
+  - Show active A/B tests dashboard
+  - Display performance comparison table
+  - Add template comparison chart (side-by-side)
+  - Implement activate/deactivate toggles
+
+**Week 2 Tasks:**
+
+**Developer A - Dashboard Polish & Completion (5 days):**
+- [ ] Day 1-2: **Frontend** - Create insights widgets
   - Build FailureAnalysisWidget.tsx
   - Create SuccessTrendWidget.tsx
   - Build PatternLibraryWidget.tsx
   - Create SuggestedImprovementsWidget.tsx
-- [ ] Day 4-5: Add interactivity
-  - Click charts to drill down
-  - Add date range selector
-  - Implement filter controls
-  - Add export to CSV/PDF
-
-**Week 2 Tasks:**
-
-**Backend Developer (5 days):**
-- [ ] Day 1-2: Build A/B testing engine
-  - Implement weighted random selection
-  - Create running average calculations
-  - Build auto-deactivation triggers (<60% success)
-  - Add A/B test result tracking
-- [ ] Day 2-3: Optional: Train simple ML models
-  - Logistic Regression for success prediction
-  - Random Forest for failure type classification
-  - Model training scheduler (weekly)
-  - Model performance tracking
-- [ ] Day 3-4: Comprehensive testing
-  - Unit tests for insights queries
-  - Test A/B selection algorithm
-  - Test auto-deactivation logic
-  - Performance benchmarks (<2s dashboard load)
-- [ ] Day 4-5: Phase 2 final polish
-  - Fix all reported bugs
-  - Code review and refactoring
-  - Security review
-  - Prepare for demo
-
-**Frontend Developer (5 days):**
-- [ ] Day 1-2: Build prompt management UI
-  - Create PromptManagementPage.tsx
-  - Display template list with metrics
-  - Add edit template modal
-  - Implement traffic allocation sliders (0-100%)
-- [ ] Day 2-3: Add A/B testing UI
-  - Show active A/B tests
-  - Display performance comparison table
-  - Add template comparison chart
-  - Implement activate/deactivate toggles
-- [ ] Day 3-4: Integration testing
-  - Test insights dashboard loading
+- [ ] Day 2-3: **Frontend** - Add interactivity & drill-downs
+  - Click charts to drill down into details
+  - Add date range selector (7/30/90 days, custom)
+  - Implement filter controls (by domain, test suite)
+  - Add export to CSV/PDF functionality
+- [ ] Day 3-4: **Testing** - Dashboard integration tests
+  - Test insights dashboard loading (<2s target)
   - Test chart interactivity
-  - Test prompt management CRUD
-  - Test A/B testing workflow
-- [ ] Day 4-5: Documentation & demo
-  - Create user guide for insights
+  - Test data refresh and real-time updates
+  - Cross-browser compatibility testing
+- [ ] Day 4-5: **Documentation** - Finalize dashboard feature
+  - Create user guide for insights dashboard
   - Record feature walkthrough video
-  - Update help documentation
-  - Prepare Phase 2 completion report
+  - Add help tooltips for each widget
+  - Prepare sprint review demo
+
+**Developer B - A/B Testing Engine & ML Integration (5 days):**
+- [ ] Day 1-2: **Backend** - Build A/B testing engine
+  - Implement weighted random selection algorithm
+  - Create running average calculations
+  - Build auto-deactivation triggers (<60% success after 50 uses)
+  - Add A/B test result tracking and comparison
+- [ ] Day 2-3: **Backend** - Optional: Train simple ML models
+  - Logistic Regression for test success prediction
+  - Random Forest for failure type classification
+  - Model training scheduler (weekly auto-training)
+  - Model performance tracking and alerts
+- [ ] Day 3-4: **Testing** - A/B testing system tests
+  - Unit tests for selection algorithm fairness
+  - Test auto-deactivation logic
+  - Test template performance tracking
+  - Load testing with 1000+ template uses
+- [ ] Day 4-5: **Phase 2 Final Polish** - Bug fixes & deployment
+  - Fix all reported bugs across Phase 2 features
+  - Code review and refactoring
+  - Security review (input validation, SQL injection prevention)
+  - Deploy to production and prepare Phase 2 completion demo
 
 **Deliverables:**
-- ✅ Learning Insights dashboard operational
-- ✅ QA team sees what system is learning
-- ✅ Prompt A/B testing automatically optimizes prompts
-- ✅ Underperforming prompts auto-deactivated
-- ✅ Optional: ML models for success/failure prediction
+- ✅ **Developer A**: Learning Insights dashboard shows what system is learning
+- ✅ **Developer B**: Prompt A/B testing automatically optimizes prompts
+- ✅ Underperforming prompts auto-deactivated (<60% success)
+- ✅ Optional: ML models for success/failure prediction (>75% accuracy)
 
-**Team:** 2 developers (1 backend, 1 frontend)
+**Team:** 2 full-stack developers (feature-based ownership)
+
+**Coordination Points:**
+- Day 3 integration sync: Ensure dashboard can display prompt A/B test results
+- Day 5 mid-sprint checkpoint: Demo working dashboard + A/B testing
+- Final sprint review (Day 10): Both developers present complete Phase 2 features
 
 **Success Metrics:**
 - Dashboard loads in <2 seconds
@@ -1195,9 +1165,10 @@ def train_ml_models():
 - Optional: ML prediction accuracy >75%
 
 **Sprint Review & Retrospective:**
-- Final demo to stakeholders (both devs present)
-- Collect feedback on Phase 2 features
-- Retrospective: What went well, what to improve
+- Final Phase 2 demo to stakeholders (both developers present)
+- Collect feedback on all Phase 2 features (editing, feedback, patterns, KB, dashboard, A/B testing)
+- Retrospective: What went well, what to improve for Phase 3
+- Celebrate Phase 2 completion! 🎉
 - Plan Phase 3 kickoff
 
 **Success Metrics:**
@@ -1476,83 +1447,118 @@ Implement the **full multi-agent architecture** (including delayed Observation A
 
 ## Phase 2 Developer Task Split Summary
 
-### Team Structure
-- **Backend Developer**: Full-stack backend engineer focused on APIs, services, database
-- **Frontend Developer**: React/TypeScript developer focused on UI/UX, components, integration
-- **Working Model**: Parallel development with daily sync meetings
+### Team Structure - Feature-Based Development Approach
+
+**Key Philosophy:** 
+- **Feature Ownership, Not Layer Ownership** - Each developer owns complete features (full-stack: backend + frontend)
+- **Full-Stack Developers** - Both developers are capable of working across the stack (Python/FastAPI + React/TypeScript)
+- **Collaboration Over Silos** - Developers can assist each other, but each feature has a clear owner for accountability
+
+**Developer Roles:**
+- **Developer A**: Full-stack engineer focused on assigned features (owns backend + frontend for their features)
+- **Developer B**: Full-stack engineer focused on assigned features (owns backend + frontend for their features)
+- **Working Model**: Feature-based parallel development with integration checkpoints
+
+---
+
+## Phase 2: Developer Task Split Summary (Feature-Based)
 
 ### Sprint 4 (Week 9-10): Test Editing & Feedback Collection
 
-**Backend Developer Focus (10 days):**
-1. Database schema design (test_versions, execution_feedback)
-2. Version control logic (save, retrieve, rollback)
-3. Feedback collection pipeline
-4. Correction workflow API
-5. Unit & integration tests
-6. Performance optimization
+**Developer A - Feature: Test Editing & Versioning (10 days):**
+- **Backend (5 days):**
+  - Implement `test_versions` table and version control logic
+  - Create `PUT /api/v1/tests/{id}/steps` endpoint
+  - Build save_version(), retrieve_version(), rollback_to_version()
+  - Add unit tests and performance optimization
+- **Frontend (5 days):**
+  - Build inline step editor UI with drag-drop (TestStepEditor.tsx)
+  - Create version history viewer with diff display (VersionHistoryPanel.tsx)
+  - Integrate editing workflow into TestDetailPage
+  - Add keyboard shortcuts, loading states, and polish
 
-**Frontend Developer Focus (10 days):**
-1. Test step editor UI with drag-drop
-2. Version history viewer with diff display
-3. Feedback viewer and correction form
-4. Edit mode workflow (edit/save/cancel)
-5. UI polish and loading states
-6. Integration testing and documentation
+**Developer B - Feature: Execution Feedback System (10 days):**
+- **Backend (5 days):**
+  - Implement `ExecutionFeedback` table and model
+  - Build automatic feedback capture in execution service
+  - Create correction workflow API (POST /api/v1/feedback/{id}/correction)
+  - Add unit tests for feedback collection pipeline
+- **Frontend (5 days):**
+  - Build feedback viewer UI (ExecutionFeedbackViewer.tsx)
+  - Create correction input form with validation
+  - Add feedback list view with filtering
+  - Implement bulk correction approval
 
-**Key Deliverables:** Test editing with version control + comprehensive feedback system
+**Key Deliverables:** 
+- ✅ **Developer A**: Complete test editing feature with version history
+- ✅ **Developer B**: Complete execution feedback and correction system
 
 ---
 
 ### Sprint 5 (Week 11-12): Pattern Recognition & KB Enhancement
 
-**Backend Developer A Focus (10 days):**
-1. PatternAnalyzer service implementation
-2. Failure pattern matching algorithms
-3. Confidence-based auto-fix engine
-4. Anomaly detection system
-5. Test generation prompt enhancement
-6. Performance testing & optimization
+**Developer A - Feature: Pattern Recognition & Auto-Suggestions (10 days):**
+- **Backend (5-6 days):**
+  - Implement PatternAnalyzer service core
+  - Build failure pattern matching algorithms
+  - Create auto-fix suggestion engine with confidence scoring
+  - Add anomaly detection system
+  - Unit tests for pattern matching
+- **Frontend (4-5 days):**
+  - Build suggestions UI (SuggestionCard.tsx)
+  - Create pattern library viewer (PatternLibrary.tsx)
+  - Build anomaly alerts UI (AnomalyAlertBanner.tsx)
+  - Add pattern search/filter functionality
 
-**Backend Developer B Focus (10 days):**
-> Note: This can be the same backend developer or split tasks within one person
-1. New KB category creation (patterns, lessons, selectors)
-2. Auto-KB population logic
-3. KB API endpoints
-4. Integration with pattern analyzer
-5. KB analytics and health metrics
-6. Integration testing
+**Developer B - Feature: Knowledge Base Enhancement (10 days):**
+- **Backend (6 days):**
+  - Add new KB categories (test_patterns, failure_lessons, selector_library)
+  - Implement auto-KB population logic
+  - Create KB API endpoints (GET /api/v1/kb/patterns, etc.)
+  - Integrate KB with pattern analyzer
+  - Build KB analytics and health metrics
+- **Frontend (4 days):**
+  - Enhance test generation UI with KB pattern selector
+  - Show KB suggestions during test generation
+  - Display "similar patterns found" notices
+  - Add KB context preview panel
 
-**Frontend Developer Focus (10 days):**
-1. Auto-suggestion UI components
-2. Pattern library viewer with search
-3. KB pattern integration in generation
-4. Anomaly alert banners
-5. Visualizations and charts
-6. Demo preparation
-
-**Key Deliverables:** Pattern-based auto-fixes + self-learning KB system
+**Key Deliverables:**
+- ✅ **Developer A**: Pattern-based auto-suggestions with anomaly detection
+- ✅ **Developer B**: Self-learning KB system with auto-population
 
 ---
 
 ### Sprint 6 (Week 13-14): Learning Dashboard & Prompt A/B Testing
 
-**Backend Developer Focus (10 days):**
-1. Learning insights API with complex queries
-2. PromptTemplate model and management
-3. A/B testing selection algorithm
-4. Auto-deactivation logic
-5. Optional ML model training
-6. Final testing and bug fixes
+**Developer A - Feature: Learning Insights Dashboard (10 days):**
+- **Backend (4-5 days):**
+  - Create Learning Insights API (`/api/v1/learning/insights`)
+  - Build failure analysis and success trend queries
+  - Implement suggested improvements query
+  - Add unit tests and performance optimization (<2s load time)
+- **Frontend (5-6 days):**
+  - Build Learning Insights page (LearningInsightsPage.tsx)
+  - Add Recharts visualizations (bar, line, donut, timeline charts)
+  - Create insights widgets (FailureAnalysisWidget, SuccessTrendWidget, etc.)
+  - Implement interactivity (drill-down, date range selector, export)
 
-**Frontend Developer Focus (10 days):**
-1. Learning Insights dashboard page
-2. Recharts visualizations (4+ charts)
-3. Interactive drill-down features
-4. Prompt management UI
-5. A/B testing comparison views
-6. Phase 2 documentation and demo
+**Developer B - Feature: Prompt A/B Testing System (10 days):**
+- **Backend (6-7 days):**
+  - Implement PromptTemplate model with performance tracking
+  - Create prompt management API (CRUD endpoints)
+  - Build A/B testing selection algorithm
+  - Add auto-deactivation logic for underperformers
+  - Optional: Train simple ML models (Logistic Regression, Random Forest)
+- **Frontend (3-4 days):**
+  - Build prompt management UI (PromptManagementPage.tsx)
+  - Add A/B testing dashboard with performance comparison
+  - Implement traffic allocation sliders
+  - Add template comparison chart
 
-**Key Deliverables:** Comprehensive learning dashboard + data-driven prompt optimization
+**Key Deliverables:**
+- ✅ **Developer A**: Learning Insights dashboard with visualizations
+- ✅ **Developer B**: Prompt A/B testing with auto-optimization
 
 ---
 
@@ -1562,106 +1568,97 @@ Implement the **full multi-agent architecture** (including delayed Observation A
 
 **Morning (9:00 AM - 12:00 PM):**
 - 15-minute standup (9:00 AM)
-  - What I did yesterday
-  - What I'm doing today
-  - Any blockers
+  - What I completed yesterday (show working feature slice)
+  - What feature I'm building today (backend or frontend focus)
+  - Any integration dependencies or blockers
 - Deep work session (9:15 AM - 12:00 PM)
-  - Backend: Work on services/APIs
-  - Frontend: Work on components/pages
+  - Work on assigned feature (backend services, APIs, or frontend components)
+  - Both developers can work on backend OR frontend depending on feature needs
 
 **Afternoon (1:00 PM - 5:00 PM):**
 - Integration work (1:00 PM - 3:00 PM)
-  - Test API integration
-  - Fix integration issues
+  - Test API integration between features
+  - Fix cross-feature integration issues
   - Update API contracts if needed
 - Code review session (3:00 PM - 4:00 PM)
-  - Review each other's PRs
-  - Discuss code quality
+  - Review each other's PRs (both backend + frontend code)
+  - Discuss code quality and feature completeness
   - Suggest improvements
 - Documentation (4:00 PM - 5:00 PM)
-  - Update API docs
-  - Update user guides
+  - Update API docs and user guides
+  - Document feature workflows
   - Commit changes
 
 **Weekly:**
-- Mid-sprint review (Wednesday)
-- Sprint review/demo (Friday Week 2)
-- Sprint retrospective (Friday Week 2)
+- Mid-sprint integration checkpoint (Wednesday) - Both developers demo working features
+- Sprint review/demo (Friday Week 2) - Each developer presents their complete features
+- Sprint retrospective (Friday Week 2) - Discuss what worked well in feature-based approach
 
 ---
 
-### Communication & Handoffs
+### Communication & Integration Checkpoints
 
-**API Contract Agreement (Week Start):**
-- Backend: Design API endpoints and request/response schemas
-- Frontend: Review and provide feedback
-- Both: Agree on final contract before implementation
+**Feature Kickoff (Sprint Start - Day 1):**
+- Both developers: Discuss feature requirements and dependencies
+- Each developer: Design API contracts for their feature
+- Integration points: Identify where features interact (e.g., patterns use feedback data)
 - Document in Swagger/OpenAPI
 
-**Integration Points (Mid-Sprint):**
-- Backend: Deploy to dev environment
-- Frontend: Test against real APIs
-- Both: Fix integration issues together
-- Update documentation
+**Mid-Sprint Integration (Day 5):**
+- Both developers: Deploy features to dev environment
+- Integration testing: Test cross-feature workflows
+- Fix integration issues collaboratively
+- Update documentation and API contracts if needed
 
-**Demo Preparation (End of Sprint):**
-- Backend: Ensure all APIs working
-- Frontend: Polish UI and workflows
-- Both: Prepare demo script and test data
-
----
-
-### Tools & Technologies Split
-
-**Backend Developer:**
-- **Languages**: Python 3.12
-- **Framework**: FastAPI
-- **Database**: SQLAlchemy (SQLite dev, PostgreSQL prod)
-- **Testing**: Pytest, unittest
-- **Tools**: VS Code, Postman, DBeaver
-- **Skills Needed**: 
-  - Statistical analysis (pattern matching)
-  - Database design
-  - API development
-  - Performance optimization
-
-**Frontend Developer:**
-- **Languages**: TypeScript, JavaScript
-- **Framework**: React 18, React Router
-- **UI Library**: Tailwind CSS, Shadcn/ui
-- **Charts**: Recharts
-- **Testing**: Jest, React Testing Library
-- **Tools**: VS Code, Chrome DevTools
-- **Skills Needed**:
-  - Component design
-  - State management
-  - Data visualization
-  - Responsive design
+**Sprint Review (Day 10):**
+- Each developer: Demo their complete feature (backend + frontend)
+- Stakeholder feedback: Collect input on features
+- Prepare handoff documentation for next sprint
 
 ---
 
-### Success Metrics by Developer
+### Tools & Technologies (Full-Stack for Both Developers)
 
-**Backend Developer Success:**
-- [ ] All APIs return <200ms (95th percentile)
-- [ ] Database queries optimized (<5s pattern analysis)
-- [ ] 100% test coverage for critical paths
-- [ ] Zero API breaking changes
-- [ ] All endpoints documented in Swagger
+**Both Developers Use:**
+- **Backend**: Python 3.12, FastAPI, SQLAlchemy, Pytest
+- **Frontend**: React 18, TypeScript, Vite, TailwindCSS, Shadcn/ui
+- **Database**: SQLite (dev), PostgreSQL (prod)
+- **Testing**: Pytest (backend), Vitest (frontend), React Testing Library
+- **Tools**: VS Code, Postman, DBeaver, Git, Docker, Chrome DevTools
+- **Charts**: Recharts (for dashboard visualizations)
 
-**Frontend Developer Success:**
-- [ ] Dashboard loads in <2 seconds
-- [ ] All components responsive (mobile/tablet/desktop)
-- [ ] Zero console errors in production
-- [ ] Accessibility (WCAG AA compliance)
-- [ ] User feedback >80% satisfaction
+**Skills Required (Both Developers):**
+- Backend: API development, database design, statistical analysis
+- Frontend: Component design, state management, data visualization, responsive design
+- Both: Full-stack thinking, integration testing, documentation
 
-**Team Success (Both):**
-- [ ] All Phase 2 features delivered on time
-- [ ] Integration issues resolved within 24 hours
+---
+
+### Success Metrics by Feature Owner
+
+**Developer A Feature Success (Test Editing + Pattern Recognition + Dashboard):**
+- [ ] Test editing: 85%+ reduction in test regenerations
+- [ ] Version control: <100ms overhead for version operations
+- [ ] Pattern recognition: 70%+ of suggestions accepted by users
+- [ ] Dashboard: Loads in <2 seconds with all visualizations
+- [ ] All features fully tested with >90% code coverage
 - [ ] Zero critical bugs in production
+
+**Developer B Feature Success (Feedback System + KB + A/B Testing):**
+- [ ] Feedback: 100% of executions capture detailed feedback
+- [ ] Correction workflow: <100ms overhead for feedback collection
+- [ ] KB auto-population: Successfully learns from 100+ tests
+- [ ] Test generation: Success rate improves from 60% to 85%
+- [ ] A/B testing: Identifies best prompt within 100 uses
+- [ ] All features fully documented and demoed
+
+**Team Success (Both Developers):**
+- [ ] All Phase 2 features delivered on time (6 weeks)
+- [ ] Features integrate seamlessly (cross-feature workflows work)
+- [ ] Zero API breaking changes between developers
 - [ ] Documentation complete and up-to-date
-- [ ] Stakeholder demo successful
+- [ ] Stakeholder demo successful with positive feedback
+- [ ] 2-3x overall productivity improvement achieved
 
 ---
 
