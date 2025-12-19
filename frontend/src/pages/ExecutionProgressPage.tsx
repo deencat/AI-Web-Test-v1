@@ -6,6 +6,7 @@ import { Button } from '../components/common/Button';
 import { ScreenshotGallery } from '../components/execution/ScreenshotGallery';
 import { ExecutionFeedbackViewer } from '../components/execution/ExecutionFeedbackViewer';
 import { CorrectionForm } from '../components/execution/CorrectionForm';
+import { ReportIssueButton } from '../components/execution/ReportIssueButton';
 import { DebugModeModal } from '../components/debug/DebugModeModal';
 import { DebugSessionView } from '../components/debug/DebugSessionView';
 import executionService from '../services/executionService';
@@ -246,7 +247,12 @@ export function ExecutionProgressPage() {
             <h2 className="text-xl font-semibold text-gray-900 mb-4">Test Steps</h2>
             <div className="space-y-4">
               {execution.steps.map((step) => (
-                <StepCard key={step.id} step={step} />
+                <StepCard 
+                  key={step.id} 
+                  step={step} 
+                  executionId={execution.id}
+                  onReportSuccess={fetchExecutionDetail}
+                />
               ))}
             </div>
           </div>
@@ -255,15 +261,17 @@ export function ExecutionProgressPage() {
         {/* Screenshot Gallery */}
         <ScreenshotGallery steps={execution.steps} />
 
-        {/* Execution Feedback */}
-        {execution.failed_steps > 0 && (
+        {/* Execution Feedback - Always show for completed executions */}
+        {execution.status === 'completed' && (
           <Card>
             <div className="p-6">
               <h2 className="text-xl font-semibold text-gray-900 mb-4">
                 🔍 Execution Feedback & Learning
               </h2>
               <p className="text-sm text-gray-600 mb-4">
-                Review failure details and submit corrections to improve future test execution accuracy.
+                {execution.failed_steps > 0 
+                  ? 'Review failure details and submit corrections to improve future test execution accuracy.'
+                  : 'No automatic failures detected. You can still report issues like false positives using the backend tool.'}
               </p>
               <ExecutionFeedbackViewer
                 executionId={execution.id}
@@ -358,9 +366,11 @@ function ExecutionStatusBadge({ status, result }: ExecutionStatusBadgeProps) {
 
 interface StepCardProps {
   step: TestExecutionDetail['steps'][0];
+  executionId: number;
+  onReportSuccess?: () => void;
 }
 
-function StepCard({ step }: StepCardProps) {
+function StepCard({ step, executionId, onReportSuccess }: StepCardProps) {
   const getStepResultColor = () => {
     if (step.result === 'pass') return 'border-green-200 bg-green-50';
     if (step.result === 'fail') return 'border-red-200 bg-red-50';
@@ -415,6 +425,18 @@ function StepCard({ step }: StepCardProps) {
               {step.retry_count > 0 && ` (${step.retry_count} retries)`}
             </div>
           )}
+
+          {/* Report Issue Button - Available for ALL steps */}
+          <div className="mt-3 pt-3 border-t border-gray-200">
+            <ReportIssueButton 
+              executionId={executionId}
+              step={step}
+              onReportSuccess={onReportSuccess}
+            />
+            <span className="ml-4 text-xs text-gray-500">
+              Report false positives, wrong actions, or other issues
+            </span>
+          </div>
         </div>
       </div>
     </div>
