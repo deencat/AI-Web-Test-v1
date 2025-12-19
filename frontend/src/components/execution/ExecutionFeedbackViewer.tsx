@@ -5,8 +5,9 @@
 
 import { useState, useEffect } from 'react';
 import { Card } from '../common/Card';
-import type { ExecutionFeedback } from '../../types/execution';
+import type { ExecutionFeedback, TestExecutionDetail } from '../../types/execution';
 import executionFeedbackService from '../../services/executionFeedbackService';
+import executionService from '../../services/executionService';
 
 interface ExecutionFeedbackViewerProps {
   executionId: number;
@@ -15,6 +16,7 @@ interface ExecutionFeedbackViewerProps {
 
 export function ExecutionFeedbackViewer({ executionId, onCorrectClick }: ExecutionFeedbackViewerProps) {
   const [feedbackItems, setFeedbackItems] = useState<ExecutionFeedback[]>([]);
+  const [execution, setExecution] = useState<TestExecutionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,8 +28,15 @@ export function ExecutionFeedbackViewer({ executionId, onCorrectClick }: Executi
     try {
       setLoading(true);
       setError(null);
-      const items = await executionFeedbackService.getExecutionFeedback(executionId);
+      
+      // Load both feedback and execution details in parallel
+      const [items, executionData] = await Promise.all([
+        executionFeedbackService.getExecutionFeedback(executionId),
+        executionService.getExecutionDetail(executionId)
+      ]);
+      
       setFeedbackItems(items);
+      setExecution(executionData);
     } catch (err) {
       console.error('Failed to load feedback:', err);
       setError('Failed to load execution feedback');
@@ -107,13 +116,21 @@ export function ExecutionFeedbackViewer({ executionId, onCorrectClick }: Executi
       </div>
 
       <div className="space-y-4">
-        {feedbackItems.map((feedback) => (
-          <FeedbackItem
-            key={feedback.id}
-            feedback={feedback}
-            onCorrectClick={onCorrectClick}
-          />
-        ))}
+        {feedbackItems.map((feedback) => {
+          // Get step description from execution details
+          const stepIndex = feedback.step_index ?? 0;
+          const step = execution?.steps?.find(s => s.step_number === stepIndex + 1);
+          const stepDescription = step?.step_description || '';
+          
+          return (
+            <FeedbackItem
+              key={feedback.id}
+              feedback={feedback}
+              stepDescription={stepDescription}
+              onCorrectClick={onCorrectClick}
+            />
+          );
+        })}
       </div>
     </Card>
   );
@@ -121,10 +138,11 @@ export function ExecutionFeedbackViewer({ executionId, onCorrectClick }: Executi
 
 interface FeedbackItemProps {
   feedback: ExecutionFeedback;
+  stepDescription: string;
   onCorrectClick?: (feedback: ExecutionFeedback) => void;
 }
 
-function FeedbackItem({ feedback, onCorrectClick }: FeedbackItemProps) {
+function FeedbackItem({ feedback, stepDescription, onCorrectClick }: FeedbackItemProps) {
   const [expanded, setExpanded] = useState(false);
 
   const failureTypeColor = executionFeedbackService.getFailureTypeBadgeColor(feedback.failure_type);
@@ -153,10 +171,13 @@ function FeedbackItem({ feedback, onCorrectClick }: FeedbackItemProps) {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div className="flex-1">
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
             {feedback.step_index !== null && feedback.step_index !== undefined && (
-              <span className="text-sm font-medium text-gray-600">
+              <span className="text-sm font-medium text-gray-900">
                 Step {feedback.step_index + 1}
+                {stepDescription && (
+                  <span className="text-gray-600 font-normal">: {stepDescription}</span>
+                )}
               </span>
             )}
             {feedback.failure_type && (
