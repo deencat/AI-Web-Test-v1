@@ -5,8 +5,9 @@ import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { RunTestButton } from '../components/RunTestButton';
 import { TestStepEditor } from '../components/TestStepEditor';
+import { VersionHistoryPanel } from '../components/VersionHistoryPanel';
 import testsService from '../services/testsService';
-import { Loader2, ArrowLeft, Calendar, User, Clock } from 'lucide-react';
+import { Loader2, ArrowLeft, Calendar, User, Clock, History } from 'lucide-react';
 
 interface TestDetail {
   id: string | number;
@@ -30,6 +31,7 @@ export const TestDetailPage: React.FC = () => {
   const [test, setTest] = useState<TestDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
 
   useEffect(() => {
     loadTestDetails();
@@ -148,11 +150,20 @@ export const TestDetailPage: React.FC = () => {
             <h1 className="text-3xl font-bold text-gray-900">{test.title || test.name}</h1>
             <p className="text-gray-600 mt-2">{test.description}</p>
           </div>
-          <RunTestButton
-            testCaseId={typeof test.id === 'string' ? parseInt(test.id) : test.id}
-            testCaseName={test.title || test.name}
-            onExecutionStart={handleExecutionStart}
-          />
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowVersionHistory(true)}
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2 transition-colors"
+            >
+              <History className="w-4 h-4" />
+              View History
+            </button>
+            <RunTestButton
+              testCaseId={typeof test.id === 'string' ? parseInt(test.id) : test.id}
+              testCaseName={test.title || test.name}
+              onExecutionStart={handleExecutionStart}
+            />
+          </div>
         </div>
 
         {/* Test Metadata */}
@@ -269,6 +280,28 @@ export const TestDetailPage: React.FC = () => {
           </div>
         </Card>
       </div>
+
+      {/* Version History Panel */}
+      {test && (
+        <VersionHistoryPanel
+          testId={typeof test.id === 'string' ? parseInt(test.id) : test.id}
+          currentVersion={test.current_version || 1}
+          isOpen={showVersionHistory}
+          onClose={() => setShowVersionHistory(false)}
+          onViewVersion={(version) => {
+            console.log('View version:', version);
+            // TODO: Implement view version dialog
+          }}
+          onCompareVersions={(v1, v2) => {
+            console.log('Compare versions:', v1, v2);
+            // TODO: Implement comparison dialog
+          }}
+          onRollback={(versionId) => {
+            console.log('Rollback to version:', versionId);
+            // TODO: Implement rollback confirmation
+          }}
+        />
+      )}
     </Layout>
   );
 };
