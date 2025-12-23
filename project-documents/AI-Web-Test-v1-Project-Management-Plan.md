@@ -3039,46 +3039,69 @@ cd backend/artifacts/screenshots
 
 ---
 
-### Phase 3: Frontend Implementation ⏳ **PENDING** (Developer A)
+### Phase 3: Frontend Implementation 🔄 **IN PROGRESS** (Developer A)
 
 **Goal:** Build UI for version control features
 
-**Components to Build (14-21 hours estimated):**
+**Progress Update (December 23, 2025):**
 
-1. **TestStepEditor.tsx** (4-6 hours)
-   - Rich text editor for test steps
-   - Auto-save (debounced)
-   - Show current version number
-   - "Saving..." indicator
-   - API: PUT `/tests/{id}/steps`
+**✅ Completed Components:**
 
-2. **VersionHistoryPanel.tsx** (3-4 hours)
+1. **TestStepEditor.tsx** ✅ **COMPLETE** (215 lines, 6 hours)
+   - ✅ Rich text editor for test steps (textarea with monospace font)
+   - ✅ Auto-save with 2-second debounce (using lodash)
+   - ✅ Manual "Save Now" button
+   - ✅ Show current version number (e.g., "Test Steps (v3)")
+   - ✅ "Saving..." loading indicator
+   - ✅ "Saved X ago" timestamp (updates every 10 seconds)
+   - ✅ Error handling and display
+   - ✅ Converts textarea content to array before API call
+   - ✅ Integrated into TestDetailPage.tsx
+   - ✅ API Integration: PUT `/tests/{id}/steps`
+   - **Location:** `frontend/src/components/TestStepEditor.tsx`
+   - **Status:** Fully functional and tested
+
+**🔧 Bug Fixes & Infrastructure (December 22-23, 2025):**
+- ✅ Fixed 422 error: API expects array format, not string
+- ✅ Fixed blank screen: Added conditional rendering with default version
+- ✅ Fixed debug mode 500 error: Windows ProactorEventLoop issue
+- ✅ Created `backend/run_server.py`: Custom uvicorn runner for Windows/Playwright
+- ✅ Event loop validation: Added checks in stagehand_service.py
+- ✅ Debug mode now functional (both Auto and Manual setup)
+- ✅ lodash installed for debouncing functionality
+
+**⏳ Pending Components (10-14 hours remaining):**
+
+2. **VersionHistoryPanel.tsx** (3-4 hours) ⏳
    - List all versions (newest first)
    - Show version #, date, author, reason
    - Actions: View, Rollback, Compare
    - Pagination (50 versions)
    - API: GET `/tests/{id}/versions`
 
-3. **VersionCompareDialog.tsx** (2-3 hours)
+3. **VersionCompareDialog.tsx** (2-3 hours) ⏳
    - Side-by-side diff view
    - Highlighted changes (green/red/yellow)
    - Field-by-field comparison
    - API: GET `/tests/{id}/versions/compare/{v1}/{v2}`
 
-4. **RollbackConfirmDialog.tsx** (1-2 hours)
+4. **RollbackConfirmDialog.tsx** (1-2 hours) ⏳
    - Confirmation before rollback
    - Input reason for rollback
    - Show current vs. rollback target
    - API: POST `/tests/{id}/versions/rollback`
 
-5. **Integration** (2-3 hours)
-   - Update TestDetailPage.tsx
-   - Wire up all components
-   - Add "Version History" button
+5. **Integration & Polish** (2-3 hours) ⏳
+   - Add "Version History" button to TestDetailPage
+   - Wire up remaining components
    - Show version number in header
+   - Manual debug mode UX improvement (show prerequisite steps)
 
 **Testing Checklist:**
-- ⏳ Create test → edit steps → verify version created
+- ✅ Create test → edit steps → verify version created (WORKING)
+- ✅ Auto-save → verify debounced save (WORKING)
+- ✅ Manual save → verify immediate save (WORKING)
+- ✅ Version number increments correctly (WORKING)
 - ⏳ View version history → verify all versions listed
 - ⏳ Compare versions → verify diff shown correctly
 - ⏳ Rollback → verify new version created with old content
@@ -3086,8 +3109,12 @@ cd backend/artifacts/screenshots
 - ⏳ Multiple users → verify created_by tracking
 
 **Timeline:**
-- Estimated: 14-21 hours (~2-3 days)
-- Target completion: December 20-22, 2025
+- Original estimate: 14-21 hours (~2-3 days)
+- Time spent: ~10 hours (6 hrs dev + 4 hrs debugging)
+- Remaining: 10-14 hours (~1.5-2 days)
+- **Revised completion target:** December 24-25, 2025
+
+**Progress:** 1/4 components complete = **25% frontend** | **Overall Sprint 4: ~40%**
 
 ---
 
