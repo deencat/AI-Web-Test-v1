@@ -220,14 +220,32 @@ class StagehandExecutionService:
             Dict with browser_pid, devtools_url (if available), and other metadata
         """
         if not self.stagehand:
-            # Ensure Windows event loop policy is set
+            # Critical: Playwright requires ProactorEventLoop on Windows
+            # SelectorEventLoop doesn't support subprocess operations
             if sys.platform == 'win32':
-                loop = asyncio.get_event_loop()
-                if not isinstance(loop, asyncio.ProactorEventLoop):
+                try:
+                    import asyncio
+                    # Check current loop type
                     try:
+                        current_loop = asyncio.get_running_loop()
+                        loop_type = type(current_loop).__name__
+                        print(f"[DEBUG] Current event loop type: {loop_type}")
+                        
+                        if not isinstance(current_loop, asyncio.ProactorEventLoop):
+                            print(f"[ERROR] Wrong event loop type! Playwright requires ProactorEventLoop on Windows.")
+                            print(f"[ERROR] Current loop is {loop_type}. This will cause NotImplementedError.")
+                            raise RuntimeError(
+                                f"Playwright requires ProactorEventLoop on Windows, but found {loop_type}. "
+                                "Please ensure ProactorEventLoop policy is set before starting the server. "
+                                "Add this to your startup: asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())"
+                            )
+                    except RuntimeError:
+                        # No running loop, set policy and create new one
                         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-                    except:
-                        pass
+                        print(f"[DEBUG] Set ProactorEventLoop policy")
+                except Exception as e:
+                    print(f"[ERROR] Event loop check failed: {e}")
+                    raise
             
             print(f"[DEBUG] Initializing persistent Stagehand browser with userDataDir: {user_data_dir}")
             

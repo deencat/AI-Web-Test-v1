@@ -4,6 +4,7 @@ import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { RunTestButton } from '../components/RunTestButton';
+import { TestStepEditor } from '../components/TestStepEditor';
 import testsService from '../services/testsService';
 import { Loader2, ArrowLeft, Calendar, User, Clock } from 'lucide-react';
 
@@ -15,11 +16,12 @@ interface TestDetail {
   test_type?: string;
   priority: 'high' | 'medium' | 'low';
   status: 'passed' | 'failed' | 'pending' | 'running';
-  steps?: string[];
+  steps?: string[] | string;
   expected_result?: string;
   created_at: string;
   updated_at: string;
   created_by?: string;
+  current_version?: number;
 }
 
 export const TestDetailPage: React.FC = () => {
@@ -215,22 +217,18 @@ export const TestDetailPage: React.FC = () => {
         {/* Test Steps */}
         <Card>
           <h2 className="text-xl font-semibold text-gray-900 mb-4">Test Steps</h2>
-          <div className="space-y-3">
-            {test.steps && test.steps.length > 0 ? (
-              test.steps.map((step, index) => (
-                <div key={index} className="flex gap-4 items-start p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                  <div className="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-semibold">
-                    {index + 1}
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-gray-900">{step}</p>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="text-gray-500 text-center py-4">No test steps defined</p>
-            )}
-          </div>
+          {test.id && (
+            <TestStepEditor
+              testId={typeof test.id === 'string' ? parseInt(test.id) : test.id}
+              initialSteps={Array.isArray(test.steps) ? test.steps.join('\n') : (test.steps || '')}
+              initialVersion={test.current_version || 1}
+              onSave={(versionNumber) => {
+                console.log('New version saved:', versionNumber);
+                // Update test data to reflect new version
+                setTest({ ...test, current_version: versionNumber });
+              }}
+            />
+          )}
         </Card>
 
         {/* Expected Result */}

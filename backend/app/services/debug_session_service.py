@@ -84,11 +84,21 @@ class DebugSessionService:
                 screenshot_dir=f"artifacts/screenshots/debug_{session_id}"
             )
             
-            browser_metadata = await browser_service.initialize_persistent(
-                user_data_dir=str(user_data_dir),
-                user_config=user_config,
-                devtools=True
-            )
+            try:
+                browser_metadata = await browser_service.initialize_persistent(
+                    user_data_dir=str(user_data_dir),
+                    user_config=user_config,
+                    devtools=True
+                )
+            except Exception as browser_error:
+                print(f"[ERROR] Failed to initialize persistent browser: {browser_error}")
+                # Clean up and raise
+                crud_debug.update_debug_session_status(
+                    db=db,
+                    session_id=session_id,
+                    status=DebugSessionStatus.FAILED
+                )
+                raise ValueError(f"Failed to initialize browser: {str(browser_error)}")
             
             # Update session with browser info
             crud_debug.update_debug_session_browser_info(
@@ -192,6 +202,10 @@ class DebugSessionService:
         total_tokens = 0
         
         print(f"[DEBUG] Auto-setup: Executing {prerequisite_steps} prerequisite steps")
+        
+        # Verify browser page is ready
+        if not browser_service.page:
+            raise ValueError("Browser page not initialized")
         
         # Navigate to base URL first
         await browser_service.page.goto(base_url)
