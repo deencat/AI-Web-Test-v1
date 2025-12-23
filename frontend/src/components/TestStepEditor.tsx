@@ -21,6 +21,7 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
   onSave
 }) => {
   const [steps, setSteps] = useState(initialSteps);
+  const [savedSteps, setSavedSteps] = useState(initialSteps); // Track last saved content
   const [currentVersion, setCurrentVersion] = useState(initialVersion);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
@@ -28,12 +29,14 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
 
   // Auto-save function (debounced)
   const autoSave = useCallback(
-    debounce(async (content: string, originalContent: string) => {
-      if (content === originalContent || content.trim() === '') {
+    debounce(async (content: string, lastSavedContent: string) => {
+      if (content === lastSavedContent || content.trim() === '') {
         // No changes or empty content, skip save
+        console.log('⏭️ Auto-save skipped - no changes');
         return;
       }
 
+      console.log('💾 Auto-saving...');
       setIsSaving(true);
       setError(null);
 
@@ -62,7 +65,9 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
 
         const data: SaveResponse = await response.json();
         setCurrentVersion(data.version_number);
+        setSavedSteps(content); // Update saved baseline
         setLastSaved(new Date());
+        console.log('✅ Auto-save complete - version', data.version_number);
         
         if (onSave) {
           onSave(data.version_number);
@@ -81,15 +86,17 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newContent = e.target.value;
     setSteps(newContent);
-    autoSave(newContent, initialSteps);
+    autoSave(newContent, savedSteps); // Compare with last saved content
   };
 
   // Manual save function
   const handleManualSave = async () => {
-    if (steps === initialSteps) {
+    if (steps === savedSteps) {
+      console.log('⏭️ Manual save skipped - no changes');
       return; // No changes
     }
 
+    console.log('💾 Manual saving...');
     setIsSaving(true);
     setError(null);
 
@@ -118,7 +125,9 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
 
       const data: SaveResponse = await response.json();
       setCurrentVersion(data.version_number);
+      setSavedSteps(steps); // Update saved baseline
       setLastSaved(new Date());
+      console.log('✅ Manual save complete - version', data.version_number);
       
       if (onSave) {
         onSave(data.version_number);
@@ -164,7 +173,7 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
         
         <button
           onClick={handleManualSave}
-          disabled={isSaving || steps === initialSteps}
+          disabled={isSaving || steps === savedSteps}
           className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
           {isSaving ? 'Saving...' : 'Save Now'}
