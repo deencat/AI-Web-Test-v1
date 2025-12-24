@@ -1,13 +1,13 @@
 # AI Web Test v1.0 - Project Management Plan
 ## Multi-Agent Test Automation Platform
 
-**Version:** 3.7  
-**Date:** December 19, 2025  
-**Status:** ✅ Sprint 1 COMPLETE (100%) | ✅ Sprint 2 COMPLETE (100% - Including KB Integration) | ✅ Sprint 3 COMPLETE (100%) | ✅ Sprint 3 Enhancement COMPLETE (Debug Mode) | 🎯 Sprint 4 IN PROGRESS (Backend ✅ Complete | Frontend ⏳ Pending) | 🚀 Ready for UAT  
-**Project Duration:** 32 weeks (8 months)  
+**Version:** 3.8  
+**Date:** December 24, 2025  
+**Status:** ✅ Sprint 1 COMPLETE (100%) | ✅ Sprint 2 COMPLETE (100% - Including KB Integration) | ✅ Sprint 3 COMPLETE (100%) | ✅ Sprint 3 Enhancement COMPLETE (Debug Mode) | 🎯 Sprint 4 IN PROGRESS (Backend ✅ 100% | Frontend 🔄 50% | Dual Provider ⏳ Planned) | 🚀 Ready for UAT  
+**Project Duration:** 32 weeks (8 months) + Sprint 4 Extended (4-5 weeks)  
 **Team Structure:** 2 Developers (Developer A: Full-stack | Developer B: Parallel features)  
 **Methodology:** Agile with 2-week sprints + Pragmatic MVP approach  
-**Latest Update:** Sprint 4 Infrastructure & Versioning (Dec 19, 2025) - Database collaboration infrastructure complete (migrations + seeds approach, 6 documentation files, tested and committed to main). Test case version control backend complete (5 API endpoints, 718 lines, committed to feature branch). Frontend implementation pending (4 components, 14-21 hours estimated). Developer B can now sync database without conflicts. Industry-standard collaboration workflow operational.  
+**Latest Update:** Sprint 4 Test Versioning & Dual Provider (Dec 24, 2025) - Database collaboration infrastructure complete ✅. Test case version control backend complete (5 API endpoints, 718 lines) ✅. Frontend 50% complete: TestStepEditor ✅ (with auto-save bug fix), VersionHistoryPanel ✅ (with data parsing bug fix). Components 3-4 pending. Dual Stagehand Provider System planned as final Sprint 4 task (3-4 weeks, 92-136 hours) - enables side-by-side comparison of Python vs TypeScript Stagehand with runtime switching via settings page.  
 
 ---
 
@@ -2915,11 +2915,12 @@ cd backend/artifacts/screenshots
 
 ## 🚀 Sprint 4: Infrastructure Enhancement & Test Versioning (Week 7)
 
-### Status: 🎯 **IN PROGRESS** | Developer A: Backend ✅ Complete | Frontend ⏳ Pending
+### Status: 🎯 **IN PROGRESS** | Backend ✅ Complete | Frontend 🔄 50% | Dual Provider ⏳ Planned
 
 **Sprint Start:** December 19, 2025  
-**Sprint Goal:** Database collaboration + Test case version control  
-**Duration:** 1-2 weeks  
+**Latest Update:** December 24, 2025  
+**Sprint Goal:** Database collaboration + Test versioning + Dual Stagehand provider  
+**Duration:** 4-5 weeks (extended for dual provider system)  
 **Team:** Developer A (Frontend + Backend) | Developer B (Parallel work)
 
 ---
@@ -3039,13 +3040,13 @@ cd backend/artifacts/screenshots
 
 ---
 
-### Phase 3: Frontend Implementation 🔄 **IN PROGRESS** (Developer A)
+### Phase 3: Frontend Implementation ✅ **50% COMPLETE** (Developer A)
 
 **Goal:** Build UI for version control features
 
-**Progress Update (December 23, 2025):**
+**Progress Update (December 24, 2025):**
 
-**✅ Completed Components:**
+**✅ Completed Components (2/4):**
 
 1. **TestStepEditor.tsx** ✅ **COMPLETE** (215 lines, 6 hours)
    - ✅ Rich text editor for test steps (textarea with monospace font)
@@ -3060,6 +3061,25 @@ cd backend/artifacts/screenshots
    - ✅ API Integration: PUT `/tests/{id}/steps`
    - **Location:** `frontend/src/components/TestStepEditor.tsx`
    - **Status:** Fully functional and tested
+   - **Bug Fix (Dec 23):** Fixed auto-save creating 11 duplicate versions - added `savedSteps` state to track last saved state instead of comparing with `initialSteps`
+
+2. **VersionHistoryPanel.tsx** ✅ **COMPLETE** (318 lines, 4 hours)
+   - ✅ Slide-in panel from right side
+   - ✅ List all versions (newest first) with checkboxes
+   - ✅ Show version #, date, author, reason
+   - ✅ Select up to 2 versions for comparison
+   - ✅ Actions: View, Compare (2 selected), Rollback
+   - ✅ Date formatting with relative time ("2 hours ago")
+   - ✅ API Integration: GET `/tests/{id}/versions`
+   - **Location:** `frontend/src/components/VersionHistoryPanel.tsx`
+   - **Status:** Fully functional and tested
+   - **Bug Fix (Dec 23):** Fixed blank display - API returns array directly, not wrapped object. Changed `data.versions || []` to `Array.isArray(data) ? data : []`
+
+**Git Status:**
+- ✅ Commit e7a0b97 (December 23, 2025)
+- ✅ 12 files changed, 2,221 insertions(+)
+- ✅ Pushed to `feature/sprint-4-test-versioning` branch
+- ✅ 9 documentation files created for bug fixes
 
 **🔧 Bug Fixes & Infrastructure (December 22-23, 2025):**
 - ✅ Fixed 422 error: API expects array format, not string
@@ -3069,15 +3089,12 @@ cd backend/artifacts/screenshots
 - ✅ Event loop validation: Added checks in stagehand_service.py
 - ✅ Debug mode now functional (both Auto and Manual setup)
 - ✅ lodash installed for debouncing functionality
+- ✅ **Auto-save bug fix:** Creating 11 versions from single edit - fixed by tracking `savedSteps` state
+- ✅ **Version history bug fix:** Panel showing blank - fixed API response parsing
 
-**⏳ Pending Components (10-14 hours remaining):**
+**⏳ Pending Components (5-8 hours remaining):**
 
-2. **VersionHistoryPanel.tsx** (3-4 hours) ⏳
-   - List all versions (newest first)
-   - Show version #, date, author, reason
-   - Actions: View, Rollback, Compare
-   - Pagination (50 versions)
-   - API: GET `/tests/{id}/versions`
+2. **VersionHistoryPanel.tsx** ✅ ~~(3-4 hours)~~ **COMPLETE - SEE ABOVE**
 
 3. **VersionCompareDialog.tsx** (2-3 hours) ⏳
    - Side-by-side diff view
@@ -3099,22 +3116,158 @@ cd backend/artifacts/screenshots
 
 **Testing Checklist:**
 - ✅ Create test → edit steps → verify version created (WORKING)
-- ✅ Auto-save → verify debounced save (WORKING)
+- ✅ Auto-save → verify debounced save (WORKING - only 1 version per edit)
 - ✅ Manual save → verify immediate save (WORKING)
 - ✅ Version number increments correctly (WORKING)
-- ⏳ View version history → verify all versions listed
+- ✅ View version history → verify all versions listed (WORKING)
 - ⏳ Compare versions → verify diff shown correctly
 - ⏳ Rollback → verify new version created with old content
-- ⏳ Rapid edits → verify multiple versions
+- ✅ Rapid edits → verify multiple versions (FIXED - no longer creates duplicates)
 - ⏳ Multiple users → verify created_by tracking
 
 **Timeline:**
 - Original estimate: 14-21 hours (~2-3 days)
-- Time spent: ~10 hours (6 hrs dev + 4 hrs debugging)
-- Remaining: 10-14 hours (~1.5-2 days)
-- **Revised completion target:** December 24-25, 2025
+- Time spent: ~14 hours (10 hrs dev + 4 hrs debugging/fixes)
+- Remaining: 5-8 hours (~1 day)
+- **Revised completion target:** December 25, 2025 (Components 3-4)
 
-**Progress:** 1/4 components complete = **25% frontend** | **Overall Sprint 4: ~40%**
+**Progress:** 2/4 components complete = **50% frontend** | **Overall Phase 1-2: ~65%**
+
+---
+
+### Phase 4: Dual Stagehand Provider System ⏳ **PLANNED** (Developer A)
+
+**Note:** This phase will begin AFTER Components 3-4 are complete. Positioned as the final task in Sprint 4.
+
+**Objective:** Enable side-by-side comparison of Python and TypeScript Stagehand implementations with runtime switching capability
+
+**Strategic Context:**
+- Current: Python Stagehand implementation (stable, working)
+- Goal: Add TypeScript Stagehand option WITHOUT breaking existing functionality
+- Benefit: Data-driven comparison for future migration decisions
+- Approach: Adapter + Factory pattern for clean abstraction
+
+**Architecture Overview:**
+```
+Backend (FastAPI)
+├── Adapter Pattern (Abstract Base Class)
+│   ├── PythonStagehandAdapter (wraps existing code)
+│   └── TypeScriptStagehandAdapter (HTTP client to Node.js)
+├── Factory Pattern (selects provider based on user setting)
+└── User Setting: stagehand_provider ('python' | 'typescript')
+
+Node.js Microservice (Port 3001)
+├── Express server wrapping @browserbasehq/stagehand
+├── Session management (UUID-based)
+└── API endpoints: /init, /execute, /screenshot, /cleanup, /debug
+
+Frontend
+└── Settings Page: Radio button selection with comparison table
+```
+
+**Implementation Phases:**
+
+**Phase 4.1: Configuration Setting** (1 day, 6-8 hours)
+- Database schema update: Add `users.stagehand_provider VARCHAR(20) DEFAULT 'python'`
+- Backend API: `PUT /api/v1/settings/stagehand-provider` endpoint
+- Basic settings page structure
+- **Deliverables:**
+  - Migration: `add_stagehand_provider_setting.py`
+  - API endpoint: `settings.py` (new router)
+  - Frontend: Basic `SettingsPage.tsx` skeleton
+
+**Phase 4.2: Adapter Pattern** (2-3 days, 16-24 hours)
+- Create abstract base class: `StagehandAdapter`
+- Implement Python adapter (wraps existing code, zero changes)
+- Implement TypeScript adapter (HTTP client placeholder)
+- **Deliverables:**
+  - `backend/app/services/stagehand_adapter.py` (abstract base, ~80 lines)
+  - `backend/app/services/python_stagehand_adapter.py` (wrapper, ~150 lines)
+  - `backend/app/services/typescript_stagehand_adapter.py` (HTTP client, ~200 lines)
+  - Unit tests for adapters
+
+**Phase 4.3: Factory Pattern** (1 day, 6-8 hours)
+- Create factory to select adapter based on user preference
+- Update all Stagehand usage to use factory
+- Add error handling for provider selection
+- **Deliverables:**
+  - `backend/app/services/stagehand_factory.py` (~100 lines)
+  - Update `TestExecutionService` to use factory
+  - Update `DebugSessionService` to use factory
+
+**Phase 4.4: Node.js Microservice** (5-7 days, 40-56 hours)
+- Setup Node.js + TypeScript project structure
+- Install @browserbasehq/stagehand + dependencies
+- Implement Express server with session management
+- Create API endpoints matching Python functionality
+- Add error handling and logging
+- Add health check endpoint
+- **Deliverables:**
+  - `stagehand-typescript-service/package.json`
+  - `stagehand-typescript-service/src/server.ts` (~300 lines)
+  - `stagehand-typescript-service/src/session-manager.ts` (~150 lines)
+  - Dockerfile for containerization
+  - README with setup instructions
+
+**Phase 4.5: Frontend Settings UI** (1-2 days, 8-16 hours)
+- Complete Settings page with radio button selection
+- Add comparison table (features, performance, status)
+- Add warning messages for beta features
+- Integrate with backend API
+- Add loading/error states
+- **Deliverables:**
+  - `frontend/src/pages/SettingsPage.tsx` (~250 lines)
+  - Settings page route in router
+  - Navigation menu item for settings
+
+**Phase 4.6: Testing & Documentation** (2-3 days, 16-24 hours)
+- Integration testing (both providers)
+- Performance benchmarking
+- Error handling validation
+- User documentation (setup, switching providers)
+- Developer documentation (architecture, extending)
+- Video demo (optional)
+- **Deliverables:**
+  - `DUAL-STAGEHAND-PROVIDER-SETUP.md`
+  - `STAGEHAND-PROVIDER-COMPARISON.md`
+  - `STAGEHAND-ARCHITECTURE.md`
+  - Test execution comparison data
+
+**Effort Estimate:**
+- **Total Time:** 92-136 hours (12-17 days)
+- **With Buffer:** 3-4 weeks
+- **Prerequisites:** Components 3-4 complete, version control fully functional
+
+**Success Criteria:**
+- ✅ Both Python and TypeScript Stagehand work independently
+- ✅ User can switch providers via settings page
+- ✅ Zero breaking changes to existing Python implementation
+- ✅ Session management handles concurrent executions
+- ✅ Error handling gracefully falls back or reports issues
+- ✅ Documentation enables smooth setup and switching
+- ✅ Performance comparison data collected
+
+**Risks & Mitigations:**
+- **Risk:** TypeScript Stagehand behavior differs from Python
+  - **Mitigation:** Comprehensive test suite comparing outputs
+- **Risk:** Node.js service adds deployment complexity
+  - **Mitigation:** Dockerize service, provide docker-compose setup
+- **Risk:** Session management memory leaks
+  - **Mitigation:** Add session cleanup, timeout mechanisms
+- **Risk:** Performance degradation from HTTP overhead
+  - **Mitigation:** Keep sessions alive, batch operations where possible
+
+**Timeline:**
+- Start: After Components 3-4 complete (~Dec 25-26, 2025)
+- Phase 4.1: Dec 26-27 (config setting)
+- Phase 4.2: Dec 27-30 (adapter pattern)
+- Phase 4.3: Dec 30-31 (factory pattern)
+- Phase 4.4: Jan 1-8 (Node.js service)
+- Phase 4.5: Jan 8-10 (frontend UI)
+- Phase 4.6: Jan 10-14 (testing & docs)
+- **Target Completion:** January 14, 2026
+
+**Progress:** 0/6 phases complete = **0%** (starts after Components 3-4)
 
 ---
 
@@ -3150,16 +3303,25 @@ python db_seed_simple.py
 - ✅ Documentation enables smooth onboarding
 
 **Version Control:**
-- ✅ Backend API complete and tested
-- ⏳ Frontend components implemented
+- ✅ Backend API complete and tested (5 endpoints)
+- 🔄 Frontend components implemented (2/4 complete)
 - ⏳ Full integration tested
 - ⏳ User acceptance verified
+
+**Dual Stagehand Provider:**
+- ⏳ Abstract adapter pattern implemented
+- ⏳ Both Python and TypeScript providers functional
+- ⏳ Factory pattern for runtime switching
+- ⏳ Settings UI for provider selection
+- ⏳ Documentation and comparison data
 
 **Quality:**
 - ✅ No breaking changes to existing features
 - ✅ All existing tests still pass
+- ✅ Bug fixes validated (auto-save, version history)
 - ⏳ New tests added for versioning
 - ⏳ Performance validated (no degradation)
+- ⏳ Dual provider system tested
 
 ---
 
@@ -3174,16 +3336,30 @@ python db_seed_simple.py
 6. ✅ Version control API endpoints (5 endpoints)
 7. ✅ Migration for test_versions table
 8. ✅ Git commits properly separated (infrastructure vs. features)
+9. ✅ TestStepEditor component with auto-save (+ bug fix)
+10. ✅ VersionHistoryPanel component (+ bug fix)
+11. ✅ Bug fix documentation (9 files)
 
 **In Progress:**
-1. ⏳ Frontend version control components
-2. ⏳ Integration testing
-3. ⏳ User documentation
+1. ⏳ VersionCompareDialog component
+2. ⏳ RollbackConfirmDialog component
+3. ⏳ Integration testing (version control)
 
-**Pending:**
-1. ⏳ Pull request review
-2. ⏳ Merge to main (after frontend complete)
-3. ⏳ Production deployment
+**Pending (Phase 4 - Dual Provider):**
+1. ⏳ Stagehand adapter pattern implementation
+2. ⏳ Python Stagehand adapter (wrapper)
+3. ⏳ TypeScript Stagehand adapter (HTTP client)
+4. ⏳ Stagehand factory pattern
+5. ⏳ Node.js microservice (@browserbasehq/stagehand)
+6. ⏳ Settings page with provider selection
+7. ⏳ Provider comparison documentation
+8. ⏳ Dual provider testing and benchmarks
+
+**Future:**
+1. ⏳ Pull request review (after Components 3-4)
+2. ⏳ Pull request review (after Phase 4)
+3. ⏳ Merge to main (after all testing complete)
+4. ⏳ Production deployment
 
 ---
 
@@ -3194,10 +3370,18 @@ python db_seed_simple.py
 | Dec 19 | Database collaboration infrastructure | ✅ Complete | Developer A |
 | Dec 19 | Test versioning backend | ✅ Complete | Developer A |
 | Dec 19 | Git commits and documentation | ✅ Complete | Developer A |
-| Dec 20-22 | Frontend components | ⏳ In Progress | Developer A |
+| Dec 20-23 | Frontend components (1-2) + bug fixes | ✅ Complete | Developer A |
 | Dec 20 | Developer B database setup | ⏳ Pending | Developer B |
-| Dec 23 | Integration testing | ⏳ Pending | Both |
-| Dec 23 | Code review | ⏳ Pending | Both |
+| Dec 24-25 | Frontend components (3-4) | ⏳ In Progress | Developer A |
+| Dec 25 | Integration testing (version control) | ⏳ Pending | Both |
+| Dec 26-27 | Phase 4.1: Config setting | ⏳ Pending | Developer A |
+| Dec 27-30 | Phase 4.2: Adapter pattern | ⏳ Pending | Developer A |
+| Dec 30-31 | Phase 4.3: Factory pattern | ⏳ Pending | Developer A |
+| Jan 1-8 | Phase 4.4: Node.js microservice | ⏳ Pending | Developer A |
+| Jan 8-10 | Phase 4.5: Frontend settings UI | ⏳ Pending | Developer A |
+| Jan 10-14 | Phase 4.6: Testing & documentation | ⏳ Pending | Both |
+| Jan 14-15 | Code review & pull request | ⏳ Pending | Both |
+| Jan 15 | Sprint 4 completion | ⏳ Target | Both |
 | Dec 24 | Merge to main | ⏳ Pending | Developer A |
 
 ---
