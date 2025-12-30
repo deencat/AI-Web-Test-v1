@@ -20,8 +20,8 @@ interface VersionHistoryPanelProps {
   isOpen: boolean;
   onClose: () => void;
   onViewVersion?: (version: Version) => void;
-  onCompareVersions?: (v1: number, v2: number) => void;
-  onRollback?: (versionId: number) => void;
+  onCompareVersions?: (versionId1: number, versionId2: number) => void;
+  onRollback?: (version: Version) => void;
 }
 
 export const VersionHistoryPanel: React.FC<VersionHistoryPanelProps> = ({
@@ -116,8 +116,15 @@ export const VersionHistoryPanel: React.FC<VersionHistoryPanelProps> = ({
   // Handle compare action
   const handleCompare = () => {
     if (selectedVersions.length === 2 && onCompareVersions) {
-      const [v1, v2] = selectedVersions.sort((a, b) => a - b);
-      onCompareVersions(v1, v2);
+      // Find version objects by version numbers
+      const version1 = versions.find(v => v.version_number === selectedVersions[0]);
+      const version2 = versions.find(v => v.version_number === selectedVersions[1]);
+      
+      if (version1 && version2) {
+        // Sort by version number (older first)
+        const sorted = [version1, version2].sort((a, b) => a.version_number - b.version_number);
+        onCompareVersions(sorted[0].id, sorted[1].id);
+      }
     }
   };
 
@@ -267,7 +274,7 @@ export const VersionHistoryPanel: React.FC<VersionHistoryPanelProps> = ({
                     
                     {version.version_number !== currentVersion && (
                       <button
-                        onClick={() => onRollback && onRollback(version.id)}
+                        onClick={() => onRollback && onRollback(version)}
                         className="px-3 py-1.5 text-sm bg-orange-100 text-orange-700 rounded hover:bg-orange-200 flex items-center gap-1.5 transition-colors"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />

@@ -6,6 +6,8 @@ import { Button } from '../components/common/Button';
 import { RunTestButton } from '../components/RunTestButton';
 import { TestStepEditor } from '../components/TestStepEditor';
 import { VersionHistoryPanel } from '../components/VersionHistoryPanel';
+import { VersionCompareDialog } from '../components/VersionCompareDialog';
+import { RollbackConfirmDialog } from '../components/RollbackConfirmDialog';
 import testsService from '../services/testsService';
 import { Loader2, ArrowLeft, Calendar, User, Clock, History } from 'lucide-react';
 
@@ -32,6 +34,11 @@ export const TestDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [showCompareDialog, setShowCompareDialog] = useState(false);
+  const [showRollbackDialog, setShowRollbackDialog] = useState(false);
+  const [compareVersion1, setCompareVersion1] = useState<number | null>(null);
+  const [compareVersion2, setCompareVersion2] = useState<number | null>(null);
+  const [rollbackVersion, setRollbackVersion] = useState<any | null>(null);
 
   useEffect(() => {
     loadTestDetails();
@@ -60,6 +67,58 @@ export const TestDetailPage: React.FC = () => {
 
   const handleBack = () => {
     navigate('/tests');
+  };
+
+  const handleCompareVersions = (v1: number, v2: number) => {
+    setCompareVersion1(v1);
+    setCompareVersion2(v2);
+    setShowCompareDialog(true);
+  };
+
+  const handleRollback = async (version: any) => {
+    setRollbackVersion(version);
+    setShowRollbackDialog(true);
+  };
+
+  const handleRollbackConfirm = async (reason: string) => {
+    if (!test || !rollbackVersion) return;
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('Not authenticated');
+    }
+
+    const testIdNum = typeof test.id === 'string' ? parseInt(test.id) : test.id;
+
+    const response = await fetch(
+      `http://localhost:8000/api/v1/tests/${testIdNum}/versions/rollback`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          version_id: rollbackVersion.id,
+          created_by: 'user' // TODO: Get from auth context
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || 'Failed to rollback version');
+    }
+
+    const newVersion = await response.json();
+    
+    // Refresh test data to show new version
+    await loadTestDetails();
+    
+    // Close dialogs
+    setShowRollbackDialog(false);
+    setShowVersionHistory(false);
+    setRollbackVersion(null);
   };
 
   const getPriorityColor = (priority: string) => {
@@ -290,16 +349,40 @@ export const TestDetailPage: React.FC = () => {
           onClose={() => setShowVersionHistory(false)}
           onViewVersion={(version) => {
             console.log('View version:', version);
-            // TODO: Implement view version dialog
+            // TODO: Implement view version dialog (optional feature)
           }}
-          onCompareVersions={(v1, v2) => {
-            console.log('Compare versions:', v1, v2);
-            // TODO: Implement comparison dialog
+          onCompareVersions={handleCompareVersions}
+          onRollback={handleRollback}
+        />
+      )}
+
+      {/* Version Compare Dialog */}
+      {test && compareVersion1 && compareVersion2 && (
+        <VersionCompareDialog
+          testId={typeof test.id === 'string' ? parseInt(test.id) : test.id}
+          versionId1={compareVersion1}
+          versionId2={compareVersion2}
+          isOpen={showCompareDialog}
+          onClose={() => {
+            setShowCompareDialog(false);
+            setCompareVersion1(null);
+            setCompareVersion2(null);
           }}
-          onRollback={(versionId) => {
-            console.log('Rollback to version:', versionId);
-            // TODO: Implement rollback confirmation
+        />
+      )}
+
+      {/* Rollback Confirm Dialog */}
+      {test && rollbackVersion && (
+        <RollbackConfirmDialog
+          testId={typeof test.id === 'string' ? parseInt(test.id) : test.id}
+          version={rollbackVersion}
+          currentVersion={test.current_version || 1}
+          isOpen={showRollbackDialog}
+          onClose={() => {
+            setShowRollbackDialog(false);
+            setRollbackVersion(null);
           }}
+          onConfirm={handleRollbackConfirm}
         />
       )}
     </Layout>
