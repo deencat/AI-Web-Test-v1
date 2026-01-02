@@ -23,8 +23,8 @@ class ExecutionFeedback(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     
-    # Execution reference
-    execution_id = Column(Integer, ForeignKey("test_executions.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Execution reference (nullable for imported feedback from other databases)
+    execution_id = Column(Integer, ForeignKey("test_executions.id", ondelete="CASCADE"), nullable=True, index=True)
     execution = relationship("TestExecution", backref="feedback_items")
     
     # Step reference (optional - can be null for execution-level feedback)
