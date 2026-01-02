@@ -95,6 +95,35 @@ export interface FeedbackCreate {
   tags?: string[];
 }
 
+export interface FeedbackExportParams {
+  include_html?: boolean;
+  include_screenshots?: boolean;
+  since_date?: string;
+  limit?: number;
+}
+
+export interface FeedbackExportData {
+  export_version: string;
+  exported_at: string;
+  exported_by: string;
+  total_count: number;
+  sanitized: boolean;
+  includes_html: boolean;
+  includes_screenshots: boolean;
+  feedback_items: any[];
+}
+
+export interface FeedbackImportResult {
+  success: boolean;
+  message: string;
+  imported_count: number;
+  skipped_count: number;
+  updated_count: number;
+  failed_count: number;
+  total_processed: number;
+  errors: string[];
+}
+
 // ============================================================================
 // Feedback Service Class
 // ============================================================================
@@ -217,6 +246,81 @@ class FeedbackService {
     } catch (error) {
       throw new Error(apiHelpers.getErrorMessage(error));
     }
+  }
+
+  /**
+   * Export feedback to JSON file
+   * 
+   * Sprint 4 Feature: Team Data Sync
+   * 
+   * @param params - Export parameters (html, screenshots, date filter, limit)
+   * @returns Blob containing JSON data for download
+   */
+  async exportFeedback(params?: FeedbackExportParams): Promise<Blob> {
+    try {
+      const response = await api.get('/feedback/export', {
+        params: {
+          include_html: params?.include_html || false,
+          include_screenshots: params?.include_screenshots || false,
+          since_date: params?.since_date,
+          limit: params?.limit || 1000,
+        },
+        responseType: 'blob', // Important: Get response as Blob for file download
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  /**
+   * Import feedback from JSON file
+   * 
+   * Sprint 4 Feature: Team Data Sync
+   * 
+   * @param file - JSON file from export endpoint
+   * @param mergeStrategy - How to handle duplicates: 'skip_duplicates', 'update_existing', 'create_all'
+   * @returns Import result summary
+   */
+  async importFeedback(
+    file: File,
+    mergeStrategy: 'skip_duplicates' | 'update_existing' | 'create_all' = 'skip_duplicates'
+  ): Promise<FeedbackImportResult> {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await api.post<FeedbackImportResult>(
+        '/feedback/import',
+        formData,
+        {
+          params: { merge_strategy: mergeStrategy },
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        }
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  /**
+   * Download export file helper
+   * 
+   * @param blob - Blob data from exportFeedback
+   * @param filename - Optional custom filename
+   */
+  downloadExportFile(blob: Blob, filename?: string): void {
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename || `feedback-export-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
   }
 }
 
