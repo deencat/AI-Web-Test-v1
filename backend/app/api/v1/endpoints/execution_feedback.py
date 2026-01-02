@@ -1,7 +1,10 @@
 """API endpoints for execution feedback."""
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from datetime import datetime
+import json
 
 from app.api import deps
 from app.crud import execution_feedback as crud_feedback
@@ -90,6 +93,91 @@ def list_feedback(
         skip=skip,
         limit=limit
     )
+
+
+@router.get("/feedback/stats/summary", response_model=ExecutionFeedbackStats)
+def get_feedback_stats(
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user)
+):
+    """
+    Get overall feedback statistics.
+    
+    Returns:
+    - Total feedback entries
+    - Total failures
+    - Total corrected failures
+    - Total anomalies
+    - Correction rate (%)
+    - Top 10 failure types with counts
+    - Top 10 failed selectors with counts
+    """
+    stats = crud_feedback.get_feedback_stats(db=db)
+    return ExecutionFeedbackStats(**stats)
+
+
+@router.get("/feedback/export")
+def export_feedback(
+    include_html: bool = Query(False, description="Include HTML snapshots (increases file size)"),
+    include_screenshots: bool = Query(False, description="Include screenshot paths"),
+    since_date: Optional[str] = Query(None, description="Export feedback created after this date (ISO format)"),
+    limit: int = Query(1000, ge=1, le=10000, description="Max feedback entries to export"),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user)
+):
+    """
+    Export feedback to JSON format for team collaboration.
+    
+    **Sprint 4 Feature: Team Data Sync**
+    
+    Security features:
+    - Strips sensitive query parameters from URLs
+    - Excludes HTML snapshots by default (configurable)
+    - Converts user IDs to emails for cross-database compatibility
+    - Excludes execution FK references (stores metadata instead)
+    
+    Returns JSON object for download.
+    """
+    # Parse since_date if provided
+    since_datetime = None
+    if since_date:
+        try:
+            since_datetime = datetime.fromisoformat(since_date)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid date format. Use ISO format: YYYY-MM-DDTHH:MM:SS"
+            )
+    
+    # Export feedback
+    try:
+        feedback_data = crud_feedback.export_feedback_to_dict(
+            db=db,
+            include_html=include_html,
+            include_screenshots=include_screenshots,
+            since_date=since_datetime,
+            limit=limit
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Export failed: {str(e)}"
+        )
+    
+    # Build export file
+    export_file = {
+        "export_version": "1.0",
+        "exported_at": datetime.utcnow().isoformat(),
+        "exported_by": current_user.email,
+        "total_count": len(feedback_data),
+        "sanitized": True,
+        "includes_html": include_html,
+        "includes_screenshots": include_screenshots,
+        "feedback_items": feedback_data
+    }
+    
+    # Return as JSON (FastAPI will handle serialization)
+    return export_file
 
 
 @router.get("/feedback/{feedback_id}", response_model=ExecutionFeedbackResponse)
@@ -215,22 +303,107 @@ def delete_feedback(
     return None
 
 
-@router.get("/feedback/stats/summary", response_model=ExecutionFeedbackStats)
-def get_feedback_stats(
+@router.post("/feedback/import")
+async def import_feedback(
+    file: UploadFile = File(..., description="JSON file exported from /feedback/export"),
+    merge_strategy: str = Query(
+        "skip_duplicates",
+        description="Import strategy",
+        regex="^(skip_duplicates|update_existing|create_all)$"
+    ),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user)
 ):
     """
-    Get overall feedback statistics.
+    Import feedback from JSON file.
     
-    Returns:
-    - Total feedback entries
-    - Total failures
-    - Total corrected failures
-    - Total anomalies
-    - Correction rate (%)
-    - Top 10 failure types with counts
-    - Top 10 failed selectors with counts
+    **Sprint 4 Feature: Team Data Sync**
+    
+    Security features:
+    - Validates JSON schema before import
+    - Maps user emails to local user IDs
+    - Detects duplicates via hash comparison
+    - Requires authentication
+    
+    Merge strategies:
+    - skip_duplicates: Skip if similar feedback exists (default)
+    - update_existing: Update existing feedback with new corrections
+    - create_all: Always create new entries (no duplicate check)
+    
+    Returns summary of import operation.
     """
-    stats = crud_feedback.get_feedback_stats(db=db)
-    return ExecutionFeedbackStats(**stats)
+    # Validate file type
+    if not file.filename.endswith('.json'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be a JSON file"
+        )
+    
+    # Read and parse JSON
+    try:
+        content = await file.read()
+        import_data = json.loads(content)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON format"
+        )
+    
+    # Validate export format
+    if "export_version" not in import_data or "feedback_items" not in import_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid export file format. Must contain 'export_version' and 'feedback_items'"
+        )
+    
+    feedback_items = import_data.get("feedback_items", [])
+    
+    if not feedback_items:
+        return {
+            "success": True,
+            "message": "No feedback items to import",
+            "imported_count": 0,
+            "skipped_count": 0,
+            "updated_count": 0,
+            "failed_count": 0,
+            "errors": []
+        }
+    
+    # Import each feedback item
+    imported_count = 0
+    skipped_count = 0
+    updated_count = 0
+    failed_count = 0
+    errors = []
+    
+    for idx, feedback_data in enumerate(feedback_items):
+        try:
+            success, message = crud_feedback.import_feedback_from_dict(
+                db=db,
+                feedback_data=feedback_data,
+                current_user_id=current_user.id,
+                merge_strategy=merge_strategy
+            )
+            
+            if success:
+                if "Updated" in message:
+                    updated_count += 1
+                else:
+                    imported_count += 1
+            else:
+                skipped_count += 1
+                
+        except Exception as e:
+            failed_count += 1
+            errors.append(f"Item {idx + 1}: {str(e)}")
+    
+    return {
+        "success": True,
+        "message": f"Import completed: {imported_count} created, {updated_count} updated, {skipped_count} skipped, {failed_count} failed",
+        "imported_count": imported_count,
+        "skipped_count": skipped_count,
+        "updated_count": updated_count,
+        "failed_count": failed_count,
+        "total_processed": len(feedback_items),
+        "errors": errors[:10]  # Return first 10 errors only
+    }
