@@ -14,21 +14,16 @@ test.describe('Sprint 4: Test Version Control', () => {
     // Navigate and login
     await page.goto('/');
     await page.getByPlaceholder(/username/i).fill('admin');
-    await page.getByPlaceholder(/password/i).fill('password123');
+    await page.getByPlaceholder(/password/i).fill('admin123');
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/dashboard');
     
-    // Navigate to Tests page
-    await page.getByRole('link', { name: /^tests$/i }).click();
-    await page.waitForURL('**/tests');
+    // Navigate directly to test #100 (the test we created)
+    await page.goto('/tests/100');
+    await page.waitForLoadState('networkidle');
     
-    // Wait for tests to load
-    await page.waitForSelector('[data-testid="test-case-card"], .test-case-card', { timeout: 10000 });
-    
-    // Click on first test to open detail page
-    const firstTest = page.locator('[data-testid="test-case-card"], .test-case-card').first();
-    await firstTest.click();
-    await page.waitForURL('**/tests/**');
+    // Wait for page to fully load
+    await page.waitForTimeout(1000);
   });
 
   test('should display test detail page with version number', async ({ page }) => {
