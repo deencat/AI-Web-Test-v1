@@ -27,364 +27,249 @@ test.describe('Sprint 4: Test Version Control', () => {
   });
 
   test('should display test detail page with version number', async ({ page }) => {
-    // Verify test detail page loaded
-    await expect(page.getByRole('heading', { name: /test case/i })).toBeVisible();
+    // Verify test detail page loaded (checks for test title which is in h1)
+    await expect(page.getByRole('heading', { name: /Login Flow Test/i })).toBeVisible();
     
-    // Verify version number is displayed (e.g., "Test Steps (v1)")
-    await expect(page.getByText(/test steps.*v\d+/i)).toBeVisible();
+    // Verify version number is displayed in the Test Steps label (e.g., "Test Steps (v1)")
+    await expect(page.getByText(/Test Steps.*\(v\d+\)/i)).toBeVisible();
   });
 
   test('should show test step editor with editable steps', async ({ page }) => {
-    // Verify test steps are displayed
-    const stepEditor = page.locator('[data-testid="test-step-editor"], .test-step-editor').first();
+    // Verify test step editor is displayed
+    const stepEditor = page.locator('.test-step-editor');
     await expect(stepEditor).toBeVisible();
     
-    // Verify steps are editable (check for input fields or editable content)
-    const steps = page.locator('[data-testid="test-step"], .test-step');
-    const stepCount = await steps.count();
-    expect(stepCount).toBeGreaterThan(0);
+    // Verify textarea for steps is editable
+    const textarea = stepEditor.locator('textarea');
+    await expect(textarea).toBeVisible();
+    await expect(textarea).toBeEditable();
   });
 
   test('should auto-save when editing test steps', async ({ page }) => {
-    // Find first editable step
-    const firstStep = page.locator('[data-testid="test-step"], .test-step').first();
+    // Find the textarea in test step editor
+    const textarea = page.locator('.test-step-editor textarea');
+    await expect(textarea).toBeVisible();
     
-    // Click to edit (if needed)
-    await firstStep.click();
+    // Get current content and add new text
+    const currentText = await textarea.inputValue();
+    await textarea.fill(currentText + '\nUpdated test step for version control testing');
     
-    // Edit the step content
-    const stepInput = firstStep.locator('input, textarea, [contenteditable="true"]').first();
-    if (await stepInput.count() > 0) {
-      await stepInput.fill('Updated test step for version control testing');
-      
-      // Wait for auto-save indicator (2 second debounce)
-      await page.waitForTimeout(2500);
-      
-      // Verify save indicator appears
-      await expect(page.getByText(/saving|saved/i)).toBeVisible({ timeout: 5000 });
-    }
+    // Wait for auto-save (2 second debounce + processing)
+    await page.waitForTimeout(3000);
+    
+    // Verify save indicator appears
+    await expect(page.getByText(/Saving|Saved/)).toBeVisible({ timeout: 5000 });
   });
 
   test('should open version history panel', async ({ page }) => {
-    // Find and click version history button
-    const versionHistoryBtn = page.getByRole('button', { name: /version history|history|versions/i });
+    // Find and click "View History" button
+    const versionHistoryBtn = page.getByRole('button', { name: /View History/i });
+    await expect(versionHistoryBtn).toBeVisible();
+    await versionHistoryBtn.click();
     
-    if (await versionHistoryBtn.count() > 0) {
-      await versionHistoryBtn.click();
-      
-      // Verify version history panel opens
-      await expect(page.getByText(/version history|versions/i)).toBeVisible({ timeout: 3000 });
-      
-      // Verify version list is displayed
-      const versionList = page.locator('[data-testid="version-list"], .version-item');
-      await expect(versionList.first()).toBeVisible({ timeout: 5000 });
-    } else {
-      // If button doesn't exist, skip test (feature may not be fully implemented)
-      test.skip();
-    }
+    // Verify version history panel opens with heading
+    await expect(page.getByRole('heading', { name: 'Version History' })).toBeVisible({ timeout: 3000 });
+    
+    // Verify version list is displayed
+    const versionList = page.locator('.version-item');
+    await expect(versionList.first()).toBeVisible({ timeout: 5000 });
   });
 
   test('should display version list with version numbers', async ({ page }) => {
     // Open version history
-    const versionHistoryBtn = page.getByRole('button', { name: /version history|history|versions/i });
+    const versionHistoryBtn = page.getByRole('button', { name: /View History/i });
+    await expect(versionHistoryBtn).toBeVisible();
+    await versionHistoryBtn.click();
+    await page.waitForTimeout(1000);
     
-    if (await versionHistoryBtn.count() > 0) {
-      await versionHistoryBtn.click();
-      await page.waitForTimeout(1000);
-      
-      // Verify at least one version is displayed
-      const versions = page.locator('[data-testid="version-item"], .version-item, [data-version]');
-      const versionCount = await versions.count();
-      
-      if (versionCount > 0) {
-        // Verify version number is displayed
-        await expect(versions.first()).toContainText(/v\d+|version \d+/i);
-      }
-    } else {
-      test.skip();
-    }
+    // Verify at least one version is displayed
+    const versions = page.locator('.version-item');
+    const versionCount = await versions.count();
+    expect(versionCount).toBeGreaterThan(0);
+    
+    // Verify version number is displayed
+    await expect(versions.first()).toContainText(/v\d+|version \d+/i);
   });
 
   test('should allow selecting two versions for comparison', async ({ page }) => {
     // Open version history
-    const versionHistoryBtn = page.getByRole('button', { name: /version history|history|versions/i });
+    const versionHistoryBtn = page.getByRole('button', { name: /View History/i });
+    await versionHistoryBtn.click();
+    await page.waitForTimeout(1000);
     
-    if (await versionHistoryBtn.count() > 0) {
-      await versionHistoryBtn.click();
-      await page.waitForTimeout(1000);
-      
-      // Find version checkboxes
-      const versionCheckboxes = page.locator('[data-testid="version-checkbox"], input[type="checkbox"]');
-      const checkboxCount = await versionCheckboxes.count();
-      
-      if (checkboxCount >= 2) {
-        // Select first two versions
-        await versionCheckboxes.nth(0).check();
-        await versionCheckboxes.nth(1).check();
-        
-        // Verify compare button is enabled
-        const compareBtn = page.getByRole('button', { name: /compare/i });
-        await expect(compareBtn).toBeEnabled();
-      } else {
-        test.skip();
-      }
-    } else {
-      test.skip();
-    }
+    // Find version checkboxes
+    const versionCheckboxes = page.locator('input[type="checkbox"]');
+    const checkboxCount = await versionCheckboxes.count();
+    expect(checkboxCount).toBeGreaterThanOrEqual(2);
+    
+    // Select first two versions
+    await versionCheckboxes.nth(0).check();
+    await versionCheckboxes.nth(1).check();
+    
+    // Verify compare button is enabled
+    const compareBtn = page.getByRole('button', { name: /Compare/i });
+    await expect(compareBtn).toBeEnabled();
   });
 
   test('should open version comparison dialog', async ({ page }) => {
     // Open version history
-    const versionHistoryBtn = page.getByRole('button', { name: /version history|history|versions/i });
+    const versionHistoryBtn = page.getByRole('button', { name: /View History/i });
+    await versionHistoryBtn.click();
+    await page.waitForTimeout(1000);
     
-    if (await versionHistoryBtn.count() > 0) {
-      await versionHistoryBtn.click();
-      await page.waitForTimeout(1000);
-      
-      // Select two versions and click compare
-      const versionCheckboxes = page.locator('[data-testid="version-checkbox"], input[type="checkbox"]');
-      const checkboxCount = await versionCheckboxes.count();
-      
-      if (checkboxCount >= 2) {
-        await versionCheckboxes.nth(0).check();
-        await versionCheckboxes.nth(1).check();
-        
-        const compareBtn = page.getByRole('button', { name: /compare/i });
-        await compareBtn.click();
-        
-        // Verify comparison dialog opens
-        await expect(page.getByText(/compare versions|version comparison/i)).toBeVisible({ timeout: 3000 });
-        
-        // Verify side-by-side comparison is displayed
-        await expect(page.locator('[data-testid="version-compare"], .version-compare')).toBeVisible({ timeout: 3000 });
-      } else {
-        test.skip();
-      }
-    } else {
-      test.skip();
-    }
+    // Select two versions and click compare
+    const versionCheckboxes = page.locator('input[type="checkbox"]');
+    await versionCheckboxes.nth(0).check();
+    await versionCheckboxes.nth(1).check();
+    
+    const compareBtn = page.getByRole('button', { name: /Compare/i });
+    await compareBtn.click();
+    
+    // Verify comparison dialog opens
+    await expect(page.getByRole('heading', { name: /Compare Versions/i })).toBeVisible({ timeout: 3000 });
   });
 
   test('should display diff highlighting in comparison', async ({ page }) => {
     // Open version history and compare
-    const versionHistoryBtn = page.getByRole('button', { name: /version history|history|versions/i });
+    const versionHistoryBtn = page.getByRole('button', { name: /View History/i });
+    await versionHistoryBtn.click();
+    await page.waitForTimeout(1000);
     
-    if (await versionHistoryBtn.count() > 0) {
-      await versionHistoryBtn.click();
-      await page.waitForTimeout(1000);
-      
-      const versionCheckboxes = page.locator('[data-testid="version-checkbox"], input[type="checkbox"]');
-      const checkboxCount = await versionCheckboxes.count();
-      
-      if (checkboxCount >= 2) {
-        await versionCheckboxes.nth(0).check();
-        await versionCheckboxes.nth(1).check();
-        
-        const compareBtn = page.getByRole('button', { name: /compare/i });
-        await compareBtn.click();
-        await page.waitForTimeout(1000);
-        
-        // Verify diff highlighting (added/modified/removed classes)
-        const diffElements = page.locator('[data-diff-type], .diff-added, .diff-removed, .diff-modified');
-        const diffCount = await diffElements.count();
-        
-        // At least some diff elements should be present if versions differ
-        if (diffCount > 0) {
-          await expect(diffElements.first()).toBeVisible();
-        }
-      } else {
-        test.skip();
-      }
-    } else {
-      test.skip();
-    }
+    const versionCheckboxes = page.locator('input[type="checkbox"]');
+    await versionCheckboxes.nth(0).check();
+    await versionCheckboxes.nth(1).check();
+    
+    const compareBtn = page.getByRole('button', { name: /Compare/i });
+    await compareBtn.click();
+    await page.waitForTimeout(1000);
+    
+    // Verify comparison dialog is visible
+    await expect(page.getByRole('heading', { name: /Compare Versions/i })).toBeVisible();
+    
+    // Verify diff content areas exist (two text areas for side-by-side comparison)
+    const diffAreas = page.locator('textarea[readonly], pre');
+    const diffCount = await diffAreas.count();
+    expect(diffCount).toBeGreaterThan(0);
   });
 
   test('should close comparison dialog', async ({ page }) => {
     // Open version history and compare
-    const versionHistoryBtn = page.getByRole('button', { name: /version history|history|versions/i });
+    const versionHistoryBtn = page.getByRole('button', { name: /View History/i });
+    await versionHistoryBtn.click();
+    await page.waitForTimeout(1000);
     
-    if (await versionHistoryBtn.count() > 0) {
-      await versionHistoryBtn.click();
-      await page.waitForTimeout(1000);
-      
-      const versionCheckboxes = page.locator('[data-testid="version-checkbox"], input[type="checkbox"]');
-      const checkboxCount = await versionCheckboxes.count();
-      
-      if (checkboxCount >= 2) {
-        await versionCheckboxes.nth(0).check();
-        await versionCheckboxes.nth(1).check();
-        
-        const compareBtn = page.getByRole('button', { name: /compare/i });
-        await compareBtn.click();
-        await page.waitForTimeout(1000);
-        
-        // Click close button
-        const closeBtn = page.getByRole('button', { name: /close/i }).or(page.locator('[aria-label*="close" i]'));
-        if (await closeBtn.count() > 0) {
-          await closeBtn.first().click();
-          
-          // Verify dialog is closed
-          await expect(page.getByText(/compare versions|version comparison/i)).not.toBeVisible({ timeout: 2000 });
-        }
-      } else {
-        test.skip();
-      }
-    } else {
-      test.skip();
-    }
+    const versionCheckboxes = page.locator('input[type="checkbox"]');
+    await versionCheckboxes.nth(0).check();
+    await versionCheckboxes.nth(1).check();
+    
+    const compareBtn = page.getByRole('button', { name: /Compare/i });
+    await compareBtn.click();
+    await page.waitForTimeout(1000);
+    
+    // Verify dialog is open
+    await expect(page.getByRole('heading', { name: /Compare Versions/i })).toBeVisible();
+    
+    // Press Escape to close
+    await page.keyboard.press('Escape');
+    
+    // Verify dialog is closed
+    await expect(page.getByRole('heading', { name: /Compare Versions/i })).not.toBeVisible({ timeout: 2000 });
   });
 
   test('should show rollback button for versions', async ({ page }) => {
     // Open version history
-    const versionHistoryBtn = page.getByRole('button', { name: /version history|history|versions/i });
+    const versionHistoryBtn = page.getByRole('button', { name: /View History/i });
+    await versionHistoryBtn.click();
+    await page.waitForTimeout(1000);
     
-    if (await versionHistoryBtn.count() > 0) {
-      await versionHistoryBtn.click();
-      await page.waitForTimeout(1000);
-      
-      // Find rollback buttons
-      const rollbackBtns = page.getByRole('button', { name: /rollback|revert/i });
-      const rollbackCount = await rollbackBtns.count();
-      
-      if (rollbackCount > 0) {
-        // Verify rollback button is visible
-        await expect(rollbackBtns.first()).toBeVisible();
-      } else {
-        test.skip();
-      }
-    } else {
-      test.skip();
-    }
+    // Find rollback buttons (should be on each version item except current)
+    const rollbackBtns = page.getByRole('button', { name: /Rollback|Revert/i });
+    const rollbackCount = await rollbackBtns.count();
+    expect(rollbackCount).toBeGreaterThan(0);
+    
+    // Verify rollback button is visible
+    await expect(rollbackBtns.first()).toBeVisible();
   });
 
   test('should open rollback confirmation dialog', async ({ page }) => {
     // Open version history
-    const versionHistoryBtn = page.getByRole('button', { name: /version history|history|versions/i });
+    const versionHistoryBtn = page.getByRole('button', { name: /View History/i });
+    await versionHistoryBtn.click();
+    await page.waitForTimeout(1000);
     
-    if (await versionHistoryBtn.count() > 0) {
-      await versionHistoryBtn.click();
-      await page.waitForTimeout(1000);
-      
-      // Click first rollback button
-      const rollbackBtns = page.getByRole('button', { name: /rollback|revert/i });
-      const rollbackCount = await rollbackBtns.count();
-      
-      if (rollbackCount > 0) {
-        await rollbackBtns.first().click();
-        
-        // Verify confirmation dialog opens
-        await expect(page.getByText(/confirm rollback|rollback confirmation/i)).toBeVisible({ timeout: 3000 });
-        
-        // Verify reason input field is present
-        await expect(page.getByPlaceholder(/reason/i).or(page.locator('textarea, input[type="text"]'))).toBeVisible();
-      } else {
-        test.skip();
-      }
-    } else {
-      test.skip();
-    }
+    // Click first rollback button
+    const rollbackBtns = page.getByRole('button', { name: /Rollback|Revert/i });
+    await rollbackBtns.first().click();
+    
+    // Verify confirmation dialog opens with heading
+    await expect(page.getByRole('heading', { name: /Confirm Rollback/i })).toBeVisible({ timeout: 3000 });
+    
+    // Verify reason textarea is present using label
+    const reasonField = page.getByRole('textbox', { name: /Reason for Rollback/i });
+    await expect(reasonField).toBeVisible();
   });
 
   test('should require reason for rollback', async ({ page }) => {
     // Open version history and click rollback
-    const versionHistoryBtn = page.getByRole('button', { name: /version history|history|versions/i });
+    const versionHistoryBtn = page.getByRole('button', { name: /View History/i });
+    await versionHistoryBtn.click();
+    await page.waitForTimeout(1000);
     
-    if (await versionHistoryBtn.count() > 0) {
-      await versionHistoryBtn.click();
-      await page.waitForTimeout(1000);
-      
-      const rollbackBtns = page.getByRole('button', { name: /rollback|revert/i });
-      const rollbackCount = await rollbackBtns.count();
-      
-      if (rollbackCount > 0) {
-        await rollbackBtns.first().click();
-        await page.waitForTimeout(1000);
-        
-        // Find confirm button
-        const confirmBtn = page.getByRole('button', { name: /confirm rollback|confirm/i });
-        
-        if (await confirmBtn.count() > 0) {
-          // Verify confirm button is disabled when reason is empty
-          await expect(confirmBtn).toBeDisabled();
-          
-          // Fill in reason
-          const reasonInput = page.getByPlaceholder(/reason/i).or(page.locator('textarea').first());
-          await reasonInput.fill('E2E test rollback reason');
-          
-          // Verify confirm button is now enabled
-          await expect(confirmBtn).toBeEnabled();
-        }
-      } else {
-        test.skip();
-      }
-    } else {
-      test.skip();
-    }
+    const rollbackBtns = page.getByRole('button', { name: /Rollback|Revert/i });
+    await rollbackBtns.first().click();
+    await page.waitForTimeout(1000);
+    
+    // Find confirm button
+    const confirmBtn = page.getByRole('button', { name: /Confirm Rollback|Confirm/i });
+    
+    // Verify confirm button is disabled when reason is empty
+    await expect(confirmBtn).toBeDisabled();
+    
+    // Fill in reason using the specific textbox for rollback reason
+    const reasonInput = page.getByRole('textbox', { name: /Reason for Rollback/i });
+    await reasonInput.fill('E2E test rollback reason');
+    
+    // Verify confirm button is now enabled
+    await expect(confirmBtn).toBeEnabled();
   });
 
   test('should close rollback dialog without confirming', async ({ page }) => {
     // Open version history and click rollback
-    const versionHistoryBtn = page.getByRole('button', { name: /version history|history|versions/i });
+    const versionHistoryBtn = page.getByRole('button', { name: /View History/i });
+    await versionHistoryBtn.click();
+    await page.waitForTimeout(1000);
     
-    if (await versionHistoryBtn.count() > 0) {
-      await versionHistoryBtn.click();
-      await page.waitForTimeout(1000);
-      
-      const rollbackBtns = page.getByRole('button', { name: /rollback|revert/i });
-      const rollbackCount = await rollbackBtns.count();
-      
-      if (rollbackCount > 0) {
-        await rollbackBtns.first().click();
-        await page.waitForTimeout(1000);
-        
-        // Click cancel or close
-        const cancelBtn = page.getByRole('button', { name: /cancel/i });
-        const closeBtn = page.locator('[aria-label*="close" i]');
-        
-        if (await cancelBtn.count() > 0) {
-          await cancelBtn.click();
-        } else if (await closeBtn.count() > 0) {
-          await closeBtn.first().click();
-        }
-        
-        // Verify dialog is closed
-        await expect(page.getByText(/confirm rollback|rollback confirmation/i)).not.toBeVisible({ timeout: 2000 });
-      } else {
-        test.skip();
-      }
-    } else {
-      test.skip();
-    }
+    const rollbackBtns = page.getByRole('button', { name: /Rollback|Revert/i });
+    await rollbackBtns.first().click();
+    await page.waitForTimeout(1000);
+    
+    // Verify dialog is open
+    await expect(page.getByRole('heading', { name: /Confirm Rollback/i })).toBeVisible();
+    
+    // Click cancel button
+    const cancelBtn = page.getByRole('button', { name: /Cancel/i });
+    await cancelBtn.click();
+    
+    // Verify dialog is closed
+    await expect(page.getByRole('heading', { name: /Confirm Rollback/i })).not.toBeVisible({ timeout: 2000 });
   });
 
   test('should display version metadata in history', async ({ page }) => {
     // Open version history
-    const versionHistoryBtn = page.getByRole('button', { name: /version history|history|versions/i });
+    const versionHistoryBtn = page.getByRole('button', { name: /View History/i });
+    await versionHistoryBtn.click();
+    await page.waitForTimeout(1000);
     
-    if (await versionHistoryBtn.count() > 0) {
-      await versionHistoryBtn.click();
-      await page.waitForTimeout(1000);
-      
-      // Verify version metadata is displayed (created date, created by, etc.)
-      const versionItems = page.locator('[data-testid="version-item"], .version-item');
-      const itemCount = await versionItems.count();
-      
-      if (itemCount > 0) {
-        const firstVersion = versionItems.first();
-        
-        // Check for common metadata fields
-        const hasDate = await firstVersion.locator('text=/created|date|time/i').count() > 0;
-        const hasAuthor = await firstVersion.locator('text=/created by|by|user/i').count() > 0;
-        
-        // At least one metadata field should be present
-        expect(hasDate || hasAuthor).toBeTruthy();
-      } else {
-        test.skip();
-      }
-    } else {
-      test.skip();
-    }
+    // Verify version metadata is displayed (created date, created by, etc.)
+    const versionItems = page.locator('.version-item');
+    const itemCount = await versionItems.count();
+    expect(itemCount).toBeGreaterThan(0);
+    
+    const firstVersion = versionItems.first();
+    
+    // Check for common metadata fields (dates, timestamps, etc.)
+    const hasMetadata = await firstVersion.locator('text=/\d{4}-\d{2}-\d{2}|\d{1,2}:\d{2}|ago|created|modified/i').count();
+    expect(hasMetadata).toBeGreaterThan(0);
   });
 });
 
