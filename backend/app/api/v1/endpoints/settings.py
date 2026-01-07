@@ -9,7 +9,9 @@ from app.schemas.user_settings import (
     UserSettingInDB, 
     UserSettingUpdate, 
     UserSettingCreate,
-    AvailableProvidersResponse
+    AvailableProvidersResponse,
+    StagehandProviderResponse,
+    StagehandProviderUpdate
 )
 from app.services.user_settings_service import user_settings_service
 
@@ -175,4 +177,73 @@ async def get_execution_config(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get execution config: {str(e)}"
+        )
+
+
+# Sprint 5: Dual Stagehand Provider System Endpoints
+
+@router.get("/stagehand-provider", response_model=StagehandProviderResponse)
+async def get_stagehand_provider(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get current user's stagehand provider preference.
+    Returns current provider and list of available providers.
+    
+    Sprint 5: Dual Stagehand Provider System
+    """
+    try:
+        settings = user_settings_service.get_or_create_user_settings(db, current_user.id)
+        
+        return StagehandProviderResponse(
+            provider=settings.stagehand_provider,
+            available_providers=["python", "typescript"]
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get stagehand provider: {str(e)}"
+        )
+
+
+@router.put("/stagehand-provider", response_model=StagehandProviderResponse)
+async def update_stagehand_provider(
+    provider_update: StagehandProviderUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update current user's stagehand provider preference.
+    Switches between Python and TypeScript Stagehand implementations.
+    
+    Sprint 5: Dual Stagehand Provider System
+    
+    Args:
+        provider_update: New provider selection ('python' or 'typescript')
+    
+    Returns:
+        Updated provider configuration
+    """
+    try:
+        # Get or create settings
+        settings = user_settings_service.get_or_create_user_settings(db, current_user.id)
+        
+        # Update the stagehand_provider field
+        update_data = UserSettingUpdate(stagehand_provider=provider_update.provider)
+        updated_settings = user_settings_service.update_user_settings(db, current_user.id, update_data)
+        
+        return StagehandProviderResponse(
+            provider=updated_settings.stagehand_provider,
+            available_providers=["python", "typescript"]
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update stagehand provider: {str(e)}"
         )

@@ -18,11 +18,21 @@ class UserSettingBase(BaseModel):
     execution_temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="Temperature for execution (0.0-2.0)")
     execution_max_tokens: int = Field(default=4096, ge=100, le=32000, description="Max tokens for execution")
     
+    # Stagehand Provider Configuration (Sprint 5: Dual Stagehand Provider System)
+    stagehand_provider: str = Field(default="python", description="Stagehand implementation to use (python, typescript)")
+    
     @validator('generation_provider', 'execution_provider')
     def validate_provider(cls, v):
         allowed = ['google', 'cerebras', 'openrouter']
         if v not in allowed:
             raise ValueError(f"Provider must be one of: {allowed}")
+        return v
+    
+    @validator('stagehand_provider')
+    def validate_stagehand_provider(cls, v):
+        allowed = ['python', 'typescript']
+        if v not in allowed:
+            raise ValueError(f"Stagehand provider must be one of: {allowed}")
         return v
 
 
@@ -43,12 +53,22 @@ class UserSettingUpdate(BaseModel):
     execution_temperature: Optional[float] = Field(None, ge=0.0, le=2.0)
     execution_max_tokens: Optional[int] = Field(None, ge=100, le=32000)
     
+    stagehand_provider: Optional[str] = None
+    
     @validator('generation_provider', 'execution_provider')
     def validate_provider(cls, v):
         if v is not None:
             allowed = ['google', 'cerebras', 'openrouter']
             if v not in allowed:
                 raise ValueError(f"Provider must be one of: {allowed}")
+        return v
+    
+    @validator('stagehand_provider')
+    def validate_stagehand_provider(cls, v):
+        if v is not None:
+            allowed = ['python', 'typescript']
+            if v not in allowed:
+                raise ValueError(f"Stagehand provider must be one of: {allowed}")
         return v
 
 
@@ -79,3 +99,38 @@ class AvailableProvidersResponse(BaseModel):
     default_generation_model: str
     default_execution_provider: str
     default_execution_model: str
+
+
+# Sprint 5: Dual Stagehand Provider System Schemas
+
+class StagehandProviderResponse(BaseModel):
+    """Schema for stagehand provider response."""
+    provider: str = Field(..., description="Current stagehand provider (python, typescript)")
+    available_providers: list[str] = Field(..., description="List of available stagehand providers")
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "provider": "python",
+                "available_providers": ["python", "typescript"]
+            }
+        }
+
+
+class StagehandProviderUpdate(BaseModel):
+    """Schema for updating stagehand provider."""
+    provider: str = Field(..., description="Stagehand provider to switch to (python, typescript)")
+    
+    @validator('provider')
+    def validate_provider(cls, v):
+        allowed = ['python', 'typescript']
+        if v not in allowed:
+            raise ValueError(f"Stagehand provider must be one of: {allowed}")
+        return v
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "provider": "typescript"
+            }
+        }
