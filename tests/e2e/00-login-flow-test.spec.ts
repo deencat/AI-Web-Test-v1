@@ -18,7 +18,7 @@ test.describe('Login Flow Test', () => {
     await page.getByPlaceholder(/username/i).fill('admin');
     
     console.log('Step 3: Fill password');
-    await page.getByPlaceholder(/password/i).fill('password123');
+    await page.getByPlaceholder(/password/i).fill('admin123');
     await page.screenshot({ path: 'test-results/login-2-filled.png' });
     
     console.log('Step 4: Click sign in button');

@@ -11,7 +11,7 @@ test.describe('Tests Page', () => {
     // Navigate and login
     await page.goto('/');
     await page.getByPlaceholder(/username/i).fill('admin');
-    await page.getByPlaceholder(/password/i).fill('password123');
+    await page.getByPlaceholder(/password/i).fill('admin123');
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/dashboard');
     
