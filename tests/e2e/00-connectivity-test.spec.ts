@@ -36,7 +36,7 @@ test.describe('Connectivity Test', () => {
     const passwordField = page.getByPlaceholder(/password/i);
     await expect(passwordField).toBeVisible();
     
-    await passwordField.fill('password123');
+    await passwordField.fill('admin123');
     
     console.log('Login fields filled successfully');
   });

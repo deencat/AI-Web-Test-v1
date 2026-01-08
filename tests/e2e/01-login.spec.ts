@@ -31,9 +31,9 @@ test.describe('Login Page', () => {
   });
 
   test('should successfully login with any credentials (mock)', async ({ page }) => {
-    // Fill in login form
+    // Fill in login form with correct credentials
     await page.getByPlaceholder(/username/i).fill('admin');
-    await page.getByPlaceholder(/password/i).fill('password123');
+    await page.getByPlaceholder(/password/i).fill('admin123');
     
     // Click sign in
     await page.getByRole('button', { name: /sign in/i }).click();
@@ -46,9 +46,9 @@ test.describe('Login Page', () => {
   });
 
   test('should navigate to dashboard with specific username', async ({ page }) => {
-    // Login with specific username
-    await page.getByPlaceholder(/username/i).fill('qa_engineer');
-    await page.getByPlaceholder(/password/i).fill('anypassword');
+    // Login with correct credentials
+    await page.getByPlaceholder(/username/i).fill('admin');
+    await page.getByPlaceholder(/password/i).fill('admin123');
     await page.getByRole('button', { name: /sign in/i }).click();
     
     // Verify navigation

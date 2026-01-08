@@ -10,7 +10,7 @@ test.describe('Sprint 2: Test Generation', () => {
     // Login and navigate to Tests page
     await page.goto('/');
     await page.getByPlaceholder(/username/i).fill('admin');
-    await page.getByPlaceholder(/password/i).fill('password123');
+    await page.getByPlaceholder(/password/i).fill('admin123');
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/dashboard');
     await page.getByRole('link', { name: /^tests$/i }).click();
@@ -73,7 +73,7 @@ test.describe('Sprint 2: Knowledge Base Upload', () => {
     // Login and navigate to KB page
     await page.goto('/');
     await page.getByPlaceholder(/username/i).fill('admin');
-    await page.getByPlaceholder(/password/i).fill('password123');
+    await page.getByPlaceholder(/password/i).fill('admin123');
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/dashboard');
     await page.getByRole('link', { name: /knowledge base/i }).click();
@@ -132,7 +132,7 @@ test.describe('Sprint 2: Dashboard Charts', () => {
     // Login and go to dashboard
     await page.goto('/');
     await page.getByPlaceholder(/username/i).fill('admin');
-    await page.getByPlaceholder(/password/i).fill('password123');
+    await page.getByPlaceholder(/password/i).fill('admin123');
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/dashboard');
   });
@@ -182,7 +182,7 @@ test.describe('Sprint 2: Edit Test Case', () => {
     // Login and go to tests page
     await page.goto('/');
     await page.getByPlaceholder(/username/i).fill('admin');
-    await page.getByPlaceholder(/password/i).fill('password123');
+    await page.getByPlaceholder(/password/i).fill('admin123');
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/dashboard');
     await page.goto('/tests');

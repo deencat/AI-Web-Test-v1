@@ -5,7 +5,7 @@ test.describe('Sprint 3 - Test Execution Features', () => {
     // Login using same pattern as existing tests
     await page.goto('/');
     await page.getByPlaceholder(/username/i).fill('admin');
-    await page.getByPlaceholder(/password/i).fill('password123');
+    await page.getByPlaceholder(/password/i).fill('admin123');
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/dashboard');
   });
