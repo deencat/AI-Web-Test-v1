@@ -90,6 +90,9 @@ backend/*.sqlite3
 backend/artifacts/
 backend/artifacts/screenshots/
 backend/artifacts/videos/
+backend/screenshots/
+test-results/
+playwright-report/
 
 # Test scripts (keep test suite, exclude temp test scripts)
 backend/check_*.py
