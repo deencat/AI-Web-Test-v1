@@ -20,7 +20,8 @@ from app.schemas.test_execution import (
 )
 from app.crud import test_case as crud_tests
 from app.crud import test_execution as crud_executions
-from app.services.stagehand_service import get_stagehand_service
+from app.services.stagehand_factory import get_stagehand_adapter
+from app.services.stagehand_adapter import StagehandAdapter
 from app.services.queue_manager import get_queue_manager
 from app.services.execution_queue import get_execution_queue
 

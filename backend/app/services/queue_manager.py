@@ -10,7 +10,8 @@ from typing import Optional
 from datetime import datetime
 
 from app.services.execution_queue import get_execution_queue, QueuedExecution
-from app.services.stagehand_service import get_stagehand_service
+from app.services.stagehand_factory import get_stagehand_adapter
+from app.services.stagehand_adapter import StagehandAdapter
 from app.db.session import SessionLocal
 from app.crud import test_execution as crud_execution
 from app.crud import test_case as crud_test
@@ -189,17 +190,21 @@ class QueueManager:
                         )
                         print(f"[DEBUG] 🎯 Loaded user execution config: provider={user_config['provider']}, model={user_config['model']}")
                         
-                        # Create NEW Stagehand service for THIS thread (not singleton!)
+                        # Create NEW Stagehand adapter for THIS thread (not singleton!)
                         # Each thread needs its own instance because Playwright can't be shared across event loops
-                        from app.services.stagehand_service import StagehandExecutionService
                         import os
                         
                         # TEMPORARY: Force headless=False to see browser during testing
                         headless = False  # TODO: Change back to env var after testing
                         
-                        print(f"[DEBUG] Creating StagehandExecutionService with headless={headless}")
+                        print(f"[DEBUG] Creating Stagehand adapter with headless={headless}")
                         
-                        service = StagehandExecutionService(headless=headless)
+                        # Use factory to get adapter (automatically selects provider from user settings)
+                        service = get_stagehand_adapter(
+                            db=bg_db,
+                            user_id=queued_execution.user_id,
+                            headless=headless
+                        )
                         
                         # Initialize with user's config (pass to initialize method)
                         loop.run_until_complete(service.initialize(user_config=user_config))
