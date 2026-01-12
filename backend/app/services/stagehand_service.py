@@ -657,6 +657,43 @@ class StagehandExecutionService:
             print(f"[DEBUG]   - URL: {url_after}")
             print(f"[DEBUG]   - Title: {title_after}")
             print(f"[DEBUG] Changes: URL changed={url_before != url_after}, Title changed={title_before != title_after}")
+            
+            # FAILURE DETECTION: If it's a fill/type action and nothing changed, it probably failed
+            desc_lower = step_description.lower()
+            is_input_action = any(word in desc_lower for word in ['fill', 'type', 'enter', 'input'])
+            is_navigation_action = any(word in desc_lower for word in ['navigate', 'goto', 'open'])
+            is_click_action = any(word in desc_lower for word in ['click', 'select', 'press'])
+            
+            url_changed = url_before != url_after
+            title_changed = title_before != title_after
+            something_changed = url_changed or title_changed
+            
+            # If it's an input action and nothing changed, treat as failure
+            if is_input_action and not something_changed:
+                print(f"[DEBUG] ⚠️  INPUT ACTION but nothing changed - treating as FAILURE")
+                print(f"[DEBUG] ========================================")
+                return {
+                    "success": False,
+                    "error": "Input action completed but no page changes detected. Element may not be fillable or action had no effect.",
+                    "actual": f"AI tried but no changes: XPath: {xpath_used}. Page: {title_after} | URL: {url_after}",
+                    "expected": step_description,
+                    "selector_used": xpath_used,
+                    "action_method": "stagehand_ai_failed"
+                }
+            
+            # If it's a navigation action and URL didn't change, treat as failure
+            if is_navigation_action and not url_changed:
+                print(f"[DEBUG] ⚠️  NAVIGATION ACTION but URL didn't change - treating as FAILURE")
+                print(f"[DEBUG] ========================================")
+                return {
+                    "success": False,
+                    "error": "Navigation action completed but URL didn't change. Navigation may have failed.",
+                    "actual": f"AI tried but URL unchanged: {url_after}",
+                    "expected": step_description,
+                    "selector_used": xpath_used,
+                    "action_method": "stagehand_ai_failed"
+                }
+            
             print(f"[DEBUG] ========================================")
             
             return {
