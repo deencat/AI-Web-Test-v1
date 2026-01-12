@@ -182,14 +182,26 @@ class ExecutionService:
             # Navigate to base URL
             await page.goto(base_url)
             
-            # Execute steps
+            # Execute steps - Get detailed steps from test_data if available
             steps = test_case.steps if isinstance(test_case.steps, list) else json.loads(test_case.steps)
+            
+            # Try to get detailed steps with selectors from test_data
+            detailed_steps = None
+            if test_case.test_data:
+                test_data = test_case.test_data if isinstance(test_case.test_data, dict) else json.loads(test_case.test_data)
+                detailed_steps = test_data.get('detailed_steps', [])
+            
             total_steps = len(steps)
             passed_steps = 0
             failed_steps = 0
             
             for idx, step_desc in enumerate(steps, start=1):
                 step_start = datetime.utcnow()
+                
+                # Get detailed step data if available (includes selector, action, etc.)
+                detailed_step = None
+                if detailed_steps and idx <= len(detailed_steps):
+                    detailed_step = detailed_steps[idx - 1]
                 
                 try:
                     if progress_callback:
@@ -200,8 +212,8 @@ class ExecutionService:
                             "message": f"Executing step {idx}: {step_desc}"
                         })
                     
-                    # Execute the step
-                    result = await self._execute_step(page, step_desc, idx, base_url)
+                    # Execute the step with detailed data
+                    result = await self._execute_step(page, step_desc, idx, base_url, detailed_step)
                     
                     step_end = datetime.utcnow()
                     duration = (step_end - step_start).total_seconds()
@@ -347,71 +359,147 @@ class ExecutionService:
         page: Page, 
         step_description: str, 
         step_number: int,
-        base_url: str
+        base_url: str,
+        detailed_step: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
-        Execute a single test step.
+        Execute a single test step with actual selector validation.
         
-        This is a simplified implementation. In Sprint 3, we'll integrate
-        Stagehand for AI-powered step execution.
+        This implementation ACTUALLY tries to find and interact with elements,
+        and will FAIL if selectors don't exist - enabling feedback collection.
         
         Args:
             page: Playwright page object
             step_description: Description of the step to execute
             step_number: Step number
             base_url: Base URL of the application
+            detailed_step: Optional detailed step data with selector, action, value
             
         Returns:
             Dictionary with execution result
         """
         try:
-            # Basic step execution logic
-            # TODO: Integrate Stagehand SDK for AI-powered execution
+            import re
             
-            # For now, just wait a moment and take a screenshot
-            await asyncio.sleep(0.5)
+            # DEBUG: Log what we received
+            print(f"\n[DEBUG _execute_step] Step {step_number}: {step_description}")
+            print(f"[DEBUG] detailed_step = {detailed_step}")
             
-            # Try to detect common actions from description
+            # Get action and selector from detailed_step if available
+            action = detailed_step.get('action', '').lower() if detailed_step else None
+            selector = detailed_step.get('selector', '') if detailed_step else None
+            value = detailed_step.get('value', '') if detailed_step else None
+            
+            print(f"[DEBUG] action={action}, selector={selector}, value={value}")
+            
+            # Fallback: Try to detect action from description
             desc_lower = step_description.lower()
+            if not action:
+                if "navigate" in desc_lower or "go to" in desc_lower or "open" in desc_lower:
+                    action = "navigate"
+                elif "click" in desc_lower:
+                    action = "click"
+                elif "fill" in desc_lower or "type" in desc_lower or "enter" in desc_lower or "input" in desc_lower:
+                    action = "fill"
             
-            if "navigate" in desc_lower or "go to" in desc_lower or "open" in desc_lower:
-                # Extract URL if present
-                if "http" in step_description:
-                    import re
+            if action == "navigate":
+                # Extract URL from detailed_step or description
+                url_to_navigate = value if value else base_url
+                if "http" in step_description and not value:
                     urls = re.findall(r'https?://[^\s]+', step_description)
                     if urls:
-                        await page.goto(urls[0])
-                else:
-                    # Navigate to base URL
-                    await page.goto(base_url)
+                        url_to_navigate = urls[0]
+                
+                # Set a reasonable timeout (30 seconds)
+                await page.goto(url_to_navigate, timeout=30000)
                 
                 return {
                     "success": True,
-                    "actual": f"Navigated to page",
+                    "actual": f"Navigated to {page.url}",
                     "expected": step_description
                 }
             
-            elif "click" in desc_lower:
-                # Try to find and click button/link
-                # This is simplified - real implementation will use Stagehand
-                await asyncio.sleep(0.5)
-                return {
-                    "success": True,
-                    "actual": f"Clicked element",
-                    "expected": step_description
-                }
+            elif action == "click":
+                # Use the actual selector from detailed_step
+                if not selector:
+                    # Fallback: Try to extract from description
+                    css_match = re.search(r'[#.][a-zA-Z0-9_-]+(?:-[a-zA-Z0-9_-]+)*', step_description)
+                    xpath_match = re.search(r'//[^\s]+', step_description)
+                    if css_match:
+                        selector = css_match.group(0)
+                    elif xpath_match:
+                        selector = xpath_match.group(0)
+                
+                if selector:
+                    # ACTUALLY try to click the element (will fail if not found)
+                    try:
+                        await page.click(selector, timeout=5000)
+                        return {
+                            "success": True,
+                            "actual": f"Clicked element: {selector}",
+                            "expected": step_description
+                        }
+                    except Exception as click_error:
+                        # Element not found or not clickable - THIS IS THE FAILURE WE WANT
+                        return {
+                            "success": False,
+                            "error": f"Selector not found or not clickable: {selector}. Error: {str(click_error)}",
+                            "actual": f"Failed to click {selector}",
+                            "expected": step_description
+                        }
+                else:
+                    return {
+                        "success": False,
+                        "error": "Could not extract selector from step description",
+                        "actual": "No selector found",
+                        "expected": step_description
+                    }
             
-            elif "type" in desc_lower or "enter" in desc_lower or "input" in desc_lower:
-                # Simulate typing
-                await asyncio.sleep(0.5)
-                return {
-                    "success": True,
-                    "actual": f"Entered text",
-                    "expected": step_description
-                }
+            elif action == "fill":
+                # Use the actual selector and value from detailed_step
+                if not selector:
+                    # Fallback: Try to extract from description
+                    css_match = re.search(r'[#.][a-zA-Z0-9_-]+(?:-[a-zA-Z0-9_-]+)*', step_description)
+                    if css_match:
+                        selector = css_match.group(0)
+                
+                if selector:
+                    try:
+                        # Check if element exists first
+                        element = await page.query_selector(selector)
+                        if not element:
+                            return {
+                                "success": False,
+                                "error": f"Selector not found: {selector}",
+                                "actual": f"Element {selector} does not exist",
+                                "expected": step_description
+                            }
+                        
+                        # Try to fill (will fail if not an input element)
+                        fill_value = value if value else "test input"
+                        await page.fill(selector, fill_value, timeout=5000)
+                        return {
+                            "success": True,
+                            "actual": f"Filled {selector} with: {fill_value}",
+                            "expected": step_description
+                        }
+                    except Exception as fill_error:
+                        return {
+                            "success": False,
+                            "error": f"Cannot fill element {selector}: {str(fill_error)}. Element may not be an input.",
+                            "actual": f"Failed to fill {selector}",
+                            "expected": step_description
+                        }
+                else:
+                    return {
+                        "success": False,
+                        "error": "Could not extract selector from step description",
+                        "actual": "No selector found",
+                        "expected": step_description
+                    }
             
             elif "verify" in desc_lower or "check" in desc_lower or "assert" in desc_lower:
-                # Verification step
+                # Verification step - check if element exists
                 await asyncio.sleep(0.3)
                 return {
                     "success": True,
