@@ -10,33 +10,48 @@ import { test, expect } from '@playwright/test';
  */
 
 test.describe('Sprint 4: Test Version Control', () => {
-  test.beforeEach(async ({ page }) => {
-    // Navigate and login
-    await page.goto('/');
-    await page.getByPlaceholder(/username/i).fill('admin');
-    await page.getByPlaceholder(/password/i).fill('admin123');
-    await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL('**/dashboard');
+  // Shared page for all tests to avoid rate limiting
+  let sharedPage;
+  let sharedContext;
+
+  test.beforeAll(async ({ browser }) => {
+    // Create a persistent context and page for all tests
+    sharedContext = await browser.newContext();
+    sharedPage = await sharedContext.newPage();
     
-    // Navigate directly to test #100 (the test we created)
-    await page.goto('/tests/100');
-    await page.waitForLoadState('networkidle');
-    
-    // Wait for page to fully load
-    await page.waitForTimeout(1000);
+    // Navigate and login once
+    await sharedPage.goto('/');
+    await sharedPage.getByPlaceholder(/username/i).fill('admin');
+    await sharedPage.getByPlaceholder(/password/i).fill('admin123');
+    await sharedPage.getByRole('button', { name: /sign in/i }).click();
+    await sharedPage.waitForURL('**/dashboard', { timeout: 10000 });
   });
 
-  test('should display test detail page with version number', async ({ page }) => {
+  test.afterAll(async () => {
+    // Clean up
+    if (sharedContext) {
+      await sharedContext.close();
+    }
+  });
+
+  test.beforeEach(async () => {
+    // Navigate to test page before each test
+    await sharedPage.goto('/tests/100');
+    await sharedPage.waitForLoadState('networkidle');
+    await sharedPage.waitForTimeout(1000);
+  });
+
+  test('should display test detail page with version number', async () => {
     // Verify test detail page loaded (checks for test title which is in h1)
-    await expect(page.getByRole('heading', { name: /Login Flow Test/i })).toBeVisible();
+    await expect(sharedPage.getByRole('heading', { name: /Login Flow Test/i })).toBeVisible();
     
     // Verify version number is displayed in the Test Steps label (e.g., "Test Steps (v1)")
-    await expect(page.getByText(/Test Steps.*\(v\d+\)/i)).toBeVisible();
+    await expect(sharedPage.getByText(/Test Steps.*\(v\d+\)/i)).toBeVisible();
   });
 
-  test('should show test step editor with editable steps', async ({ page }) => {
+  test('should show test step editor with editable steps', async () => {
     // Verify test step editor is displayed
-    const stepEditor = page.locator('.test-step-editor');
+    const stepEditor = sharedPage.locator('.test-step-editor');
     await expect(stepEditor).toBeVisible();
     
     // Verify textarea for steps is editable
@@ -45,9 +60,9 @@ test.describe('Sprint 4: Test Version Control', () => {
     await expect(textarea).toBeEditable();
   });
 
-  test('should auto-save when editing test steps', async ({ page }) => {
+  test('should auto-save when editing test steps', async () => {
     // Find the textarea in test step editor
-    const textarea = page.locator('.test-step-editor textarea');
+    const textarea = sharedPage.locator('.test-step-editor textarea');
     await expect(textarea).toBeVisible();
     
     // Get current content and add new text
@@ -55,35 +70,35 @@ test.describe('Sprint 4: Test Version Control', () => {
     await textarea.fill(currentText + '\nUpdated test step for version control testing');
     
     // Wait for auto-save (2 second debounce + processing)
-    await page.waitForTimeout(3000);
+    await sharedPage.waitForTimeout(3000);
     
     // Verify save indicator appears
-    await expect(page.getByText(/Saving|Saved/)).toBeVisible({ timeout: 5000 });
+    await expect(sharedPage.getByText(/Saving|Saved/)).toBeVisible({ timeout: 5000 });
   });
 
-  test('should open version history panel', async ({ page }) => {
+  test('should open version history panel', async () => {
     // Find and click "View History" button
-    const versionHistoryBtn = page.getByRole('button', { name: /View History/i });
+    const versionHistoryBtn = sharedPage.getByRole('button', { name: /View History/i });
     await expect(versionHistoryBtn).toBeVisible();
     await versionHistoryBtn.click();
     
     // Verify version history panel opens with heading
-    await expect(page.getByRole('heading', { name: 'Version History' })).toBeVisible({ timeout: 3000 });
+    await expect(sharedPage.getByRole('heading', { name: 'Version History' })).toBeVisible({ timeout: 3000 });
     
     // Verify version list is displayed
-    const versionList = page.locator('.version-item');
+    const versionList = sharedPage.locator('.version-item');
     await expect(versionList.first()).toBeVisible({ timeout: 5000 });
   });
 
-  test('should display version list with version numbers', async ({ page }) => {
+  test('should display version list with version numbers', async () => {
     // Open version history
-    const versionHistoryBtn = page.getByRole('button', { name: /View History/i });
+    const versionHistoryBtn = sharedPage.getByRole('button', { name: /View History/i });
     await expect(versionHistoryBtn).toBeVisible();
     await versionHistoryBtn.click();
-    await page.waitForTimeout(1000);
+    await sharedPage.waitForTimeout(1000);
     
     // Verify at least one version is displayed
-    const versions = page.locator('.version-item');
+    const versions = sharedPage.locator('.version-item');
     const versionCount = await versions.count();
     expect(versionCount).toBeGreaterThan(0);
     
@@ -91,14 +106,14 @@ test.describe('Sprint 4: Test Version Control', () => {
     await expect(versions.first()).toContainText(/v\d+|version \d+/i);
   });
 
-  test('should allow selecting two versions for comparison', async ({ page }) => {
+  test('should allow selecting two versions for comparison', async () => {
     // Open version history
-    const versionHistoryBtn = page.getByRole('button', { name: /View History/i });
+    const versionHistoryBtn = sharedPage.getByRole('button', { name: /View History/i });
     await versionHistoryBtn.click();
-    await page.waitForTimeout(1000);
+    await sharedPage.waitForTimeout(1000);
     
     // Find version checkboxes
-    const versionCheckboxes = page.locator('input[type="checkbox"]');
+    const versionCheckboxes = sharedPage.locator('input[type="checkbox"]');
     const checkboxCount = await versionCheckboxes.count();
     expect(checkboxCount).toBeGreaterThanOrEqual(2);
     
@@ -107,83 +122,83 @@ test.describe('Sprint 4: Test Version Control', () => {
     await versionCheckboxes.nth(1).check();
     
     // Verify compare button is enabled
-    const compareBtn = page.getByRole('button', { name: /Compare/i });
+    const compareBtn = sharedPage.getByRole('button', { name: /Compare/i });
     await expect(compareBtn).toBeEnabled();
   });
 
-  test('should open version comparison dialog', async ({ page }) => {
+  test('should open version comparison dialog', async () => {
     // Open version history
-    const versionHistoryBtn = page.getByRole('button', { name: /View History/i });
+    const versionHistoryBtn = sharedPage.getByRole('button', { name: /View History/i });
     await versionHistoryBtn.click();
-    await page.waitForTimeout(1000);
+    await sharedPage.waitForTimeout(1000);
     
     // Select two versions and click compare
-    const versionCheckboxes = page.locator('input[type="checkbox"]');
+    const versionCheckboxes = sharedPage.locator('input[type="checkbox"]');
     await versionCheckboxes.nth(0).check();
     await versionCheckboxes.nth(1).check();
     
-    const compareBtn = page.getByRole('button', { name: /Compare/i });
+    const compareBtn = sharedPage.getByRole('button', { name: /Compare/i });
     await compareBtn.click();
     
     // Verify comparison dialog opens
-    await expect(page.getByRole('heading', { name: /Compare Versions/i })).toBeVisible({ timeout: 3000 });
+    await expect(sharedPage.getByRole('heading', { name: /Compare Versions/i })).toBeVisible({ timeout: 3000 });
   });
 
-  test('should display diff highlighting in comparison', async ({ page }) => {
+  test('should display diff highlighting in comparison', async () => {
     // Open version history and compare
-    const versionHistoryBtn = page.getByRole('button', { name: /View History/i });
+    const versionHistoryBtn = sharedPage.getByRole('button', { name: /View History/i });
     await versionHistoryBtn.click();
-    await page.waitForTimeout(1000);
+    await sharedPage.waitForTimeout(1000);
     
-    const versionCheckboxes = page.locator('input[type="checkbox"]');
+    const versionCheckboxes = sharedPage.locator('input[type="checkbox"]');
     await versionCheckboxes.nth(0).check();
     await versionCheckboxes.nth(1).check();
     
-    const compareBtn = page.getByRole('button', { name: /Compare/i });
+    const compareBtn = sharedPage.getByRole('button', { name: /Compare/i });
     await compareBtn.click();
-    await page.waitForTimeout(1000);
+    await sharedPage.waitForTimeout(1000);
     
     // Verify comparison dialog is visible
-    await expect(page.getByRole('heading', { name: /Compare Versions/i })).toBeVisible();
+    await expect(sharedPage.getByRole('heading', { name: /Compare Versions/i })).toBeVisible();
     
-    // Verify diff content areas exist (two text areas for side-by-side comparison)
-    const diffAreas = page.locator('textarea[readonly], pre');
+    // Verify diff content areas exist (span elements with font-mono class displaying steps)
+    const diffAreas = sharedPage.locator('span.font-mono');
     const diffCount = await diffAreas.count();
     expect(diffCount).toBeGreaterThan(0);
   });
 
-  test('should close comparison dialog', async ({ page }) => {
+  test('should close comparison dialog', async () => {
     // Open version history and compare
-    const versionHistoryBtn = page.getByRole('button', { name: /View History/i });
+    const versionHistoryBtn = sharedPage.getByRole('button', { name: /View History/i });
     await versionHistoryBtn.click();
-    await page.waitForTimeout(1000);
+    await sharedPage.waitForTimeout(1000);
     
-    const versionCheckboxes = page.locator('input[type="checkbox"]');
+    const versionCheckboxes = sharedPage.locator('input[type="checkbox"]');
     await versionCheckboxes.nth(0).check();
     await versionCheckboxes.nth(1).check();
     
-    const compareBtn = page.getByRole('button', { name: /Compare/i });
+    const compareBtn = sharedPage.getByRole('button', { name: /Compare/i });
     await compareBtn.click();
-    await page.waitForTimeout(1000);
+    await sharedPage.waitForTimeout(1000);
     
     // Verify dialog is open
-    await expect(page.getByRole('heading', { name: /Compare Versions/i })).toBeVisible();
+    await expect(sharedPage.getByRole('heading', { name: /Compare Versions/i })).toBeVisible();
     
     // Press Escape to close
-    await page.keyboard.press('Escape');
+    await sharedPage.keyboard.press('Escape');
     
     // Verify dialog is closed
-    await expect(page.getByRole('heading', { name: /Compare Versions/i })).not.toBeVisible({ timeout: 2000 });
+    await expect(sharedPage.getByRole('heading', { name: /Compare Versions/i })).not.toBeVisible({ timeout: 2000 });
   });
 
-  test('should show rollback button for versions', async ({ page }) => {
+  test('should show rollback button for versions', async () => {
     // Open version history
-    const versionHistoryBtn = page.getByRole('button', { name: /View History/i });
+    const versionHistoryBtn = sharedPage.getByRole('button', { name: /View History/i });
     await versionHistoryBtn.click();
-    await page.waitForTimeout(1000);
+    await sharedPage.waitForTimeout(1000);
     
     // Find rollback buttons (should be on each version item except current)
-    const rollbackBtns = page.getByRole('button', { name: /Rollback|Revert/i });
+    const rollbackBtns = sharedPage.getByRole('button', { name: /Rollback|Revert/i });
     const rollbackCount = await rollbackBtns.count();
     expect(rollbackCount).toBeGreaterThan(0);
     
@@ -191,77 +206,77 @@ test.describe('Sprint 4: Test Version Control', () => {
     await expect(rollbackBtns.first()).toBeVisible();
   });
 
-  test('should open rollback confirmation dialog', async ({ page }) => {
+  test('should open rollback confirmation dialog', async () => {
     // Open version history
-    const versionHistoryBtn = page.getByRole('button', { name: /View History/i });
+    const versionHistoryBtn = sharedPage.getByRole('button', { name: /View History/i });
     await versionHistoryBtn.click();
-    await page.waitForTimeout(1000);
+    await sharedPage.waitForTimeout(1000);
     
     // Click first rollback button
-    const rollbackBtns = page.getByRole('button', { name: /Rollback|Revert/i });
+    const rollbackBtns = sharedPage.getByRole('button', { name: /Rollback|Revert/i });
     await rollbackBtns.first().click();
     
     // Verify confirmation dialog opens with heading
-    await expect(page.getByRole('heading', { name: /Confirm Rollback/i })).toBeVisible({ timeout: 3000 });
+    await expect(sharedPage.getByRole('heading', { name: /Rollback to Version/i })).toBeVisible({ timeout: 3000 });
     
     // Verify reason textarea is present using label
-    const reasonField = page.getByRole('textbox', { name: /Reason for Rollback/i });
+    const reasonField = sharedPage.getByRole('textbox', { name: /Reason for Rollback/i });
     await expect(reasonField).toBeVisible();
   });
 
-  test('should require reason for rollback', async ({ page }) => {
+  test('should require reason for rollback', async () => {
     // Open version history and click rollback
-    const versionHistoryBtn = page.getByRole('button', { name: /View History/i });
+    const versionHistoryBtn = sharedPage.getByRole('button', { name: /View History/i });
     await versionHistoryBtn.click();
-    await page.waitForTimeout(1000);
+    await sharedPage.waitForTimeout(1000);
     
-    const rollbackBtns = page.getByRole('button', { name: /Rollback|Revert/i });
+    const rollbackBtns = sharedPage.getByRole('button', { name: /Rollback|Revert/i });
     await rollbackBtns.first().click();
-    await page.waitForTimeout(1000);
+    await sharedPage.waitForTimeout(1000);
     
     // Find confirm button
-    const confirmBtn = page.getByRole('button', { name: /Confirm Rollback|Confirm/i });
+    const confirmBtn = sharedPage.getByRole('button', { name: /Confirm Rollback|Confirm/i });
     
     // Verify confirm button is disabled when reason is empty
     await expect(confirmBtn).toBeDisabled();
     
     // Fill in reason using the specific textbox for rollback reason
-    const reasonInput = page.getByRole('textbox', { name: /Reason for Rollback/i });
+    const reasonInput = sharedPage.getByRole('textbox', { name: /Reason for Rollback/i });
     await reasonInput.fill('E2E test rollback reason');
     
     // Verify confirm button is now enabled
     await expect(confirmBtn).toBeEnabled();
   });
 
-  test('should close rollback dialog without confirming', async ({ page }) => {
+  test('should close rollback dialog without confirming', async () => {
     // Open version history and click rollback
-    const versionHistoryBtn = page.getByRole('button', { name: /View History/i });
+    const versionHistoryBtn = sharedPage.getByRole('button', { name: /View History/i });
     await versionHistoryBtn.click();
-    await page.waitForTimeout(1000);
+    await sharedPage.waitForTimeout(1000);
     
-    const rollbackBtns = page.getByRole('button', { name: /Rollback|Revert/i });
+    const rollbackBtns = sharedPage.getByRole('button', { name: /Rollback|Revert/i });
     await rollbackBtns.first().click();
-    await page.waitForTimeout(1000);
+    await sharedPage.waitForTimeout(1000);
     
     // Verify dialog is open
-    await expect(page.getByRole('heading', { name: /Confirm Rollback/i })).toBeVisible();
+    await expect(sharedPage.getByRole('heading', { name: /Rollback to Version/i })).toBeVisible();
     
     // Click cancel button
-    const cancelBtn = page.getByRole('button', { name: /Cancel/i });
+    const cancelBtn = sharedPage.getByRole('button', { name: /Cancel/i });
     await cancelBtn.click();
     
     // Verify dialog is closed
-    await expect(page.getByRole('heading', { name: /Confirm Rollback/i })).not.toBeVisible({ timeout: 2000 });
+    await expect(sharedPage.getByRole('heading', { name: /Rollback to Version/i })).not.toBeVisible({ timeout: 2000 });
   });
 
-  test('should display version metadata in history', async ({ page }) => {
+  test('should display version metadata in history', async () => {
     // Open version history
-    const versionHistoryBtn = page.getByRole('button', { name: /View History/i });
+    const versionHistoryBtn = sharedPage.getByRole('button', { name: /View History/i });
     await versionHistoryBtn.click();
-    await page.waitForTimeout(1000);
+    await sharedPage.waitForTimeout(1000);
     
     // Verify version metadata is displayed (created date, created by, etc.)
-    const versionItems = page.locator('.version-item');
+    const versionItems = sharedPage.locator('.version-item');
     const itemCount = await versionItems.count();
     expect(itemCount).toBeGreaterThan(0);
     
@@ -272,4 +287,5 @@ test.describe('Sprint 4: Test Version Control', () => {
     expect(hasMetadata).toBeGreaterThan(0);
   });
 });
+
 
