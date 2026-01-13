@@ -221,7 +221,69 @@ class SettingsService {
       throw new Error(apiHelpers.getErrorMessage(error));
     }
   }
+
+  /**
+   * Get current Stagehand provider setting (Sprint 5)
+   */
+  async getStagehandProvider(): Promise<any> {
+    try {
+      const response = await api.get('/settings/stagehand-provider');
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  /**
+   * Update Stagehand provider (Sprint 5)
+   */
+  async updateStagehandProvider(provider: 'python' | 'typescript'): Promise<any> {
+    try {
+      const response = await api.put('/settings/stagehand-provider', { provider });
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  /**
+   * Check Stagehand provider health (Sprint 5)
+   */
+  async checkStagehandHealth(provider: 'python' | 'typescript'): Promise<any> {
+    try {
+      // Check if TypeScript service is running
+      if (provider === 'typescript') {
+        const response = await fetch('http://localhost:3001/health');
+        if (response.ok) {
+          const data = await response.json();
+          return {
+            provider: 'typescript',
+            status: 'healthy',
+            latency_ms: 0,
+            ...data
+          };
+        }
+        return {
+          provider: 'typescript',
+          status: 'unhealthy',
+          error: 'Service not responding'
+        };
+      }
+      
+      // Python is always available (built-in)
+      return {
+        provider: 'python',
+        status: 'healthy',
+        latency_ms: 0
+      };
+    } catch (error) {
+      return {
+        provider,
+        status: 'unhealthy',
+        error: apiHelpers.getErrorMessage(error)
+      };
+    }
+  }
 }
 
 export default new SettingsService();
-
