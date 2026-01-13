@@ -81,7 +81,6 @@ class TypeScriptStagehandAdapter(StagehandAdapter):
                 "config": user_config or {}
             }
             
-            print(f"[DEBUG] Sending payload: {payload}")
             
             try:
                 async with session.post(
@@ -304,6 +303,9 @@ class TypeScriptStagehandAdapter(StagehandAdapter):
         """
         Initialize a persistent debug session using TypeScript Stagehand.
         
+        NOTE: Currently uses the same endpoint as initialize() since persistent
+        sessions are managed by the TypeScript service automatically.
+        
         Args:
             session_id: Unique session identifier
             test_id: Test case ID being debugged
@@ -311,35 +313,37 @@ class TypeScriptStagehandAdapter(StagehandAdapter):
             db: Database session
             user_config: Optional configuration overrides
         """
-        session = await self._get_session()
-        
-        payload = {
-            "session_id": session_id,
-            "test_id": test_id,
-            "user_id": user_id,
-            "user_config": user_config or {}
-        }
-        
-        try:
-            async with session.post(
-                f"{self.service_url}/api/initialize-persistent",
-                json=payload
-            ) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    raise ValueError(
-                        f"Failed to initialize persistent session: {error_text}"
-                    )
-                
-                data = await response.json()
-                self._browser_session_id = data.get("browser_session_id")
-                
-                print(f"[TypeScript Adapter] Initialized persistent session: {session_id}")
-        
-        except aiohttp.ClientError as e:
-            raise ConnectionError(
-                f"Cannot initialize persistent session: {e}"
-            )
+        # Create a fresh session for this request
+        async with aiohttp.ClientSession() as session:
+            self._browser_session_id = session_id
+            
+            payload = {
+                "session_id": session_id,
+                "test_id": test_id,
+                "user_id": user_id,
+                "config": user_config or {}
+            }
+            
+            try:
+                async with session.post(
+                    f"{self.service_url}/api/sessions/initialize",
+                    json=payload,
+                    headers={"Content-Type": "application/json"}
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        raise ValueError(
+                            f"Failed to initialize persistent session: {error_text}"
+                        )
+                    
+                    data = await response.json()
+                    
+                    print(f"[TypeScript Adapter] Initialized persistent session: {session_id}")
+            
+            except aiohttp.ClientError as e:
+                raise ConnectionError(
+                    f"Cannot initialize persistent session: {e}"
+                )
     
     @property
     def provider_name(self) -> str:
