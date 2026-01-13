@@ -51,16 +51,20 @@ Generate test cases in the following JSON format:
 }
 
 GUIDELINES:
-- Be specific and actionable
-- Include realistic test data
+- Be specific and actionable with detailed step-by-step instructions
+- Include ALL necessary steps - do NOT skip or abbreviate steps
+- Each step should be a single, clear action (e.g., "Click the 'Login' button" not "Login to system")
+- Include realistic test data with specific values
 - Cover both positive and negative scenarios
 - Prioritize critical functionality as "high"
 - Use clear, concise language
 - Each test should be independent and repeatable
 - Include edge cases when relevant
 - When KB context is available, cite the source document for domain-specific steps
+- For complex workflows, break down into 15-20 granular steps if needed
+- NEVER truncate or summarize steps - always provide complete sequences
 
-IMPORTANT: Return ONLY valid JSON, no additional text or explanation."""
+IMPORTANT: Return ONLY valid JSON, no additional text or explanation. Do NOT abbreviate or skip steps to save tokens - completeness is critical."""
 
     def _build_user_prompt(
         self,
@@ -92,7 +96,13 @@ IMPORTANT: Return ONLY valid JSON, no additional text or explanation."""
             prompt += "\n- Cite KB sources when referencing documented procedures"
             prompt += "\n- Ensure test steps match documented workflows"
         
-        prompt += "\n\nGenerate comprehensive test cases covering positive scenarios, negative scenarios, and edge cases where applicable."
+        prompt += "\n\n**Generation Instructions:**"
+        prompt += "\n- Generate comprehensive test cases with COMPLETE step sequences (do not abbreviate)"
+        prompt += "\n- Include ALL necessary steps for each test case (15-20 steps for complex workflows)"
+        prompt += "\n- Cover positive scenarios, negative scenarios, and edge cases where applicable"
+        prompt += "\n- Use specific, actionable language for each step"
+        prompt += "\n- Include realistic test data with actual values (not placeholders)"
+        prompt += "\n\nIf the requirement is vague, make reasonable assumptions and document them in the test case description."
         
         return prompt
     
@@ -175,14 +185,14 @@ IMPORTANT: Return ONLY valid JSON, no additional text or explanation."""
             provider = user_config.get("provider", "openrouter")
             generation_model = user_config.get("model") if not model else model  # Explicit model param takes precedence
             temperature = user_config.get("temperature", 0.7)
-            max_tokens_val = user_config.get("max_tokens", 2000)
+            max_tokens_val = user_config.get("max_tokens", 4096)  # INCREASED: 2000 → 4096 for detailed test cases
             print(f"[DEBUG] 🎯 Using user's generation config: {provider}/{generation_model} (temp={temperature}, max_tokens={max_tokens_val})")
         else:
             # Fall back to .env defaults
             provider = "openrouter"
             generation_model = model  # Use explicit model param or None (will use settings default)
             temperature = 0.7
-            max_tokens_val = 2000
+            max_tokens_val = 4096  # INCREASED: 2000 → 4096 for detailed test cases with more steps
             print(f"[DEBUG] 📋 Using .env defaults: {provider} (temp={temperature}, max_tokens={max_tokens_val})")
         
         # Call Universal LLM service (supports Google, Cerebras, OpenRouter)
