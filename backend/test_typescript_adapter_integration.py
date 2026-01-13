@@ -51,7 +51,6 @@ async def test_typescript_adapter():
         
         # Test 2.5: Navigate to a page first (Stagehand requires this)
         print("\n[Test 2.5] Navigating to a test page...")
-        from app.services.typescript_stagehand_adapter import TypeScriptStagehandAdapter
         
         # We need to manually call navigate since it's not in the adapter interface yet
         session = await adapter._get_session()

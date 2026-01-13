@@ -66,32 +66,44 @@ class TypeScriptStagehandAdapter(StagehandAdapter):
             aiohttp.ClientError: If service is unreachable
             ValueError: If initialization fails
         """
-        session = await self._get_session()
+        import uuid
         
-        payload = {
-            "user_config": user_config or {}
-        }
-        
-        try:
-            async with session.post(
-                f"{self.service_url}/api/initialize",
-                json=payload
-            ) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    raise ValueError(
-                        f"Failed to initialize TypeScript Stagehand: {error_text}"
-                    )
-                
-                data = await response.json()
-                self._browser_session_id = data.get("session_id")
-                
-                print(f"[TypeScript Adapter] Initialized browser session: {self._browser_session_id}")
-        
-        except aiohttp.ClientError as e:
-            raise ConnectionError(
-                f"Cannot connect to TypeScript Stagehand service at {self.service_url}: {e}"
-            )
+        # Create a fresh session for this request
+        async with aiohttp.ClientSession() as session:
+            # Generate session ID if not already set
+            if not self._browser_session_id:
+                self._browser_session_id = f"ts-{uuid.uuid4().hex[:16]}"
+            
+            payload = {
+                "session_id": self._browser_session_id,
+                "test_id": self.test_case_id if hasattr(self, 'test_case_id') else 0,
+                "user_id": 1,  # Default user ID, can be passed from caller
+                "config": user_config or {}
+            }
+            
+            print(f"[DEBUG] Sending payload: {payload}")
+            
+            try:
+                async with session.post(
+                    f"{self.service_url}/api/sessions/initialize",
+                    json=payload,
+                    headers={"Content-Type": "application/json"}
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        raise ValueError(
+                            f"Failed to initialize TypeScript Stagehand: {error_text}"
+                        )
+                    
+                    data = await response.json()
+                    # Session ID should match what we sent
+                    
+                    print(f"[TypeScript Adapter] Initialized browser session: {self._browser_session_id}")
+            
+            except aiohttp.ClientError as e:
+                raise ConnectionError(
+                    f"Cannot connect to TypeScript Stagehand service at {self.service_url}: {e}"
+                )
     
     async def cleanup(self) -> None:
         """
