@@ -178,3 +178,121 @@ export interface ActiveExecution {
   duration_seconds?: number;
   progress_percentage?: number;
 }
+
+// ============================================================================
+// Execution Feedback Types (Sprint 4)
+// ============================================================================
+
+export type FailureType = 
+  | 'selector_not_found'
+  | 'timeout'
+  | 'assertion_failed'
+  | 'network_error'
+  | 'permission_error'
+  | 'navigation_error'
+  | 'unknown_error';
+
+export type CorrectionSource = 'human' | 'ai_suggestion' | 'auto_applied';
+export type SelectorType = 'css' | 'xpath' | 'text' | 'aria';
+export type AnomalyType = 'performance' | 'flaky' | 'environment' | 'intermittent_failure';
+
+export interface ExecutionFeedbackBase {
+  execution_id: number;
+  step_index?: number; // null for execution-level feedback
+  failure_type?: FailureType;
+  error_message?: string;
+  screenshot_url?: string;
+  page_url?: string;
+  browser_type?: string;
+  failed_selector?: string;
+  selector_type?: SelectorType;
+  notes?: string;
+  tags?: string[];
+}
+
+export interface ExecutionFeedback extends ExecutionFeedbackBase {
+  id: number;
+  page_html_snapshot?: string;
+  viewport_width?: number;
+  viewport_height?: number;
+  corrected_step?: Record<string, any>;
+  correction_source?: CorrectionSource;
+  correction_confidence?: number;
+  correction_applied_at?: string;
+  corrected_by_user_id?: number;
+  step_duration_ms?: number;
+  memory_usage_mb?: number;
+  network_requests?: number;
+  is_anomaly: boolean;
+  anomaly_score?: number;
+  anomaly_type?: AnomalyType;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExecutionFeedbackListItem {
+  id: number;
+  execution_id: number;
+  step_index?: number;
+  failure_type?: FailureType;
+  error_message?: string;
+  screenshot_url?: string;
+  page_url?: string;
+  browser_type?: string;
+  failed_selector?: string;
+  selector_type?: SelectorType;
+  correction_source?: CorrectionSource;
+  correction_confidence?: number;
+  is_anomaly: boolean;
+  anomaly_score?: number;
+  created_at: string;
+}
+
+export interface ExecutionFeedbackListResponse {
+  items: ExecutionFeedbackListItem[];
+  total: number;
+  skip: number;
+  limit: number;
+}
+
+export interface CorrectionSubmit {
+  corrected_step: Record<string, any>;
+  correction_source: CorrectionSource;
+  correction_confidence?: number;
+  notes?: string;
+}
+
+export interface ExecutionFeedbackStats {
+  total_feedback: number;
+  total_failures: number;
+  total_corrected: number;
+  total_anomalies: number;
+  correction_rate: number; // Percentage
+  top_failure_types: Array<{
+    type: string;
+    count: number;
+  }>;
+  top_failed_selectors: Array<{
+    selector: string;
+    count: number;
+  }>;
+}
+
+export interface ExecutionFeedbackCreate extends ExecutionFeedbackBase {
+  page_html_snapshot?: string;
+  viewport_width?: number;
+  viewport_height?: number;
+  step_duration_ms?: number;
+  memory_usage_mb?: number;
+  network_requests?: number;
+}
+
+export interface ExecutionFeedbackUpdate {
+  failure_type?: FailureType;
+  error_message?: string;
+  notes?: string;
+  tags?: string[];
+  is_anomaly?: boolean;
+  anomaly_score?: number;
+  anomaly_type?: AnomalyType;
+}
