@@ -184,6 +184,12 @@ IMPORTANT: Return ONLY valid JSON, no additional text or explanation. Do NOT abb
             # Use user's generation settings
             provider = user_config.get("provider", "openrouter")
             generation_model = user_config.get("model") if not model else model  # Explicit model param takes precedence
+            
+            # Strip provider prefix from model if present (e.g., "cerebras/llama3.3-70b" -> "llama3.3-70b")
+            # This handles cases where model is stored as "provider/model" format
+            if generation_model and "/" in generation_model:
+                generation_model = generation_model.split("/", 1)[1]
+            
             temperature = user_config.get("temperature", 0.7)
             max_tokens_val = user_config.get("max_tokens", 4096)  # INCREASED: 2000 → 4096 for detailed test cases
             print(f"[DEBUG] 🎯 Using user's generation config: {provider}/{generation_model} (temp={temperature}, max_tokens={max_tokens_val})")
