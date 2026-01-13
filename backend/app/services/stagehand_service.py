@@ -114,6 +114,10 @@ class StagehandExecutionService:
                 # Use user's model selection if available, otherwise use .env default
                 cerebras_model = user_config.get("model") if user_config else os.getenv("CEREBRAS_MODEL", "llama3.1-8b")
                 
+                # Strip provider prefix from model if present (e.g., "cerebras/llama3.3-70b" -> "llama3.3-70b")
+                if cerebras_model and "/" in cerebras_model:
+                    cerebras_model = cerebras_model.split("/", 1)[1]
+                
                 if not cerebras_api_key:
                     raise ValueError(
                         "CEREBRAS_API_KEY not set in .env file. "
@@ -139,6 +143,10 @@ class StagehandExecutionService:
                 # Use user's model selection if available, otherwise use .env default
                 google_model = user_config.get("model") if user_config else os.getenv("GOOGLE_MODEL", "gemini-1.5-flash")
                 
+                # Strip provider prefix from model if present (e.g., "google/gemini-2.0-flash" -> "gemini-2.0-flash")
+                if google_model and "/" in google_model:
+                    google_model = google_model.split("/", 1)[1]
+                
                 if not google_api_key:
                     raise ValueError(
                         "GOOGLE_API_KEY not set in .env file. "
@@ -163,6 +171,12 @@ class StagehandExecutionService:
                 openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
                 # Use user's model selection if available, otherwise use .env default
                 openrouter_model = user_config.get("model") if user_config else os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct")
+                
+                # Strip provider prefix from model if present (e.g., "openrouter/model-name" -> "model-name")
+                # Note: OpenRouter models often include org/model format (e.g., "meta-llama/llama-3.3-70b")
+                # Only strip if it starts with "openrouter/"
+                if openrouter_model and openrouter_model.startswith("openrouter/"):
+                    openrouter_model = openrouter_model.split("/", 1)[1]
                 
                 config = StagehandConfig(
                     env="LOCAL",
@@ -266,6 +280,10 @@ class StagehandExecutionService:
                 cerebras_api_key = os.getenv("CEREBRAS_API_KEY")
                 cerebras_model = user_config.get("model") if user_config else os.getenv("CEREBRAS_MODEL", "llama3.1-8b")
                 
+                # Strip provider prefix from model if present (e.g., "cerebras/llama3.3-70b" -> "llama3.3-70b")
+                if cerebras_model and "/" in cerebras_model:
+                    cerebras_model = cerebras_model.split("/", 1)[1]
+                
                 if not cerebras_api_key:
                     raise ValueError("CEREBRAS_API_KEY not set in .env file")
                 
@@ -283,6 +301,10 @@ class StagehandExecutionService:
                 google_api_key = os.getenv("GOOGLE_API_KEY")
                 google_model = user_config.get("model") if user_config else os.getenv("GOOGLE_MODEL", "gemini-1.5-flash")
                 
+                # Strip provider prefix from model if present (e.g., "google/gemini-2.0-flash" -> "gemini-2.0-flash")
+                if google_model and "/" in google_model:
+                    google_model = google_model.split("/", 1)[1]
+                
                 if not google_api_key:
                     raise ValueError("GOOGLE_API_KEY not set in .env file")
                 
@@ -299,6 +321,12 @@ class StagehandExecutionService:
             else:  # OpenRouter
                 openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
                 openrouter_model = user_config.get("model") if user_config else os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct")
+                
+                # Strip provider prefix from model if present (e.g., "openrouter/model-name" -> "model-name")
+                # Note: OpenRouter models often include org/model format (e.g., "meta-llama/llama-3.3-70b")
+                # Only strip if it starts with "openrouter/"
+                if openrouter_model and openrouter_model.startswith("openrouter/"):
+                    openrouter_model = openrouter_model.split("/", 1)[1]
                 
                 config = StagehandConfig(
                     env="LOCAL",
