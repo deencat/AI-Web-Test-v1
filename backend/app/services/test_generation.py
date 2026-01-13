@@ -138,6 +138,9 @@ IMPORTANT: Return ONLY valid JSON, no additional text or explanation. Do NOT abb
         Raises:
             Exception: If generation fails
         """
+        # Log the request parameters for debugging
+        print(f"[DEBUG] 📝 Generation request: requirement='{requirement[:50]}...', num_tests={num_tests}, use_kb_context={use_kb_context}, category_id={category_id}")
+        
         # Load user's generation settings if user_id provided
         user_config = None
         if db and user_id:
@@ -185,10 +188,14 @@ IMPORTANT: Return ONLY valid JSON, no additional text or explanation. Do NOT abb
             provider = user_config.get("provider", "openrouter")
             generation_model = user_config.get("model") if not model else model  # Explicit model param takes precedence
             
-            # Strip provider prefix from model if present (e.g., "cerebras/llama3.3-70b" -> "llama3.3-70b")
-            # This handles cases where model is stored as "provider/model" format
-            if generation_model and "/" in generation_model:
-                generation_model = generation_model.split("/", 1)[1]
+            # Strip provider prefix from model ONLY for non-OpenRouter providers
+            # - Cerebras/Google: "cerebras/llama3.3-70b" -> "llama3.3-70b"
+            # - OpenRouter: Keep "meta-llama/llama-3.3-70b-instruct:free" as-is (needs org/model format)
+            if generation_model and provider.lower() != "openrouter":
+                # Only strip if it starts with the provider name
+                provider_prefix = f"{provider.lower()}/"
+                if generation_model.lower().startswith(provider_prefix):
+                    generation_model = generation_model.split("/", 1)[1]
             
             temperature = user_config.get("temperature", 0.7)
             max_tokens_val = user_config.get("max_tokens", 4096)  # INCREASED: 2000 → 4096 for detailed test cases
@@ -253,7 +260,13 @@ IMPORTANT: Return ONLY valid JSON, no additional text or explanation. Do NOT abb
             return result
             
         except Exception as e:
+            # Log detailed error for debugging
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"[ERROR] Test generation failed: {str(e)}")
+            print(f"[ERROR] Full traceback:\n{error_details}")
             raise Exception(f"Test generation failed: {str(e)}")
+
     
     async def generate_tests_for_page(
         self,

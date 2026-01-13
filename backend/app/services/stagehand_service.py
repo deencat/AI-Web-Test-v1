@@ -115,7 +115,7 @@ class StagehandExecutionService:
                 cerebras_model = user_config.get("model") if user_config else os.getenv("CEREBRAS_MODEL", "llama3.1-8b")
                 
                 # Strip provider prefix from model if present (e.g., "cerebras/llama3.3-70b" -> "llama3.3-70b")
-                if cerebras_model and "/" in cerebras_model:
+                if cerebras_model and cerebras_model.lower().startswith("cerebras/"):
                     cerebras_model = cerebras_model.split("/", 1)[1]
                 
                 if not cerebras_api_key:
@@ -144,7 +144,7 @@ class StagehandExecutionService:
                 google_model = user_config.get("model") if user_config else os.getenv("GOOGLE_MODEL", "gemini-1.5-flash")
                 
                 # Strip provider prefix from model if present (e.g., "google/gemini-2.0-flash" -> "gemini-2.0-flash")
-                if google_model and "/" in google_model:
+                if google_model and google_model.lower().startswith("google/"):
                     google_model = google_model.split("/", 1)[1]
                 
                 if not google_api_key:
@@ -281,7 +281,7 @@ class StagehandExecutionService:
                 cerebras_model = user_config.get("model") if user_config else os.getenv("CEREBRAS_MODEL", "llama3.1-8b")
                 
                 # Strip provider prefix from model if present (e.g., "cerebras/llama3.3-70b" -> "llama3.3-70b")
-                if cerebras_model and "/" in cerebras_model:
+                if cerebras_model and cerebras_model.lower().startswith("cerebras/"):
                     cerebras_model = cerebras_model.split("/", 1)[1]
                 
                 if not cerebras_api_key:
@@ -302,7 +302,7 @@ class StagehandExecutionService:
                 google_model = user_config.get("model") if user_config else os.getenv("GOOGLE_MODEL", "gemini-1.5-flash")
                 
                 # Strip provider prefix from model if present (e.g., "google/gemini-2.0-flash" -> "gemini-2.0-flash")
-                if google_model and "/" in google_model:
+                if google_model and google_model.lower().startswith("google/"):
                     google_model = google_model.split("/", 1)[1]
                 
                 if not google_api_key:
