@@ -12,9 +12,11 @@ class UniversalLLMService:
     """Service for interacting with multiple LLM providers."""
     
     def __init__(self):
-        self.google_api_key = os.getenv("GOOGLE_API_KEY")
-        self.cerebras_api_key = os.getenv("CEREBRAS_API_KEY")
-        self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+        # Use settings object which loads from .env via pydantic_settings
+        # Fallback to os.getenv for compatibility
+        self.google_api_key = settings.GOOGLE_API_KEY or os.getenv("GOOGLE_API_KEY")
+        self.cerebras_api_key = settings.CEREBRAS_API_KEY or os.getenv("CEREBRAS_API_KEY")
+        self.openrouter_api_key = settings.OPENROUTER_API_KEY or os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
     
     async def chat_completion(
         self,
@@ -85,7 +87,7 @@ class UniversalLLMService:
             "contents": gemini_contents,
             "generationConfig": {
                 "temperature": temperature,
-                "maxOutputTokens": max_tokens or 2000,
+                "maxOutputTokens": max_tokens or 8192,  # Increased default from 2000 to 8192 for complete responses
             }
         }
         
