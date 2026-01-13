@@ -10,6 +10,7 @@ from app.models.test_scenario import TestScenario
 from app.models.test_suite import TestSuite, TestSuiteItem, SuiteExecution
 from app.models.user_settings import UserSetting
 from app.models.debug_session import DebugSession, DebugStepExecution, DebugMode, DebugSessionStatus
+from app.models.execution_feedback import ExecutionFeedback
 
 __all__ = [
     "User",
@@ -22,6 +23,7 @@ __all__ = [
     "TestScenario",
     "TestSuite", "TestSuiteItem", "SuiteExecution",
     "UserSetting",
-    "DebugSession", "DebugStepExecution", "DebugMode", "DebugSessionStatus"
+    "DebugSession", "DebugStepExecution", "DebugMode", "DebugSessionStatus",
+    "ExecutionFeedback"
 ]
 

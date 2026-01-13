@@ -675,6 +675,43 @@ class StagehandExecutionService:
             print(f"[DEBUG]   - URL: {url_after}")
             print(f"[DEBUG]   - Title: {title_after}")
             print(f"[DEBUG] Changes: URL changed={url_before != url_after}, Title changed={title_before != title_after}")
+            
+            # FAILURE DETECTION: If it's a fill/type action and nothing changed, it probably failed
+            desc_lower = step_description.lower()
+            is_input_action = any(word in desc_lower for word in ['fill', 'type', 'enter', 'input'])
+            is_navigation_action = any(word in desc_lower for word in ['navigate', 'goto', 'open'])
+            is_click_action = any(word in desc_lower for word in ['click', 'select', 'press'])
+            
+            url_changed = url_before != url_after
+            title_changed = title_before != title_after
+            something_changed = url_changed or title_changed
+            
+            # If it's an input action and nothing changed, treat as failure
+            if is_input_action and not something_changed:
+                print(f"[DEBUG] ⚠️  INPUT ACTION but nothing changed - treating as FAILURE")
+                print(f"[DEBUG] ========================================")
+                return {
+                    "success": False,
+                    "error": "Input action completed but no page changes detected. Element may not be fillable or action had no effect.",
+                    "actual": f"AI tried but no changes: XPath: {xpath_used}. Page: {title_after} | URL: {url_after}",
+                    "expected": step_description,
+                    "selector_used": xpath_used,
+                    "action_method": "stagehand_ai_failed"
+                }
+            
+            # If it's a navigation action and URL didn't change, treat as failure
+            if is_navigation_action and not url_changed:
+                print(f"[DEBUG] ⚠️  NAVIGATION ACTION but URL didn't change - treating as FAILURE")
+                print(f"[DEBUG] ========================================")
+                return {
+                    "success": False,
+                    "error": "Navigation action completed but URL didn't change. Navigation may have failed.",
+                    "actual": f"AI tried but URL unchanged: {url_after}",
+                    "expected": step_description,
+                    "selector_used": xpath_used,
+                    "action_method": "stagehand_ai_failed"
+                }
+            
             print(f"[DEBUG] ========================================")
             
             return {
@@ -843,7 +880,7 @@ class StagehandExecutionService:
                 for selector in selectors_to_try:
                     try:
                         print(f"[DEBUG] Trying selector: {selector}")
-                        element = await pw_page.wait_for_selector(selector, timeout=30000)  # 30 seconds for slow pages
+                        element = await pw_page.wait_for_selector(selector, timeout=5000)  # 5 seconds only
                         
                         if element:
                             is_visible = await element.is_visible()
@@ -855,7 +892,7 @@ class StagehandExecutionService:
                                 
                                 # Try normal click first
                                 try:
-                                    await element.click(timeout=60000)  # 60 seconds for click to complete
+                                    await element.click(timeout=10000)  # 10 seconds for click to complete
                                 except Exception as click_error:
                                     # If blocked by modal overlay, force the click
                                     if "intercepts pointer events" in str(click_error):
@@ -973,11 +1010,12 @@ class StagehandExecutionService:
                     'input:visible:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])'
                 ]
             
-            # Try each selector
+            # Try each selector with REDUCED timeout (5s per selector instead of 30s)
+            # This prevents infinite waiting when element doesn't exist
             for selector in selectors_to_try:
                 try:
-                    print(f"[DEBUG] Trying Playwright selector: {selector}")
-                    element = await self.page._page.wait_for_selector(selector, timeout=30000, state='visible')  # 30 seconds
+                    print(f"[DEBUG] Trying: {selector}")
+                    element = await self.page._page.wait_for_selector(selector, timeout=5000, state='visible')  # 5 seconds only
                     
                     if element:
                         print(f"[DEBUG] Found element with: {selector}")
@@ -999,10 +1037,12 @@ class StagehandExecutionService:
                         return {
                             "success": True,
                             "actual": f"Entered '{text_to_type}' into {field_type} field. Page: {title}",
-                            "expected": step_description
+                            "expected": step_description,
+                            "selector_used": selector,
+                            "action_method": "playwright"
                         }
                 except Exception as e:
-                    print(f"[DEBUG] Selector '{selector}' failed: {str(e)}")
+                    print(f"[DEBUG] {selector} failed: {str(e)[:100]}")
                     continue
             
             # If direct Playwright approach fails, fall back to Stagehand AI
@@ -1055,11 +1095,11 @@ class StagehandExecutionService:
                 try:
                     element = await pw_page.wait_for_selector(
                         "input[type='checkbox']:visible, [role='checkbox']:visible, label:has(input[type='checkbox']):visible",
-                        timeout=10000,  # 10 seconds
+                        timeout=5000,  # 5 seconds only
                         state='visible'
                     )
                     if element:
-                        await element.click(timeout=10000)  # 10 seconds
+                        await element.click(timeout=5000)  # 5 seconds
                         await asyncio.sleep(0.5)
                         print(f"[DEBUG] ✅ Clicked checkbox")
                         checkbox_selector = "input[type='checkbox']:visible, [role='checkbox']:visible, label:has(input[type='checkbox']):visible"
@@ -1087,11 +1127,11 @@ class StagehandExecutionService:
                 try:
                     element = await pw_page.wait_for_selector(
                         "button[aria-label*='close' i]:visible, button[class*='close' i]:visible, button:has-text('×'):visible, [aria-label*='close' i]:visible",
-                        timeout=10000,  # 10 seconds
+                        timeout=5000,  # 5 seconds only
                         state='visible'
                     )
                     if element:
-                        await element.click(timeout=10000)  # 10 seconds
+                        await element.click(timeout=5000)  # 5 seconds
                         await asyncio.sleep(1)
                         print(f"[DEBUG] ✅ Clicked close button")
                         close_selector = "button[aria-label*='close' i]:visible, button[class*='close' i]:visible, button:has-text('×'):visible, [aria-label*='close' i]:visible"
@@ -1156,14 +1196,14 @@ class StagehandExecutionService:
                 combined_selector = ", ".join(base_patterns)
             
             try:
-                print(f"[DEBUG] Trying combined selector (timeout: 10s)")
+                print(f"[DEBUG] Trying combined selector (timeout: 5s)")
                 element = await pw_page.wait_for_selector(
                     combined_selector, 
-                    timeout=10000,  # 10 seconds total (not per selector)
+                    timeout=5000,  # 5 seconds only
                     state='visible'
                 )
                 if element:
-                    await element.click(timeout=10000)  # 10 seconds
+                    await element.click(timeout=5000)  # 5 seconds
                     await asyncio.sleep(1.5)
                     
                     title = await self.page.title()
@@ -1296,7 +1336,7 @@ class StagehandExecutionService:
             for selector in selectors:
                 try:
                     print(f"[DEBUG] Trying: {selector}")
-                    element = await pw_page.wait_for_selector(selector, timeout=30000, state='visible')  # 30 seconds
+                    element = await pw_page.wait_for_selector(selector, timeout=5000, state='visible')  # 5 seconds only
                     if element:
                         await element.fill(text_to_type)
                         await asyncio.sleep(0.5)

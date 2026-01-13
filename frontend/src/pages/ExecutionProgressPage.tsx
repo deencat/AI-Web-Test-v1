@@ -4,11 +4,14 @@ import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { ScreenshotGallery } from '../components/execution/ScreenshotGallery';
+import { ExecutionFeedbackViewer } from '../components/execution/ExecutionFeedbackViewer';
+import { CorrectionForm } from '../components/execution/CorrectionForm';
+import { ReportIssueButton } from '../components/execution/ReportIssueButton';
 import { DebugModeModal } from '../components/debug/DebugModeModal';
 import { DebugSessionView } from '../components/debug/DebugSessionView';
 import executionService from '../services/executionService';
 import debugService from '../services/debugService';
-import type { TestExecutionDetail, ExecutionStatus, ExecutionResult } from '../types/execution';
+import type { TestExecutionDetail, ExecutionStatus, ExecutionResult, ExecutionFeedback } from '../types/execution';
 import type { DebugMode } from '../types/debug';
 
 export function ExecutionProgressPage() {
@@ -21,6 +24,10 @@ export function ExecutionProgressPage() {
   // Debug mode state
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [activeDebugSession, setActiveDebugSession] = useState<string | null>(null);
+  
+  // Feedback correction modal state
+  const [showCorrectionModal, setShowCorrectionModal] = useState(false);
+  const [selectedFeedback, setSelectedFeedback] = useState<ExecutionFeedback | null>(null);
 
   const fetchExecutionDetail = async () => {
     if (!executionId) return;
@@ -55,6 +62,24 @@ export function ExecutionProgressPage() {
   // Close debug session
   const handleCloseDebug = () => {
     setActiveDebugSession(null);
+  };
+
+  // Handle correction workflow
+  const handleCorrectClick = (feedback: ExecutionFeedback) => {
+    setSelectedFeedback(feedback);
+    setShowCorrectionModal(true);
+  };
+
+  const handleCorrectionSuccess = () => {
+    setShowCorrectionModal(false);
+    setSelectedFeedback(null);
+    // Optionally refresh execution details to see updated feedback
+    fetchExecutionDetail();
+  };
+
+  const handleCorrectionCancel = () => {
+    setShowCorrectionModal(false);
+    setSelectedFeedback(null);
   };
 
   useEffect(() => {
@@ -222,7 +247,12 @@ export function ExecutionProgressPage() {
             <h2 className="text-xl font-semibold text-gray-900 mb-4">Test Steps</h2>
             <div className="space-y-4">
               {execution.steps.map((step) => (
-                <StepCard key={step.id} step={step} />
+                <StepCard 
+                  key={step.id} 
+                  step={step} 
+                  executionId={execution.id}
+                  onReportSuccess={fetchExecutionDetail}
+                />
               ))}
             </div>
           </div>
@@ -230,6 +260,26 @@ export function ExecutionProgressPage() {
 
         {/* Screenshot Gallery */}
         <ScreenshotGallery steps={execution.steps} />
+
+        {/* Execution Feedback - Always show for completed executions */}
+        {execution.status === 'completed' && (
+          <Card>
+            <div className="p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                🔍 Execution Feedback & Learning
+              </h2>
+              <p className="text-sm text-gray-600 mb-4">
+                {execution.failed_steps > 0 
+                  ? 'Review failure details and submit corrections to improve future test execution accuracy.'
+                  : 'No automatic failures detected. You can still report issues like false positives using the backend tool.'}
+              </p>
+              <ExecutionFeedbackViewer
+                executionId={execution.id}
+                onCorrectClick={handleCorrectClick}
+              />
+            </div>
+          </Card>
+        )}
 
         {/* Error Message (if any) */}
         {execution.error_message && (
@@ -252,6 +302,32 @@ export function ExecutionProgressPage() {
         totalSteps={execution.total_steps}
         executionId={execution.id}
       />
+
+      {/* Correction Modal */}
+      {showCorrectionModal && selectedFeedback && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-gray-900">
+                  Submit Correction
+                </h2>
+                <button
+                  onClick={handleCorrectionCancel}
+                  className="text-gray-400 hover:text-gray-600 text-2xl"
+                >
+                  ×
+                </button>
+              </div>
+              <CorrectionForm
+                feedback={selectedFeedback}
+                onSuccess={handleCorrectionSuccess}
+                onCancel={handleCorrectionCancel}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }
@@ -290,9 +366,11 @@ function ExecutionStatusBadge({ status, result }: ExecutionStatusBadgeProps) {
 
 interface StepCardProps {
   step: TestExecutionDetail['steps'][0];
+  executionId: number;
+  onReportSuccess?: () => void;
 }
 
-function StepCard({ step }: StepCardProps) {
+function StepCard({ step, executionId, onReportSuccess }: StepCardProps) {
   const getStepResultColor = () => {
     if (step.result === 'pass') return 'border-green-200 bg-green-50';
     if (step.result === 'fail') return 'border-red-200 bg-red-50';
@@ -347,6 +425,18 @@ function StepCard({ step }: StepCardProps) {
               {step.retry_count > 0 && ` (${step.retry_count} retries)`}
             </div>
           )}
+
+          {/* Report Issue Button - Available for ALL steps */}
+          <div className="mt-3 pt-3 border-t border-gray-200">
+            <ReportIssueButton 
+              executionId={executionId}
+              step={step}
+              onReportSuccess={onReportSuccess}
+            />
+            <span className="ml-4 text-xs text-gray-500">
+              Report false positives, wrong actions, or other issues
+            </span>
+          </div>
         </div>
       </div>
     </div>
