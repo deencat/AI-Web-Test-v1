@@ -197,7 +197,7 @@ class TypeScriptStagehandAdapter(StagehandAdapter):
                 # TODO: Update database with results from TypeScript service
                 # For now, import CRUD and update execution record
                 from app.crud import crud_execution
-                from app.models.execution import ExecutionResult
+                from app.models.test_execution import ExecutionResult
                 
                 # Mark execution as complete
                 if result.get("success"):
