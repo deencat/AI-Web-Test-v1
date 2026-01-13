@@ -31,7 +31,7 @@ async def test_typescript_adapter():
             "model": "gpt-4",
             "temperature": 0.7
         })
-        print("✅ Adapter initialization successful (service is reachable)")
+        print("[OK] Adapter initialization successful (service is reachable)")
         
         # Test 2: Initialize a persistent session (for debug mode)
         print("\n[Test 2] Initializing persistent session...")
@@ -47,7 +47,7 @@ async def test_typescript_adapter():
             user_id=1,
             db=mock_db
         )
-        print(f"✅ Persistent session initialized: {adapter._browser_session_id}")
+        print(f"[OK] Persistent session initialized: {adapter._browser_session_id}")
         
         # Test 2.5: Navigate to a page first (Stagehand requires this)
         print("\n[Test 2.5] Navigating to a test page...")
@@ -59,7 +59,7 @@ async def test_typescript_adapter():
             json={"url": "https://example.com"}
         )
         nav_result = await nav_response.json()
-        print(f"✅ Navigation completed: {nav_result.get('message')}")
+        print(f"[OK] Navigation completed: {nav_result.get('message')}")
         
         # Test 3: Execute single step
         print("\n[Test 3] Executing a test step...")
@@ -68,7 +68,7 @@ async def test_typescript_adapter():
             step_number=1,
             execution_id=999
         )
-        print(f"✅ Step execution completed:")
+        print(f"[OK] Step execution completed:")
         print(f"   Success: {result.get('success')}")
         print(f"   Message: {result.get('message')}")
         print(f"   Duration: {result.get('duration_ms')}ms")
@@ -78,10 +78,10 @@ async def test_typescript_adapter():
         # Test 4: Cleanup
         print("\n[Test 4] Cleaning up session...")
         await adapter.cleanup()
-        print("✅ Cleanup successful")
+        print("[OK] Cleanup successful")
         
         print("\n" + "="*80)
-        print("✅ ALL TESTS PASSED")
+        print("[SUCCESS] ALL TESTS PASSED")
         print("="*80)
         print("\nThe TypeScript adapter is working correctly!")
         print("You can now switch to 'typescript' provider in settings.")
@@ -89,7 +89,7 @@ async def test_typescript_adapter():
         return True
         
     except Exception as e:
-        print(f"\n❌ Test failed: {e}")
+        print(f"\n[FAIL] Test failed: {e}")
         import traceback
         traceback.print_exc()
         print("\nMake sure:")

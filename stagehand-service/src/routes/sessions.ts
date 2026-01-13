@@ -23,8 +23,14 @@ router.post('/initialize', async (req: Request, res: Response) => {
       config?: SessionConfig;
     } = req.body;
 
-    // Validate required fields
-    if (!session_id || !test_id || !user_id) {
+    // Validate required fields (allow 0 values, just check for null/undefined)
+    if (session_id == null || test_id == null || user_id == null) {
+      logger.warn('Missing required fields', {
+        session_id,
+        test_id,
+        user_id,
+        body: req.body
+      });
       return res.status(400).json({
         error: 'Missing required fields: session_id, test_id, user_id',
       });
