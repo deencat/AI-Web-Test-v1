@@ -3,6 +3,7 @@ import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/common/Card';
 import { Input } from '../components/common/Input';
 import { Button } from '../components/common/Button';
+import { FeedbackDataSync } from '../components/FeedbackDataSync';
 import settingsService from '../services/settingsService';
 import type { AvailableProvider, UserSettings } from '../types/api';
 
@@ -461,6 +462,15 @@ export const SettingsPage: React.FC = () => {
             </div>
           </div>
         </Card>
+
+        {/* Team Collaboration - Feedback Data Sync */}
+        <div>
+          <div className="mb-4">
+            <h2 className="text-2xl font-bold text-gray-900">Team Collaboration</h2>
+            <p className="text-gray-600 mt-1">Share feedback data across team members with different databases</p>
+          </div>
+          <FeedbackDataSync />
+        </div>
 
         {/* System Information */}
         <Card>

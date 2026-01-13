@@ -9,6 +9,7 @@ import { KnowledgeBasePage } from './pages/KnowledgeBasePage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ExecutionProgressPage } from './pages/ExecutionProgressPage';
 import { ExecutionHistoryPage } from './pages/ExecutionHistoryPage';
+import { FeedbackListPage } from './pages/FeedbackListPage';
 import './index.css';
 
 // Protected Route wrapper
@@ -96,6 +97,14 @@ function App() {
           element={
             <ProtectedRoute>
               <ExecutionProgressPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/feedback"
+          element={
+            <ProtectedRoute>
+              <FeedbackListPage />
             </ProtectedRoute>
           }
         />
