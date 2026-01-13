@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, Page, BrowserContext } from '@playwright/test';
 
 /**
  * Sprint 4: Test Version Control E2E Tests
@@ -11,8 +11,8 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Sprint 4: Test Version Control', () => {
   // Shared page for all tests to avoid rate limiting
-  let sharedPage;
-  let sharedContext;
+  let sharedPage: Page;
+  let sharedContext: BrowserContext;
 
   test.beforeAll(async ({ browser }) => {
     // Create a persistent context and page for all tests
