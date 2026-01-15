@@ -59,6 +59,8 @@ export class StagehandSessionManager {
           apiKey = process.env.CEREBRAS_API_KEY;
         } else if (provider === 'google' || provider === 'gemini') {
           apiKey = process.env.GOOGLE_API_KEY;
+        } else if (provider === 'azure') {
+          apiKey = process.env.AZURE_OPENAI_API_KEY;
         } else {
           apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
         }
@@ -72,6 +74,8 @@ export class StagehandSessionManager {
         baseURL = 'https://openrouter.ai/api/v1';
       } else if (provider === 'cerebras') {
         baseURL = 'https://api.cerebras.ai/v1';
+      } else if (provider === 'azure') {
+        baseURL = 'https://chatgpt-uat.openai.azure.com/openai/v1';
       } else if (provider === 'google' || provider === 'gemini') {
         // Google Gemini uses SDK, not baseURL
         baseURL = undefined;

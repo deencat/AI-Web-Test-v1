@@ -35,8 +35,13 @@ class Settings(BaseSettings):
     CEREBRAS_API_KEY: str | None = None  # Get from: https://cloud.cerebras.ai/
     CEREBRAS_MODEL: str = "llama3.1-8b"  # llama3.1-8b, llama3.1-70b
     
+    # Azure OpenAI (Company-provided)
+    AZURE_OPENAI_API_KEY: str | None = None  # Company Azure OpenAI API key
+    AZURE_OPENAI_ENDPOINT: str = "https://chatgpt-uat.openai.azure.com/openai/v1"
+    AZURE_OPENAI_MODEL: str = "ChatGPT-UAT"  # Deployment name
+    
     # Model Provider Selection (new unified approach)
-    # Options: "openrouter", "google", "cerebras"
+    # Options: "openrouter", "google", "cerebras", "azure"
     MODEL_PROVIDER: str = "openrouter"  # Default provider
     
     # OpenAI API compatibility (for Stagehand/LiteLLM)
