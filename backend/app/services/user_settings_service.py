@@ -242,6 +242,28 @@ class UserSettingsService:
             return True
         return False
     
+    def _get_api_key_for_provider(self, provider: str) -> Optional[str]:
+        """
+        Get the appropriate API key from environment variables based on provider.
+        
+        Args:
+            provider: Provider name ("openrouter", "google", "gemini", "cerebras")
+            
+        Returns:
+            API key from environment or None
+        """
+        import os
+        
+        if provider == "cerebras":
+            return os.getenv("CEREBRAS_API_KEY")
+        elif provider in ["google", "gemini"]:
+            return os.getenv("GOOGLE_API_KEY")
+        elif provider == "openrouter":
+            return os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+        else:
+            # Default fallback
+            return os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+    
     def get_provider_config(
         self,
         db: Session,
@@ -263,17 +285,26 @@ class UserSettingsService:
         user_settings = self.get_user_settings(db, user_id)
         
         if user_settings:
+            # Get API key from environment based on provider (not stored in database for security)
+            import os
+            
             if config_type == "generation":
+                provider = user_settings.generation_provider
+                api_key = self._get_api_key_for_provider(provider)
                 return {
-                    "provider": user_settings.generation_provider,
+                    "provider": provider,
                     "model": user_settings.generation_model,
+                    "api_key": api_key,  # From environment variables
                     "temperature": user_settings.generation_temperature,
                     "max_tokens": user_settings.generation_max_tokens
                 }
             else:  # execution
+                provider = user_settings.execution_provider
+                api_key = self._get_api_key_for_provider(provider)
                 return {
-                    "provider": user_settings.execution_provider,
+                    "provider": provider,
                     "model": user_settings.execution_model,
+                    "api_key": api_key,  # From environment variables
                     "temperature": user_settings.execution_temperature,
                     "max_tokens": user_settings.execution_max_tokens
                 }

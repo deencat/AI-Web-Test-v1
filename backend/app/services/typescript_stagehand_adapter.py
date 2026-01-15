@@ -78,7 +78,7 @@ class TypeScriptStagehandAdapter(StagehandAdapter):
                 "session_id": self._browser_session_id,
                 "test_id": self.test_case_id if hasattr(self, 'test_case_id') else 0,
                 "user_id": 1,  # Default user ID, can be passed from caller
-                "config": user_config or {}
+                "config": {"user_config": user_config} if user_config else {}
             }
             
             
@@ -171,7 +171,7 @@ class TypeScriptStagehandAdapter(StagehandAdapter):
         
         session = await self._get_session()
         
-        # Prepare test steps
+        # Prepare test steps - format them as TestStep objects with action field
         import json
         steps = test_case.steps
         if isinstance(steps, str):
@@ -182,12 +182,28 @@ class TypeScriptStagehandAdapter(StagehandAdapter):
         elif not isinstance(steps, list):
             steps = []
         
+        # Ensure each step has proper format with 'action' field
+        formatted_steps = []
+        for step in steps:
+            if isinstance(step, str):
+                # Convert string step to TestStep format
+                formatted_steps.append({"action": step})
+            elif isinstance(step, dict) and 'action' in step:
+                # Already in correct format
+                formatted_steps.append(step)
+            elif isinstance(step, dict):
+                # Dict but no action field - use first value or description
+                action = step.get('description') or step.get('step') or str(step)
+                formatted_steps.append({"action": action})
+            else:
+                formatted_steps.append({"action": str(step)})
+        
         payload = {
             "session_id": self._browser_session_id,
             "test_case_id": test_case.id,
             "execution_id": execution_id,
             "base_url": base_url,
-            "steps": steps,
+            "steps": formatted_steps,
             "environment": environment,
             "skip_navigation": skip_navigation
         }
@@ -205,24 +221,26 @@ class TypeScriptStagehandAdapter(StagehandAdapter):
                 
                 result = await response.json()
                 
-                # TODO: Update database with results from TypeScript service
-                # For now, import CRUD and update execution record
-                from app.crud import crud_execution
+                # Update database with results from TypeScript service
+                from app.crud import test_execution
                 from app.models.test_execution import ExecutionResult
                 
-                # Mark execution as complete
+                # Mark execution as complete with proper parameters
                 if result.get("success"):
-                    execution = crud_execution.complete_execution(
+                    execution = test_execution.complete_execution(
                         db,
                         execution_id,
-                        ExecutionResult.PASS
+                        ExecutionResult.PASS,
+                        total_steps=result.get("steps_executed", 0),
+                        passed_steps=result.get("steps_passed", 0),
+                        failed_steps=result.get("steps_failed", 0)
                     )
                 else:
-                    execution = crud_execution.complete_execution(
+                    # Use fail_execution for failures
+                    execution = test_execution.fail_execution(
                         db,
                         execution_id,
-                        ExecutionResult.FAIL,
-                        error_message=result.get("error_message")
+                        result.get("error_message", "Test execution failed")
                     )
                 
                 return execution
@@ -321,7 +339,7 @@ class TypeScriptStagehandAdapter(StagehandAdapter):
                 "session_id": session_id,
                 "test_id": test_id,
                 "user_id": user_id,
-                "config": user_config or {}
+                "config": {"user_config": user_config} if user_config else {}
             }
             
             try:
