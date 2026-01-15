@@ -320,3 +320,20 @@ export interface TestTrendData {
   total: number;
 }
 
+// Sprint 5: Stagehand Provider types
+export interface StagehandProviderResponse {
+  provider: 'python' | 'typescript';
+  available_providers: string[];
+}
+
+export interface StagehandProviderUpdate {
+  provider: 'python' | 'typescript';
+}
+
+export interface StagehandProviderHealth {
+  provider: 'python' | 'typescript';
+  status: 'healthy' | 'unhealthy' | 'unknown';
+  latency_ms?: number;
+  error?: string;
+}
+

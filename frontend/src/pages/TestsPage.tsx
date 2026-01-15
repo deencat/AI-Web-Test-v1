@@ -4,11 +4,12 @@ import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { TestCaseCard } from '../components/tests/TestCaseCard';
 import { RunTestButton } from '../components/RunTestButton';
+import { TestStepEditor } from '../components/TestStepEditor';
 import { mockTests } from '../mock/tests';
 import testsService from '../services/testsService';
 import knowledgeBaseService from '../services/knowledgeBaseService';
 import { GeneratedTestCase, KBCategory } from '../types/api';
-import { Sparkles, Loader2, Plus, Trash2, ChevronUp, ChevronDown, BookOpen } from 'lucide-react';
+import { Sparkles, Loader2, BookOpen } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 export const TestsPage: React.FC = () => {
@@ -202,33 +203,6 @@ export const TestsPage: React.FC = () => {
     }
     setEditingTest(null);
     setEditingSavedTest(false);
-  };
-
-  // Step management handlers
-  const handleAddStep = () => {
-    setEditForm({ 
-      ...editForm, 
-      steps: [...editForm.steps, ''] 
-    });
-  };
-
-  const handleDeleteStep = (index: number) => {
-    const newSteps = editForm.steps.filter((_, i) => i !== index);
-    setEditForm({ ...editForm, steps: newSteps });
-  };
-
-  const handleMoveStepUp = (index: number) => {
-    if (index === 0) return;
-    const newSteps = [...editForm.steps];
-    [newSteps[index - 1], newSteps[index]] = [newSteps[index], newSteps[index - 1]];
-    setEditForm({ ...editForm, steps: newSteps });
-  };
-
-  const handleMoveStepDown = (index: number) => {
-    if (index === editForm.steps.length - 1) return;
-    const newSteps = [...editForm.steps];
-    [newSteps[index], newSteps[index + 1]] = [newSteps[index + 1], newSteps[index]];
-    setEditForm({ ...editForm, steps: newSteps });
   };
 
   const handleSaveTest = async (testCase: GeneratedTestCase) => {
@@ -582,79 +556,21 @@ export const TestsPage: React.FC = () => {
                     </select>
                   </div>
 
-                  {/* Test Steps */}
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <label className="block text-sm font-semibold text-gray-900">
-                        Test Steps
-                      </label>
-                      <button
-                        type="button"
-                        onClick={handleAddStep}
-                        className="flex items-center gap-1 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
-                        title="Add new step"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Add Step
-                      </button>
-                    </div>
-                    
-                    {editForm.steps.length === 0 ? (
-                      <div className="text-center py-4 text-gray-500 border-2 border-dashed border-gray-300 rounded-lg">
-                        No steps yet. Click "Add Step" to create one.
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {editForm.steps.map((step, index) => (
-                          <div key={index} className="flex gap-2 items-start">
-                            <span className="flex-shrink-0 w-8 h-8 bg-blue-700 text-white rounded-full flex items-center justify-center text-xs font-semibold mt-1">
-                              {index + 1}
-                            </span>
-                            <input
-                              id={`edit-step-${index}`}
-                              type="text"
-                              value={step}
-                              onChange={(e) => {
-                                const newSteps = [...editForm.steps];
-                                newSteps[index] = e.target.value;
-                                setEditForm({ ...editForm, steps: newSteps });
-                              }}
-                              placeholder={`Step ${index + 1} description...`}
-                              className="flex-1 px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-blue-700 bg-white"
-                            />
-                            <div className="flex flex-col gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handleMoveStepUp(index)}
-                                disabled={index === 0}
-                                className="p-1 text-gray-600 hover:text-blue-700 hover:bg-blue-50 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                                title="Move up"
-                              >
-                                <ChevronUp className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleMoveStepDown(index)}
-                                disabled={index === editForm.steps.length - 1}
-                                className="p-1 text-gray-600 hover:text-blue-700 hover:bg-blue-50 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                                title="Move down"
-                              >
-                                <ChevronDown className="w-4 h-4" />
-                              </button>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteStep(index)}
-                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors mt-1"
-                              title="Delete step"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  {/* Test Steps - Version Control Enabled */}
+                  {editingTest && (
+                    <TestStepEditor
+                      testId={Number(editingTest.id)}
+                      initialSteps={editForm.steps}
+                      initialVersion={(editingTest as any).current_version || 1}
+                      onChange={(newSteps) => {
+                        setEditForm({ ...editForm, steps: newSteps });
+                      }}
+                      onSave={(versionNumber, steps) => {
+                        console.log('Version saved:', versionNumber);
+                        setEditForm({ ...editForm, steps });
+                      }}
+                    />
+                  )}
 
                   {/* Expected Result */}
                   <div>

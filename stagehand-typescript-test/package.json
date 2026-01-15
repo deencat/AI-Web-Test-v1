@@ -1,0 +1,22 @@
+{
+  "name": "stagehand-typescript-test",
+  "version": "1.0.0",
+  "description": "Standalone test for TypeScript Stagehand with Three.com.hk 5G Broadband flow",
+  "main": "test-three-broadband.js",
+  "type": "module",
+  "scripts": {
+    "test": "node test-three-broadband.js"
+  },
+  "keywords": [
+    "stagehand",
+    "typescript",
+    "browser-automation",
+    "e2e-testing"
+  ],
+  "author": "Developer A",
+  "license": "MIT",
+  "dependencies": {
+    "@browserbasehq/stagehand": "^2.0.0",
+    "dotenv": "^16.4.7"
+  }
+}

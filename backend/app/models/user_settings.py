@@ -24,6 +24,10 @@ class UserSetting(Base):
     execution_temperature = Column(Float, default=0.7)
     execution_max_tokens = Column(Integer, default=4096)
     
+    # Stagehand Provider Selection (Sprint 5: Dual Stagehand Provider System)
+    # Options: 'python' (default, current implementation) or 'typescript' (official library)
+    stagehand_provider = Column(String(20), nullable=False, default="python")
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
