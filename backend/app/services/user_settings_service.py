@@ -56,6 +56,14 @@ class UserSettingsService:
             ],
             "recommended": "google/gemini-2.0-flash-exp:free",
             "api_key_env": "OPENROUTER_API_KEY"
+        },
+        "azure": {
+            "display_name": "Azure OpenAI",
+            "models": [
+                "ChatGPT-UAT"
+            ],
+            "recommended": "ChatGPT-UAT",
+            "api_key_env": "AZURE_OPENAI_API_KEY"
         }
     }
     
@@ -99,7 +107,8 @@ class UserSettingsService:
         model_map = {
             "google": settings.GOOGLE_MODEL,
             "cerebras": settings.CEREBRAS_MODEL,
-            "openrouter": settings.OPENROUTER_MODEL
+            "openrouter": settings.OPENROUTER_MODEL,
+            "azure": getattr(settings, "AZURE_OPENAI_MODEL", "ChatGPT-UAT")
         }
         
         return {
@@ -258,6 +267,8 @@ class UserSettingsService:
             return os.getenv("CEREBRAS_API_KEY")
         elif provider in ["google", "gemini"]:
             return os.getenv("GOOGLE_API_KEY")
+        elif provider == "azure":
+            return os.getenv("AZURE_OPENAI_API_KEY")
         elif provider == "openrouter":
             return os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
         else:
