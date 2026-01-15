@@ -49,32 +49,78 @@ export class StagehandSessionManager {
         await this.closeSession(sessionId);
       }
 
+      // Get provider first (with fallback)
+      const provider = config.user_config?.provider || process.env.MODEL_PROVIDER || 'openrouter';
+      
+      // Get API key based on provider - fallback to environment variables
+      let apiKey = config.user_config?.api_key;
+      if (!apiKey) {
+        if (provider === 'cerebras') {
+          apiKey = process.env.CEREBRAS_API_KEY;
+        } else if (provider === 'google' || provider === 'gemini') {
+          apiKey = process.env.GOOGLE_API_KEY;
+        } else {
+          apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
+        }
+      }
+      
+      const modelName = config.user_config?.model || process.env.OPENROUTER_MODEL || process.env.MODEL_NAME || 'gpt-4o-mini';
+      
+      // Determine baseURL based on provider
+      let baseURL: string | undefined = undefined;
+      if (provider === 'openrouter' || apiKey?.startsWith('sk-or-v1-')) {
+        baseURL = 'https://openrouter.ai/api/v1';
+      } else if (provider === 'cerebras') {
+        baseURL = 'https://api.cerebras.ai/v1';
+      } else if (provider === 'google' || provider === 'gemini') {
+        // Google Gemini uses SDK, not baseURL
+        baseURL = undefined;
+      }
+      
       logger.info('Initializing new Stagehand session', {
         sessionId,
         testId,
         userId,
         browser: config.browser || 'chromium',
-        headless: config.headless !== false,
+        headless: config.headless === true,  // Default to false (show browser window)
+        hasUserConfig: !!config.user_config,
+        hasApiKey: !!apiKey,
+        provider: provider,
+        modelName: modelName,
+        baseURL: baseURL,
+        usingCustomBaseURL: !!baseURL,
       });
 
-      // Create Stagehand instance
-      const stagehand = new Stagehand({
-        env: config.headless !== false ? 'BROWSERBASE' : 'LOCAL',
+      // Validate API key is available
+      if (!apiKey) {
+        throw new Error('API key is required for Stagehand. Provide it in user_config or set OPENAI_API_KEY environment variable.');
+      }
+
+      // Create Stagehand instance with OpenRouter support
+      const stagehandConfig: any = {
+        env: 'LOCAL',  // Always use LOCAL mode (uses local Playwright)
+        headless: config.headless === true,  // Default to false (show browser window)
         verbose: 1,
         debugDom: true,
         enableCaching: false,
-        // User AI configuration
-        modelName: config.user_config?.model as any, // Type cast to allow dynamic model names
-        apiKey: config.user_config?.api_key,
-      });
+        // User AI configuration with fallbacks
+        modelName: modelName,
+        apiKey: apiKey,
+      };
+      
+      // Add baseURL for OpenRouter
+      if (baseURL) {
+        stagehandConfig.baseURL = baseURL;
+      }
+      
+      const stagehand = new Stagehand(stagehandConfig);
 
       // Initialize Stagehand
       await stagehand.init();
 
-      // Navigate to blank page to initialize act handler
-      // Stagehand requires a page to be loaded before act() can be used
-      await stagehand.page.goto('about:blank');
-      logger.info('Act handler initialized with blank page', { sessionId });
+      // Don't navigate to about:blank - act() doesn't work on blank pages
+      // Let the first test step handle initial navigation
+      logger.info('Stagehand session initialized, ready for navigation', { sessionId });
 
       // Create session info
       const info: SessionInfo = {
@@ -125,7 +171,84 @@ export class StagehandSessionManager {
 
       const { stagehand } = session;
 
-      // Execute step using Stagehand's act method
+      // Check if this step is a navigation step
+      const actionLower = step.action.toLowerCase();
+      const isNavigationStep = 
+        actionLower.includes('navigate to') ||
+        actionLower.includes('go to') ||
+        actionLower.startsWith('visit');
+
+      logger.info('Step analysis', { 
+        sessionId, 
+        stepNumber, 
+        actionLower: actionLower.substring(0, 100),
+        isNavigationStep 
+      });
+
+      // If it's a navigation step, extract URL and use page.goto()
+      // (act() doesn't work until a real page is loaded)
+      if (isNavigationStep) {
+        // Extract URL from step action
+        // Patterns: "Navigate to URL: https://..." or "Navigate to https://..." or "Go to https://..."
+        const urlMatch = step.action.match(/https?:\/\/[^\s]+/);
+        
+        logger.info('URL extraction', { sessionId, stepNumber, urlMatch: urlMatch?.[0] });
+        
+        if (urlMatch) {
+          const url = urlMatch[0];
+          logger.info('Detected navigation step, using page.goto()', { sessionId, stepNumber, url });
+          
+          // Try networkidle first (matching working test), fall back to load if it times out
+          try {
+            await stagehand.page.goto(url, { 
+              waitUntil: 'networkidle',
+              timeout: 30000  // 30s timeout for networkidle
+            });
+            logger.info('Page reached networkidle state', { sessionId, stepNumber });
+          } catch (timeoutError) {
+            // If networkidle times out, the page is already loaded, just log and continue
+            logger.warn('Networkidle timeout, page is loaded but still has network activity', { 
+              sessionId, 
+              stepNumber 
+            });
+          }
+          
+          // Wait for page to stabilize and let act handler initialize (matching working test)
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          // Prime the act handler by calling it with a simple action
+          // This forces Stagehand to initialize its AI handlers after navigation
+          try {
+            logger.info('Priming act handler after navigation', { sessionId, stepNumber });
+            // Call act() with a no-op action to initialize the handler
+            // This ensures the act handler is ready for subsequent steps
+            await stagehand.act({ action: 'observe the page' });
+            logger.info('Act handler primed successfully', { sessionId, stepNumber });
+          } catch (e) {
+            logger.warn('Failed to prime act handler, will initialize on first real step', { 
+              sessionId, 
+              stepNumber, 
+              error: e instanceof Error ? e.message : String(e) 
+            });
+          }
+          
+          const duration = Date.now() - startTime;
+          logger.info('Navigation step completed successfully', {
+            sessionId,
+            stepNumber,
+            url,
+            duration_ms: duration,
+          });
+
+          return {
+            success: true,
+            message: `Navigated to ${url}`,
+            duration_ms: duration,
+          };
+        }
+      }
+
+      // Execute step using Stagehand's act method (working test calls act directly)
       await stagehand.act({ action: step.action });
 
       const duration = Date.now() - startTime;
@@ -179,6 +302,17 @@ export class StagehandSessionManager {
       
       // Wait for page to stabilize and dynamic content to load
       await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      // Re-initialize act handler context after navigation
+      // This ensures Stagehand's act() method has proper page context
+      try {
+        await session.stagehand.page.evaluate(() => {
+          // Simple page evaluation to ensure context is established
+          return document.readyState;
+        });
+      } catch (e) {
+        logger.warn('Failed to re-establish page context', { sessionId, error: String(e) });
+      }
       
       logger.info('Navigation completed successfully', { sessionId, url });
 
