@@ -4,8 +4,12 @@ import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { RunTestButton } from '../components/RunTestButton';
+import { TestStepEditor } from '../components/TestStepEditor';
+import { VersionHistoryPanel } from '../components/VersionHistoryPanel';
+import { VersionCompareDialog } from '../components/VersionCompareDialog';
+import { RollbackConfirmDialog } from '../components/RollbackConfirmDialog';
 import testsService from '../services/testsService';
-import { Loader2, ArrowLeft, Calendar, User, Clock } from 'lucide-react';
+import { Loader2, ArrowLeft, Calendar, User, Clock, History } from 'lucide-react';
 
 interface TestDetail {
   id: string | number;
@@ -15,11 +19,12 @@ interface TestDetail {
   test_type?: string;
   priority: 'high' | 'medium' | 'low';
   status: 'passed' | 'failed' | 'pending' | 'running';
-  steps?: string[];
+  steps?: string[] | string;
   expected_result?: string;
   created_at: string;
   updated_at: string;
   created_by?: string;
+  current_version?: number;
 }
 
 export const TestDetailPage: React.FC = () => {
@@ -28,6 +33,12 @@ export const TestDetailPage: React.FC = () => {
   const [test, setTest] = useState<TestDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [showCompareDialog, setShowCompareDialog] = useState(false);
+  const [showRollbackDialog, setShowRollbackDialog] = useState(false);
+  const [compareVersion1, setCompareVersion1] = useState<number | null>(null);
+  const [compareVersion2, setCompareVersion2] = useState<number | null>(null);
+  const [rollbackVersion, setRollbackVersion] = useState<any | null>(null);
 
   useEffect(() => {
     loadTestDetails();
@@ -56,6 +67,58 @@ export const TestDetailPage: React.FC = () => {
 
   const handleBack = () => {
     navigate('/tests');
+  };
+
+  const handleCompareVersions = (v1: number, v2: number) => {
+    setCompareVersion1(v1);
+    setCompareVersion2(v2);
+    setShowCompareDialog(true);
+  };
+
+  const handleRollback = async (version: any) => {
+    setRollbackVersion(version);
+    setShowRollbackDialog(true);
+  };
+
+  const handleRollbackConfirm = async (reason: string) => {
+    if (!test || !rollbackVersion) return;
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('Not authenticated');
+    }
+
+    const testIdNum = typeof test.id === 'string' ? parseInt(test.id) : test.id;
+
+    const response = await fetch(
+      `http://localhost:8000/api/v1/tests/${testIdNum}/versions/rollback`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          version_id: rollbackVersion.id,
+          created_by: 'user' // TODO: Get from auth context
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || 'Failed to rollback version');
+    }
+
+    const newVersion = await response.json();
+    
+    // Refresh test data to show new version
+    await loadTestDetails();
+    
+    // Close dialogs
+    setShowRollbackDialog(false);
+    setShowVersionHistory(false);
+    setRollbackVersion(null);
   };
 
   const getPriorityColor = (priority: string) => {
@@ -146,11 +209,20 @@ export const TestDetailPage: React.FC = () => {
             <h1 className="text-3xl font-bold text-gray-900">{test.title || test.name}</h1>
             <p className="text-gray-600 mt-2">{test.description}</p>
           </div>
-          <RunTestButton
-            testCaseId={typeof test.id === 'string' ? parseInt(test.id) : test.id}
-            testCaseName={test.title || test.name}
-            onExecutionStart={handleExecutionStart}
-          />
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowVersionHistory(true)}
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2 transition-colors"
+            >
+              <History className="w-4 h-4" />
+              View History
+            </button>
+            <RunTestButton
+              testCaseId={typeof test.id === 'string' ? parseInt(test.id) : test.id}
+              testCaseName={test.title || test.name}
+              onExecutionStart={handleExecutionStart}
+            />
+          </div>
         </div>
 
         {/* Test Metadata */}
@@ -215,22 +287,18 @@ export const TestDetailPage: React.FC = () => {
         {/* Test Steps */}
         <Card>
           <h2 className="text-xl font-semibold text-gray-900 mb-4">Test Steps</h2>
-          <div className="space-y-3">
-            {test.steps && test.steps.length > 0 ? (
-              test.steps.map((step, index) => (
-                <div key={index} className="flex gap-4 items-start p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                  <div className="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-semibold">
-                    {index + 1}
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-gray-900">{step}</p>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="text-gray-500 text-center py-4">No test steps defined</p>
-            )}
-          </div>
+          {test.id && (
+            <TestStepEditor
+              testId={typeof test.id === 'string' ? parseInt(test.id) : test.id}
+              initialSteps={Array.isArray(test.steps) ? test.steps.join('\n') : (test.steps || '')}
+              initialVersion={test.current_version || 1}
+              onSave={(versionNumber) => {
+                console.log('New version saved:', versionNumber);
+                // Update test data to reflect new version
+                setTest({ ...test, current_version: versionNumber });
+              }}
+            />
+          )}
         </Card>
 
         {/* Expected Result */}
@@ -271,6 +339,52 @@ export const TestDetailPage: React.FC = () => {
           </div>
         </Card>
       </div>
+
+      {/* Version History Panel */}
+      {test && (
+        <VersionHistoryPanel
+          testId={typeof test.id === 'string' ? parseInt(test.id) : test.id}
+          currentVersion={test.current_version || 1}
+          isOpen={showVersionHistory}
+          onClose={() => setShowVersionHistory(false)}
+          onViewVersion={(version) => {
+            console.log('View version:', version);
+            // TODO: Implement view version dialog (optional feature)
+          }}
+          onCompareVersions={handleCompareVersions}
+          onRollback={handleRollback}
+        />
+      )}
+
+      {/* Version Compare Dialog */}
+      {test && compareVersion1 && compareVersion2 && (
+        <VersionCompareDialog
+          testId={typeof test.id === 'string' ? parseInt(test.id) : test.id}
+          versionId1={compareVersion1}
+          versionId2={compareVersion2}
+          isOpen={showCompareDialog}
+          onClose={() => {
+            setShowCompareDialog(false);
+            setCompareVersion1(null);
+            setCompareVersion2(null);
+          }}
+        />
+      )}
+
+      {/* Rollback Confirm Dialog */}
+      {test && rollbackVersion && (
+        <RollbackConfirmDialog
+          testId={typeof test.id === 'string' ? parseInt(test.id) : test.id}
+          version={rollbackVersion}
+          currentVersion={test.current_version || 1}
+          isOpen={showRollbackDialog}
+          onClose={() => {
+            setShowRollbackDialog(false);
+            setRollbackVersion(null);
+          }}
+          onConfirm={handleRollbackConfirm}
+        />
+      )}
     </Layout>
   );
 };
