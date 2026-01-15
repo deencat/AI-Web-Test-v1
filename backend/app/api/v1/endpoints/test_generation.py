@@ -84,6 +84,9 @@ async def generate_test_cases(
             detail=str(e)
         )
     except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
+        print(f"[ERROR] Test generation exception:\n{error_traceback}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Test generation failed: {str(e)}"

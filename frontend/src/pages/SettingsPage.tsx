@@ -33,6 +33,80 @@ export const SettingsPage: React.FC = () => {
   const [executionTemperature, setExecutionTemperature] = useState<number>(0.7);
   const [executionMaxTokens, setExecutionMaxTokens] = useState<number>(4096);
 
+  // Sprint 5: Stagehand Provider settings
+  const [stagehandProvider, setStagehandProvider] = useState<'python' | 'typescript'>('python');
+  const [stagehandHealth, setStagehandHealth] = useState<{
+    python: { status: 'healthy' | 'unhealthy' | 'checking', error?: string };
+    typescript: { status: 'healthy' | 'unhealthy' | 'checking', error?: string };
+  }>({
+    python: { status: 'checking' },
+    typescript: { status: 'checking' }
+  });
+
+  // Load settings on mount
+  useEffect(() => {
+    loadSettings();
+    loadStagehandSettings();
+  }, []);
+
+  const loadStagehandSettings = async () => {
+    try {
+      // Load current provider
+      const providerRes = await settingsService.getStagehandProvider();
+      setStagehandProvider(providerRes.provider);
+      
+      // Check health of both providers
+      checkProvidersHealth();
+    } catch (error: any) {
+      console.error('Failed to load Stagehand settings:', error);
+    }
+  };
+
+  const checkProvidersHealth = async () => {
+    // Check Python
+    setStagehandHealth(prev => ({ ...prev, python: { status: 'checking' } }));
+    const pythonHealth = await settingsService.checkStagehandHealth('python');
+    setStagehandHealth(prev => ({ 
+      ...prev, 
+      python: { 
+        status: pythonHealth.status, 
+        error: pythonHealth.error 
+      } 
+    }));
+
+    // Check TypeScript
+    setStagehandHealth(prev => ({ ...prev, typescript: { status: 'checking' } }));
+    const typescriptHealth = await settingsService.checkStagehandHealth('typescript');
+    setStagehandHealth(prev => ({ 
+      ...prev, 
+      typescript: { 
+        status: typescriptHealth.status, 
+        error: typescriptHealth.error 
+      } 
+    }));
+  };
+
+  const handleStagehandProviderChange = async (provider: 'python' | 'typescript') => {
+    try {
+      setIsSaving(true);
+      await settingsService.updateStagehandProvider(provider);
+      setStagehandProvider(provider);
+      setSaveMessage({ 
+        type: 'success', 
+        text: `✅ Switched to ${provider === 'python' ? 'Python' : 'TypeScript'} Stagehand provider!` 
+      });
+      setTimeout(() => setSaveMessage(null), 5000);
+    } catch (error: any) {
+      console.error('Failed to update Stagehand provider:', error);
+      setSaveMessage({ 
+        type: 'error', 
+        text: error.message || 'Failed to update Stagehand provider' 
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   // Load settings on mount
   useEffect(() => {
     loadSettings();
@@ -459,6 +533,199 @@ export const SettingsPage: React.FC = () => {
                 min="100"
                 max="32000"
               />
+            </div>
+          </div>
+        </Card>
+
+        {/* Sprint 5: Stagehand Provider Selection */}
+        <Card>
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900">Stagehand Provider</h2>
+              <p className="text-sm text-gray-600 mt-1">Choose browser automation implementation</p>
+            </div>
+            <div className="flex gap-2">
+              <div className="px-3 py-1 bg-purple-100 text-purple-700 text-xs font-medium rounded-full">
+                Sprint 5
+              </div>
+              <button
+                onClick={checkProvidersHealth}
+                className="px-3 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-full hover:bg-gray-200 transition-colors"
+              >
+                🔄 Check Health
+              </button>
+            </div>
+          </div>
+
+          {/* Provider Selection */}
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            {/* Python Stagehand */}
+            <button
+              onClick={() => handleStagehandProviderChange('python')}
+              disabled={isSaving || stagehandHealth.python.status === 'unhealthy'}
+              className={`p-6 rounded-lg border-2 transition-all text-left ${
+                stagehandProvider === 'python'
+                  ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                  : stagehandHealth.python.status === 'unhealthy'
+                  ? 'border-gray-200 opacity-50 cursor-not-allowed'
+                  : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50/50'
+              }`}
+            >
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl">🐍</span>
+                  <h3 className="text-lg font-semibold text-gray-900">Python Stagehand</h3>
+                </div>
+                {stagehandProvider === 'python' && (
+                  <span className="px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded">
+                    Active
+                  </span>
+                )}
+              </div>
+              
+              <p className="text-sm text-gray-600 mb-3">
+                Built-in Python implementation with @browserbasehq/stagehand
+              </p>
+
+              {/* Status Badge */}
+              <div className="flex items-center gap-2">
+                {stagehandHealth.python.status === 'checking' && (
+                  <span className="flex items-center gap-1 text-xs text-gray-500">
+                    <span className="animate-spin">⏳</span>
+                    Checking...
+                  </span>
+                )}
+                {stagehandHealth.python.status === 'healthy' && (
+                  <span className="flex items-center gap-1 text-xs text-green-600">
+                    <span>✓</span>
+                    Healthy
+                  </span>
+                )}
+                {stagehandHealth.python.status === 'unhealthy' && (
+                  <span className="flex items-center gap-1 text-xs text-red-600">
+                    <span>✗</span>
+                    Unavailable
+                  </span>
+                )}
+              </div>
+            </button>
+
+            {/* TypeScript Stagehand */}
+            <button
+              onClick={() => handleStagehandProviderChange('typescript')}
+              disabled={isSaving || stagehandHealth.typescript.status === 'unhealthy'}
+              className={`p-6 rounded-lg border-2 transition-all text-left ${
+                stagehandProvider === 'typescript'
+                  ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                  : stagehandHealth.typescript.status === 'unhealthy'
+                  ? 'border-gray-200 opacity-50 cursor-not-allowed'
+                  : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50/50'
+              }`}
+            >
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl">⚡</span>
+                  <h3 className="text-lg font-semibold text-gray-900">TypeScript Stagehand</h3>
+                </div>
+                {stagehandProvider === 'typescript' && (
+                  <span className="px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded">
+                    Active
+                  </span>
+                )}
+              </div>
+              
+              <p className="text-sm text-gray-600 mb-3">
+                Node.js microservice with native @browserbasehq/stagehand
+              </p>
+
+              {/* Status Badge */}
+              <div className="flex items-center gap-2">
+                {stagehandHealth.typescript.status === 'checking' && (
+                  <span className="flex items-center gap-1 text-xs text-gray-500">
+                    <span className="animate-spin">⏳</span>
+                    Checking...
+                  </span>
+                )}
+                {stagehandHealth.typescript.status === 'healthy' && (
+                  <span className="flex items-center gap-1 text-xs text-green-600">
+                    <span>✓</span>
+                    Healthy - Port 3001
+                  </span>
+                )}
+                {stagehandHealth.typescript.status === 'unhealthy' && (
+                  <div className="flex flex-col gap-1">
+                    <span className="flex items-center gap-1 text-xs text-red-600">
+                      <span>✗</span>
+                      Service Not Running
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      Run: cd stagehand-service && npm run dev
+                    </span>
+                  </div>
+                )}
+              </div>
+            </button>
+          </div>
+
+          {/* Feature Comparison Table */}
+          <div className="mt-6">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Feature Comparison</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-gray-700 font-medium">Feature</th>
+                    <th className="px-4 py-2 text-center text-gray-700 font-medium">Python</th>
+                    <th className="px-4 py-2 text-center text-gray-700 font-medium">TypeScript</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  <tr>
+                    <td className="px-4 py-2 text-gray-900">Browser Automation</td>
+                    <td className="px-4 py-2 text-center">✓</td>
+                    <td className="px-4 py-2 text-center">✓</td>
+                  </tr>
+                  <tr className="bg-gray-50">
+                    <td className="px-4 py-2 text-gray-900">AI-Powered Selectors</td>
+                    <td className="px-4 py-2 text-center">✓</td>
+                    <td className="px-4 py-2 text-center">✓</td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-2 text-gray-900">Session Management</td>
+                    <td className="px-4 py-2 text-center">✓</td>
+                    <td className="px-4 py-2 text-center">✓</td>
+                  </tr>
+                  <tr className="bg-gray-50">
+                    <td className="px-4 py-2 text-gray-900">Performance</td>
+                    <td className="px-4 py-2 text-center text-gray-600">Good</td>
+                    <td className="px-4 py-2 text-center text-green-600 font-medium">Better</td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-2 text-gray-900">Setup Required</td>
+                    <td className="px-4 py-2 text-center text-green-600">None (Built-in)</td>
+                    <td className="px-4 py-2 text-center text-yellow-600">Microservice</td>
+                  </tr>
+                  <tr className="bg-gray-50">
+                    <td className="px-4 py-2 text-gray-900">Native API Support</td>
+                    <td className="px-4 py-2 text-center text-gray-400">-</td>
+                    <td className="px-4 py-2 text-center text-green-600 font-medium">✓</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Info Box */}
+          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex gap-3">
+              <span className="text-blue-600 text-lg">ℹ️</span>
+              <div className="flex-1">
+                <h4 className="text-sm font-semibold text-blue-900 mb-1">About Dual Stagehand Provider</h4>
+                <p className="text-sm text-blue-800">
+                  Choose between Python (built-in, always available) or TypeScript (requires microservice on port 3001).
+                  TypeScript offers better performance and native API support. Switch anytime without breaking existing tests.
+                </p>
+              </div>
             </div>
           </div>
         </Card>

@@ -90,11 +90,16 @@ backend/*.sqlite3
 backend/artifacts/
 backend/artifacts/screenshots/
 backend/artifacts/videos/
+backend/screenshots/
+test-results/
+playwright-report/
 
 # Test scripts (keep test suite, exclude temp test scripts)
 backend/check_*.py
 backend/test_queue_quick.py
 backend/verify_*.py
+backend/optimized_steps.py
+backend/update_test_steps.py
 
 # Python virtual environments
 **/venv/

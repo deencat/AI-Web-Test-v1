@@ -113,6 +113,15 @@ async def general_exception_handler(request: Request, exc: Exception):
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
+@app.on_event("startup")
+async def startup_event():
+    """Startup event to ensure Windows event loop policy is set."""
+    if sys.platform == 'win32':
+        # Force ProactorEventLoop policy for Playwright
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        print("[STARTUP] Windows ProactorEventLoop policy set for Playwright compatibility")
+
+
 @app.get("/")
 def root():
     """Root endpoint with API information."""

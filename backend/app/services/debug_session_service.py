@@ -15,7 +15,8 @@ from app.schemas.debug_session import (
     DebugSessionStartRequest,
     ManualSetupInstruction
 )
-from app.services.stagehand_service import StagehandExecutionService
+from app.services.stagehand_factory import get_stagehand_adapter
+from app.services.stagehand_adapter import StagehandAdapter
 
 
 class DebugSessionService:
@@ -24,7 +25,7 @@ class DebugSessionService:
     def __init__(self):
         """Initialize debug session service."""
         # Track active sessions in memory: session_id -> browser instance
-        self.active_sessions: Dict[str, StagehandExecutionService] = {}
+        self.active_sessions: Dict[str, StagehandAdapter] = {}
         
         # Base directory for user data dirs
         self.user_data_base = Path("artifacts/debug_sessions")
@@ -77,18 +78,30 @@ class DebugSessionService:
             user_data_dir = self.user_data_base / session_id
             user_data_dir.mkdir(parents=True, exist_ok=True)
             
-            # Initialize persistent browser
-            browser_service = StagehandExecutionService(
+            # Initialize persistent browser using factory
+            browser_service = get_stagehand_adapter(
+                db=db,
+                user_id=user_id,
                 browser="chromium",
                 headless=False,  # Always visible for debug mode
                 screenshot_dir=f"artifacts/screenshots/debug_{session_id}"
             )
             
-            browser_metadata = await browser_service.initialize_persistent(
-                user_data_dir=str(user_data_dir),
-                user_config=user_config,
-                devtools=True
-            )
+            try:
+                browser_metadata = await browser_service.initialize_persistent(
+                    user_data_dir=str(user_data_dir),
+                    user_config=user_config,
+                    devtools=True
+                )
+            except Exception as browser_error:
+                print(f"[ERROR] Failed to initialize persistent browser: {browser_error}")
+                # Clean up and raise
+                crud_debug.update_debug_session_status(
+                    db=db,
+                    session_id=session_id,
+                    status=DebugSessionStatus.FAILED
+                )
+                raise ValueError(f"Failed to initialize browser: {str(browser_error)}")
             
             # Update session with browser info
             crud_debug.update_debug_session_browser_info(
@@ -149,7 +162,7 @@ class DebugSessionService:
         session_id: str,
         execution: TestExecution,
         target_step: int,
-        browser_service: StagehandExecutionService
+        browser_service: StagehandAdapter
     ):
         """
         Execute prerequisite steps automatically (auto mode).
@@ -159,7 +172,7 @@ class DebugSessionService:
             session_id: Debug session ID
             execution: Original test execution
             target_step: Target step number
-            browser_service: Browser service instance
+            browser_service: Browser service instance (adapter)
         """
         # Update status to setup in progress
         crud_debug.update_debug_session_status(
@@ -192,6 +205,10 @@ class DebugSessionService:
         total_tokens = 0
         
         print(f"[DEBUG] Auto-setup: Executing {prerequisite_steps} prerequisite steps")
+        
+        # Verify browser page is ready
+        if not browser_service.page:
+            raise ValueError("Browser page not initialized")
         
         # Navigate to base URL first
         await browser_service.page.goto(base_url)
