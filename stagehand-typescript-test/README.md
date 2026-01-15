@@ -61,7 +61,7 @@ Tests the Three.com.hk 5G Broadband subscription flow (18 steps):
 ======================================================================
   Step 1: Navigate to 5G Broadband plan page
 ======================================================================
-✅ Navigated to: https://web.three.com.hk/5gbroadband/plan-hsbc-en.html
+✅ Navigated to: https://web.three.com.hk/5gbroadband/plan-monthly.html?intcmp=web_homeshortcut_5gbb_251230_nil_tc
 
 [... 18 steps ...]
 

@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import logger from './services/logger';
 import sessionRoutes from './routes/sessions';
 import healthRoutes from './routes/health';
+import executionRoutes from './routes/execution';
 import { sessionManager } from './services/sessionManager';
 
 // Load environment variables
@@ -14,7 +15,11 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:8000',
+  origin: [
+    process.env.CORS_ORIGIN || 'http://localhost:8000',
+    'http://localhost:5173', // Frontend dev server
+    'http://localhost:3000'  // Alternative frontend port
+  ],
   credentials: true,
 }));
 app.use(express.json({ limit: '50mb' }));
@@ -33,6 +38,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // Routes
 app.use('/health', healthRoutes);
 app.use('/api/sessions', sessionRoutes);
+app.use('/api', executionRoutes);
 
 // Root endpoint
 app.get('/', (req: Request, res: Response) => {
@@ -43,6 +49,7 @@ app.get('/', (req: Request, res: Response) => {
     endpoints: {
       health: '/health',
       sessions: '/api/sessions',
+      'execute-test': '/api/execute-test',
     },
   });
 });
