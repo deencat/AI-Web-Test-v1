@@ -17,6 +17,8 @@ class UniversalLLMService:
         self.google_api_key = settings.GOOGLE_API_KEY or os.getenv("GOOGLE_API_KEY")
         self.cerebras_api_key = settings.CEREBRAS_API_KEY or os.getenv("CEREBRAS_API_KEY")
         self.openrouter_api_key = settings.OPENROUTER_API_KEY or os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+        self.azure_api_key = settings.AZURE_OPENAI_API_KEY or os.getenv("AZURE_OPENAI_API_KEY")
+        self.azure_endpoint = settings.AZURE_OPENAI_ENDPOINT or os.getenv("AZURE_OPENAI_ENDPOINT")
     
     async def chat_completion(
         self,
@@ -49,6 +51,8 @@ class UniversalLLMService:
             return await self._call_google(messages, model, temperature, max_tokens)
         elif provider == "cerebras":
             return await self._call_cerebras(messages, model, temperature, max_tokens)
+        elif provider == "azure":
+            return await self._call_azure(messages, model, temperature, max_tokens)
         else:  # default to openrouter
             return await self._call_openrouter(messages, model, temperature, max_tokens)
     
@@ -180,6 +184,64 @@ class UniversalLLMService:
                 raise Exception(f"Cerebras API error ({e.response.status_code}): {error_detail}")
             except httpx.HTTPError as e:
                 raise Exception(f"Cerebras API connection error: {str(e)}")
+    
+    async def _call_azure(
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None
+    ) -> dict:
+        """Call Azure OpenAI API (OpenAI-compatible)."""
+        if not self.azure_api_key:
+            raise ValueError(
+                "AZURE_OPENAI_API_KEY not set in environment. "
+                "Please add your Azure OpenAI API key to backend/.env file."
+            )
+        
+        if not self.azure_endpoint:
+            raise ValueError(
+                "AZURE_OPENAI_ENDPOINT not set in environment. "
+                "Please add your Azure endpoint to backend/.env file."
+            )
+        
+        # Use default model if not specified (deployment name)
+        if not model:
+            model = "ChatGPT-UAT"
+        
+        # Azure OpenAI API endpoint (OpenAI-compatible)
+        base_url = self.azure_endpoint
+        
+        # Prepare request payload (OpenAI format)
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+        }
+        
+        if max_tokens:
+            payload["max_tokens"] = max_tokens
+        
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            try:
+                response = await client.post(
+                    f"{base_url}/chat/completions",
+                    headers={
+                        "api-key": self.azure_api_key,  # Azure uses 'api-key' header
+                        "Content-Type": "application/json"
+                    },
+                    json=payload
+                )
+                response.raise_for_status()
+                return response.json()
+                
+            except httpx.TimeoutException:
+                raise Exception("Azure OpenAI API request timed out (90s)")
+            except httpx.HTTPStatusError as e:
+                error_detail = e.response.text if e.response else "Unknown error"
+                raise Exception(f"Azure OpenAI API error ({e.response.status_code}): {error_detail}")
+            except httpx.HTTPError as e:
+                raise Exception(f"Azure OpenAI API connection error: {str(e)}")
     
     async def _call_openrouter(
         self,
