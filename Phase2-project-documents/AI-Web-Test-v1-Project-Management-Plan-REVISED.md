@@ -12,7 +12,7 @@
 ## 📍 CURRENT LOCATION TRACKER
 
 **🎯 WHERE WE ARE:**  
-**Phase 2 > Sprint 5 COMPLETE** ✅
+**Phase 2 > Sprint 5.5 (Hybrid Execution Engine)** 🔄
 
 **📊 COMPLETION STATUS:**
 
@@ -23,14 +23,14 @@ PROJECT HIERARCHY:
 │  ├─ Sprint 2: AI Integration ✅ 100%
 │  └─ Sprint 3: Execution Engine ✅ 100%
 │
-├─ Phase 2: Learning Foundations (Weeks 9-14) 🔄 92%
+├─ Phase 2: Learning Foundations (Weeks 9-14) 🔄 85%
 │  ├─ Sprint 4: Test Editing & Versioning ✅ 100%
 │  │  ├─ Backend API (5 endpoints) ✅
 │  │  ├─ Frontend Components (4 components) ✅
 │  │  ├─ Unit Tests (18 tests) ✅
 │  │  └─ E2E Tests (14 tests) ✅
 │  │
-│  ├─ Sprint 5: Dual Stagehand Provider 🔄 83%
+│  ├─ Sprint 5: Dual Stagehand Provider ✅ 100%
 │  │  ├─ Stage 1: Database Config ✅ 100%
 │  │  ├─ Stage 2: Adapter Pattern ✅ 100%
 │  │  ├─ Stage 3-4: Node.js Microservice ✅ 100%
@@ -44,7 +44,13 @@ PROJECT HIERARCHY:
 │  │  │  ├─ Health Status Monitoring ✅
 │  │  │  ├─ Feature Comparison Table ✅
 │  │  │  └─ API Integration Complete ✅
-│  │  └─ Stage 6: Testing & Docs 🔄 0% ◄── YOU ARE HERE
+│  │  └─ Stage 6: Testing & Docs ✅ 100%
+│  │
+│  ├─ Sprint 5.5: Hybrid Execution Engine 🔄 0% ◄── YOU ARE HERE
+│  │  ├─ Stage 1: XPath Extraction via Observe ⏳ 0%
+│  │  ├─ Stage 2: Playwright Execution Layer ⏳ 0%
+│  │  ├─ Stage 3: XPath Caching & Self-Healing ⏳ 0%
+│  │  └─ Stage 4: Testing & Validation ⏳ 0%
 │  │
 │  └─ Sprint 6: Dashboard + Prompt A/B ⏳ 0%
 │
@@ -54,15 +60,15 @@ PROJECT HIERARCHY:
 
 **📅 TIMELINE:**
 - **Started:** Week 13 (January 2026)
-- **Current Week:** Week 13, Day 3
-- **Sprint 5 Target:** Week 14 end
+- **Current Week:** Week 13, Day 5
+- **Sprint 5.5 Target:** Week 14, Day 3
 - **Phase 2 Target:** Week 14 end
 
 **🎯 NEXT MILESTONES:**
-1. Sprint 6: Dashboard + Prompt A/B Testing (1 week) ← NEXT
-2. Complete Phase 2 (Week 14 end)
-3. Begin Phase 3: Multi-Agent Architecture
-4. Sprint 7-8: Observation Agent + Agents Manager
+1. Sprint 5.5: Hybrid Execution Engine (3 days) ← CURRENT
+2. Sprint 6: Dashboard + Prompt A/B Testing (1 week) ← NEXT
+3. Complete Phase 2 (Week 14 end)
+4. Begin Phase 3: Multi-Agent Architecture
 
 ---
 
@@ -147,7 +153,26 @@ After completing Phase 1 (Sprint 1-3) and analyzing real-world usage, we identif
 - ✅ **Testing:** 18 comprehensive unit tests (all passing)
 - ✅ **Integration Testing:** 6 integration tests validating real browser execution
 - ✅ **Prototype:** TypeScript Stagehand validated with 18-step subscription flow test
+- ✅ **Node.js Microservice:** Complete Express REST API (14 files, 1,733 lines)
+- ✅ **Settings UI:** Provider selection + health monitoring + feature comparison
+- ✅ **Stage 6:** Integration testing (17/17 passing) + Performance benchmarks (8x faster)
 - ✅ Code committed to feature/phase2-dev-a branch
+
+**Sprint 5.5 IN PROGRESS (0%)** - Hybrid Execution Engine
+- **Strategic Goal:** Separate AI element discovery from execution for reliability
+- **Problem:** Stagehand `act()` has 30-40% failure rate on complex pages (overlays, multiple similar elements)
+- **Solution:** Use Stagehand `observe()` to find XPath + Playwright to execute actions
+- **Benefits:** 
+  - 90%+ success rate (vs 60-70% with act alone)
+  - 5-10x faster on cached runs (no LLM call)
+  - 80-90% token savings on repeated executions
+  - Self-healing when page structure changes
+- **Timeline:** 3 days (January 16-18, 2026)
+- **Stages:**
+  - Stage 1: XPath Extraction via Observe (6 hours)
+  - Stage 2: Playwright Execution Layer (8 hours)
+  - Stage 3: XPath Caching & Self-Healing (8 hours)
+  - Stage 4: Testing & Validation (6 hours)
 
 **Current Progress: Phase 2 ~75% Complete**
 - ✅ Sprint 4: Test Editing & Versioning (100%) - **FULLY TESTED**
@@ -166,7 +191,15 @@ After completing Phase 1 (Sprint 1-3) and analyzing real-world usage, we identif
   - Feature comparison table (6 features)
   - API integration complete (GET/PUT endpoints)
   - Real-time status indicators
-- 🔄 Sprint 5 Stage 6: Testing & Documentation (IN PROGRESS)
+- ✅ Sprint 5 Stage 6: Testing & Documentation (100% - COMPLETED January 13, 2026)
+  - Integration tests (17/17 passing)
+  - Performance benchmarks (TypeScript 8x faster)
+  - Complete documentation
+- 🔄 Sprint 5.5: Hybrid Execution Engine (IN PROGRESS - Started January 16, 2026)
+  - ⏳ Stage 1: XPath Extraction via Observe
+  - ⏳ Stage 2: Playwright Execution Layer
+  - ⏳ Stage 3: XPath Caching & Self-Healing
+  - ⏳ Stage 4: Testing & Validation
 - ⏳ Sprint 6: Dashboard + Prompt A/B Testing (Planned)
 
 ---
@@ -313,7 +346,17 @@ After completing Phase 1 (Sprint 1-3) and analyzing real-world usage, we identif
   - Factory Pattern: Provider selection with DB integration
   - Testing: 18 unit tests + 6 integration tests (all passing)
   - TypeScript Prototype: 18-step subscription flow validated
+  - Node.js Microservice: 14 files, 1,733 lines (100%)
+  - Settings UI: Provider selection + health monitoring (100%)
   - Branch: feature/phase2-dev-a
+  
+- 🔄 **Sprint 5.5 IN PROGRESS (0%):** Hybrid Execution Engine
+  - ⏳ Stage 1: XPath Extraction via Observe (0%)
+  - ⏳ Stage 2: Playwright Execution Layer (0%)
+  - ⏳ Stage 3: XPath Caching & Self-Healing (0%)
+  - ⏳ Stage 4: Testing & Validation (0%)
+  
+- ⏳ **Sprint 6 PLANNED:** Dashboard + Prompt A/B Testing
   - ✅ **Developer A (100% Complete):**
     - ✅ Backend: Test versioning database schema + 5 API endpoints
     - ✅ Frontend: All 4 components (TestStepEditor, VersionHistoryPanel, VersionCompareDialog, RollbackConfirmDialog)
@@ -325,8 +368,13 @@ After completing Phase 1 (Sprint 1-3) and analyzing real-world usage, we identif
   - ✅ **Sprint 5 Stage 1-2 COMPLETE:** Adapter Pattern + Testing (100%)
   - ✅ **Sprint 5 Stage 3-4 COMPLETE:** Node.js Microservice + Integration (100%)
   - ✅ **Sprint 5 Stage 5 COMPLETE:** Settings UI Implementation (100%)
-  - 🔄 **Sprint 5 Stage 6 IN PROGRESS:** Final Testing & Documentation (0%)
-  - ⏳ **Sprint 6 PLANNED:** Dashboard + Prompt A/B Testing (or KB Enhancement)
+  - ✅ **Sprint 5 Stage 6 COMPLETE:** Final Testing & Documentation (100%)
+  - 🔄 **Sprint 5.5 IN PROGRESS:** Hybrid Execution Engine (0%) ◄── YOU ARE HERE
+    - ⏳ Stage 1: XPath Extraction via Observe
+    - ⏳ Stage 2: Playwright Execution Layer  
+    - ⏳ Stage 3: XPath Caching & Self-Healing
+    - ⏳ Stage 4: Testing & Validation
+  - ⏳ **Sprint 6 PLANNED:** Dashboard + Prompt A/B Testing
 - 📋 **Phase 3 PLANNED:** Multi-agent architecture delayed but fully specified
 - 🧠 **Phase 4 PLANNED:** RL implementation timeline unchanged
 
@@ -1455,6 +1503,223 @@ Frontend
 - 70%+ of suggestions accepted by users
 - Auto-fix accuracy >85% (for high-confidence)
 - Generation success rate improves from 60% to 85%
+
+---
+
+#### Sprint 5.5 (Week 13-14): Hybrid Execution Engine - Observe + Playwright
+**Goal:** ⏳ IN PROGRESS | Fix unreliable element clicking by separating AI discovery from execution
+
+**Duration:** 3 days (January 16-18, 2026)
+
+**Strategic Rationale:**
+During Sprint 5 testing, we identified a critical issue: Stagehand's `act()` method sometimes returns correct XPath but fails to click elements reliably, particularly with:
+- Elements under overlays/modals
+- Multiple similar elements (e.g., two "Login" buttons - one in modal, one in header)
+- Elements with z-index/CSS positioning issues
+- Success reported but no action taken
+
+**Root Cause Analysis:**
+- **Current:** `page.act("click login")` → Stagehand finds AND clicks in one step (black box)
+- **Problem:** No control over which element is chosen or how click is executed
+- **Impact:** 30-40% failure rate on complex pages, no visibility into decision-making
+
+**Solution: Hybrid Execution Strategy**
+```
+BEFORE (Current):                  AFTER (Hybrid):
+┌──────────────────────┐          ┌──────────────────────┐
+│ page.act("click")    │          │ page.observe("find") │
+│  ↓ (black box)       │          │  ↓ Returns XPath     │
+│ Find + Click         │    →     │ Store XPath in DB    │
+│  ↓ (no visibility)   │          │  ↓                   │
+│ Success/Fail         │          │ Playwright.click()   │
+└──────────────────────┘          │  ↓ (reliable)        │
+                                  │ Success/Fail         │
+                                  └──────────────────────┘
+```
+
+**Benefits:**
+✅ **AI Flexibility:** Use Stagehand `observe()` to find elements intelligently
+✅ **Execution Reliability:** Use Playwright's battle-tested click() for actions
+✅ **XPath Caching:** Store discovered selectors, skip AI on subsequent runs (cost savings)
+✅ **Self-Healing:** Auto-retry with `observe()` when cached XPath fails
+✅ **Transparency:** Full visibility into which element is selected
+✅ **Dual-Mode Support:** Keep existing Playwright mode when XPath is known
+
+---
+
+**Stage 1: XPath Extraction via Observe (Day 1 - 6 hours)**
+**Owner:** Backend Developer
+
+**Tasks:**
+- [ ] **Backend** - Enhance Python Stagehand Adapter
+  - [ ] Add `observe_element()` method to StagehandAdapter base class
+  - [ ] Implement in PythonStagehandAdapter using `page.observe(instruction)`
+  - [ ] Parse ObserveResult to extract selector (xpath=...)
+  - [ ] Return ObserveResult with: selector, method, description, arguments
+  - [ ] Add error handling for empty results or multiple matches
+  
+- [ ] **Backend** - Update execution_service.py
+  - [ ] Create new `_execute_step_hybrid()` method
+  - [ ] Call `stagehand.page.observe()` with natural language instruction
+  - [ ] Extract XPath from `ObserveResult.selector` field
+  - [ ] Clean XPath format (remove "xpath=" prefix if present)
+  - [ ] Log discovered XPath for debugging
+  
+- [ ] **Testing** - Unit Tests for Observe
+  - [ ] Test observe() returns valid ObserveResult
+  - [ ] Test XPath extraction from selector field
+  - [ ] Test handling of multiple matches
+  - [ ] Test error handling for no matches
+
+**Acceptance Criteria:**
+✅ `page.observe("find login button")` returns `ObserveResult` with valid XPath
+✅ XPath extracted cleanly (e.g., `/html/body[1]/div[1]/form[1]/button[1]`)
+✅ Unit tests passing (5 tests)
+
+---
+
+**Stage 2: Playwright Execution Layer (Day 1-2 - 8 hours)**
+**Owner:** Backend Developer
+
+**Tasks:**
+- [ ] **Backend** - Implement Playwright Click with XPath
+  - [ ] In `_execute_step_hybrid()`, use Playwright's `page.locator()` with XPath
+  - [ ] Add retry logic (3 attempts with 1s delay)
+  - [ ] Add element visibility check before click
+  - [ ] Add scroll-into-view if element not in viewport
+  - [ ] Handle overlay detection (wait for clickable)
+  - [ ] Return detailed result with XPath used
+  
+- [ ] **Backend** - Action Type Detection
+  - [ ] Parse `ObserveResult.method` field (click, fill, select, etc.)
+  - [ ] Route to appropriate Playwright method:
+    - `click` → `page.locator(xpath).click()`
+    - `fill` → `page.locator(xpath).fill(value)`
+    - `select` → `page.locator(xpath).select_option(value)`
+  - [ ] Extract `arguments` from ObserveResult for fill/select actions
+  
+- [ ] **Backend** - Fallback Logic
+  - [ ] If Playwright click fails, log error with XPath
+  - [ ] Optionally retry with different click strategy (force:true)
+  - [ ] Track success/failure per XPath for analytics
+
+**Testing:**
+- [ ] Test Playwright click with valid XPath
+- [ ] Test handling of overlay/blocked elements
+- [ ] Test scroll-into-view functionality
+- [ ] Test different action types (click, fill, select)
+
+**Acceptance Criteria:**
+✅ Playwright successfully clicks element with XPath from observe
+✅ Handles overlays better than `act()` method
+✅ 90%+ success rate on test pages
+✅ Integration tests passing (8 tests)
+
+---
+
+**Stage 3: XPath Caching & Self-Healing (Day 2-3 - 8 hours)**
+**Owner:** Backend Developer
+
+**Tasks:**
+- [ ] **Database** - Add XPath Storage
+  - [ ] Add `xpath` column to `test_steps` table (TEXT, nullable)
+  - [ ] Add `xpath_last_validated` column (TIMESTAMP)
+  - [ ] Add `xpath_success_count` column (INTEGER, default 0)
+  - [ ] Add `xpath_failure_count` column (INTEGER, default 0)
+  - [ ] Migration script to update existing test steps
+  
+- [ ] **Backend** - XPath Caching Logic
+  - [ ] After successful observe+click, store XPath in test_step.xpath
+  - [ ] On subsequent executions, check if xpath exists
+  - [ ] If xpath exists and recent (<7 days), skip observe()
+  - [ ] Use Playwright directly with cached XPath
+  - [ ] Update success/failure counters
+  
+- [ ] **Backend** - Self-Healing Logic
+  - [ ] If cached XPath fails (ElementNotFound or timeout):
+    - [ ] Log failure with old XPath
+    - [ ] Call `observe()` again to find element
+    - [ ] Update test_step.xpath with new XPath
+    - [ ] Mark xpath_last_validated = NOW()
+    - [ ] Try Playwright click with new XPath
+  - [ ] Track "healed" count in execution logs
+  
+- [ ] **Backend** - Cost Optimization
+  - [ ] Calculate tokens saved by using cached XPath
+  - [ ] Add metrics: xpath_cache_hit_rate, tokens_saved
+  - [ ] Display savings in execution results
+
+**Testing:**
+- [ ] Test XPath storage after successful execution
+- [ ] Test cached XPath execution (no LLM call)
+- [ ] Test self-healing when XPath becomes invalid
+- [ ] Test cost metrics calculation
+
+**Acceptance Criteria:**
+✅ XPath stored in database after first successful execution
+✅ Subsequent runs use cached XPath (no LLM call) = 5-10x faster
+✅ Self-healing works when page structure changes
+✅ Token savings tracked and displayed
+✅ Database migration successful
+
+---
+
+**Stage 4: Testing & Validation (Day 3 - 6 hours)**
+**Owner:** Backend Developer + QA
+
+**Tasks:**
+- [ ] **Testing** - Integration Tests
+  - [ ] Test end-to-end hybrid execution flow
+  - [ ] Test observe → Playwright click workflow
+  - [ ] Test XPath caching on second execution
+  - [ ] Test self-healing on page structure change
+  - [ ] Test with multiple similar elements (e.g., 2 Login buttons)
+  - [ ] Test with overlay/modal scenarios
+  
+- [ ] **Testing** - Performance Comparison
+  - [ ] Benchmark: Traditional `act()` vs Hybrid execution
+  - [ ] Measure: Time, success rate, cost (tokens)
+  - [ ] Test on 10 different pages
+  - [ ] Document results in comparison table
+  
+- [ ] **Documentation** - Hybrid Execution Guide
+  - [ ] Document how hybrid execution works
+  - [ ] Add decision tree: When to use hybrid vs direct Playwright
+  - [ ] Document XPath caching strategy
+  - [ ] Add troubleshooting guide
+  - [ ] Update API documentation
+
+**Deliverables:**
+- [ ] 15+ integration tests passing
+- [ ] Performance benchmark report
+- [ ] User documentation (HYBRID-EXECUTION-GUIDE.md)
+- [ ] Updated API docs
+
+**Acceptance Criteria:**
+✅ All integration tests passing (15+ tests)
+✅ Hybrid execution 90%+ success rate (vs 60-70% with act alone)
+✅ 5-10x speed improvement on cached runs
+✅ 80-90% token savings on cached runs
+✅ Documentation complete and reviewed
+
+---
+
+**Sprint 5.5 Success Metrics:**
+- **Reliability:** 90%+ success rate on complex pages (vs 60-70% before)
+- **Speed:** 5-10x faster on subsequent runs (cached XPath)
+- **Cost:** 80-90% token savings on cached runs
+- **Transparency:** Full visibility into element selection
+- **Self-Healing:** Automatic recovery from page structure changes
+
+**Team:** 1 Backend Developer (3 days focused work)
+
+**Risks & Mitigation:**
+- **Risk:** Observe() may return multiple matches
+  - **Mitigation:** Rank by description, allow user selection, store preferred index
+- **Risk:** XPath caching may break frequently
+  - **Mitigation:** Smart invalidation (7-day TTL, failure threshold), self-healing
+- **Risk:** Playwright click may still fail on some elements
+  - **Mitigation:** Multiple click strategies (normal, force, JS click), retry logic
 
 ---
 
