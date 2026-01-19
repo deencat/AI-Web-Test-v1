@@ -4,6 +4,8 @@ import { Card } from '../components/common/Card';
 import { Input } from '../components/common/Input';
 import { Button } from '../components/common/Button';
 import { FeedbackDataSync } from '../components/FeedbackDataSync';
+import { ExecutionSettingsPanel } from '../components/ExecutionSettingsPanel';
+import { TierAnalyticsPanel } from '../components/TierAnalyticsPanel';
 import settingsService from '../services/settingsService';
 import type { AvailableProvider, UserSettings } from '../types/api';
 
@@ -737,6 +739,24 @@ export const SettingsPage: React.FC = () => {
             <p className="text-gray-600 mt-1">Share feedback data across team members with different databases</p>
           </div>
           <FeedbackDataSync />
+        </div>
+
+        {/* Sprint 5.5: 3-Tier Execution Engine */}
+        <div>
+          <div className="mb-4">
+            <h2 className="text-2xl font-bold text-gray-900">3-Tier Execution Engine</h2>
+            <p className="text-gray-600 mt-1">Configure intelligent fallback strategies and view execution analytics</p>
+          </div>
+          <ExecutionSettingsPanel />
+        </div>
+
+        {/* Tier Analytics */}
+        <div>
+          <div className="mb-4">
+            <h2 className="text-2xl font-bold text-gray-900">Execution Analytics</h2>
+            <p className="text-gray-600 mt-1">View tier distribution and strategy effectiveness metrics</p>
+          </div>
+          <TierAnalyticsPanel />
         </div>
 
         {/* System Information */}
