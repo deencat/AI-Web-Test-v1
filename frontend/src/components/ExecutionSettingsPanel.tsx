@@ -68,7 +68,8 @@ export const ExecutionSettingsPanel: React.FC<ExecutionSettingsPanelProps> = ({
   const loadStrategies = async () => {
     try {
       const data = await settingsService.getExecutionStrategies();
-      setStrategies(data.strategies || []);
+      // API returns array directly, not wrapped in object
+      setStrategies(Array.isArray(data) ? data : []);
     } catch (error: any) {
       console.error('Failed to load strategies:', error);
     }

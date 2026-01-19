@@ -57,9 +57,14 @@ class ExecutionStrategyInfo(BaseModel):
     success_rate_max: int
     cost_level: Literal["low", "medium", "high"]
     speed_level: Literal["fast", "medium", "slow"]
+    performance_level: Literal["high", "medium", "low"]  # Frontend expects this
     recommended: bool
     tier_flow: list[int]  # e.g., [1, 2] or [1, 2, 3]
+    fallback_chain: list[str]  # e.g., ["Tier 1", "Tier 2"]
+    recommended_for: str  # Description of ideal use cases
     use_cases: list[str]
+    pros: list[str]  # Advantages of this strategy
+    cons: list[str]  # Disadvantages of this strategy
 
 
 class TierDistributionStats(BaseModel):

@@ -357,12 +357,26 @@ async def get_available_strategies(
             "success_rate_max": 95,
             "cost_level": "medium",
             "speed_level": "fast",
+            "performance_level": "high",
             "recommended": False,
             "tier_flow": [1, 2],
+            "fallback_chain": ["Tier 1: Playwright", "Tier 2: Hybrid"],
+            "recommended_for": "Stable pages with occasional selector changes, cost-conscious environments",
             "use_cases": [
                 "Stable pages with occasional selector changes",
                 "Cost-conscious environments",
                 "Tests with predictable selectors"
+            ],
+            "pros": [
+                "Fast execution (most tests succeed at Tier 1)",
+                "XPath caching benefits (Tier 2)",
+                "Cost-effective (no Tier 3 usage)",
+                "90-95% combined success rate"
+            ],
+            "cons": [
+                "Lower success rate than Option C",
+                "No AI reasoning fallback",
+                "May fail on complex interactions"
             ]
         },
         {
@@ -373,12 +387,26 @@ async def get_available_strategies(
             "success_rate_max": 94,
             "cost_level": "high",
             "speed_level": "medium",
+            "performance_level": "medium",
             "recommended": False,
             "tier_flow": [1, 3],
+            "fallback_chain": ["Tier 1: Playwright", "Tier 3: Stagehand AI"],
+            "recommended_for": "Complex interactions requiring AI reasoning, dynamic pages with unpredictable structure",
             "use_cases": [
                 "Complex interactions requiring AI reasoning",
                 "Dynamic pages with unpredictable structure",
                 "When cost is less of a concern"
+            ],
+            "pros": [
+                "Full AI reasoning for complex cases",
+                "Handles unpredictable page structures",
+                "92-94% combined success rate",
+                "Skips Tier 2 (faster than Option C)"
+            ],
+            "cons": [
+                "Higher cost (Tier 3 uses full LLM)",
+                "Slower execution on failures",
+                "No XPath caching benefits"
             ]
         },
         {
@@ -389,13 +417,27 @@ async def get_available_strategies(
             "success_rate_max": 99,
             "cost_level": "medium",
             "speed_level": "fast",
+            "performance_level": "high",
             "recommended": True,
             "tier_flow": [1, 2, 3],
+            "fallback_chain": ["Tier 1: Playwright", "Tier 2: Hybrid", "Tier 3: Stagehand AI"],
+            "recommended_for": "Production environments, critical test suites, maximum reliability requirements",
             "use_cases": [
                 "Production environments",
                 "Critical test suites",
                 "Maximum reliability requirements",
                 "Most tests succeed at Tier 1/2 (low cost)"
+            ],
+            "pros": [
+                "Highest success rate (97-99%)",
+                "Comprehensive fallback strategy",
+                "Balanced cost (most succeed at Tier 1/2)",
+                "Self-healing with XPath caching"
+            ],
+            "cons": [
+                "Slightly slower on complex failures",
+                "Higher cost than Option A",
+                "More complex execution flow"
             ]
         }
     ]
