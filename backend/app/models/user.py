@@ -21,4 +21,6 @@ class User(Base):
     kb_documents = relationship("KBDocument", back_populates="user", cascade="all, delete-orphan")
     test_executions = relationship("TestExecution", back_populates="user", cascade="all, delete-orphan")
     settings = relationship("UserSetting", back_populates="user", cascade="all, delete-orphan", uselist=False)
+    execution_settings = relationship("ExecutionSettings", back_populates="user", cascade="all, delete-orphan", uselist=False)
+
 
