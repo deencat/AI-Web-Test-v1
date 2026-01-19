@@ -1,6 +1,7 @@
 """
 Test Execution Service with Stagehand and Playwright
 Handles browser automation and test execution.
+Integrated with 3-Tier Execution Engine (Sprint 5.5)
 """
 import asyncio
 import json
@@ -18,9 +19,11 @@ from app.models.test_execution import (
     ExecutionStatus,
     ExecutionResult
 )
+from app.models.execution_settings import ExecutionSettings
 from app.crud import test_execution as crud_execution
 from app.crud import execution_feedback as crud_feedback
 from app.schemas.execution_feedback import ExecutionFeedbackCreate
+from app.services.three_tier_execution_service import ThreeTierExecutionService
 
 
 class ExecutionConfig:
@@ -53,6 +56,7 @@ class ExecutionService:
     """
     Service for executing test cases using Playwright.
     Provides browser automation, step execution, and result tracking.
+    Integrated with 3-Tier Execution Engine (Sprint 5.5).
     """
     
     def __init__(self, config: ExecutionConfig = None):
@@ -62,6 +66,37 @@ class ExecutionService:
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
         self.page: Optional[Page] = None
+        self.three_tier_service: Optional[ThreeTierExecutionService] = None
+    
+    def _get_user_execution_settings(self, db: Session, user_id: int) -> ExecutionSettings:
+        """
+        Get user's execution settings from database with defaults if not configured.
+        
+        Args:
+            db: Database session
+            user_id: User ID
+            
+        Returns:
+            ExecutionSettings object (existing or default)
+        """
+        # Try to get existing settings
+        settings = db.query(ExecutionSettings).filter(
+            ExecutionSettings.user_id == user_id
+        ).first()
+        
+        if settings:
+            return settings
+        
+        # Return default settings if not configured
+        default_settings = ExecutionSettings()
+        default_settings.user_id = user_id
+        default_settings.fallback_strategy = "option_c"  # Recommended default
+        default_settings.max_retry_per_tier = 1
+        default_settings.timeout_per_tier_seconds = 30
+        default_settings.track_fallback_reasons = True
+        default_settings.track_strategy_effectiveness = True
+        
+        return default_settings
         
     async def initialize(self):
         """Initialize Playwright and browser."""
@@ -179,6 +214,14 @@ class ExecutionService:
             await self.create_context(record_video=True)
             page = await self.create_page()
             
+            # Get user's execution settings and initialize 3-Tier service
+            user_settings = self._get_user_execution_settings(db, user_id)
+            self.three_tier_service = ThreeTierExecutionService(
+                db=db,
+                page=page,
+                user_settings=user_settings
+            )
+            
             # Navigate to base URL
             await page.goto(base_url)
             
@@ -218,17 +261,18 @@ class ExecutionService:
                     step_end = datetime.utcnow()
                     duration = (step_end - step_start).total_seconds()
                     
+                    # Determine result for screenshot naming
+                    step_result = ExecutionResult.PASS if result["success"] else ExecutionResult.FAIL
+                    
                     # Save screenshot for this step
                     screenshot_path = await self._capture_screenshot(
                         page, 
                         execution.id, 
                         idx,
-                        result["result"]
+                        step_result
                     )
                     
                     # Create step record
-                    step_result = ExecutionResult.PASS if result["success"] else ExecutionResult.FAIL
-                    
                     crud_execution.create_execution_step(
                         db=db,
                         execution_id=execution.id,
@@ -247,7 +291,7 @@ class ExecutionService:
                     else:
                         failed_steps += 1
                         
-                        # Capture execution feedback for failed step
+                        # Capture execution feedback for failed step with 3-tier info
                         await self._capture_execution_feedback(
                             db=db,
                             execution_id=execution.id,
@@ -256,7 +300,9 @@ class ExecutionService:
                             error_message=result.get("error", "Step failed"),
                             page=page,
                             screenshot_path=screenshot_path,
-                            duration_ms=int(duration * 1000)
+                            duration_ms=int(duration * 1000),
+                            tier_info=result.get("execution_history"),  # 3-tier execution history
+                            strategy_used=result.get("strategy_used")  # Which strategy was used
                         )
                         
                         # If step is critical and failed, stop execution
@@ -363,10 +409,11 @@ class ExecutionService:
         detailed_step: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
-        Execute a single test step with actual selector validation.
+        Execute a single test step using 3-Tier Execution Engine.
         
-        This implementation ACTUALLY tries to find and interact with elements,
-        and will FAIL if selectors don't exist - enabling feedback collection.
+        This implementation uses ThreeTierExecutionService which attempts:
+        - Tier 1: Direct Playwright execution (fastest)
+        - Tier 2/3: Fallback based on user's selected strategy
         
         Args:
             page: Playwright page object
@@ -384,6 +431,74 @@ class ExecutionService:
             # DEBUG: Log what we received
             print(f"\n[DEBUG _execute_step] Step {step_number}: {step_description}")
             print(f"[DEBUG] detailed_step = {detailed_step}")
+            
+            # If 3-tier service is available, use it
+            if self.three_tier_service:
+                # Prepare step data for 3-tier execution
+                step_data = {
+                    "action": detailed_step.get('action', '') if detailed_step else None,
+                    "selector": detailed_step.get('selector', '') if detailed_step else None,
+                    "value": detailed_step.get('value', '') if detailed_step else None,
+                    "instruction": step_description
+                }
+                
+                # Detect action from description if not provided
+                desc_lower = step_description.lower()
+                if not step_data["action"]:
+                    if "navigate" in desc_lower or "go to" in desc_lower or "open" in desc_lower:
+                        step_data["action"] = "navigate"
+                    elif "click" in desc_lower:
+                        step_data["action"] = "click"
+                    elif "fill" in desc_lower or "type" in desc_lower or "enter" in desc_lower or "input" in desc_lower:
+                        step_data["action"] = "fill"
+                
+                # For navigate actions, extract URL
+                if step_data["action"] == "navigate":
+                    if not step_data["value"]:
+                        step_data["value"] = base_url
+                        if "http" in step_description:
+                            urls = re.findall(r'https?://[^\s]+', step_description)
+                            if urls:
+                                step_data["value"] = urls[0]
+                
+                # For fill actions without value, use default
+                if step_data["action"] == "fill" and not step_data["value"]:
+                    step_data["value"] = "test input"
+                
+                print(f"[DEBUG] Calling 3-Tier with: {step_data}")
+                
+                # Execute with 3-tier service
+                result = await self.three_tier_service.execute_step(
+                    step=step_data,
+                    execution_id=None,  # Will add execution_id later if needed
+                    step_index=step_number - 1
+                )
+                
+                print(f"[DEBUG] 3-Tier result: {result}")
+                
+                # Convert 3-tier result format to legacy format
+                if result["success"]:
+                    return {
+                        "success": True,
+                        "actual": f"Tier {result['tier']} execution successful: {step_description}",
+                        "expected": step_description,
+                        "tier": result["tier"],
+                        "execution_time_ms": result.get("execution_time_ms", 0),
+                        "strategy_used": result.get("strategy_used")
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "error": result.get("error", "Execution failed"),
+                        "actual": f"All tiers failed: {result.get('error')}",
+                        "expected": step_description,
+                        "execution_history": result.get("execution_history", []),
+                        "strategy_used": result.get("strategy_used")
+                    }
+            
+            # Fallback: Use old direct Playwright execution if 3-tier not available
+            # This ensures backward compatibility
+            print("[DEBUG] 3-Tier service not available, using fallback direct execution")
             
             # Get action and selector from detailed_step if available
             action = detailed_step.get('action', '').lower() if detailed_step else None
@@ -562,11 +677,26 @@ class ExecutionService:
         error_message: str,
         page: Page,
         screenshot_path: Optional[str],
-        duration_ms: int
+        duration_ms: int,
+        tier_info: Optional[List[Dict[str, Any]]] = None,
+        strategy_used: Optional[str] = None
     ):
         """
         Capture execution feedback for failed steps.
         This is the foundation of the learning system - collects context for pattern analysis.
+        Includes 3-tier execution information for better diagnostics.
+        
+        Args:
+            db: Database session
+            execution_id: Execution ID
+            step_index: Step index (0-based)
+            step_description: Step description
+            error_message: Error message
+            page: Playwright page
+            screenshot_path: Path to screenshot
+            duration_ms: Step duration in milliseconds
+            tier_info: Optional 3-tier execution history (which tiers attempted/failed)
+            strategy_used: Optional strategy used (option_a, option_b, option_c)
         """
         try:
             # Get current page context
@@ -594,6 +724,25 @@ class ExecutionService:
             viewport_width = viewport.get("width") if viewport else None
             viewport_height = viewport.get("height") if viewport else None
             
+            # Add 3-tier information to metadata
+            metadata = {}
+            if tier_info:
+                metadata["tier_execution_history"] = tier_info
+                # Extract which tiers were attempted
+                tiers_attempted = [t.get("tier") for t in tier_info if "tier" in t]
+                metadata["tiers_attempted"] = tiers_attempted
+                # Find which tier finally failed
+                failed_tier = None
+                for t in reversed(tier_info):
+                    if not t.get("success", True):
+                        failed_tier = t.get("tier")
+                        break
+                if failed_tier:
+                    metadata["final_failed_tier"] = failed_tier
+            
+            if strategy_used:
+                metadata["strategy_used"] = strategy_used
+            
             # Create feedback entry
             feedback = ExecutionFeedbackCreate(
                 execution_id=execution_id,
@@ -608,7 +757,8 @@ class ExecutionService:
                 viewport_height=viewport_height,
                 failed_selector=failed_selector,
                 selector_type=selector_type,
-                step_duration_ms=duration_ms
+                step_duration_ms=duration_ms,
+                metadata=metadata if metadata else None  # Include 3-tier execution info
             )
             
             # Save feedback (with minimal overhead)
