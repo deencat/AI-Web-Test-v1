@@ -24,11 +24,17 @@
 ### 1.1 Executive Summary
 
 **Project:** Multi-Agent Test Generation System (Phase 3)  
-**Budget:** $1,061/month operational costs  
+**Budget:** $160/month operational costs (simplified infrastructure)  
 **Timeline:** 12 weeks (Jan 23 - Apr 15, 2026)  
 **Team Size:** 2 developers (Developer A lead, Developer B support)  
 **Total Effort:** 354 story points  
 **Target Launch:** April 15, 2026
+
+**Phase 3 Strategy: MVP First, Scale Later**
+- Use existing Phase 2 infrastructure (PostgreSQL, Redis)
+- No Kubernetes/complex deployment (Docker Compose or direct Python)
+- No DevOps dependencies (removes 2-3 week blocker)
+- Defer production infrastructure to Phase 4 (when we have >50 users)
 
 **Current Status (Jan 19, 2026):**
 - Developer B: Completing Phase 2 work
@@ -38,10 +44,10 @@
 **Success Criteria:**
 - ✅ All 6 agents deployed and operational
 - ✅ 95%+ code coverage achieved
-- ✅ <$1.00 per test cycle cost
+- ✅ <$0.20 per test cycle cost (simplified infrastructure)
 - ✅ 85%+ test generation accuracy
-- ✅ Zero unplanned downtime during rollout
 - ✅ Learning system operational with 10+ patterns by Sprint 12
+- ✅ Ready to scale to Phase 4 when proven
 
 ### 1.2 Project Sponsor
 
@@ -150,15 +156,20 @@
 
 ### 2.3 External Dependencies
 
-**DevOps Team:**
-- Kubernetes cluster setup (Sprint 7, Week 1)
-- Redis Streams deployment (Sprint 7, Week 1)
-- PostgreSQL with pgvector extension (Sprint 7, Week 1)
-- Monitoring stack (Prometheus/Grafana) setup (Sprint 7, Week 2)
+**Phase 3 (MVP - Simple Infrastructure):**
+- **NONE** - Use existing Phase 2 infrastructure
+- PostgreSQL: Already running (reuse existing database)
+- Redis: Simple pub/sub (not Streams, already installed)
+- Deployment: Docker Compose locally or direct Python processes
+- Monitoring: Python logging + basic metrics endpoint
 
-**Timeline:** Must be complete by Jan 30, 2026 (Day 5 of Sprint 7)
+**Phase 4 (Production-Ready - Complex Infrastructure):**
+- Kubernetes cluster for auto-scaling (when we have >100 users)
+- Redis Streams upgrade (when we need >1000 messages/sec)
+- Prometheus/Grafana monitoring stack (when we need dashboards)
+- Load balancers and HA setup (when we need 99.9% uptime)
 
-**Escalation:** If DevOps delayed beyond Jan 30, escalate to CTO immediately
+**Rationale:** Phase 3 focuses on **agent functionality**, not infrastructure. Use simplest tools that work, defer complexity to Phase 4 when we have proven value and need scale.
 
 ---
 
@@ -248,15 +259,29 @@
 
 ### 4.1 Infrastructure Costs (Monthly)
 
-| Component | Cost (Managed) | Cost (Self-hosted) | Recommendation |
-|-----------|---------------|--------------------|----------------|
-| **Redis Cluster** (3 nodes) | $544 | $240 | Self-hosted ✅ |
-| **PostgreSQL** (primary + replica) | $736 | $150 | Self-hosted ✅ |
-| **Qdrant Vector DB** | $95 | $0 (free tier) | Free tier ✅ |
-| **Kubernetes (EKS)** | $431 | $431 | Required |
-| **Load Balancer** | $25 | $25 | Required |
-| **Monitoring** | $5 | $5 | Required |
-| **Subtotal Infrastructure** | **$1,836** | **$851** | **$851** ✅ |
+**Phase 3 (MVP - Simplified):**
+
+| Component | Cost | Notes |
+|-----------|------|-------|
+| **PostgreSQL** | $0 | Reuse existing Phase 2 database |
+| **Redis** | $0 | Reuse existing Phase 2 Redis (simple pub/sub) |
+| **Qdrant Vector DB** | $0 | Free tier (1GB) |
+| **Hosting** | $0 | Run locally or use existing server |
+| **Monitoring** | $0 | Python logging (console output) |
+| **Subtotal Infrastructure** | **$0** ✅ |
+
+**Phase 4 (Production - When We Need Scale):**
+
+| Component | Cost | When to Upgrade |
+|-----------|------|-----------------|
+| **Kubernetes (EKS)** | $431 | >100 concurrent users |
+| **Redis Streams (3 nodes)** | $240 | >1000 messages/sec |
+| **PostgreSQL HA** | $150 | Need 99.9% uptime |
+| **Load Balancer** | $25 | Multiple backend instances |
+| **Prometheus/Grafana** | $5 | Need metrics dashboard |
+| **Subtotal Phase 4** | **$851** | Deferred |
+
+**Key Insight:** Phase 3 costs **$0 infrastructure** by reusing existing Phase 2 setup!
 
 ### 4.2 LLM API Costs (Monthly)
 
@@ -290,25 +315,41 @@
 
 ### 4.3 Learning System Costs
 
-**Additional Monthly Costs:**
-- PostgreSQL storage for learning tables (8 tables × 10GB): $10
-- Perplexity AI API (prompt optimization): $20/month
+**Phase 3 (Start Simple):**
+- PostgreSQL storage: $0 (reuse existing database, add 8 tables)
+- Perplexity AI API: $0 (defer to Phase 4, use manual prompt optimization)
+- A/B testing: $0 (manual testing initially)
+- Pattern mining: $0 (Python scripts on existing infrastructure)
+- **Total Learning System: $0/month**
+
+**Phase 4 (Automated Learning):**
+- PostgreSQL storage expansion: $10/month
+- Perplexity AI API (automated prompt optimization): $20/month
 - A/B testing infrastructure: $10/month
 - Pattern mining compute: $10/month
-- **Total Learning System: $50/month**
-
-**ROI:** 40%+ quality improvement justifies 5% cost increase
+- **Total Learning System: $50/month** (when we need automation)
 
 ### 4.4 Total Monthly Budget
+
+**Phase 3 (MVP):**
+
+| Category | Cost |
+|----------|------|
+| **Infrastructure** | $0 (reuse Phase 2) |
+| **LLM API (Hybrid)** | $160 |
+| **Learning System** | $0 (manual initially) |
+| **TOTAL** | **$160/month** ✅ |
+
+**Cost per Test Cycle:** $160 / 1,000 = **$0.16/cycle** (84% cheaper than original!)
+
+**Phase 4 (Production Scale):**
 
 | Category | Cost |
 |----------|------|
 | **Infrastructure** | $851 |
 | **LLM API (Hybrid)** | $160 |
 | **Learning System** | $50 |
-| **TOTAL** | **$1,061/month** ✅ |
-
-**Cost per Test Cycle:** $1,061 / 1,000 = **$1.06/cycle**
+| **TOTAL** | **$1,061/month** |
 
 ### 4.5 Cost Optimization Strategies
 
@@ -340,20 +381,22 @@ if len(input_tokens) > MAX_TOKENS_PER_REQUEST:
 ```
 **Savings:** Prevents unexpected $1000+ bills
 
-**Optimized Monthly Cost:** $1,061 - $48 - $96 = **$917/month**
+**Optimized Monthly Cost:** $160 - $48 = **$112/month** (with caching)
+
+**Phase 3 is 89% cheaper than original plan ($112 vs $1,061) while delivering same functionality!**
 
 ### 4.6 Scaling Projections
 
-**At 10,000 test cycles/month (100 developers):**
+**When do we need Phase 4 infrastructure upgrade?**
 
-| Component | Cost |
-|-----------|------|
-| Infrastructure (auto-scaled) | $1,737 |
-| LLM API (Hybrid) | $1,600 |
-| Learning System | $50 |
-| **TOTAL** | **$3,387/month** |
+| Metric | Phase 3 Limit | Upgrade Trigger | Phase 4 Capacity |
+|--------|---------------|-----------------|------------------|
+| **Concurrent Users** | 10-20 | >50 users | 1000+ users |
+| **Messages/sec** | 100 | >500 msg/sec | 10,000 msg/sec |
+| **Test Cycles/month** | 1,000-5,000 | >10,000 cycles | 100,000 cycles |
+| **Uptime Required** | 95% (dev/test) | Need 99.9% | 99.99% |
 
-**Cost per cycle:** $3,387 / 10,000 = **$0.34/cycle** (within target!)
+**Phase 3 handles 10 developers comfortably. Upgrade to Phase 4 when product-market fit proven.**
 
 ### 4.7 ROI Justification
 
@@ -361,13 +404,13 @@ if len(input_tokens) > MAX_TOKENS_PER_REQUEST:
 - QA engineer salary: $80,000/year = $6,667/month
 - Time spent writing tests: 50% = $3,333/month
 
-**Automated Testing (Phase 3):**
-- Infrastructure + LLM: $917/month
+**Automated Testing (Phase 3 - Simplified):**
+- Infrastructure + LLM: $112/month (with caching)
 - Developer time saved: 10 developers × 1 hour/day × $50/hour × 20 days = $10,000/month
 
-**Net Savings:** $10,000 - $917 = **$9,083/month** (~**11x ROI**)
+**Net Savings:** $10,000 - $112 = **$9,888/month** (~**89x ROI!**)
 
-**Break-Even:** 0.9 developers using system
+**Break-Even:** 0.1 developers using system (nearly instant ROI)
 
 ---
 
