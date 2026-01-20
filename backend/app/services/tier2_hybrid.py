@@ -215,9 +215,14 @@ class Tier2HybridExecutor:
         Args:
             page: Playwright Page object
             action: Action type (click, fill, etc.)
-            xpath: XPath selector
+            xpath: XPath selector (may or may not have xpath= prefix)
             value: Value for fill/select actions
         """
+        # Ensure xpath doesn't have double prefix
+        # XPath should be just the path, e.g., "/html/body/..."
+        if xpath.startswith('xpath='):
+            xpath = xpath[6:]  # Remove xpath= prefix
+        
         # Use XPath locator
         element = page.locator(f"xpath={xpath}").first
         

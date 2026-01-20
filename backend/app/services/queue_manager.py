@@ -190,24 +190,27 @@ class QueueManager:
                         )
                         print(f"[DEBUG] 🎯 Loaded user execution config: provider={user_config['provider']}, model={user_config['model']}")
                         
-                        # Create NEW Stagehand adapter for THIS thread (not singleton!)
-                        # Each thread needs its own instance because Playwright can't be shared across event loops
-                        import os
+                        # ========================================
+                        # Sprint 5.5: Use NEW ExecutionService with 3-Tier System
+                        # ========================================
+                        from app.services.execution_service import ExecutionService, ExecutionConfig
                         
                         # TEMPORARY: Force headless=False to see browser during testing
                         headless = False  # TODO: Change back to env var after testing
                         
-                        print(f"[DEBUG] Creating Stagehand adapter with headless={headless}")
+                        print(f"[DEBUG] Creating ExecutionService with 3-Tier system, headless={headless}")
                         
-                        # Use factory to get adapter (automatically selects provider from user settings)
-                        service = get_stagehand_adapter(
-                            db=bg_db,
-                            user_id=queued_execution.user_id,
-                            headless=headless
+                        # Create ExecutionConfig
+                        exec_config = ExecutionConfig(
+                            browser=execution.browser or "chromium",
+                            headless=headless,
+                            timeout=30000  # 30 seconds
                         )
                         
-                        # Initialize with user's config (pass to initialize method)
-                        loop.run_until_complete(service.initialize(user_config=user_config))
+                        # Create ExecutionService with config
+                        service = ExecutionService(config=exec_config)
+                        
+                        # No separate initialize() call needed - ExecutionService handles it internally
                         
                         try:
                             loop.run_until_complete(

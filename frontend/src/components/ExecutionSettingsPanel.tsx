@@ -12,10 +12,14 @@ import type {
 
 interface ExecutionSettingsPanelProps {
   onSettingsChange?: (settings: ExecutionSettings) => void;
+  showSaveButton?: boolean; // Control whether to show internal save button
+  onFormStateChange?: (formState: ExecutionSettingsUpdate) => void; // Expose form state to parent
 }
 
 export const ExecutionSettingsPanel: React.FC<ExecutionSettingsPanelProps> = ({
   onSettingsChange,
+  showSaveButton = true,
+  onFormStateChange,
 }) => {
   // State
   const [settings, setSettings] = useState<ExecutionSettings | null>(null);
@@ -40,6 +44,21 @@ export const ExecutionSettingsPanel: React.FC<ExecutionSettingsPanelProps> = ({
     loadSettings();
     loadStrategies();
   }, []);
+
+  // Notify parent of form state changes
+  useEffect(() => {
+    if (onFormStateChange) {
+      const formState: ExecutionSettingsUpdate = {
+        fallback_strategy: selectedStrategy,
+        timeout_per_tier_seconds: timeoutPerTier,
+        max_retry_per_tier: maxRetryPerTier,
+        track_token_usage: trackTokenUsage,
+        track_execution_time: trackExecutionTime,
+        track_success_rate: trackSuccessRate,
+      };
+      onFormStateChange(formState);
+    }
+  }, [selectedStrategy, timeoutPerTier, maxRetryPerTier, trackTokenUsage, trackExecutionTime, trackSuccessRate, onFormStateChange]);
 
   const loadSettings = async () => {
     setIsLoading(true);
@@ -355,12 +374,14 @@ export const ExecutionSettingsPanel: React.FC<ExecutionSettingsPanelProps> = ({
           </div>
         </div>
 
-        {/* Save Button */}
-        <div className="flex gap-3">
-          <Button variant="primary" onClick={handleSave} loading={isSaving}>
-            {isSaving ? 'Saving...' : '💾 Save Settings'}
-          </Button>
-        </div>
+        {/* Save Button - Only show if showSaveButton is true */}
+        {showSaveButton && (
+          <div className="flex gap-3">
+            <Button variant="primary" onClick={handleSave} loading={isSaving}>
+              {isSaving ? 'Saving...' : '💾 Save Settings'}
+            </Button>
+          </div>
+        )}
       </div>
     </Card>
   );

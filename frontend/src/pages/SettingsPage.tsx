@@ -7,7 +7,7 @@ import { FeedbackDataSync } from '../components/FeedbackDataSync';
 import { ExecutionSettingsPanel } from '../components/ExecutionSettingsPanel';
 import { TierAnalyticsPanel } from '../components/TierAnalyticsPanel';
 import settingsService from '../services/settingsService';
-import type { AvailableProvider, UserSettings } from '../types/api';
+import type { AvailableProvider, UserSettings, ExecutionSettingsUpdate } from '../types/api';
 
 export const SettingsPage: React.FC = () => {
   const [projectName, setProjectName] = useState('AI Web Test v1.0');
@@ -34,6 +34,9 @@ export const SettingsPage: React.FC = () => {
   const [executionModel, setExecutionModel] = useState<string>('gemini-2.0-flash-exp');
   const [executionTemperature, setExecutionTemperature] = useState<number>(0.7);
   const [executionMaxTokens, setExecutionMaxTokens] = useState<number>(4096);
+
+  // Sprint 5.5: 3-Tier Execution Settings (from child component)
+  const [executionSettingsFormState, setExecutionSettingsFormState] = useState<ExecutionSettingsUpdate | null>(null);
 
   // Sprint 5: Stagehand Provider settings
   const [stagehandProvider, setStagehandProvider] = useState<'python' | 'typescript'>('python');
@@ -147,6 +150,7 @@ export const SettingsPage: React.FC = () => {
     setSaveMessage(null);
     
     try {
+      // Save AI Provider Settings
       const updateData = {
         generation_provider: generationProvider,
         generation_model: generationModel,
@@ -161,9 +165,14 @@ export const SettingsPage: React.FC = () => {
       const updated = await settingsService.updateUserProviderSettings(updateData);
       setUserSettings(updated);
       
+      // Save 3-Tier Execution Settings (if form state is available)
+      if (executionSettingsFormState) {
+        await settingsService.updateExecutionSettings(executionSettingsFormState);
+      }
+      
       setSaveMessage({ 
         type: 'success', 
-        text: `✅ Settings saved! Using ${generationProvider.toUpperCase()} for generation and ${executionProvider.toUpperCase()} for execution.` 
+        text: `✅ All settings saved successfully! Using ${generationProvider.toUpperCase()} for generation, ${executionProvider.toUpperCase()} for execution, and ${executionSettingsFormState?.fallback_strategy?.toUpperCase() || 'default'} execution strategy.` 
       });
       
       // Clear message after 5 seconds
@@ -747,7 +756,10 @@ export const SettingsPage: React.FC = () => {
             <h2 className="text-2xl font-bold text-gray-900">3-Tier Execution Engine</h2>
             <p className="text-gray-600 mt-1">Configure intelligent fallback strategies and view execution analytics</p>
           </div>
-          <ExecutionSettingsPanel />
+          <ExecutionSettingsPanel 
+            showSaveButton={false}
+            onFormStateChange={setExecutionSettingsFormState}
+          />
         </div>
 
         {/* Tier Analytics */}
@@ -797,18 +809,39 @@ export const SettingsPage: React.FC = () => {
           </div>
         </Card>
 
-        {/* Save Button */}
-        <div className="flex justify-end gap-3">
-          <Button variant="secondary" onClick={handleResetSettings}>
-            Reset to Defaults
-          </Button>
-          <Button 
-            variant="primary" 
-            onClick={handleSaveSettings}
-            disabled={isSaving}
-          >
-            {isSaving ? 'Saving...' : 'Save Settings'}
-          </Button>
+        {/* Save Button for ALL Settings */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-lg p-6 shadow-lg">
+          <div className="flex items-start justify-between gap-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-2">
+                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                </svg>
+                <h3 className="text-lg font-bold text-blue-900">Save All Settings</h3>
+              </div>
+              <p className="text-sm text-blue-800 mb-1">
+                This will save all settings on this page:
+              </p>
+              <ul className="text-xs text-blue-700 space-y-1 ml-4">
+                <li>• General Settings (Project Name, Timeout)</li>
+                <li>• Notification Settings (Email, Slack, Alerts)</li>
+                <li>• AI Provider Settings (Generation & Execution)</li>
+                <li>• 3-Tier Execution Settings (Strategy, Timeout, Analytics)</li>
+              </ul>
+            </div>
+            <div className="flex gap-3">
+              <Button variant="secondary" onClick={handleResetSettings} disabled={isSaving}>
+                Reset to Defaults
+              </Button>
+              <Button 
+                variant="primary" 
+                onClick={handleSaveSettings}
+                disabled={isSaving}
+              >
+                {isSaving ? 'Saving All Settings...' : '💾 Save All Settings'}
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
     </Layout>

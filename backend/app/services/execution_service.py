@@ -6,6 +6,7 @@ Integrated with 3-Tier Execution Engine (Sprint 5.5)
 import asyncio
 import json
 import os
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Callable
@@ -20,10 +21,13 @@ from app.models.test_execution import (
     ExecutionResult
 )
 from app.models.execution_settings import ExecutionSettings
+from app.models.user_settings import UserSetting
 from app.crud import test_execution as crud_execution
 from app.crud import execution_feedback as crud_feedback
 from app.schemas.execution_feedback import ExecutionFeedbackCreate
 from app.services.three_tier_execution_service import ThreeTierExecutionService
+
+logger = logging.getLogger(__name__)
 
 
 class ExecutionConfig:
@@ -116,13 +120,40 @@ class ExecutionService:
                     slow_mo=self.config.slow_mo
                 )
             else:  # chromium (default)
+                # Launch with remote debugging port for CDP access
                 self.browser = await self.playwright.chromium.launch(
                     headless=self.config.headless,
-                    slow_mo=self.config.slow_mo
+                    slow_mo=self.config.slow_mo,
+                    args=[
+                        '--remote-debugging-port=9222',  # Fixed port for CDP
+                        '--disable-blink-features=AutomationControlled'
+                    ]
                 )
     
     async def cleanup(self):
         """Clean up browser and Playwright resources."""
+        # Clean up 3-Tier service (includes Stagehand cleanup)
+        if self.three_tier_service:
+            try:
+                # Clean up Tier 2 XPath extractor's Stagehand
+                if hasattr(self.three_tier_service, 'xpath_extractor') and self.three_tier_service.xpath_extractor:
+                    if hasattr(self.three_tier_service.xpath_extractor, 'stagehand') and self.three_tier_service.xpath_extractor.stagehand:
+                        try:
+                            await self.three_tier_service.xpath_extractor.stagehand.close()
+                        except Exception as e:
+                            print(f"[DEBUG] Error closing Stagehand: {e}")
+                
+                # Clean up Tier 3 Stagehand
+                if hasattr(self.three_tier_service, 'tier3_executor') and self.three_tier_service.tier3_executor:
+                    if hasattr(self.three_tier_service.tier3_executor, 'stagehand') and self.three_tier_service.tier3_executor.stagehand:
+                        try:
+                            await self.three_tier_service.tier3_executor.stagehand.close()
+                        except Exception as e:
+                            print(f"[DEBUG] Error closing Tier 3 Stagehand: {e}")
+            except Exception as e:
+                print(f"[DEBUG] Error cleaning up 3-Tier service: {e}")
+        
+        # Clean up ExecutionService's Playwright browser
         if self.page:
             await self.page.close()
             self.page = None
@@ -172,6 +203,7 @@ class ExecutionService:
         user_id: int,
         base_url: str,
         environment: str = "dev",
+        execution_id: Optional[int] = None,
         progress_callback: Optional[Callable] = None
     ) -> TestExecution:
         """
@@ -183,20 +215,28 @@ class ExecutionService:
             user_id: ID of user triggering execution
             base_url: Base URL for the application under test
             environment: Environment name (dev, staging, production)
+            execution_id: Optional existing execution ID (for queue manager)
             progress_callback: Optional callback for progress updates
             
         Returns:
             TestExecution object with results
         """
-        # Create execution record
-        execution = crud_execution.create_execution(
-            db=db,
-            test_case_id=test_case.id,
-            user_id=user_id,
-            browser=self.config.browser,
-            environment=environment,
-            base_url=base_url
-        )
+        # Get or create execution record
+        if execution_id:
+            # Use existing execution (from queue manager)
+            execution = crud_execution.get_execution(db, execution_id)
+            if not execution:
+                raise ValueError(f"Execution {execution_id} not found")
+        else:
+            # Create new execution record
+            execution = crud_execution.create_execution(
+                db=db,
+                test_case_id=test_case.id,
+                user_id=user_id,
+                browser=self.config.browser,
+                environment=environment,
+                base_url=base_url
+            )
         
         try:
             # Update status to running
@@ -214,12 +254,35 @@ class ExecutionService:
             await self.create_context(record_video=True)
             page = await self.create_page()
             
+            # Get CDP endpoint for shared browser context
+            # Use fixed remote debugging port (set in initialize())
+            cdp_endpoint = "http://localhost:9222"
+            
+            logger.info(f"[DEBUG] CDP endpoint: {cdp_endpoint}")
+            
             # Get user's execution settings and initialize 3-Tier service
             user_settings = self._get_user_execution_settings(db, user_id)
+            
+            # Get user's AI provider config from UserSetting table
+            user_ai_config = None
+            user_setting = db.query(UserSetting).filter(UserSetting.user_id == user_id).first()
+            if user_setting:
+                user_ai_config = {
+                    "provider": user_setting.execution_provider,
+                    "model": user_setting.execution_model,
+                    "temperature": user_setting.execution_temperature,
+                    "max_tokens": user_setting.execution_max_tokens
+                }
+                logger.info(f"[DEBUG] 🎯 User AI config from DB: {user_ai_config}")
+            else:
+                logger.info("[DEBUG] ⚠️ No user settings found, will use .env defaults")
+            
             self.three_tier_service = ThreeTierExecutionService(
                 db=db,
                 page=page,
-                user_settings=user_settings
+                user_settings=user_settings,
+                cdp_endpoint=cdp_endpoint,  # Pass CDP endpoint for shared browser context
+                user_ai_config=user_ai_config  # Pass user's AI provider settings
             )
             
             # Navigate to base URL
@@ -447,10 +510,12 @@ class ExecutionService:
                 if not step_data["action"]:
                     if "navigate" in desc_lower or "go to" in desc_lower or "open" in desc_lower:
                         step_data["action"] = "navigate"
-                    elif "click" in desc_lower:
+                    elif "click" in desc_lower or "select" in desc_lower or "choose" in desc_lower:
                         step_data["action"] = "click"
                     elif "fill" in desc_lower or "type" in desc_lower or "enter" in desc_lower or "input" in desc_lower:
                         step_data["action"] = "fill"
+                    elif "verify" in desc_lower or "check" in desc_lower or "assert" in desc_lower:
+                        step_data["action"] = "verify"
                 
                 # For navigate actions, extract URL
                 if step_data["action"] == "navigate":
@@ -459,7 +524,9 @@ class ExecutionService:
                         if "http" in step_description:
                             urls = re.findall(r'https?://[^\s]+', step_description)
                             if urls:
-                                step_data["value"] = urls[0]
+                                # Strip trailing quotes, commas, periods, etc.
+                                url = urls[0].rstrip("'\",.;:)")
+                                step_data["value"] = url
                 
                 # For fill actions without value, use default
                 if step_data["action"] == "fill" and not step_data["value"]:
