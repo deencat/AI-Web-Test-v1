@@ -69,12 +69,12 @@ class Tier3StagehandExecutor:
             elif action in ["fill", "type"] and value:
                 # Combine action with value for better instruction
                 full_instruction = f"{instruction} with value '{value}'"
-                result = await self.stagehand.act(full_instruction)
+                result = await self.stagehand.page.act(full_instruction)
                 
             elif action in ["assert", "verify"]:
                 # Use extract to verify content
                 extract_instruction = f"Get the text that should contain: {value}"
-                result = await self.stagehand.extract(extract_instruction)
+                result = await self.stagehand.page.extract(extract_instruction)
                 
                 if value not in str(result):
                     raise AssertionError(
@@ -83,7 +83,7 @@ class Tier3StagehandExecutor:
                     
             else:
                 # Use act() for all other actions
-                result = await self.stagehand.act(instruction)
+                result = await self.stagehand.page.act(instruction)
             
             execution_time_ms = (time.time() - start_time) * 1000
             
