@@ -21,6 +21,58 @@
 
 ## 1. Implementation Overview
 
+### 1.0 Agent Roles (Web Application Testing)
+
+**Context:** This is an AI-powered WEB APPLICATION testing tool that generates browser automation tests using Playwright/Stagehand.
+
+**The 6 Agents and Their Roles:**
+
+1. **ObservationAgent** - Web Application Observer
+   - **What it does:** Crawls target web application using Playwright
+   - **Inputs:** URL, authentication credentials
+   - **Outputs:** Page map (URLs, UI elements, forms, buttons, links)
+   - **Technology:** Playwright for browser automation, DOM parsing
+   - **Example:** Given `https://myapp.com/login`, finds login form with username/password fields, submit button
+
+2. **RequirementsAgent** - Test Requirement Extractor
+   - **What it does:** Converts UI observations into test scenarios
+   - **Inputs:** Page map from ObservationAgent
+   - **Outputs:** Test requirements in Given/When/Then format
+   - **Technology:** Pattern matching, NLP
+   - **Example:** "Given user is on login page, When user enters valid credentials and clicks submit, Then user should be redirected to dashboard"
+
+3. **AnalysisAgent** - Risk & Priority Analyzer
+   - **What it does:** Identifies which UI flows are most critical to test
+   - **Inputs:** Test requirements, historical bug data
+   - **Outputs:** Risk scores (0.0-1.0), prioritized test list
+   - **Technology:** Dependency graph analysis, risk scoring algorithms
+   - **Example:** Login flow = 0.95 (critical), Footer links = 0.2 (low priority)
+
+4. **EvolutionAgent** - Test Code Generator
+   - **What it does:** Generates Playwright/Stagehand test code from requirements
+   - **Inputs:** Test requirements, risk scores
+   - **Outputs:** Executable Playwright test files (.spec.ts)
+   - **Technology:** GPT-4 LLM with prompt templates
+   - **Example:** Generates `test('user can login', async ({ page }) => { await page.goto('...'); await page.fill('#username', 'test'); ... })`
+
+5. **OrchestrationAgent** - Workflow Coordinator
+   - **What it does:** Coordinates the 4 agents above in correct sequence
+   - **Inputs:** User request ("test my web app at https://...")
+   - **Outputs:** Complete workflow execution (Observe → Require → Analyze → Evolve)
+   - **Technology:** State machine, Contract Net Protocol for task allocation
+   - **Example:** Receives user request → assigns tasks to agents → monitors progress → handles failures
+
+6. **ReportingAgent** - Test Report Generator
+   - **What it does:** Generates coverage reports, test execution summaries
+   - **Inputs:** Generated tests, execution results
+   - **Outputs:** PDF/Markdown reports with charts
+   - **Technology:** Report templates, charting libraries
+   - **Example:** "85% page coverage, 12 tests generated, 10 passed, 2 failed (login timeout)"
+
+**Key Distinction:**
+- **Phase 2 (Current):** Manual test creation OR simple AI generation
+- **Phase 3 (This):** Multi-agent system that autonomously observes web app, extracts requirements, analyzes risks, and generates tests
+
 ### 1.1 Timeline
 
 **Total Duration:** 12 weeks (6 sprints × 2 weeks)  
@@ -114,7 +166,7 @@
 
 ### Sprint 8: Observation & Requirements Agents (Feb 6 - Feb 19, 2026)
 
-**Goal:** Deploy agents that analyze code and extract requirements
+**Goal:** Deploy agents that observe web applications and extract test requirements
 
 **Story Points:** 42 (11 days duration)
 
@@ -123,9 +175,9 @@
 | Task ID | Description | Dependencies | Points | Duration | Critical Path |
 |---------|-------------|--------------|--------|----------|---------------|
 | 8A.1 | Implement ObservationAgent class | Sprint 7 | 8 | 3 days | 0 (START) |
-| 8A.2 | AST parsing for Python (ast module) | 8A.1 | 5 | 2 days | 3 |
-| 8A.3 | Extract functions, classes, imports | 8A.2 | 3 | 1 day | 5 |
-| 8A.4 | Integration with Phase 2 (wrap existing) | 8A.3 | 5 | 2 days | 6 |
+| 8A.2 | Web crawling with Playwright (page navigation, DOM analysis) | 8A.1 | 5 | 2 days | 3 |
+| 8A.3 | Extract UI elements (buttons, forms, links, inputs) | 8A.2 | 3 | 1 day | 5 |
+| 8A.4 | Integration with Phase 2 Stagehand service | 8A.3 | 5 | 2 days | 6 |
 | 8A.5 | Unit tests for ObservationAgent (30+ tests) | 8A.4 | 2 | 1 day | 8 |
 
 **Total: 23 points, 9 days**
@@ -145,9 +197,9 @@
 
 #### Sprint 8 Success Criteria
 
-- ✅ Observation Agent analyzes Python files (functions, classes, complexity)
-- ✅ Requirements Agent extracts test requirements (Given/When/Then)
-- ✅ Integration test: Observation → Requirements end-to-end
+- ✅ Observation Agent crawls web application pages (buttons, forms, navigation)
+- ✅ Requirements Agent extracts test scenarios from UI elements (Given/When/Then)
+- ✅ Integration test: Observation → Requirements end-to-end (web app → test requirements)
 - ✅ 30+ unit tests per agent, 95%+ coverage
 - ✅ 100+ user feedback samples collected
 - ✅ First 2 agents registered and operational
@@ -187,11 +239,11 @@
 
 #### Sprint 9 Success Criteria
 
-- ✅ Evolution Agent generates 10+ valid pytest tests
-- ✅ Analysis Agent produces risk scores (0.0-1.0)
+- ✅ Evolution Agent generates 10+ valid Playwright/Stagehand tests
+- ✅ Analysis Agent produces risk scores for UI elements (0.0-1.0)
 - ✅ LLM integration with GPT-4 operational
 - ✅ Caching reduces LLM calls by 30%
-- ✅ 4-agent workflow: Observe → Require → Analyze → Evolve
+- ✅ 4-agent workflow: Observe Web App → Extract Requirements → Analyze UI Risks → Generate Tests
 - ✅ First optimized prompt variant deployed (A/B tested)
 - ✅ Token usage <10,000 per test cycle
 
