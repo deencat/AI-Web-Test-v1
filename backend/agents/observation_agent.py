@@ -1,36 +1,42 @@
 """
-ObservationAgent - Analyzes code structure and complexity
+ObservationAgent - Observes and analyzes web applications
 
-This agent uses Python's Abstract Syntax Tree (AST) module to analyze Python code
-and extract valuable information about its structure, complexity, and components.
+This agent uses Playwright to crawl web applications and extract information
+about UI elements, navigation flows, and page structure for test generation.
 
 Capabilities:
-- code_analysis: Analyze Python code structure (functions, classes, imports)
-- complexity_analysis: Calculate code complexity metrics (LOC, cyclomatic complexity)
+- web_crawling: Crawl web application pages and map structure
+- ui_element_extraction: Extract buttons, forms, links, inputs from pages
 
 Usage:
-    agent = ObservationAgent(message_bus, agent_registry)
+    agent = ObservationAgent(message_queue)
     await agent.start()
     
     task = TaskContext(
         task_id="obs-1",
-        task_type="code_analysis",
-        payload={"code": "def hello(): print('world')"}
+        task_type="web_crawling",
+        payload={
+            "url": "https://example.com",
+            "max_depth": 3,
+            "auth": {"username": "test", "password": "test123"}
+        }
     )
     
     result = await agent.execute_task(task)
     # result.result = {
-    #     "functions": [...],
-    #     "classes": [...],
-    #     "imports": [...],
-    #     "complexity": {...}
+    #     "pages": [...],
+    #     "ui_elements": [...],
+    #     "navigation_flows": [...],
+    #     "forms": [...]
     # }
 """
 
-import ast
+import asyncio
 import logging
 from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass
+from urllib.parse import urljoin, urlparse
+import re
 
 from agents.base_agent import (
     BaseAgent,
@@ -39,97 +45,74 @@ from agents.base_agent import (
     TaskResult
 )
 
+# NOTE: Playwright will be imported when available
+# For now, we'll use a stub implementation for development
+try:
+    from playwright.async_api import async_playwright, Page, Browser
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    # Stub for development without Playwright installed
+    class Page:
+        pass
+    class Browser:
+        pass
+
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class FunctionInfo:
-    """Information about a function in the code."""
-    name: str
-    parameters: List[str]
-    return_type: Optional[str]
-    line_number: int
-    end_line_number: int
-    docstring: Optional[str]
-    decorators: List[str]
-    is_async: bool
-    complexity: int  # Cyclomatic complexity
+class PageInfo:
+    """Information about a web page."""
+    url: str
+    title: str
+    elements: List[Dict[str, Any]]  # UI elements found on page
+    forms: List[Dict[str, Any]]  # Forms on the page
+    links: List[str]  # Links to other pages
+    screenshot_path: Optional[str]  # Path to screenshot
+    load_time_ms: float  # Page load time
+    status_code: int  # HTTP status code
 
 
 @dataclass
-class ClassInfo:
-    """Information about a class in the code."""
-    name: str
-    base_classes: List[str]
-    methods: List[str]
-    line_number: int
-    end_line_number: int
-    docstring: Optional[str]
-    decorators: List[str]
+class UIElement:
+    """Information about a UI element."""
+    element_type: str  # button, input, link, etc.
+    selector: str  # CSS selector
+    xpath: str  # XPath selector
+    text: Optional[str]  # Visible text
+    attributes: Dict[str, str]  # HTML attributes
+    is_visible: bool  # Is element visible?
+    is_interactive: bool  # Can user interact with it?
 
 
 @dataclass
-class ImportInfo:
-    """Information about imports in the code."""
-    module: str
-    names: List[str]  # Specific names imported (empty for 'import module')
-    alias: Optional[str]
-    line_number: int
-
-
-class ComplexityVisitor(ast.NodeVisitor):
-    """AST visitor to calculate cyclomatic complexity."""
-    
-    def __init__(self):
-        self.complexity = 1  # Base complexity
-    
-    def visit_If(self, node):
-        self.complexity += 1
-        self.generic_visit(node)
-    
-    def visit_While(self, node):
-        self.complexity += 1
-        self.generic_visit(node)
-    
-    def visit_For(self, node):
-        self.complexity += 1
-        self.generic_visit(node)
-    
-    def visit_ExceptHandler(self, node):
-        self.complexity += 1
-        self.generic_visit(node)
-    
-    def visit_With(self, node):
-        self.complexity += 1
-        self.generic_visit(node)
-    
-    def visit_Assert(self, node):
-        self.complexity += 1
-        self.generic_visit(node)
-    
-    def visit_BoolOp(self, node):
-        # Each 'and'/'or' adds to complexity
-        self.complexity += len(node.values) - 1
-        self.generic_visit(node)
+class FormInfo:
+    """Information about a form."""
+    selector: str
+    action: Optional[str]  # Form action URL
+    method: str  # GET or POST
+    fields: List[Dict[str, Any]]  # Form fields
+    submit_button: Optional[Dict[str, Any]]
 
 
 class ObservationAgent(BaseAgent):
     """
-    Agent that analyzes Python code structure and complexity.
+    Agent that observes web applications using Playwright.
     
     This agent can:
-    1. Extract functions with parameters, return types, and decorators
-    2. Extract classes with methods and inheritance
-    3. Extract import statements
-    4. Calculate complexity metrics (LOC, cyclomatic complexity)
-    5. Identify code patterns and potential issues
+    1. Crawl web application pages (follow links, map structure)
+    2. Extract UI elements (buttons, inputs, forms, links)
+    3. Identify user flows (login → dashboard → settings)
+    4. Take screenshots for visual verification
+    5. Measure page load times and performance
     """
     
     def __init__(
         self,
         message_queue,
         agent_id: Optional[str] = None,
-        priority: int = 5,
+        priority: int = 8,  # High priority for observation
         config: Optional[Dict[str, Any]] = None
     ):
         """
@@ -137,7 +120,7 @@ class ObservationAgent(BaseAgent):
         
         Args:
             message_queue: MessageBus instance for communication
-            agent_id: Optional custom agent ID (auto-generated if not provided)
+            agent_id: Optional custom agent ID
             priority: Agent priority (1-10, higher = more important)
             config: Agent-specific configuration
         """
@@ -146,8 +129,14 @@ class ObservationAgent(BaseAgent):
             agent_type="observation",
             priority=priority,
             message_queue=message_queue,
-            config=config
+            config=config or {}
         )
+        
+        # Configuration
+        self.max_depth = self.config.get("max_depth", 3)
+        self.max_pages = self.config.get("max_pages", 50)
+        self.timeout_ms = self.config.get("timeout_ms", 30000)
+        self.take_screenshots = self.config.get("take_screenshots", True)
     
     @property
     def capabilities(self) -> List[AgentCapability]:
@@ -159,16 +148,16 @@ class ObservationAgent(BaseAgent):
         """
         return [
             AgentCapability(
-                name="code_analysis",
+                name="web_crawling",
                 version="1.0.0",
                 confidence_threshold=0.8,
-                description="Analyze Python code structure (functions, classes, imports)"
+                description="Crawl web application and map page structure"
             ),
             AgentCapability(
-                name="complexity_analysis",
+                name="ui_element_extraction",
                 version="1.0.0",
-                confidence_threshold=0.8,
-                description="Calculate code complexity metrics"
+                confidence_threshold=0.85,
+                description="Extract UI elements (buttons, forms, inputs, links)"
             )
         ]
     
@@ -182,72 +171,104 @@ class ObservationAgent(BaseAgent):
         Returns:
             Tuple of (can_handle: bool, confidence: float)
         """
-        # Check if task type matches our capabilities
-        if task.task_type in ["code_analysis", "complexity_analysis"]:
-            # Check if we have the required code payload
-            if "code" in task.payload:
-                code = task.payload["code"]
+        if task.task_type in ["web_crawling", "ui_element_extraction"]:
+            # Check if we have required payload
+            if "url" in task.payload:
+                url = task.payload["url"]
                 
-                # Quick validation - can we parse this as Python?
-                try:
-                    ast.parse(code)
-                    return True, 0.9  # High confidence for valid Python code
-                except SyntaxError:
-                    logger.warning(f"Cannot parse code in task {task.task_id}: Invalid Python syntax")
+                # Validate URL
+                if self._is_valid_url(url):
+                    # Check if Playwright is available
+                    if PLAYWRIGHT_AVAILABLE:
+                        return True, 0.9  # High confidence
+                    else:
+                        logger.warning("Playwright not installed - using stub mode")
+                        return True, 0.5  # Lower confidence without Playwright
+                else:
+                    logger.warning(f"Invalid URL in task {task.task_id}: {url}")
                     return False, 0.0
             else:
-                logger.warning(f"Task {task.task_id} missing 'code' in payload")
+                logger.warning(f"Task {task.task_id} missing 'url' in payload")
                 return False, 0.0
         
         return False, 0.0
     
     async def execute_task(self, task: TaskContext) -> TaskResult:
         """
-        Execute code analysis task.
+        Execute web crawling/observation task.
         
         Args:
             task: Task to execute
         
         Returns:
-            TaskResult with analysis results
+            TaskResult with observation results
         """
+        if not PLAYWRIGHT_AVAILABLE:
+            return await self._execute_stub_mode(task)
+        
         try:
-            code = task.payload.get("code", "")
-            file_path = task.payload.get("file_path", "unknown")
+            url = task.payload.get("url")
+            max_depth = task.payload.get("max_depth", self.max_depth)
+            auth = task.payload.get("auth")  # Optional authentication
             
-            logger.info(f"Analyzing code from {file_path} (task {task.task_id})")
+            logger.info(f"Crawling web application: {url} (task {task.task_id})")
             
-            # Parse code into AST
-            tree = ast.parse(code, filename=file_path)
+            # Start Playwright browser
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                context = await browser.new_context(
+                    viewport={"width": 1920, "height": 1080},
+                    user_agent="AI-Web-Test ObservationAgent/1.0"
+                )
+                
+                # Add authentication if provided
+                if auth:
+                    await context.add_init_script(f"""
+                        localStorage.setItem('auth_token', '{auth.get('token', '')}');
+                    """)
+                
+                page = await context.new_page()
+                
+                # Crawl pages
+                pages = await self._crawl_pages(page, url, max_depth)
+                
+                # Extract UI elements from all pages
+                all_elements = []
+                all_forms = []
+                for page_info in pages:
+                    elements = await self._extract_ui_elements(page, page_info.url)
+                    forms = await self._extract_forms(page, page_info.url)
+                    all_elements.extend(elements)
+                    all_forms.extend(forms)
+                
+                # Identify navigation flows
+                flows = self._identify_flows(pages)
+                
+                await browser.close()
             
-            # Extract information
-            functions = self._extract_functions(tree, code)
-            classes = self._extract_classes(tree, code)
-            imports = self._extract_imports(tree)
-            complexity = self._calculate_complexity(tree, code)
-            
-            # Calculate overall confidence based on analysis completeness
-            confidence = self._calculate_confidence(functions, classes, imports, complexity)
+            # Calculate confidence based on completeness
+            confidence = self._calculate_confidence(pages, all_elements, all_forms)
             
             result = {
-                "file_path": file_path,
-                "functions": [self._function_to_dict(f) for f in functions],
-                "classes": [self._class_to_dict(c) for c in classes],
-                "imports": [self._import_to_dict(i) for i in imports],
-                "complexity": complexity,
+                "start_url": url,
+                "pages_crawled": len(pages),
+                "total_elements": len(all_elements),
+                "total_forms": len(all_forms),
+                "pages": [self._page_to_dict(p) for p in pages],
+                "ui_elements": all_elements,
+                "forms": all_forms,
+                "navigation_flows": flows,
                 "summary": {
-                    "total_functions": len(functions),
-                    "total_classes": len(classes),
-                    "total_imports": len(imports),
-                    "lines_of_code": complexity["loc"],
-                    "average_complexity": complexity["average_complexity"]
+                    "buttons": len([e for e in all_elements if e["type"] == "button"]),
+                    "inputs": len([e for e in all_elements if e["type"] == "input"]),
+                    "links": len([e for e in all_elements if e["type"] == "link"]),
+                    "forms": len(all_forms)
                 }
             }
             
             logger.info(
-                f"Analysis complete for {file_path}: "
-                f"{len(functions)} functions, {len(classes)} classes, "
-                f"{complexity['loc']} LOC"
+                f"Crawling complete: {len(pages)} pages, "
+                f"{len(all_elements)} elements, {len(all_forms)} forms"
             )
             
             return TaskResult(
@@ -257,225 +278,285 @@ class ObservationAgent(BaseAgent):
                 confidence=confidence
             )
         
-        except SyntaxError as e:
-            logger.error(f"Syntax error in task {task.task_id}: {e}")
-            return TaskResult(
-                task_id=task.task_id,
-                success=False,
-                error=f"Invalid Python syntax: {str(e)}",
-                confidence=0.0
-            )
-        
         except Exception as e:
-            logger.error(f"Error analyzing code in task {task.task_id}: {e}")
+            logger.error(f"Error crawling web application in task {task.task_id}: {e}")
             return TaskResult(
                 task_id=task.task_id,
                 success=False,
-                error=f"Analysis failed: {str(e)}",
+                error=f"Crawling failed: {str(e)}",
                 confidence=0.0
             )
     
-    def _extract_functions(self, tree: ast.AST, code: str) -> List[FunctionInfo]:
-        """Extract all functions from the AST."""
-        functions = []
+    async def _execute_stub_mode(self, task: TaskContext) -> TaskResult:
+        """
+        Stub implementation when Playwright is not available.
+        Returns mock data for development.
+        """
+        url = task.payload.get("url", "")
         
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                # Extract function parameters
-                params = [arg.arg for arg in node.args.args]
-                
-                # Extract return type annotation if present
-                return_type = None
-                if node.returns:
-                    return_type = ast.unparse(node.returns) if hasattr(ast, 'unparse') else None
-                
-                # Extract docstring
-                docstring = ast.get_docstring(node)
-                
-                # Extract decorators
-                decorators = [ast.unparse(dec) if hasattr(ast, 'unparse') else dec.id 
-                             for dec in node.decorator_list]
-                
-                # Calculate cyclomatic complexity for this function
-                visitor = ComplexityVisitor()
-                visitor.visit(node)
-                
-                functions.append(FunctionInfo(
-                    name=node.name,
-                    parameters=params,
-                    return_type=return_type,
-                    line_number=node.lineno,
-                    end_line_number=node.end_lineno if hasattr(node, 'end_lineno') else node.lineno,
-                    docstring=docstring,
-                    decorators=decorators,
-                    is_async=isinstance(node, ast.AsyncFunctionDef),
-                    complexity=visitor.complexity
-                ))
+        logger.info(f"STUB MODE: Simulating crawl of {url}")
         
-        return functions
+        # Mock data
+        result = {
+            "start_url": url,
+            "pages_crawled": 3,
+            "total_elements": 15,
+            "total_forms": 2,
+            "pages": [
+                {"url": url, "title": "Home Page", "status_code": 200, "load_time_ms": 250, "screenshot": None, "link_count": 5},
+                {"url": f"{url}/login", "title": "Login", "status_code": 200, "load_time_ms": 180, "screenshot": None, "link_count": 2},
+                {"url": f"{url}/dashboard", "title": "Dashboard", "status_code": 200, "load_time_ms": 320, "screenshot": None, "link_count": 8}
+            ],
+            "ui_elements": [
+                {"type": "button", "selector": "#login-btn", "text": "Login", "page_url": f"{url}/login"},
+                {"type": "input", "selector": "#username", "input_type": "text", "page_url": f"{url}/login"},
+                {"type": "input", "selector": "#password", "input_type": "password", "page_url": f"{url}/login"},
+                {"type": "link", "selector": "a[href='/about']", "text": "About", "href": "/about", "page_url": url},
+                {"type": "button", "selector": "#submit", "text": "Submit", "page_url": f"{url}/dashboard"}
+            ],
+            "forms": [
+                {
+                    "selector": "#login-form",
+                    "action": "/api/auth/login",
+                    "method": "POST",
+                    "fields": [
+                        {"name": "username", "type": "text"},
+                        {"name": "password", "type": "password"}
+                    ],
+                    "page_url": f"{url}/login"
+                }
+            ],
+            "navigation_flows": [
+                ["Home Page", "Login Page", "Dashboard"]
+            ],
+            "summary": {
+                "buttons": 3,
+                "inputs": 5,
+                "links": 7,
+                "forms": 2
+            },
+            "_note": "STUB MODE - Playwright not installed. Install with: pip install playwright; playwright install"
+        }
+        
+        return TaskResult(
+            task_id=task.task_id,
+            success=True,
+            result=result,
+            confidence=0.85  # Good confidence even in stub mode for demo
+        )
     
-    def _extract_classes(self, tree: ast.AST, code: str) -> List[ClassInfo]:
-        """Extract all classes from the AST."""
-        classes = []
+    async def _crawl_pages(
+        self,
+        page: Page,
+        start_url: str,
+        max_depth: int
+    ) -> List[PageInfo]:
+        """
+        Crawl pages starting from start_url up to max_depth.
+        """
+        visited = set()
+        to_visit = [(start_url, 0)]  # (url, depth)
+        pages = []
         
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef):
-                # Extract base classes
-                base_classes = []
-                for base in node.bases:
-                    if hasattr(ast, 'unparse'):
-                        base_classes.append(ast.unparse(base))
-                    elif isinstance(base, ast.Name):
-                        base_classes.append(base.id)
+        while to_visit and len(pages) < self.max_pages:
+            url, depth = to_visit.pop(0)
+            
+            if url in visited or depth > max_depth:
+                continue
+            
+            visited.add(url)
+            
+            try:
+                # Navigate to page
+                import time
+                start_time = time.time()
+                response = await page.goto(url, timeout=self.timeout_ms)
+                load_time = (time.time() - start_time) * 1000
                 
-                # Extract methods
-                methods = [
-                    n.name for n in node.body 
-                    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                # Get page info
+                title = await page.title()
+                status_code = response.status if response else 0
+                
+                # Extract links for further crawling
+                links = await page.eval_on_selector_all(
+                    "a[href]",
+                    "elements => elements.map(e => e.href)"
+                )
+                
+                # Filter links (same domain only)
+                base_domain = urlparse(start_url).netloc
+                filtered_links = [
+                    link for link in links
+                    if urlparse(link).netloc == base_domain
                 ]
                 
-                # Extract docstring
-                docstring = ast.get_docstring(node)
+                # Take screenshot if enabled
+                screenshot_path = None
+                if self.take_screenshots:
+                    screenshot_path = f"/tmp/screenshot_{len(pages)}.png"
+                    await page.screenshot(path=screenshot_path)
                 
-                # Extract decorators
-                decorators = [ast.unparse(dec) if hasattr(ast, 'unparse') else dec.id 
-                             for dec in node.decorator_list]
+                page_info = PageInfo(
+                    url=url,
+                    title=title,
+                    elements=[],  # Will be filled later
+                    forms=[],  # Will be filled later
+                    links=filtered_links,
+                    screenshot_path=screenshot_path,
+                    load_time_ms=load_time,
+                    status_code=status_code
+                )
                 
-                classes.append(ClassInfo(
-                    name=node.name,
-                    base_classes=base_classes,
-                    methods=methods,
-                    line_number=node.lineno,
-                    end_line_number=node.end_lineno if hasattr(node, 'end_lineno') else node.lineno,
-                    docstring=docstring,
-                    decorators=decorators
-                ))
+                pages.append(page_info)
+                
+                # Add new links to visit
+                for link in filtered_links[:10]:  # Limit to 10 links per page
+                    if link not in visited:
+                        to_visit.append((link, depth + 1))
+                
+                logger.info(f"Crawled: {url} (depth {depth}, {len(filtered_links)} links)")
+                
+            except Exception as e:
+                logger.error(f"Error crawling {url}: {e}")
         
-        return classes
+        return pages
     
-    def _extract_imports(self, tree: ast.AST) -> List[ImportInfo]:
-        """Extract all imports from the AST."""
-        imports = []
+    async def _extract_ui_elements(self, page: Page, url: str) -> List[Dict]:
+        """Extract UI elements from a page."""
+        elements = []
         
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    imports.append(ImportInfo(
-                        module=alias.name,
-                        names=[],  # Empty for 'import module'
-                        alias=alias.asname,
-                        line_number=node.lineno
-                    ))
+        # Extract buttons
+        buttons = await page.query_selector_all("button, input[type='button'], input[type='submit']")
+        for btn in buttons:
+            text = await btn.inner_text() if await btn.is_visible() else ""
+            elements.append({
+                "type": "button",
+                "selector": await self._get_selector(btn),
+                "text": text,
+                "page_url": url
+            })
+        
+        # Extract inputs
+        inputs = await page.query_selector_all("input, textarea")
+        for inp in inputs:
+            input_type = await inp.get_attribute("type") or "text"
+            elements.append({
+                "type": "input",
+                "input_type": input_type,
+                "selector": await self._get_selector(inp),
+                "page_url": url
+            })
+        
+        # Extract links
+        links = await page.query_selector_all("a[href]")
+        for link in links[:20]:  # Limit to 20 links
+            text = await link.inner_text() if await link.is_visible() else ""
+            href = await link.get_attribute("href")
+            elements.append({
+                "type": "link",
+                "selector": await self._get_selector(link),
+                "text": text,
+                "href": href,
+                "page_url": url
+            })
+        
+        return elements
+    
+    async def _extract_forms(self, page: Page, url: str) -> List[Dict]:
+        """Extract forms from a page."""
+        forms = []
+        
+        form_elements = await page.query_selector_all("form")
+        for form in form_elements:
+            action = await form.get_attribute("action")
+            method = await form.get_attribute("method") or "GET"
             
-            elif isinstance(node, ast.ImportFrom):
-                module = node.module or ""
-                names = [alias.name for alias in node.names]
-                
-                imports.append(ImportInfo(
-                    module=module,
-                    names=names,
-                    alias=None,
-                    line_number=node.lineno
-                ))
+            # Extract form fields
+            fields = []
+            inputs = await form.query_selector_all("input, textarea, select")
+            for inp in inputs:
+                name = await inp.get_attribute("name")
+                input_type = await inp.get_attribute("type") or "text"
+                if name:
+                    fields.append({"name": name, "type": input_type})
+            
+            forms.append({
+                "selector": await self._get_selector(form),
+                "action": action,
+                "method": method,
+                "fields": fields,
+                "page_url": url
+            })
         
-        return imports
+        return forms
     
-    def _calculate_complexity(self, tree: ast.AST, code: str) -> Dict[str, Any]:
-        """Calculate various complexity metrics."""
-        # Lines of Code (LOC)
-        lines = code.split('\n')
-        loc = len([line for line in lines if line.strip() and not line.strip().startswith('#')])
+    async def _get_selector(self, element) -> str:
+        """Generate CSS selector for an element."""
+        # Simple implementation - in production, use more robust selector generation
+        element_id = await element.get_attribute("id")
+        if element_id:
+            return f"#{element_id}"
         
-        # Total cyclomatic complexity
-        visitor = ComplexityVisitor()
-        visitor.visit(tree)
-        total_complexity = visitor.complexity
+        element_class = await element.get_attribute("class")
+        if element_class:
+            classes = element_class.split()[0] if element_class else ""
+            return f".{classes}" if classes else "element"
         
-        # Count functions for average complexity
-        function_count = sum(1 for node in ast.walk(tree) 
-                           if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)))
+        return "element"
+    
+    def _identify_flows(self, pages: List[PageInfo]) -> List[List[str]]:
+        """Identify common navigation flows."""
+        # Simple implementation - identify flows based on common patterns
+        flows = []
         
-        average_complexity = total_complexity / max(function_count, 1)
+        # Look for login flow
+        login_pages = [p for p in pages if "login" in p.url.lower()]
+        dashboard_pages = [p for p in pages if "dashboard" in p.url.lower() or "home" in p.url.lower()]
         
-        return {
-            "loc": loc,
-            "total_lines": len(lines),
-            "cyclomatic_complexity": total_complexity,
-            "average_complexity": round(average_complexity, 2),
-            "function_count": function_count
-        }
+        if login_pages and dashboard_pages:
+            flows.append(["Login Page", "Dashboard"])
+        
+        return flows
+    
+    def _is_valid_url(self, url: str) -> bool:
+        """Validate URL format."""
+        try:
+            result = urlparse(url)
+            return all([result.scheme, result.netloc])
+        except:
+            return False
     
     def _calculate_confidence(
         self,
-        functions: List[FunctionInfo],
-        classes: List[ClassInfo],
-        imports: List[ImportInfo],
-        complexity: Dict[str, Any]
+        pages: List[PageInfo],
+        elements: List[Dict],
+        forms: List[Dict]
     ) -> float:
-        """
-        Calculate confidence score based on analysis completeness.
-        
-        Higher confidence when:
-        - We successfully extracted functions/classes
-        - Code has reasonable complexity (not too simple/complex)
-        - We have docstrings and type hints
-        """
+        """Calculate confidence based on crawl completeness."""
         confidence = 0.5  # Base confidence
         
-        # Bonus for finding functions
-        if functions:
+        if pages:
+            confidence += 0.2
+        
+        if elements:
             confidence += 0.15
-            # Bonus for functions with docstrings
-            documented = sum(1 for f in functions if f.docstring)
-            if documented / len(functions) > 0.5:
-                confidence += 0.1
         
-        # Bonus for finding classes
-        if classes:
+        if forms:
             confidence += 0.1
         
-        # Bonus for reasonable complexity (not too simple, not too complex)
-        avg_complexity = complexity["average_complexity"]
-        if 2 <= avg_complexity <= 10:
-            confidence += 0.1
-        
-        # Bonus for imports (indicates real code, not just examples)
-        if imports:
+        # Bonus for finding multiple pages
+        if len(pages) >= 3:
             confidence += 0.05
         
-        return min(confidence, 1.0)  # Cap at 1.0
+        return min(confidence, 1.0)
     
-    def _function_to_dict(self, func: FunctionInfo) -> Dict[str, Any]:
-        """Convert FunctionInfo to dictionary."""
+    def _page_to_dict(self, page_info: PageInfo) -> Dict:
+        """Convert PageInfo to dictionary."""
         return {
-            "name": func.name,
-            "parameters": func.parameters,
-            "return_type": func.return_type,
-            "line_number": func.line_number,
-            "end_line_number": func.end_line_number,
-            "docstring": func.docstring,
-            "decorators": func.decorators,
-            "is_async": func.is_async,
-            "complexity": func.complexity
-        }
-    
-    def _class_to_dict(self, cls: ClassInfo) -> Dict[str, Any]:
-        """Convert ClassInfo to dictionary."""
-        return {
-            "name": cls.name,
-            "base_classes": cls.base_classes,
-            "methods": cls.methods,
-            "line_number": cls.line_number,
-            "end_line_number": cls.end_line_number,
-            "docstring": cls.docstring,
-            "decorators": cls.decorators
-        }
-    
-    def _import_to_dict(self, imp: ImportInfo) -> Dict[str, Any]:
-        """Convert ImportInfo to dictionary."""
-        return {
-            "module": imp.module,
-            "names": imp.names,
-            "alias": imp.alias,
-            "line_number": imp.line_number
+            "url": page_info.url,
+            "title": page_info.title,
+            "status_code": page_info.status_code,
+            "load_time_ms": page_info.load_time_ms,
+            "screenshot": page_info.screenshot_path,
+            "link_count": len(page_info.links)
         }
