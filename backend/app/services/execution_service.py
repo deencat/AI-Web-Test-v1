@@ -560,22 +560,41 @@ class ExecutionService:
                 
                 # For fill actions, extract value from instruction if not provided
                 if step_data["action"] == "fill" and not step_data["value"]:
-                    # Try to extract email, password, or other input values
-                    # Pattern 1: "Enter email: user@example.com"
-                    email_match = re.search(r'(?:email|e-mail):\s*([^\s]+@[^\s,;"\']+)', step_description, re.IGNORECASE)
-                    if email_match:
-                        step_data["value"] = email_match.group(1)
-                        print(f"[DEBUG] Extracted email from instruction: {step_data['value']}")
-                    else:
-                        # Pattern 2: Look for any text in quotes (could be password, username, etc.)
+                    # Try to extract email, password, username, or other input values
+                    
+                    # Pattern 1: "Enter email: value" or "Enter password: value" (any value after colon)
+                    field_value_match = re.search(
+                        r'(?:enter|fill|type|input)\s+(?:email|password|username|name|text):\s*([^\s,;"\']+)',
+                        step_description,
+                        re.IGNORECASE
+                    )
+                    if field_value_match:
+                        step_data["value"] = field_value_match.group(1)
+                        print(f"[DEBUG] Extracted field value from instruction: {step_data['value']}")
+                    
+                    # Pattern 2: Generic field pattern "field: value" (for any field type)
+                    if not step_data["value"]:
+                        generic_field_match = re.search(
+                            r':\s*([^\s,;"\']+)(?:\s+with\s+xpath|\s+with\s+selector|$)',
+                            step_description
+                        )
+                        if generic_field_match:
+                            potential_value = generic_field_match.group(1)
+                            # Make sure it's not a URL or selector
+                            if not potential_value.startswith('//') and not potential_value.startswith('http'):
+                                step_data["value"] = potential_value
+                                print(f"[DEBUG] Extracted value from generic pattern: {step_data['value']}")
+                    
+                    # Pattern 3: Look for any text in quotes (could be password, username, etc.)
+                    if not step_data["value"]:
                         quoted_values = re.findall(r'["\']([^"\']+)["\']', step_description)
                         # Filter out XPath/CSS selectors from quoted values
                         for quoted_value in quoted_values:
                             if not quoted_value.startswith('//') and not quoted_value.startswith('.') and not quoted_value.startswith('#'):
-                                # Check if it looks like an email, password, or regular text
-                                if '@' in quoted_value or len(quoted_value) < 50:
+                                # Check if it looks like text input (not a selector)
+                                if not quoted_value.startswith('http') and len(quoted_value) < 100:
                                     step_data["value"] = quoted_value
-                                    print(f"[DEBUG] Extracted value from instruction: {step_data['value']}")
+                                    print(f"[DEBUG] Extracted value from quotes: {step_data['value']}")
                                     break
                     
                     # Last resort: use default test input

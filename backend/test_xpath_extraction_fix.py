@@ -63,21 +63,36 @@ def extract_value_from_instruction(step_description: str, action: str) -> str:
     if action not in ["fill", "type", "enter", "input"]:
         return ""
     
-    # Try to extract email, password, or other input values
-    # Pattern 1: "Enter email: user@example.com"
-    email_match = re.search(r'(?:email|e-mail):\s*([^\s]+@[^\s,;"\']+)', step_description, re.IGNORECASE)
-    if email_match:
-        value = email_match.group(1)
-        print(f"  ✅ Extracted email: {value}")
+    # Pattern 1: "Enter email: value" or "Enter password: value" (any value after colon)
+    field_value_match = re.search(
+        r'(?:enter|fill|type|input)\s+(?:email|password|username|name|text):\s*([^\s,;"\']+)',
+        step_description,
+        re.IGNORECASE
+    )
+    if field_value_match:
+        value = field_value_match.group(1)
+        print(f"  ✅ Extracted field value: {value}")
         return value
     
-    # Pattern 2: Look for any text in quotes (could be password, username, etc.)
+    # Pattern 2: Generic field pattern "field: value" (for any field type)
+    generic_field_match = re.search(
+        r':\s*([^\s,;"\']+)(?:\s+with\s+xpath|\s+with\s+selector|$)',
+        step_description
+    )
+    if generic_field_match:
+        potential_value = generic_field_match.group(1)
+        # Make sure it's not a URL or selector
+        if not potential_value.startswith('//') and not potential_value.startswith('http'):
+            print(f"  ✅ Extracted value from generic pattern: {potential_value}")
+            return potential_value
+    
+    # Pattern 3: Look for any text in quotes (could be password, username, etc.)
     quoted_values = re.findall(r'["\']([^"\']+)["\']', step_description)
     # Filter out XPath/CSS selectors from quoted values
     for quoted_value in quoted_values:
         if not quoted_value.startswith('//') and not quoted_value.startswith('.') and not quoted_value.startswith('#'):
-            # Check if it looks like an email, password, or regular text
-            if '@' in quoted_value or len(quoted_value) < 50:
+            # Check if it looks like text input (not a selector)
+            if not quoted_value.startswith('http') and len(quoted_value) < 100:
                 print(f"  ✅ Extracted value from quotes: {quoted_value}")
                 return quoted_value
     
@@ -130,6 +145,25 @@ def test_extraction():
             "action": "fill",
             "expected_selector": "",
             "expected_value": "John Doe"
+        },
+        # New test cases for non-email values
+        {
+            "step": "Step 3: Enter email: invalid.email",
+            "action": "fill",
+            "expected_selector": "",
+            "expected_value": "invalid.email"
+        },
+        {
+            "step": "Enter username: testuser123",
+            "action": "fill",
+            "expected_selector": "",
+            "expected_value": "testuser123"
+        },
+        {
+            "step": "Fill password: secret123 with xpath \"//input[@type='password']\"",
+            "action": "fill",
+            "expected_selector": "//input[@type='password']",
+            "expected_value": "secret123"
         },
     ]
     
