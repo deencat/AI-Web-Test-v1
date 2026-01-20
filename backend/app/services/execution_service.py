@@ -517,6 +517,36 @@ class ExecutionService:
                     elif "verify" in desc_lower or "check" in desc_lower or "assert" in desc_lower:
                         step_data["action"] = "verify"
                 
+                # Extract XPath/CSS selector from instruction text if not already provided
+                if not step_data["selector"]:
+                    # Try to extract XPath first (pattern: xpath "//..." or with xpath "//...")
+                    xpath_patterns = [
+                        r'xpath\s*"([^"]+)"',  # xpath "//button[@class='btn']" - double quotes
+                        r"xpath\s*'([^']+)'",  # xpath '//button[@class="btn"]' - single quotes
+                        r'with\s+xpath\s*"([^"]+)"',  # with xpath "//button"
+                        r"with\s+xpath\s*'([^']+)'",  # with xpath '//button'
+                        r'(//[\w\-/@\[\]()=\'"\s,\.]+)',  # raw XPath like //button[@id='login']
+                    ]
+                    for pattern in xpath_patterns:
+                        xpath_match = re.search(pattern, step_description)
+                        if xpath_match:
+                            step_data["selector"] = xpath_match.group(1)
+                            print(f"[DEBUG] Extracted XPath from instruction: {step_data['selector']}")
+                            break
+                    
+                    # If no XPath found, try CSS selector (pattern: selector "..." or css "...")
+                    if not step_data["selector"]:
+                        css_patterns = [
+                            r'selector\s*["\']([^"\']+)["\']',
+                            r'css\s*["\']([^"\']+)["\']',
+                        ]
+                        for pattern in css_patterns:
+                            css_match = re.search(pattern, step_description)
+                            if css_match:
+                                step_data["selector"] = css_match.group(1)
+                                print(f"[DEBUG] Extracted CSS selector from instruction: {step_data['selector']}")
+                                break
+                
                 # For navigate actions, extract URL
                 if step_data["action"] == "navigate":
                     if not step_data["value"]:
@@ -528,9 +558,30 @@ class ExecutionService:
                                 url = urls[0].rstrip("'\",.;:)")
                                 step_data["value"] = url
                 
-                # For fill actions without value, use default
+                # For fill actions, extract value from instruction if not provided
                 if step_data["action"] == "fill" and not step_data["value"]:
-                    step_data["value"] = "test input"
+                    # Try to extract email, password, or other input values
+                    # Pattern 1: "Enter email: user@example.com"
+                    email_match = re.search(r'(?:email|e-mail):\s*([^\s]+@[^\s,;"\']+)', step_description, re.IGNORECASE)
+                    if email_match:
+                        step_data["value"] = email_match.group(1)
+                        print(f"[DEBUG] Extracted email from instruction: {step_data['value']}")
+                    else:
+                        # Pattern 2: Look for any text in quotes (could be password, username, etc.)
+                        quoted_values = re.findall(r'["\']([^"\']+)["\']', step_description)
+                        # Filter out XPath/CSS selectors from quoted values
+                        for quoted_value in quoted_values:
+                            if not quoted_value.startswith('//') and not quoted_value.startswith('.') and not quoted_value.startswith('#'):
+                                # Check if it looks like an email, password, or regular text
+                                if '@' in quoted_value or len(quoted_value) < 50:
+                                    step_data["value"] = quoted_value
+                                    print(f"[DEBUG] Extracted value from instruction: {step_data['value']}")
+                                    break
+                    
+                    # Last resort: use default test input
+                    if not step_data["value"]:
+                        step_data["value"] = "test input"
+                        print(f"[DEBUG] Using default value: test input")
                 
                 print(f"[DEBUG] Calling 3-Tier with: {step_data}")
                 
