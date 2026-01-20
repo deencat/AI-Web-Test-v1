@@ -173,6 +173,265 @@
 
 ---
 
+## 2.4 Sprint 7-12 Task Breakdown (Developer A vs Developer B)
+
+### Pre-Sprint 7: Developer A Early Start (Jan 20-23, WHILE Developer B on Phase 2)
+
+**Developer A can start TODAY without waiting for Developer B:**
+
+| Task | Description | Duration | Dependencies | Deliverable |
+|------|-------------|----------|--------------|-------------|
+| **EA.1** | Create `backend/agents/base_agent.py` | 3 days | NONE | BaseAgent abstract class (200+ lines) |
+| **EA.2** | Create `backend/messaging/message_bus_stub.py` | 2 days | NONE | In-memory message bus stub (80+ lines) |
+| **EA.3** | Create `backend/agents/agent_registry_stub.py` | 1 day | NONE | In-memory agent registry (60+ lines) |
+| **EA.4** | Create `backend/agents/observation_agent.py` | 2 days | EA.1 | ObservationAgent using AST parsing (150+ lines) |
+| **EA.5** | Create `backend/agents/requirements_agent.py` | 2 days | EA.1 | RequirementsAgent using pattern matching (120+ lines) |
+| **EA.6** | Write unit tests (`tests/agents/`) | 1 day | EA.1-EA.5 | 50+ unit tests, 95%+ coverage |
+
+**Total: 11 days, 26 story points, ZERO dependencies on Developer B or Phase 2**
+
+**Key Design:**
+- Use **stub implementations** for Redis/PostgreSQL (in-memory, no external dependencies)
+- Agents work with stubs, can be swapped for real infrastructure later (dependency injection)
+- All code runs on Developer A's laptop with `pytest` (no Docker/Redis/PostgreSQL needed)
+
+**By Sprint 7 Kickoff (Jan 23):** Developer A has 26 points done, leaving only 5 points for Sprint 7 proper!
+
+---
+
+### Sprint 7: Integration with Real Infrastructure (Jan 23 - Feb 5, 2026)
+
+**Now Developer B has finished Phase 2 and joins Phase 3:**
+
+#### Developer A Tasks (5 points - finishing Sprint 7)
+
+| Task | Description | Duration | Dependencies |
+|------|-------------|----------|--------------|
+| **7A.1** | Replace message bus stub with real Redis pub/sub | 1 day | 7B.1 |
+| **7A.2** | Replace agent registry stub with Redis-backed version | 1 day | 7B.1 |
+| **7A.3** | Integration tests (agents + real Redis) | 1 day | 7A.1, 7A.2 |
+
+**Total: 5 points, 3 days**
+
+#### Developer B Tasks (18 points - parallel infrastructure work)
+
+| Task | Description | Duration | Dependencies |
+|------|-------------|----------|--------------|
+| **7B.1** | Add agent-related tables to existing PostgreSQL database | 2 days | Phase 2 DB |
+| **7B.2** | Implement Redis pub/sub wrapper (reuse Phase 2 Redis) | 2 days | Phase 2 Redis |
+| **7B.3** | Implement three-layer memory system (working memory + PostgreSQL) | 3 days | 7B.1 |
+| **7B.4** | Add 8 learning system tables to PostgreSQL | 1 day | 7B.1 |
+| **7B.5** | Implement FeedbackCollector class | 2 days | 7B.4 |
+| **7B.6** | Unit tests for infrastructure (30+ tests) | 1 day | 7B.1-7B.5 |
+
+**Total: 18 points, 8 days**
+
+**Sprint 7 Success Criteria:**
+- ✅ BaseAgent + 2 concrete agents (Observation, Requirements) operational
+- ✅ Redis pub/sub message bus working (replace stubs)
+- ✅ PostgreSQL tables created (8 agent tables + 8 learning tables)
+- ✅ 80+ unit tests passing (50 from pre-sprint + 30 new)
+- ✅ Integration test: Observation → Requirements workflow end-to-end
+
+---
+
+### Sprint 8: Analysis & Evolution Agents (Feb 6 - Feb 19, 2026)
+
+**Both developers work in parallel on new agents:**
+
+#### Developer A Tasks (26 points)
+
+| Task | Description | Duration | Dependencies |
+|------|-------------|----------|--------------|
+| **8A.1** | Implement EvolutionAgent (test generation with GPT-4) | 5 days | Sprint 7 |
+| **8A.2** | LLM integration (OpenAI API client) | 2 days | 8A.1 |
+| **8A.3** | Prompt engineering (3 variants for A/B testing) | 2 days | 8A.2 |
+| **8A.4** | Caching layer (30% cost reduction) | 1 day | 8A.2 |
+| **8A.5** | Unit tests for EvolutionAgent (30+ tests) | 1 day | 8A.1-8A.4 |
+
+**Total: 26 points, 11 days**
+
+#### Developer B Tasks (21 points)
+
+| Task | Description | Duration | Dependencies |
+|------|-------------|----------|--------------|
+| **8B.1** | Implement AnalysisAgent (dependency graph + risk scoring) | 5 days | Sprint 7 |
+| **8B.2** | Dependency graph analysis (AST + imports) | 2 days | 8B.1 |
+| **8B.3** | Risk scoring algorithm (complexity + churn) | 2 days | 8B.2 |
+| **8B.4** | Unit tests for AnalysisAgent (30+ tests) | 1 day | 8B.1-8B.3 |
+| **8B.5** | Integration tests (4-agent workflow) | 2 days | 8A.5, 8B.4 |
+| **8B.6** | Collect 100+ user feedback samples (manual) | Continuous | Sprint 7 |
+
+**Total: 21 points, 9 days**
+
+**Sprint 8 Success Criteria:**
+- ✅ EvolutionAgent generates valid pytest tests (10+ samples)
+- ✅ AnalysisAgent produces risk scores (0.0-1.0)
+- ✅ 4-agent workflow operational: Observe → Require → Analyze → Evolve
+- ✅ LLM costs <$0.20 per test cycle (with caching)
+- ✅ 100+ feedback samples collected for learning system
+
+---
+
+### Sprint 9: Orchestration & Reporting (Feb 20 - Mar 5, 2026)
+
+#### Developer A Tasks (29 points)
+
+| Task | Description | Duration | Dependencies |
+|------|-------------|----------|--------------|
+| **9A.1** | Implement OrchestrationAgent (workflow coordinator) | 5 days | Sprint 8 |
+| **9A.2** | Workflow state machine (PENDING→RUNNING→COMPLETED) | 2 days | 9A.1 |
+| **9A.3** | Task allocation (Contract Net Protocol) | 3 days | 9A.2 |
+| **9A.4** | Deadlock detection (5min timeout + auto-recovery) | 2 days | 9A.3 |
+| **9A.5** | Unit tests for OrchestrationAgent (50+ tests) | 1 day | 9A.1-9A.4 |
+
+**Total: 29 points, 13 days**
+
+#### Developer B Tasks (21 points)
+
+| Task | Description | Duration | Dependencies |
+|------|-------------|----------|--------------|
+| **9B.1** | Implement ReportingAgent (Markdown + PDF generation) | 3 days | Sprint 8 |
+| **9B.2** | Coverage visualization (charts with matplotlib) | 2 days | 9B.1 |
+| **9B.3** | Integration with Phase 2 UI (display reports) | 2 days | 9B.2 |
+| **9B.4** | Unit tests for ReportingAgent (30+ tests) | 1 day | 9B.1-9B.3 |
+| **9B.5** | End-to-end workflow test (6 agents orchestrated) | 2 days | 9A.5, 9B.4 |
+
+**Total: 21 points, 10 days**
+
+**Sprint 9 Success Criteria:**
+- ✅ OrchestrationAgent coordinates all 6 agents
+- ✅ Complete workflow: User request → PDF report (end-to-end)
+- ✅ Deadlock detection prevents stuck workflows
+- ✅ Reports display in Phase 2 UI
+- ✅ All 6 agents registered and operational
+
+---
+
+### Sprint 10: Phase 2 Integration & API (Mar 6 - Mar 19, 2026)
+
+#### Developer A Tasks (24 points)
+
+| Task | Description | Duration | Dependencies |
+|------|-------------|----------|--------------|
+| **10A.1** | Create `/api/v2/generate-tests` endpoint | 2 days | Sprint 9 |
+| **10A.2** | Wrap Phase 2 execution engine (zero-downtime migration) | 3 days | 10A.1 |
+| **10A.3** | Feature flag (AGENTS_ENABLED env var) | 1 day | 10A.2 |
+| **10A.4** | API versioning (/api/v1 vs /api/v2) | 1 day | 10A.1 |
+| **10A.5** | Rollout strategy (5% → 25% → 50% → 100%) | 2 days | 10A.3 |
+
+**Total: 24 points, 9 days**
+
+#### Developer B Tasks (18 points)
+
+| Task | Description | Duration | Dependencies |
+|------|-------------|----------|--------------|
+| **10B.1** | GitHub Actions workflow (test on every PR) | 2 days | Sprint 9 |
+| **10B.2** | Automated deployment to staging | 2 days | 10B.1 |
+| **10B.3** | Load testing with Locust (100 concurrent users) | 2 days | Sprint 9 |
+| **10B.4** | System tests (15+ scenarios: happy path + edge cases) | 2 days | 10A.5, 10B.3 |
+
+**Total: 18 points, 8 days**
+
+**Sprint 10 Success Criteria:**
+- ✅ `/api/v2/generate-tests` operational (multi-agent)
+- ✅ Feature flag allows gradual rollout (5%→100%)
+- ✅ CI/CD pipeline runs tests on every PR
+- ✅ Load test passes: 100 users, <5s latency
+- ✅ Phase 2 + Phase 3 integration complete
+
+---
+
+### Sprint 11: Learning System Activation (Mar 20 - Apr 2, 2026)
+
+#### Developer A Tasks (22 points)
+
+| Task | Description | Duration | Dependencies |
+|------|-------------|----------|--------------|
+| **11A.1** | Implement PromptOptimizer (manual variant testing) | 3 days | Sprint 10 |
+| **11A.2** | Create 3 prompt variants for Evolution Agent | 2 days | 11A.1 |
+| **11A.3** | Manual A/B testing (100 samples per variant) | 3 days | 11A.2 |
+| **11A.4** | Pattern library (store + retrieve learned patterns) | 2 days | Sprint 10 |
+
+**Total: 22 points, 10 days**
+
+#### Developer B Tasks (18 points)
+
+| Task | Description | Duration | Dependencies |
+|------|-------------|----------|--------------|
+| **11B.1** | Implement ExperimentManager (10% exploration traffic) | 3 days | Sprint 10 |
+| **11B.2** | Activate automated feedback collection | 1 day | Sprint 10 |
+| **11B.3** | Weekly performance review dashboard (simple metrics) | 2 days | 11B.1 |
+| **11B.4** | Rollback mechanism (revert prompt <1 min) | 2 days | 11A.3 |
+
+**Total: 18 points, 8 days**
+
+**Sprint 11 Success Criteria:**
+- ✅ PromptOptimizer generates 3+ variants
+- ✅ A/B testing identifies best variant (manual analysis)
+- ✅ ExperimentManager allocates 10% traffic to experiments
+- ✅ Pattern library stores 10+ learned patterns
+- ✅ Rollback tested: reverts bad prompt in <1 minute
+
+---
+
+### Sprint 12: Security & Production Readiness (Apr 3 - Apr 15, 2026)
+
+#### Developer A Tasks (24 points)
+
+| Task | Description | Duration | Dependencies |
+|------|-------------|----------|--------------|
+| **12A.1** | Implement JWT authentication (agent-to-agent) | 2 days | Sprint 11 |
+| **12A.2** | Implement RBAC (4 roles: Admin, Developer, Viewer, Service) | 3 days | 12A.1 |
+| **12A.3** | TLS 1.3 enforcement (nginx config) | 1 day | Sprint 11 |
+| **12A.4** | Security audit (OWASP ZAP + manual testing) | 2 days | 12A.1-12A.3 |
+| **12A.5** | Production runbook (deployment, troubleshooting) | 1 day | Sprint 11 |
+
+**Total: 24 points, 9 days**
+
+#### Developer B Tasks (18 points)
+
+| Task | Description | Duration | Dependencies |
+|------|-------------|----------|--------------|
+| **12B.1** | Audit logging (all API calls logged) | 2 days | Sprint 11 |
+| **12B.2** | Rate limiting (per-user limits) | 2 days | Sprint 11 |
+| **12B.3** | User documentation (user guide + API reference) | 2 days | Sprint 11 |
+| **12B.4** | Final regression testing (all features) | 2 days | 12A.5, 12B.3 |
+
+**Total: 18 points, 8 days**
+
+**Sprint 12 Success Criteria:**
+- ✅ JWT authentication operational
+- ✅ RBAC with 4 roles enforced at API level
+- ✅ Security audit passed (no critical/high issues)
+- ✅ Audit log records all actions (90-day retention)
+- ✅ Rate limiting prevents abuse (1000 req/hour per user)
+- ✅ User documentation complete
+- ✅ **PHASE 3 LAUNCH READY** 🚀
+
+---
+
+## 2.5 Key Insights: Why Developer A Can Start TODAY
+
+**Problem with Original Plan:**
+- Sprint 7 had Developer A waiting for DevOps to set up Kubernetes/Redis Streams
+- 2-3 week delay just to start coding
+- Developer B blocked on Phase 2 completion
+
+**Solution:**
+1. **Pre-Sprint Early Start:** Developer A builds agents with **stub implementations** (no external dependencies)
+2. **Simplified Infrastructure:** Reuse Phase 2 PostgreSQL + Redis (no Kubernetes needed for MVP)
+3. **Dependency Injection:** Agents work with stubs initially, swap for real infrastructure in Sprint 7 when Developer B joins
+4. **Parallel Development:** Developer A = agents, Developer B = infrastructure (zero blocking)
+
+**Result:**
+- Developer A starts TODAY (Jan 20) without waiting
+- 26 story points complete before Sprint 7 kickoff (Jan 23)
+- Sprint 7 becomes "integration sprint" (swap stubs for real implementations)
+- Total velocity: 354 points / 12 weeks = 29.5 points/week (achievable!)
+
+---
+
 ## 3. Sprint Framework
 
 ### 3.1 Sprint Cycle (2 weeks each)
