@@ -240,6 +240,87 @@ class StagehandExecutionService:
             
             print(f"[DEBUG] Stagehand initialized successfully, page={self.page}")
     
+    async def initialize_with_cdp(self, cdp_endpoint: str, user_config: Optional[Dict[str, Any]] = None):
+        """
+        Initialize Stagehand by connecting to an existing browser via CDP.
+        
+        Args:
+            cdp_endpoint: CDP endpoint URL (e.g., "http://127.0.0.1:9222")
+            user_config: Optional user configuration dict with provider, model, temperature, max_tokens
+        """
+        if not self.stagehand:
+            print(f"[DEBUG] Connecting Stagehand to existing browser via CDP: {cdp_endpoint}")
+            
+            # Configure model based on provider (same logic as initialize())
+            if user_config:
+                model_provider = user_config.get("provider", "openrouter").lower()
+            else:
+                model_provider = os.getenv("MODEL_PROVIDER", "openrouter").lower()
+            
+            # Build browser launch options with CDP URL
+            # NOTE: Python Stagehand uses "cdp_url" (underscore), not "cdpUrl" (camelCase)
+            launch_options = {
+                "cdp_url": cdp_endpoint  # Connect to existing browser via CDP
+            }
+            
+            # Build config based on provider
+            if model_provider == "cerebras":
+                cerebras_api_key = os.getenv("CEREBRAS_API_KEY")
+                cerebras_model = user_config.get("model") if user_config else os.getenv("CEREBRAS_MODEL", "llama3.1-8b")
+                if cerebras_model and cerebras_model.lower().startswith("cerebras/"):
+                    cerebras_model = cerebras_model.split("/", 1)[1]
+                
+                config = StagehandConfig(
+                    env="LOCAL",  # Use LOCAL env with cdpUrl to connect to existing browser
+                    headless=False,  # Browser already running
+                    verbose=1,
+                    model_name=f"cerebras/{cerebras_model}",
+                    model_api_key=cerebras_api_key,
+                    local_browser_launch_options=launch_options
+                )
+                print(f"[DEBUG] ✅ CDP connection with Cerebras: {cerebras_model}")
+                
+            elif model_provider == "google":
+                google_api_key = os.getenv("GOOGLE_API_KEY")
+                google_model = user_config.get("model") if user_config else os.getenv("GOOGLE_MODEL", "gemini-1.5-flash")
+                if google_model and google_model.lower().startswith("google/"):
+                    google_model = google_model.split("/", 1)[1]
+                
+                config = StagehandConfig(
+                    env="LOCAL",  # Use LOCAL env with cdpUrl to connect to existing browser
+                    headless=False,  # Browser already running
+                    verbose=1,
+                    model_name=f"google/{google_model}",
+                    model_api_key=google_api_key,
+                    local_browser_launch_options=launch_options
+                )
+                print(f"[DEBUG] ✅ CDP connection with Google: {google_model}")
+                
+            else:  # openrouter
+                openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+                openrouter_model = user_config.get("model") if user_config else os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct")
+                if openrouter_model and openrouter_model.startswith("openrouter/"):
+                    openrouter_model = openrouter_model.split("/", 1)[1]
+                
+                config = StagehandConfig(
+                    env="LOCAL",  # Use LOCAL env with cdpUrl to connect to existing browser
+                    headless=False,  # Browser already running
+                    verbose=1,
+                    model_name=f"openrouter/{openrouter_model}",
+                    model_api_key=openrouter_key,
+                    local_browser_launch_options=launch_options
+                )
+                print(f"[DEBUG] ✅ CDP connection with OpenRouter: {openrouter_model}")
+            
+            self.stagehand = Stagehand(config)
+            await self.stagehand.init()
+            self.page = self.stagehand.page
+            
+            if not self.page:
+                raise RuntimeError("Stagehand CDP connection failed: page is None")
+            
+            print(f"[DEBUG] Stagehand connected to existing browser via CDP, page={self.page}")
+    
     async def cleanup(self):
         """Clean up browser resources."""
         if self.stagehand:

@@ -31,19 +31,29 @@ class XPathExtractor:
         self.stagehand = stagehand
         self._owned_stagehand = stagehand is None
     
-    async def initialize(self, user_config: Optional[Dict[str, Any]] = None):
+    async def initialize(self, user_config: Optional[Dict[str, Any]] = None, cdp_endpoint: Optional[str] = None):
         """
         Initialize Stagehand if not already provided.
         
         Args:
             user_config: Optional user configuration for Stagehand
+            cdp_endpoint: Optional CDP endpoint URL to connect to existing browser context
         """
         if not self.stagehand:
             # Import here to avoid circular dependencies
             from app.services.stagehand_service import StagehandExecutionService
             
-            service = StagehandExecutionService(headless=True)
-            await service.initialize(user_config=user_config)
+            if cdp_endpoint:
+                # Connect to existing browser via CDP
+                logger.info(f"[XPath Extractor] Connecting to existing browser via CDP: {cdp_endpoint}")
+                service = StagehandExecutionService(headless=False)
+                await service.initialize_with_cdp(cdp_endpoint=cdp_endpoint, user_config=user_config)
+            else:
+                # Create new browser instance (legacy behavior)
+                logger.info("[XPath Extractor] Creating new browser instance")
+                service = StagehandExecutionService(headless=True)
+                await service.initialize(user_config=user_config)
+            
             self.stagehand = service.stagehand
     
     async def extract_xpath(
@@ -69,13 +79,25 @@ class XPathExtractor:
         try:
             logger.info(f"[XPath Extractor] Extracting XPath for: {instruction}")
             
-            # Use Stagehand observe() to get element info
-            result = await self.stagehand.observe(instruction)
+            # Use Stagehand page.observe() to get element info
+            result = await self.stagehand.page.observe(instruction)
             
-            if not result or not hasattr(result, 'selector'):
+            if not result or (isinstance(result, list) and len(result) == 0):
+                raise ValueError(f"observe() returned no results for: {instruction}")
+            
+            # observe() returns a list of ObserveResult objects, take first one
+            if isinstance(result, list):
+                result = result[0]
+            
+            xpath = result.get('selector') if isinstance(result, dict) else getattr(result, 'selector', None)
+            
+            if not xpath:
                 raise ValueError(f"observe() returned no selector for: {instruction}")
             
-            xpath = result.selector
+            # Strip xpath= prefix if present (observe() returns "xpath=/html/...")
+            # We need just "/html/..." because Playwright adds "xpath=" later
+            if xpath.startswith('xpath='):
+                xpath = xpath[6:]  # Remove "xpath=" prefix
             
             # Get additional info if available
             element_text = getattr(result, 'text', None)
@@ -158,14 +180,26 @@ class XPathExtractor:
             if self.stagehand.page and self.stagehand.page.url != page_url:
                 await self.stagehand.page.goto(page_url)
             
-            result = await self.stagehand.observe(instruction)
+            result = await self.stagehand.page.observe(instruction)
             
-            if not result or not hasattr(result, 'selector'):
+            if not result or (isinstance(result, list) and len(result) == 0):
+                raise ValueError(f"observe() returned no results for: {instruction}")
+            
+            # observe() returns a list of ObserveResult objects, take first one
+            if isinstance(result, list):
+                result = result[0]
+            
+            xpath = result.get('selector') if isinstance(result, dict) else getattr(result, 'selector', None)
+            element_text = result.get('description') if isinstance(result, dict) else getattr(result, 'description', None)
+            element_html = None  # observe() doesn't return HTML
+            
+            if not xpath:
                 raise ValueError(f"observe() returned no selector for: {instruction}")
             
-            xpath = result.selector
-            element_text = getattr(result, 'text', None)
-            element_html = getattr(result, 'html', None)
+            # Strip xpath= prefix if present (observe() returns "xpath=/html/...")
+            # We need just "/html/..." because Playwright adds "xpath=" later
+            if xpath.startswith('xpath='):
+                xpath = xpath[6:]  # Remove "xpath=" prefix
             
             extraction_time_ms = (time.time() - start_time) * 1000
             

@@ -45,7 +45,9 @@ class ThreeTierExecutionService:
         db: Session,
         page: Page,
         stagehand: Optional[Stagehand] = None,
-        user_settings: Optional[ExecutionSettings] = None
+        user_settings: Optional[ExecutionSettings] = None,
+        cdp_endpoint: Optional[str] = None,
+        user_ai_config: Optional[Dict[str, Any]] = None
     ):
         """
         Initialize 3-Tier execution service.
@@ -55,11 +57,15 @@ class ThreeTierExecutionService:
             page: Playwright Page object
             stagehand: Optional Stagehand instance for Tier 2 and Tier 3
             user_settings: Optional user execution settings
+            cdp_endpoint: Optional CDP endpoint URL to connect Stagehand to existing browser
+            user_ai_config: Optional user AI provider configuration (provider, model, temperature, max_tokens)
         """
         self.db = db
         self.page = page
         self.stagehand = stagehand
         self.user_settings = user_settings or self._get_default_settings()
+        self.cdp_endpoint = cdp_endpoint  # Store CDP endpoint for shared browser context
+        self.user_ai_config = user_ai_config  # Store user's AI provider config
         
         # Initialize tier executors
         timeout_ms = self.user_settings.timeout_per_tier_seconds * 1000
@@ -82,12 +88,16 @@ class ThreeTierExecutionService:
         return settings
     
     async def _ensure_tier2_initialized(self):
-        """Lazy initialization of Tier 2 executor"""
+        """Lazy initialization of Tier 2 executor with shared browser context"""
         if not self.tier2_executor:
             if not self.xpath_extractor:
                 self.xpath_extractor = XPathExtractor(stagehand=self.stagehand)
                 if not self.stagehand:
-                    await self.xpath_extractor.initialize()
+                    # Initialize with CDP endpoint and user's AI config to share browser context
+                    await self.xpath_extractor.initialize(
+                        cdp_endpoint=self.cdp_endpoint,
+                        user_config=self.user_ai_config
+                    )
                     self.stagehand = self.xpath_extractor.stagehand
             
             timeout_ms = self.user_settings.timeout_per_tier_seconds * 1000
@@ -98,12 +108,15 @@ class ThreeTierExecutionService:
             )
     
     async def _ensure_tier3_initialized(self):
-        """Lazy initialization of Tier 3 executor"""
+        """Lazy initialization of Tier 3 executor with shared browser context"""
         if not self.tier3_executor:
             if not self.stagehand:
-                # Initialize Stagehand
+                # Initialize Stagehand with CDP endpoint and user's AI config to share browser context
                 self.xpath_extractor = XPathExtractor()
-                await self.xpath_extractor.initialize()
+                await self.xpath_extractor.initialize(
+                    cdp_endpoint=self.cdp_endpoint,
+                    user_config=self.user_ai_config
+                )
                 self.stagehand = self.xpath_extractor.stagehand
             
             timeout_ms = self.user_settings.timeout_per_tier_seconds * 1000
