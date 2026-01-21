@@ -294,7 +294,7 @@ This document is part of the Phase 3 documentation suite. For complete context, 
 | **EA.2** | ✅ | Create `backend/messaging/message_bus_stub.py` | 2 days | In-memory message bus stub (80+ lines) |
 | **EA.3** | ✅ | Create `backend/agents/agent_registry_stub.py` | 1 day | In-memory agent registry (60+ lines) |
 | **EA.4** | ✅ | Create `backend/agents/observation_agent.py` with **Azure OpenAI LLM** | 2 days | ObservationAgent with Playwright + Azure GPT-4o (250+ lines) - Tested with Three HK website ✅ |
-| **EA.5** | ⏳ | Create `backend/agents/requirements_agent.py` | 2 days | RequirementsAgent using pattern matching (120+ lines) |
+| **EA.5** | ⏳ | Create `backend/agents/requirements_agent.py` following **industry best practices** (BDD, WCAG 2.1, OWASP, ISTQB) | 2 days | RequirementsAgent: 800+ lines with functional scenarios, accessibility (WCAG 2.1), security (OWASP Top 10), edge cases, test data extraction, coverage metrics, LLM integration |
 | **EA.6** | ⏳ | Write unit tests (`tests/agents/`) | 1 day | 50+ unit tests, 95%+ coverage |
 
 **Total: 11 days, 26 story points, ZERO dependencies on Developer B or Phase 2**
@@ -304,7 +304,23 @@ This document is part of the Phase 3 documentation suite. For complete context, 
 - Agents work with stubs, can be swapped for real infrastructure later (dependency injection)
 - All code runs on Developer A's laptop with `pytest` (no Docker/Redis/PostgreSQL needed)
 
-**Status Update (Jan 21):** ✅ Tasks EA.1-EA.4 complete (21 points), EA.5-EA.6 remaining (5 points)
+**RequirementsAgent Specification (EA.5):**
+- **Industry Standards:** BDD (Gherkin Given/When/Then), WCAG 2.1 (accessibility), OWASP Top 10 (security), ISTQB (test design), ISO 29119 (testing standard)
+- **Input:** UI elements from ObservationAgent (262+ elements)
+- **Processing Pipeline:**
+  1. Element grouping by page/component (Page Object Model)
+  2. User journey mapping (login flow, checkout flow, etc.)
+  3. Functional scenario generation (LLM + pattern-based)
+  4. Accessibility scenario generation (keyboard nav, screen reader, contrast)
+  5. Security scenario generation (XSS, SQL injection, CSRF, input validation)
+  6. Edge case scenario generation (boundary value analysis, negative tests)
+  7. Test data extraction with validation rules
+  8. Coverage metrics calculation
+- **Output:** 12+ test scenarios per page (functional, accessibility, security, edge cases) with Given/When/Then format, priority (critical/high/medium/low), confidence scores, test data patterns
+- **LLM Integration:** Azure GPT-4o for complex scenario generation (~2,000 tokens), pattern-based fallback for reliability
+- **Quality Metrics:** 100% UI coverage, 0.85+ confidence, traceability to UI elements
+
+**Status Update (Jan 21):** ✅ Tasks EA.1-EA.4 complete (21 points), EA.5-EA.6 remaining (5 points). **Documentation updated with comprehensive RequirementsAgent specification following industry best practices.**
 
 ---
 

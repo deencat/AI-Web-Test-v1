@@ -346,6 +346,182 @@ user_feedback (generation_id, rating, comments, created_at)
 - 0.5-0.7 : Low confidence (may need human review)
 - <0.5 : Reject (cannot handle safely)
 
+### 6.3 Agent Data Flow & Interactions
+
+**Complete Pipeline (URL → Test Code):**
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      OrchestrationAgent                                  │
+│                 (Coordinates entire workflow)                            │
+└────────────────────────────┬────────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Stage 1: ObservationAgent                                               │
+│ Input:   URL (string)                                                   │
+│ Process: - Load page with Playwright                                    │
+│          - Extract 262+ UI elements                                     │
+│          - Detect page type (login, dashboard, form, pricing)           │
+│          - Identify framework (React, Vue, jQuery)                      │
+│          - Azure GPT-4o vision analysis (~1,800 tokens)                 │
+│ Output:  {                                                              │
+│            "ui_elements": [                                             │
+│              {type, selector, text, actions, aria_label},               │
+│              ...                                                        │
+│            ],                                                           │
+│            "page_structure": {url, title, forms, navigation},           │
+│            "page_context": {framework, page_type, complexity}           │
+│          }                                                              │
+│ Quality: confidence=0.92, coverage=100%, cost=$0.015/page              │
+└────────────────────────────┬────────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Stage 2: RequirementsAgent (INDUSTRY BEST PRACTICES)                   │
+│ Input:   ObservationAgent output                                        │
+│ Process: - Group elements by page/component (Page Object Model)        │
+│          - Map user journeys (login flow, checkout flow)                │
+│          - Generate functional scenarios (LLM + patterns)               │
+│          - Generate accessibility scenarios (WCAG 2.1)                  │
+│          - Generate security scenarios (OWASP Top 10)                   │
+│          - Generate edge case scenarios (boundary tests)                │
+│          - Extract test data with validation rules                      │
+│          - Calculate coverage metrics                                   │
+│          - Azure GPT-4o scenario generation (~2,000 tokens)             │
+│ Output:  {                                                              │
+│            "scenarios": [                                               │
+│              {                                                          │
+│                scenario_id: "REQ-F-001",                                │
+│                title: "User Login - Happy Path",                        │
+│                given: "User is on login page with credentials",         │
+│                when: "User enters email/password, clicks Login",        │
+│                then: "User redirected to dashboard, session set",       │
+│                priority: "critical",                                    │
+│                scenario_type: "functional",                             │
+│                tags: ["smoke", "regression"],                           │
+│                confidence: 0.92                                         │
+│              },                                                         │
+│              {scenario_id: "REQ-A-001", ...accessibility...},           │
+│              {scenario_id: "REQ-S-001", ...security...},                │
+│              {scenario_id: "REQ-E-001", ...edge_case...}                │
+│            ],                                                           │
+│            "test_data": [                                               │
+│              {field_name, field_type, validation, example_values}       │
+│            ],                                                           │
+│            "coverage_metrics": {                                        │
+│              ui_coverage_percent: 100.0,                                │
+│              scenario_count: 12,                                        │
+│              scenarios_by_type: {functional: 5, accessibility: 4,       │
+│                                  security: 2, edge_case: 1}             │
+│            },                                                           │
+│            "quality_indicators": {                                      │
+│              completeness: 100.0,                                       │
+│              confidence: 0.89,                                          │
+│              priority_distribution: {critical: 3, high: 5, medium: 4}   │
+│            }                                                            │
+│          }                                                              │
+│ Quality: confidence=0.89, 12+ scenarios/page, cost=$0.018/page         │
+│ Standards: BDD (Gherkin), WCAG 2.1, OWASP, ISTQB, IEEE 830            │
+└────────────────────────────┬────────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Stage 3: AnalysisAgent                                                  │
+│ Input:   RequirementsAgent output                                       │
+│ Process: - Score scenario risk (business impact × technical complexity) │
+│          - Analyze dependencies (scenario execution order)              │
+│          - Calculate ROI (effort vs. bug detection value)               │
+│          - Prioritize scenarios (critical-first, then high/med/low)     │
+│          - Azure GPT-4o risk analysis (~1,500 tokens)                   │
+│ Output:  {                                                              │
+│            "risk_scores": [                                             │
+│              {scenario_id: "REQ-F-001", risk: 0.95, priority: 1},       │
+│              {scenario_id: "REQ-S-001", risk: 0.88, priority: 2}        │
+│            ],                                                           │
+│            "dependencies": [                                            │
+│              {scenario: "REQ-F-001", depends_on: []}                    │
+│            ],                                                           │
+│            "execution_order": ["REQ-F-001", "REQ-S-001", ...]           │
+│          }                                                              │
+│ Quality: confidence=0.87, cost=$0.012/page                              │
+└────────────────────────────┬────────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Stage 4: EvolutionAgent                                                 │
+│ Input:   AnalysisAgent output + RequirementsAgent scenarios             │
+│ Process: - Generate Playwright test code (.spec.ts)                    │
+│          - Implement Given/When/Then as code                            │
+│          - Add assertions, waits, error handling                        │
+│          - Azure GPT-4o code generation (~2,500 tokens)                 │
+│ Output:  {                                                              │
+│            "test_file": "login.spec.ts",                                │
+│            "code": "import { test, expect } from '@playwright/test';   │
+│                     test('User Login - Happy Path', async ({page}) => { │
+│                       // Given: User on login page                      │
+│                       await page.goto('https://...');                   │
+│                       // When: User enters credentials                  │
+│                       await page.fill('#email', 'test@example.com');    │
+│                       await page.fill('#password', 'password123');      │
+│                       await page.click('#login-btn');                   │
+│                       // Then: User redirected to dashboard             │
+│                       await expect(page).toHaveURL(/dashboard/);        │
+│                     });",                                               │
+│            "test_count": 12,                                            │
+│            "confidence": 0.91                                           │
+│          }                                                              │
+│ Quality: confidence=0.91, 12+ tests/page, cost=$0.020/page             │
+└────────────────────────────┬────────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Stage 5: ReportingAgent                                                 │
+│ Input:   Test execution results                                         │
+│ Process: - Generate HTML/PDF reports                                    │
+│          - Calculate coverage metrics                                   │
+│          - Aggregate trends over time                                   │
+│ Output:  HTML dashboard, PDF reports                                    │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Message Bus Communication:**
+
+```
+Agent A                    Redis Streams                    Agent B
+  │                             │                             │
+  │─────publish_task────────────>│                             │
+  │   (task_id, payload)         │                             │
+  │                             │<─────subscribe_task─────────│
+  │                             │   (task_type filter)         │
+  │                             │                             │
+  │                             │─────deliver_task───────────>│
+  │                             │                             │─execute
+  │                             │                             │
+  │                             │<─────publish_result─────────│
+  │<─────deliver_result─────────│   (task_id, result)         │
+  │                             │                             │
+```
+
+**Error Handling & Retry Strategy:**
+
+```
+RequirementsAgent LLM Call
+        │
+        ▼
+    [Try LLM]
+        │
+        ├─Success─────> Return scenarios (confidence: 0.85-0.95)
+        │
+        ├─Timeout────> Retry with exponential backoff (3 attempts)
+        │               │
+        │               └─Still fails─> Use pattern-based fallback
+        │                               (confidence: 0.70)
+        │
+        └─Error──────> Log error, use pattern-based fallback
+                       (confidence: 0.65)
+```
+
 ---
 
 ## 7. Architecture Diagrams (C4 Model)
