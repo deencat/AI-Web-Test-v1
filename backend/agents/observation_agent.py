@@ -45,6 +45,9 @@ from agents.base_agent import (
     TaskResult
 )
 
+# Set up logger first
+logger = logging.getLogger(__name__)
+
 # NOTE: Playwright will be imported when available
 # For now, we'll use a stub implementation for development
 try:
@@ -58,7 +61,22 @@ except ImportError:
     class Browser:
         pass
 
+# Import LLM client for enhanced observation
+try:
+    import sys
+    from pathlib import Path
+    # Add parent directory to path for llm module
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from llm.azure_client import get_azure_client
+    LLM_AVAILABLE = True
+except ImportError:
+    LLM_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
+
+if not LLM_AVAILABLE:
+    logger.warning("LLM client not available - observation will use Playwright only")
+
 
 
 @dataclass
@@ -137,6 +155,18 @@ class ObservationAgent(BaseAgent):
         self.max_pages = self.config.get("max_pages", 50)
         self.timeout_ms = self.config.get("timeout_ms", 30000)
         self.take_screenshots = self.config.get("take_screenshots", True)
+        self.use_llm = self.config.get("use_llm", True)  # Enable LLM by default
+        
+        # Initialize LLM client if available and enabled
+        self.llm_client = None
+        if self.use_llm and LLM_AVAILABLE:
+            self.llm_client = get_azure_client()
+            if self.llm_client.enabled:
+                logger.info("ObservationAgent initialized with LLM enhancement (Azure OpenAI)")
+            else:
+                logger.info("ObservationAgent initialized without LLM (API key not set)")
+        else:
+            logger.info("ObservationAgent initialized without LLM (Playwright only)")
     
     @property
     def capabilities(self) -> List[AgentCapability]:
@@ -232,7 +262,7 @@ class ObservationAgent(BaseAgent):
                 # Crawl pages
                 pages = await self._crawl_pages(page, url, max_depth)
                 
-                # Extract UI elements from all pages
+                # Extract UI elements from all pages (Playwright baseline)
                 all_elements = []
                 all_forms = []
                 for page_info in pages:
@@ -241,13 +271,47 @@ class ObservationAgent(BaseAgent):
                     all_elements.extend(elements)
                     all_forms.extend(forms)
                 
+                logger.info(f"Playwright baseline: {len(all_elements)} elements, {len(all_forms)} forms")
+                
+                # ENHANCEMENT: Use LLM to find elements Playwright might miss
+                llm_enhanced_elements = []
+                llm_analysis = {}
+                if self.llm_client and self.llm_client.enabled:
+                    try:
+                        # Get page HTML for LLM analysis
+                        html_content = await page.content()
+                        page_title = await page.title()
+                        
+                        logger.info("Analyzing page with LLM for enhanced element detection...")
+                        llm_analysis = await self.llm_client.analyze_page_elements(
+                            html=html_content,
+                            basic_elements=all_elements[:20],  # Send sample to LLM
+                            url=url,
+                            page_title=page_title,
+                            learned_patterns=None  # TODO: Integrate learning system in Sprint 10
+                        )
+                        
+                        llm_enhanced_elements = llm_analysis.get("enhanced_elements", [])
+                        logger.info(f"LLM found {len(llm_enhanced_elements)} additional elements")
+                        
+                        # Merge LLM findings with Playwright results
+                        all_elements.extend(llm_enhanced_elements)
+                        
+                    except Exception as e:
+                        logger.warning(f"LLM analysis failed, continuing with Playwright-only results: {e}")
+                
                 # Identify navigation flows
                 flows = self._identify_flows(pages)
                 
                 await browser.close()
             
             # Calculate confidence based on completeness
-            confidence = self._calculate_confidence(pages, all_elements, all_forms)
+            confidence = self._calculate_confidence(
+                pages, 
+                all_elements, 
+                all_forms,
+                has_llm_enhancement=bool(llm_enhanced_elements)
+            )
             
             result = {
                 "start_url": url,
@@ -258,11 +322,20 @@ class ObservationAgent(BaseAgent):
                 "ui_elements": all_elements,
                 "forms": all_forms,
                 "navigation_flows": flows,
+                "llm_analysis": {
+                    "used": bool(llm_enhanced_elements),
+                    "elements_found": len(llm_enhanced_elements),
+                    "suggested_selectors": llm_analysis.get("suggested_selectors", {}),
+                    "page_patterns": llm_analysis.get("page_patterns", {}),
+                    "missed_by_playwright": llm_analysis.get("missed_by_playwright", [])
+                },
                 "summary": {
-                    "buttons": len([e for e in all_elements if e["type"] == "button"]),
-                    "inputs": len([e for e in all_elements if e["type"] == "input"]),
-                    "links": len([e for e in all_elements if e["type"] == "link"]),
-                    "forms": len(all_forms)
+                    "buttons": len([e for e in all_elements if e.get("type") == "button"]),
+                    "inputs": len([e for e in all_elements if e.get("type") == "input"]),
+                    "links": len([e for e in all_elements if e.get("type") == "link"]),
+                    "forms": len(all_forms),
+                    "playwright_elements": len(all_elements) - len(llm_enhanced_elements),
+                    "llm_enhanced_elements": len(llm_enhanced_elements)
                 }
             }
             
@@ -530,23 +603,29 @@ class ObservationAgent(BaseAgent):
         self,
         pages: List[PageInfo],
         elements: List[Dict],
-        forms: List[Dict]
+        forms: List[Dict],
+        has_llm_enhancement: bool = False
     ) -> float:
         """Calculate confidence based on crawl completeness."""
         confidence = 0.5  # Base confidence
         
         if pages:
-            confidence += 0.2
-        
-        if elements:
             confidence += 0.15
         
-        if forms:
+        if elements:
             confidence += 0.1
+        
+        if forms:
+            confidence += 0.05
         
         # Bonus for finding multiple pages
         if len(pages) >= 3:
             confidence += 0.05
+        
+        # MAJOR bonus for LLM enhancement
+        if has_llm_enhancement:
+            confidence += 0.15
+            logger.info("Confidence boosted by LLM enhancement")
         
         return min(confidence, 1.0)
     
