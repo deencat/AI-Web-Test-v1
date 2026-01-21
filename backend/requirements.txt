@@ -35,6 +35,9 @@ playwright==1.56.0
 stagehand==0.5.7
 websockets==15.0.1
 
+# LLM Integration (Phase 3 - Multi-Agent System)
+cerebras-cloud-sdk>=1.0.0
+
 # Environment & Configuration
 python-dotenv==1.2.1
 
