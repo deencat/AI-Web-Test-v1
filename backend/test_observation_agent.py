@@ -17,9 +17,19 @@ from messaging.message_bus_stub import MessageBusStub
 
 
 async def test_observation_agent():
-    """Test ObservationAgent functionality (stub mode without Playwright)."""
+    """Test ObservationAgent functionality."""
+    # Check Playwright availability
+    try:
+        from playwright.async_api import async_playwright
+        playwright_available = True
+        mode = "REAL MODE (Playwright available)"
+    except ImportError:
+        playwright_available = False
+        mode = "STUB MODE (Playwright not installed)"
+    
     print("=" * 60)
     print("Testing ObservationAgent (Web Application Observer)")
+    print(f"Mode: {mode}")
     print("=" * 60)
     
     # Create dependencies
@@ -56,7 +66,12 @@ async def test_observation_agent():
     print(f"   Confidence: {confidence}")
     
     if can_handle:
-        print("\n3. Executing Task (STUB MODE - Playwright not installed)...")
+        print(f"\n3. Executing Task...")
+        if playwright_available:
+            print("   Using Playwright to crawl real website...")
+        else:
+            print("   Using stub mode (mock data)...")
+        
         result = await agent.execute_task(task)
         
         print(f"\n4. Results:")
