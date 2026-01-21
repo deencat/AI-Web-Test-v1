@@ -133,22 +133,40 @@ class Tier1PlaywrightExecutor:
         await page.goto(url, timeout=self.timeout_ms, wait_until="networkidle")
     
     async def _execute_click(self, page: Page, selector: str):
-        """Click element"""
+        """Click element and wait for page state to stabilize"""
         element = page.locator(selector).first
         await element.wait_for(state="visible", timeout=self.timeout_ms)
         await element.click(timeout=self.timeout_ms)
+        
+        # Wait for any post-click navigation/state changes
+        try:
+            await page.wait_for_load_state("networkidle", timeout=self.timeout_ms)
+            logger.debug(f"[Tier 1] ✅ Page state stabilized after click")
+        except PlaywrightTimeout:
+            # If network doesn't idle, wait for DOM ready
+            try:
+                await page.wait_for_load_state("domcontentloaded", timeout=5000)
+                logger.debug(f"[Tier 1] ⚠️ DOM loaded after click (network still active)")
+            except PlaywrightTimeout:
+                # Last resort: small fixed delay
+                await asyncio.sleep(1)
+                logger.warning(f"[Tier 1] ⚠️ Using fixed delay after click")
     
     async def _execute_fill(self, page: Page, selector: str, value: str):
         """Fill input element"""
         element = page.locator(selector).first
         await element.wait_for(state="visible", timeout=self.timeout_ms)
         await element.fill(value, timeout=self.timeout_ms)
+        # Small delay to allow input event handlers to complete
+        await asyncio.sleep(0.3)
     
     async def _execute_select(self, page: Page, selector: str, value: str):
         """Select dropdown option"""
         element = page.locator(selector).first
         await element.wait_for(state="visible", timeout=self.timeout_ms)
         await element.select_option(value, timeout=self.timeout_ms)
+        # Wait for onChange handlers
+        await asyncio.sleep(0.3)
     
     async def _execute_check(self, page: Page, selector: str):
         """Check checkbox"""
@@ -156,6 +174,7 @@ class Tier1PlaywrightExecutor:
         await element.wait_for(state="visible", timeout=self.timeout_ms)
         if not await element.is_checked():
             await element.check(timeout=self.timeout_ms)
+            await asyncio.sleep(0.3)
     
     async def _execute_uncheck(self, page: Page, selector: str):
         """Uncheck checkbox"""
@@ -163,12 +182,14 @@ class Tier1PlaywrightExecutor:
         await element.wait_for(state="visible", timeout=self.timeout_ms)
         if await element.is_checked():
             await element.uncheck(timeout=self.timeout_ms)
+            await asyncio.sleep(0.3)
     
     async def _execute_hover(self, page: Page, selector: str):
         """Hover over element"""
         element = page.locator(selector).first
         await element.wait_for(state="visible", timeout=self.timeout_ms)
         await element.hover(timeout=self.timeout_ms)
+        await asyncio.sleep(0.2)
     
     async def _execute_assert(self, page: Page, selector: str, expected_value: str):
         """Assert element contains expected value"""
