@@ -514,6 +514,11 @@ class ExecutionService:
                         step_data["action"] = "click"
                     elif "fill" in desc_lower or "type" in desc_lower or "enter" in desc_lower or "input" in desc_lower:
                         step_data["action"] = "fill"
+                    # Check for checkbox/toggle actions before generic verify
+                    elif ("check" in desc_lower or "tick" in desc_lower) and ("checkbox" in desc_lower or "box" in desc_lower):
+                        step_data["action"] = "check"
+                    elif ("uncheck" in desc_lower or "untick" in desc_lower) and ("checkbox" in desc_lower or "box" in desc_lower):
+                        step_data["action"] = "uncheck"
                     elif "verify" in desc_lower or "check" in desc_lower or "assert" in desc_lower:
                         step_data["action"] = "verify"
                 
