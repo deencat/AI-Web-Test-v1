@@ -136,11 +136,25 @@ class Tier1PlaywrightExecutor:
         """Click element and wait for page state to stabilize"""
         element = page.locator(selector).first
         await element.wait_for(state="visible", timeout=self.timeout_ms)
+        
+        # Check for navigation buttons that might trigger page changes
+        element_text = await element.text_content() or ""
+        element_text_lower = element_text.lower()
+        is_navigation_button = any(
+            keyword in element_text_lower 
+            for keyword in ["next", "continue", "submit", "proceed", "upload", "confirm"]
+        )
+        
         await element.click(timeout=self.timeout_ms)
         
         # Wait for any post-click navigation/state changes
+        if is_navigation_button:
+            logger.info(f"[Tier 1] 🔄 Navigation button detected: '{element_text}' - using extended wait")
+        
         try:
-            await page.wait_for_load_state("networkidle", timeout=self.timeout_ms)
+            # For navigation buttons, use longer timeout
+            wait_timeout = self.timeout_ms if is_navigation_button else 10000
+            await page.wait_for_load_state("networkidle", timeout=wait_timeout)
             logger.debug(f"[Tier 1] ✅ Page state stabilized after click")
         except PlaywrightTimeout:
             # If network doesn't idle, wait for DOM ready
@@ -151,6 +165,40 @@ class Tier1PlaywrightExecutor:
                 # Last resort: small fixed delay
                 await asyncio.sleep(1)
                 logger.warning(f"[Tier 1] ⚠️ Using fixed delay after click")
+        
+        # Additional wait for navigation buttons to ensure new page content is ready
+        if is_navigation_button:
+            # Wait for common loading indicators to disappear
+            try:
+                # Check for loading overlays, spinners, or "loading" text
+                loading_selectors = [
+                    "[class*='loading']",
+                    "[class*='spinner']",
+                    "[class*='overlay']",
+                    "[aria-busy='true']",
+                    ".loading",
+                    ".spinner",
+                    ".overlay"
+                ]
+                
+                for selector in loading_selectors:
+                    try:
+                        loading_element = page.locator(selector).first
+                        # If loading element exists and is visible, wait for it to be hidden
+                        if await loading_element.count() > 0:
+                            logger.info(f"[Tier 1] ⏳ Detected loading indicator: {selector}")
+                            await loading_element.wait_for(state="hidden", timeout=10000)
+                            logger.info(f"[Tier 1] ✅ Loading indicator disappeared")
+                            break
+                    except Exception:
+                        # This selector doesn't match any element, try next
+                        continue
+            except Exception as e:
+                logger.debug(f"[Tier 1] No loading indicators found or error checking: {str(e)}")
+            
+            # Additional fixed delay to ensure content is fully rendered
+            await asyncio.sleep(2.0)
+            logger.debug(f"[Tier 1] ⏱️ Additional 2.0s wait after navigation button")
     
     async def _execute_fill(self, page: Page, selector: str, value: str):
         """Fill input element"""
