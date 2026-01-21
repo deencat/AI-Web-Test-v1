@@ -103,8 +103,23 @@ class Tier2HybridExecutor:
             if cached_xpath:
                 xpath = cached_xpath["xpath"]
                 cache_hit = True
-                logger.info(f"[Tier 2] 🎯 Cache hit! Using cached XPath: {xpath}")
-            else:
+                logger.info(f"[Tier 2] 🎯 Cache hit! Validating cached XPath: {xpath}")
+                
+                # Validate cached xpath - check if element exists on current page
+                try:
+                    # Quick check with 2 second timeout
+                    locator = page.locator(f"xpath={xpath}").first
+                    await locator.wait_for(state="attached", timeout=2000)
+                    logger.info(f"[Tier 2] ✅ Cached XPath validated successfully")
+                except Exception as e:
+                    # Element doesn't exist - cache is stale, invalidate and re-extract
+                    logger.warning(f"[Tier 2] ⚠️ Cached XPath validation failed: {str(e)}")
+                    logger.info(f"[Tier 2] 🔄 Invalidating stale cache and re-extracting...")
+                    self.cache_service.invalidate_cache(page_url, instruction, "Element not found on page")
+                    cache_hit = False
+                    cached_xpath = None
+            
+            if not cached_xpath:
                 # Step 2: Extract XPath using Stagehand observe()
                 logger.info(f"[Tier 2] 📡 Cache miss, extracting XPath via observe()...")
                 extraction_start = time.time()
