@@ -3,6 +3,7 @@ Tier 2: Hybrid Mode Execution
 Stagehand observe() + Playwright execution for self-healing tests
 Sprint 5.5: 3-Tier Execution Engine
 """
+import asyncio
 import time
 from typing import Dict, Any, Optional
 from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
@@ -231,19 +232,48 @@ class Tier2HybridExecutor:
         
         # Execute action
         if action == "click":
+            # Perform the click action
             await element.click(timeout=self.timeout_ms)
+            
+            # Wait for any post-click navigation/state changes
+            try:
+                # Wait for network to be idle after click (handles AJAX, SPA updates)
+                await page.wait_for_load_state("networkidle", timeout=self.timeout_ms)
+                logger.debug(f"[Tier 2] ✅ Page state stabilized after click")
+            except PlaywrightTimeout:
+                # If network doesn't idle within timeout, wait at least for DOM to be ready
+                try:
+                    await page.wait_for_load_state("domcontentloaded", timeout=5000)
+                    logger.debug(f"[Tier 2] ⚠️ DOM loaded after click (network still active)")
+                except PlaywrightTimeout:
+                    # Last resort: small fixed delay to allow content to update
+                    await asyncio.sleep(1)
+                    logger.warning(f"[Tier 2] ⚠️ Using fixed delay after click (no stable state detected)")
+                    
         elif action in ["fill", "type"]:
             await element.fill(value, timeout=self.timeout_ms)
+            # Small delay to allow any input event handlers to complete
+            await asyncio.sleep(0.3)
+            
         elif action == "select":
             await element.select_option(value, timeout=self.timeout_ms)
+            # Wait for any onChange handlers
+            await asyncio.sleep(0.3)
+            
         elif action == "check":
             if not await element.is_checked():
                 await element.check(timeout=self.timeout_ms)
+                await asyncio.sleep(0.3)
+                
         elif action == "uncheck":
             if await element.is_checked():
                 await element.uncheck(timeout=self.timeout_ms)
+                await asyncio.sleep(0.3)
+                
         elif action == "hover":
             await element.hover(timeout=self.timeout_ms)
+            await asyncio.sleep(0.2)
+            
         elif action in ["assert", "verify"]:
             actual_value = await element.text_content()
             if value not in (actual_value or ""):
