@@ -3,9 +3,9 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, and risk management  
 **Scope:** Sprint 7-12 execution framework (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ In Execution - Pre-Sprint 7 Early Start (EA.4 95% complete)  
+**Status:** ✅ In Execution - Pre-Sprint 7 (EA.1-EA.4 Complete, EA.5-EA.6 In Progress)  
 **Last Updated:** January 21, 2026  
-**Version:** 2.1
+**Version:** 2.2
 
 ---
 
@@ -111,11 +111,18 @@ This document is part of the Phase 3 documentation suite. For complete context, 
 - No DevOps dependencies (removes 2-3 week blocker)
 - Defer production infrastructure to Phase 4 (when we have >50 users)
 
-**Current Status (Jan 20, 2026):**
-- ✅ Developer A: Can start Phase 3 TODAY - 6 tasks with ZERO dependencies (see Section 2.4)
+**Current Status (Jan 21, 2026):**
+- ✅ Developer A: Pre-Sprint work in progress - 4 tasks complete (EA.1-EA.4), 2 remaining (EA.5-EA.6)
+  - ✅ BaseAgent abstract class complete (446 lines)
+  - ✅ Message bus stub complete (315 lines)
+  - ✅ Agent registry stub complete (377 lines)
+  - ✅ **ObservationAgent complete with Azure OpenAI integration** (641 lines)
+    - Successfully tested with Three HK website
+    - 262 elements detected (259 Playwright + 3 LLM-enhanced)
+    - Multi-tier caching strategy implemented
 - 🔄 Developer B: Completing Phase 2 work, joins Phase 3 in Sprint 7 (Jan 23)
-- 📅 Pre-Sprint work (Jan 20-23): Developer A builds 26 story points independently
-- 🚀 Sprint 7 kickoff: Jan 23, 2026 (both developers working in parallel)
+- 📅 Remaining pre-sprint work: EA.5 (RequirementsAgent), EA.6 (Unit tests) - 5 story points
+- 🚀 Sprint 7 kickoff: Jan 23, 2026
 
 **Success Criteria:**
 - ✅ All 6 agents deployed and operational
@@ -286,8 +293,8 @@ This document is part of the Phase 3 documentation suite. For complete context, 
 | **EA.1** | ✅ | Create `backend/agents/base_agent.py` | 3 days | BaseAgent abstract class (200+ lines) |
 | **EA.2** | ✅ | Create `backend/messaging/message_bus_stub.py` | 2 days | In-memory message bus stub (80+ lines) |
 | **EA.3** | ✅ | Create `backend/agents/agent_registry_stub.py` | 1 day | In-memory agent registry (60+ lines) |
-| **EA.4** | 🔄 95% | Create `backend/agents/observation_agent.py` with **Azure OpenAI LLM** | 2 days | ObservationAgent with Playwright + Azure GPT-4o (250+ lines) |
-| **EA.5** | ⏳ | Create `backend/agents/requirements_agent.py` | 2 days | RequirementsAgent using pattern matching (120+ lines) |
+| **EA.4** | ✅ | Create `backend/agents/observation_agent.py` with **Azure OpenAI LLM** | 2 days | ObservationAgent with Playwright + Azure GPT-4o (250+ lines) - Tested with Three HK website ✅ |
+| **EA.5** | ⏳ | Create `backend/agents/requirements_agent.py` following **industry best practices** (BDD, WCAG 2.1, OWASP, ISTQB) | 2 days | RequirementsAgent: 800+ lines with functional scenarios, accessibility (WCAG 2.1), security (OWASP Top 10), edge cases, test data extraction, coverage metrics, LLM integration |
 | **EA.6** | ⏳ | Write unit tests (`tests/agents/`) | 1 day | 50+ unit tests, 95%+ coverage |
 
 **Total: 11 days, 26 story points, ZERO dependencies on Developer B or Phase 2**
@@ -297,7 +304,23 @@ This document is part of the Phase 3 documentation suite. For complete context, 
 - Agents work with stubs, can be swapped for real infrastructure later (dependency injection)
 - All code runs on Developer A's laptop with `pytest` (no Docker/Redis/PostgreSQL needed)
 
-**By Sprint 7 Kickoff (Jan 23):** Developer A has 26 points done, leaving only 5 points for Sprint 7 proper!
+**RequirementsAgent Specification (EA.5):**
+- **Industry Standards:** BDD (Gherkin Given/When/Then), WCAG 2.1 (accessibility), OWASP Top 10 (security), ISTQB (test design), ISO 29119 (testing standard)
+- **Input:** UI elements from ObservationAgent (262+ elements)
+- **Processing Pipeline:**
+  1. Element grouping by page/component (Page Object Model)
+  2. User journey mapping (login flow, checkout flow, etc.)
+  3. Functional scenario generation (LLM + pattern-based)
+  4. Accessibility scenario generation (keyboard nav, screen reader, contrast)
+  5. Security scenario generation (XSS, SQL injection, CSRF, input validation)
+  6. Edge case scenario generation (boundary value analysis, negative tests)
+  7. Test data extraction with validation rules
+  8. Coverage metrics calculation
+- **Output:** 12+ test scenarios per page (functional, accessibility, security, edge cases) with Given/When/Then format, priority (critical/high/medium/low), confidence scores, test data patterns
+- **LLM Integration:** Azure GPT-4o for complex scenario generation (~2,000 tokens), pattern-based fallback for reliability
+- **Quality Metrics:** 100% UI coverage, 0.85+ confidence, traceability to UI elements
+
+**Status Update (Jan 21):** ✅ Tasks EA.1-EA.4 complete (21 points), EA.5-EA.6 remaining (5 points). **Documentation updated with comprehensive RequirementsAgent specification following industry best practices.**
 
 ---
 
