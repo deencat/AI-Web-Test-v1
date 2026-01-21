@@ -60,6 +60,13 @@ class Tier3StagehandExecutor:
             
             logger.info(f"[Tier 3] Executing step with full AI reasoning: {instruction}")
             
+            # Check if this is a navigation action (button text contains navigation keywords)
+            instruction_lower = instruction.lower()
+            is_navigation_action = any(
+                keyword in instruction_lower 
+                for keyword in ["next", "continue", "submit", "proceed", "upload", "confirm", "click"]
+            )
+            
             # Build action instruction for Stagehand
             if action == "navigate":
                 # Use goto instead of act for navigation
@@ -84,6 +91,54 @@ class Tier3StagehandExecutor:
             else:
                 # Use act() for all other actions
                 result = await self.stagehand.page.act(instruction)
+                
+                # Wait for page to stabilize after navigation actions
+                if is_navigation_action:
+                    logger.info(f"[Tier 3] 🔄 Navigation action detected - waiting for page to stabilize")
+                    try:
+                        await self.stagehand.page.wait_for_load_state("networkidle", timeout=self.timeout_ms)
+                        logger.debug(f"[Tier 3] ✅ Page state stabilized after action")
+                    except Exception as e:
+                        # If network doesn't idle, wait for DOM ready
+                        try:
+                            await self.stagehand.page.wait_for_load_state("domcontentloaded", timeout=5000)
+                            logger.debug(f"[Tier 3] ⚠️ DOM loaded after action (network still active)")
+                        except Exception:
+                            # Last resort: fixed delay
+                            await asyncio.sleep(1.5)
+                            logger.warning(f"[Tier 3] ⚠️ Using fixed delay after action")
+                    
+                    # Wait for common loading indicators to disappear
+                    try:
+                        # Check for loading overlays, spinners, or "loading" text
+                        loading_selectors = [
+                            "[class*='loading']",
+                            "[class*='spinner']",
+                            "[class*='overlay']",
+                            "[aria-busy='true']",
+                            ".loading",
+                            ".spinner",
+                            ".overlay"
+                        ]
+                        
+                        for selector in loading_selectors:
+                            try:
+                                loading_element = self.stagehand.page.locator(selector).first
+                                # If loading element exists and is visible, wait for it to be hidden
+                                if await loading_element.count() > 0:
+                                    logger.info(f"[Tier 3] ⏳ Detected loading indicator: {selector}")
+                                    await loading_element.wait_for(state="hidden", timeout=10000)
+                                    logger.info(f"[Tier 3] ✅ Loading indicator disappeared")
+                                    break
+                            except Exception:
+                                # This selector doesn't match any element, try next
+                                continue
+                    except Exception as e:
+                        logger.debug(f"[Tier 3] No loading indicators found or error checking: {str(e)}")
+                    
+                    # Additional fixed delay to ensure content is fully rendered
+                    await asyncio.sleep(2.0)
+                    logger.debug(f"[Tier 3] ⏱️ Additional 2.0s wait after navigation action")
             
             execution_time_ms = (time.time() - start_time) * 1000
             
