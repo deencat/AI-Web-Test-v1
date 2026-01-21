@@ -3,9 +3,9 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, and risk management  
 **Scope:** Sprint 7-12 execution framework (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Ready for execution  
-**Last Updated:** January 20, 2026  
-**Version:** 2.0
+**Status:** ✅ In Execution - Pre-Sprint 7 Early Start (EA.4 95% complete)  
+**Last Updated:** January 21, 2026  
+**Version:** 2.1
 
 ---
 
@@ -281,14 +281,14 @@ This document is part of the Phase 3 documentation suite. For complete context, 
 
 **Developer A can start TODAY without waiting for Developer B:**
 
-| Task | Description | Duration | Dependencies | Deliverable |
-|------|-------------|----------|--------------|-------------|
-| **EA.1** | Create `backend/agents/base_agent.py` | 3 days | NONE | BaseAgent abstract class (200+ lines) |
-| **EA.2** | Create `backend/messaging/message_bus_stub.py` | 2 days | NONE | In-memory message bus stub (80+ lines) |
-| **EA.3** | Create `backend/agents/agent_registry_stub.py` | 1 day | NONE | In-memory agent registry (60+ lines) |
-| **EA.4** | Create `backend/agents/observation_agent.py` | 2 days | EA.1 | ObservationAgent using AST parsing (150+ lines) |
-| **EA.5** | Create `backend/agents/requirements_agent.py` | 2 days | EA.1 | RequirementsAgent using pattern matching (120+ lines) |
-| **EA.6** | Write unit tests (`tests/agents/`) | 1 day | EA.1-EA.5 | 50+ unit tests, 95%+ coverage |
+| Task | Status | Description | Duration | Deliverable |
+|------|--------|-------------|----------|-------------|
+| **EA.1** | ✅ | Create `backend/agents/base_agent.py` | 3 days | BaseAgent abstract class (200+ lines) |
+| **EA.2** | ✅ | Create `backend/messaging/message_bus_stub.py` | 2 days | In-memory message bus stub (80+ lines) |
+| **EA.3** | ✅ | Create `backend/agents/agent_registry_stub.py` | 1 day | In-memory agent registry (60+ lines) |
+| **EA.4** | 🔄 95% | Create `backend/agents/observation_agent.py` with **Azure OpenAI LLM** | 2 days | ObservationAgent with Playwright + Azure GPT-4o (250+ lines) |
+| **EA.5** | ⏳ | Create `backend/agents/requirements_agent.py` | 2 days | RequirementsAgent using pattern matching (120+ lines) |
+| **EA.6** | ⏳ | Write unit tests (`tests/agents/`) | 1 day | 50+ unit tests, 95%+ coverage |
 
 **Total: 11 days, 26 story points, ZERO dependencies on Developer B or Phase 2**
 
@@ -645,13 +645,20 @@ This document is part of the Phase 3 documentation suite. For complete context, 
 | Strategy | Cost/Cycle | Monthly Cost (1K cycles) | Quality | Recommendation |
 |----------|-----------|-------------------------|---------|----------------|
 | All GPT-4 | $0.33 | $330 | 100% | Not cost-effective |
-| **Hybrid** (GPT-4 for Evolution, GPT-4-mini for others) | **$0.16** | **$160** | 95% | **✅ Recommended** |
+| **Hybrid Azure OpenAI** (GPT-4o for Observation/Evolution, GPT-4-mini for others) | **$0.16** | **$160** | 95% | **✅ Recommended** |
 | All GPT-4-mini | $0.006 | $6 | 80% | Too low quality |
+| **With 90% caching** (after Sprint 10) | **$0.016** | **$16** | 95% | **Future optimization** |
 
-**Hybrid Strategy Details:**
-- Evolution Agent uses GPT-4 (complex reasoning required): $0.16/cycle
-- All other agents use GPT-4-mini (simple parsing): $0.004/cycle
-- **Total LLM cost: $160/month**
+**Hybrid Azure OpenAI Strategy Details:**
+- **Primary Provider:** Azure OpenAI (enterprise SLA, no Cloudflare blocks)
+  - ObservationAgent: GPT-4o ($0.015 per page)
+  - EvolutionAgent: GPT-4o (complex reasoning): $0.16/cycle
+  - Other agents: GPT-4-mini (simple parsing): $0.004/cycle
+- **Backup Provider:** Cerebras llama3.1-8b (free, 10x faster, fallback)
+- **Caching Strategy:** Multi-tier (Hot: Redis 1h, Warm: PostgreSQL 7d, Cold: 30d)
+- **Without caching:** $160/month
+- **With 90% caching (Sprint 10+):** $16/month (90% cost reduction)
+- **Current status:** Azure OpenAI tested successfully with Three HK website (262 elements detected)
 
 ### 4.3 Learning System Costs
 

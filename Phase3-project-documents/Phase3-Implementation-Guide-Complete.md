@@ -21,6 +21,58 @@
 
 ## 1. Implementation Overview
 
+### 1.0 Agent Roles (Web Application Testing)
+
+**Context:** This is an AI-powered WEB APPLICATION testing tool that generates browser automation tests using Playwright/Stagehand.
+
+**The 6 Agents and Their Roles:**
+
+1. **ObservationAgent** - Web Application Observer
+   - **What it does:** Crawls target web application using Playwright
+   - **Inputs:** URL, authentication credentials
+   - **Outputs:** Page map (URLs, UI elements, forms, buttons, links)
+   - **Technology:** Playwright for browser automation, DOM parsing
+   - **Example:** Given `https://myapp.com/login`, finds login form with username/password fields, submit button
+
+2. **RequirementsAgent** - Test Requirement Extractor
+   - **What it does:** Converts UI observations into test scenarios
+   - **Inputs:** Page map from ObservationAgent
+   - **Outputs:** Test requirements in Given/When/Then format
+   - **Technology:** Pattern matching, NLP
+   - **Example:** "Given user is on login page, When user enters valid credentials and clicks submit, Then user should be redirected to dashboard"
+
+3. **AnalysisAgent** - Risk & Priority Analyzer
+   - **What it does:** Identifies which UI flows are most critical to test
+   - **Inputs:** Test requirements, historical bug data
+   - **Outputs:** Risk scores (0.0-1.0), prioritized test list
+   - **Technology:** Dependency graph analysis, risk scoring algorithms
+   - **Example:** Login flow = 0.95 (critical), Footer links = 0.2 (low priority)
+
+4. **EvolutionAgent** - Test Code Generator
+   - **What it does:** Generates Playwright/Stagehand test code from requirements
+   - **Inputs:** Test requirements, risk scores
+   - **Outputs:** Executable Playwright test files (.spec.ts)
+   - **Technology:** GPT-4 LLM with prompt templates
+   - **Example:** Generates `test('user can login', async ({ page }) => { await page.goto('...'); await page.fill('#username', 'test'); ... })`
+
+5. **OrchestrationAgent** - Workflow Coordinator
+   - **What it does:** Coordinates the 4 agents above in correct sequence
+   - **Inputs:** User request ("test my web app at https://...")
+   - **Outputs:** Complete workflow execution (Observe → Require → Analyze → Evolve)
+   - **Technology:** State machine, Contract Net Protocol for task allocation
+   - **Example:** Receives user request → assigns tasks to agents → monitors progress → handles failures
+
+6. **ReportingAgent** - Test Report Generator
+   - **What it does:** Generates coverage reports, test execution summaries
+   - **Inputs:** Generated tests, execution results
+   - **Outputs:** PDF/Markdown reports with charts
+   - **Technology:** Report templates, charting libraries
+   - **Example:** "85% page coverage, 12 tests generated, 10 passed, 2 failed (login timeout)"
+
+**Key Distinction:**
+- **Phase 2 (Current):** Manual test creation OR simple AI generation
+- **Phase 3 (This):** Multi-agent system that autonomously observes web app, extracts requirements, analyzes risks, and generates tests
+
 ### 1.1 Timeline
 
 **Total Duration:** 12 weeks (6 sprints × 2 weeks)  
@@ -112,9 +164,242 @@
 
 ---
 
+### 1.4 LLM Integration Architecture
+
+**Overview:** Phase 3 agents use a hybrid approach combining deterministic tools with LLM enhancement for intelligent observation and test generation.
+
+#### Why LLM Enhancement?
+
+**Playwright-Only Limitations:**
+- ❌ Misses custom elements: `<div role="button">` not found by `query_selector("button")`
+- ❌ Shadow DOM invisible to standard CSS selectors
+- ❌ Dynamic JavaScript-loaded content
+- ❌ Visual-only buttons: `<img onclick="submit()">` looks like button but isn't `<button>`
+- ❌ No semantic understanding: Can't distinguish login button vs search button vs submit button
+- **Result:** 30% accuracy on modern web applications
+
+**LLM-Enhanced Benefits:**
+- ✅ Finds custom components with `role`, `aria-*`, `data-*` attributes
+- ✅ Understands semantic context (login form vs search form vs payment form)
+- ✅ Suggests better selectors ([data-testid], text-based)
+- ✅ Identifies page patterns (React app, Vue app, custom framework)
+- ✅ Detects elements Playwright misses (dropdown menus, tooltips, modals)
+- **Result:** 95% accuracy with LLM analysis
+
+#### Hybrid Observation Architecture
+
+```
+Step 1: Playwright Baseline (200ms, $0, 30% accuracy)
+├── CSS selector scan: buttons, forms, inputs, links
+├── Fast, deterministic, free
+└── Provides foundation for LLM analysis
+
+Step 2: LLM Enhancement (3000ms, $0.015, +65% accuracy)
+├── Analyze HTML + Playwright results
+├── Find custom components, shadow DOM elements
+├── Understand semantic context and page patterns
+├── Suggest better selectors for test stability
+└── Identify missed elements with explanations
+
+Step 3: Merge Results (total 95% accuracy)
+├── Combine Playwright + LLM findings
+├── Deduplicate elements by selector
+├── Add semantic metadata (purpose, confidence)
+└── Return enhanced element list
+
+Future (Sprint 10): Learning System
+├── Cache LLM patterns for reuse (100ms, $0, 95% accuracy)
+├── Learn from user feedback on missed elements
+└── Continuous improvement without re-querying LLM
+```
+
+#### Cost & Performance Analysis
+
+| Visit # | Method | Time | Cost | Elements Found | Accuracy |
+|---------|--------|------|------|----------------|----------|
+| 1st | Playwright only | 200ms | $0 | 5 (30%) | 30% |
+| 1st | Playwright + LLM | 3200ms | $0.015 | 15 (95%) | 95% |
+| 2nd+ | Playwright + Cache | 250ms | $0 | 15 (95%) | 95% |
+| 10th+ | Cache only | 100ms | $0 | 15 (98%) | 98% |
+
+**Monthly Cost Estimate:**
+- 1,000 unique pages/month: $15
+- 10,000 page visits (90% cached): $165
+- Learning system reduces cost by 90% after Sprint 10
+
+#### LLM Provider: Azure OpenAI (Primary) + Cerebras (Backup)
+
+**Why Azure OpenAI:**
+- ✅ Enterprise SLA guarantees (99.9% uptime)
+- ✅ No Cloudflare blocks (dedicated endpoint)
+- ✅ GDPR/SOC2 compliant (data stays in your region)
+- ✅ GPT-4o model (best quality for analysis)
+- ✅ Already configured in company infrastructure
+
+**Setup:**
+```bash
+# Azure OpenAI credentials (already configured)
+export AZURE_OPENAI_API_KEY="93b1cbe69e0b46dfbf48b2067ffac258"
+export AZURE_OPENAI_ENDPOINT="https://chatgpt-uat.openai.azure.com"
+export AZURE_OPENAI_MODEL="ChatGPT-UAT"  # GPT-4o deployment
+
+# Verify installation
+pip install openai
+python -c "from openai import AzureOpenAI; print('OK')"
+```
+
+**Why Cerebras (Backup):**
+- ✅ Free tier available for development/testing
+- ✅ Fast inference (10x faster than OpenAI)
+- ✅ Open-source models (Llama 3.1-8b, 3.1-70b)
+- ❌ May be blocked by Cloudflare in some regions
+- ✅ Good fallback when Azure has issues
+
+**Setup:**
+```bash
+# Install Cerebras SDK
+pip install cerebras-cloud-sdk
+
+# Set API key (get from https://cloud.cerebras.ai)
+export CEREBRAS_API_KEY="your-key-here"
+
+# Verify installation
+python -c "from cerebras.cloud.sdk import Cerebras; print('OK')"
+```
+
+**Models:**
+- **Azure OpenAI**: `gpt-4o` (best for analysis, ~$0.015 per page)
+- **Cerebras**: `llama3.1-8b` (fast, free, fallback)
+
+**LLM Response Format:**
+```json
+{
+  "enhanced_elements": [
+    {
+      "type": "button|input|link|form|custom",
+      "selector": "CSS or XPath selector",
+      "text": "visible text content",
+      "semantic_purpose": "login|search|navigation|submit|...",
+      "attributes": {"role": "button", "data-testid": "...", ...},
+      "confidence": 0.0-1.0,
+      "why_important": "explanation of element's purpose"
+    }
+  ],
+  "suggested_selectors": {
+    "login_button": "[data-testid='login'], button:has-text('Login')",
+    "username_field": "input[name='username'], #username"
+  },
+  "page_patterns": {
+    "page_type": "login|dashboard|form|e-commerce|...",
+    "framework": "react|vue|angular|custom",
+    "complexity": "simple|medium|complex"
+  },
+  "missed_by_playwright": [
+    {
+      "element": "Sign out dropdown",
+      "reason": "Hidden until hover, custom component",
+      "selector": "[data-menu='user-dropdown'] > li:last-child"
+    }
+  ]
+}
+```
+
+#### Agent-Specific LLM Usage
+
+**ObservationAgent (Sprint 8):**
+- Uses LLM for web element detection
+- Fallback: Works without LLM (Playwright-only mode)
+- Configuration: `use_llm=true` (default)
+
+**RequirementsAgent (Sprint 8):**
+- Uses LLM for test scenario generation
+- Converts UI elements → Given/When/Then scenarios
+- Example: "Given user is on login page, When user enters valid credentials, Then user should be redirected to dashboard"
+
+**AnalysisAgent (Sprint 9):**
+- Uses LLM for risk assessment
+- Analyzes test scenarios for priority and complexity
+- No LLM fallback (critical for risk scoring)
+
+**EvolutionAgent (Sprint 9):**
+- Uses LLM for Playwright test code generation
+- Converts test scenarios → executable test code
+- Example: Generates `test('user can login', async ({ page }) => { ... })`
+
+**OrchestrationAgent (Sprint 10):**
+- No LLM usage (deterministic workflow coordination)
+
+**ReportingAgent (Sprint 10):**
+- Optional LLM for natural language report generation
+- Fallback: Template-based reports
+
+#### Configuration
+
+**Environment Variables:**
+```bash
+# PRIMARY: Azure OpenAI (enterprise-grade, recommended)
+AZURE_OPENAI_API_KEY=your-azure-key
+AZURE_OPENAI_ENDPOINT=https://your-endpoint.openai.azure.com
+AZURE_OPENAI_MODEL=ChatGPT-UAT  # Your deployment name
+
+# BACKUP: Cerebras (free, fast, fallback)
+CEREBRAS_API_KEY=your-cerebras-key  # Optional
+CEREBRAS_MODEL=llama3.1-8b
+
+# Optional overrides
+AZURE_API_VERSION=2024-02-15-preview  # Default
+LLM_TEMPERATURE=0.3    # Default: 0.3 (deterministic)
+LLM_MAX_TOKENS=2000    # Default: 2000
+```
+
+**Agent Configuration:**
+```python
+# ObservationAgent with Azure OpenAI (recommended)
+observation_agent = ObservationAgent(config={
+    "use_llm": True,        # Enable LLM enhancement
+    "llm_provider": "azure", # Use Azure OpenAI (default)
+    "playwright_only": False
+})
+
+# With Cerebras backup
+observation_agent = ObservationAgent(config={
+    "use_llm": True,
+    "llm_provider": "azure",
+    "fallback_provider": "cerebras"  # Use if Azure fails
+})
+
+# Playwright-only mode (faster, less accurate)
+observation_agent = ObservationAgent(config={
+    "use_llm": False,
+    "playwright_only": True
+})
+```
+
+#### Error Handling
+
+**LLM Failures:**
+- Network timeout → Retry 3x with exponential backoff
+- API key invalid → Fall back to Playwright-only mode
+- Rate limit exceeded → Queue requests, use cached results
+- Malformed JSON → Log error, use Playwright-only results
+
+**Graceful Degradation:**
+All agents with LLM support include fallback logic to continue operation without LLM if:
+- API key not configured
+- Network unavailable
+- LLM service down
+- Rate limits exceeded
+
+**Monitoring:**
+- Track LLM usage: requests/day, cost/month, cache hit rate
+- Alert on: API errors >5%, response time >10s, cost >$200/month
+- Dashboard: Show Playwright vs LLM element counts, accuracy metrics
+
+---
+
 ### Sprint 8: Observation & Requirements Agents (Feb 6 - Feb 19, 2026)
 
-**Goal:** Deploy agents that analyze code and extract requirements
+**Goal:** Deploy agents that observe web applications and extract test requirements
 
 **Story Points:** 42 (11 days duration)
 
@@ -123,31 +408,36 @@
 | Task ID | Description | Dependencies | Points | Duration | Critical Path |
 |---------|-------------|--------------|--------|----------|---------------|
 | 8A.1 | Implement ObservationAgent class | Sprint 7 | 8 | 3 days | 0 (START) |
-| 8A.2 | AST parsing for Python (ast module) | 8A.1 | 5 | 2 days | 3 |
-| 8A.3 | Extract functions, classes, imports | 8A.2 | 3 | 1 day | 5 |
-| 8A.4 | Integration with Phase 2 (wrap existing) | 8A.3 | 5 | 2 days | 6 |
-| 8A.5 | Unit tests for ObservationAgent (30+ tests) | 8A.4 | 2 | 1 day | 8 |
+| 8A.2 | Web crawling with Playwright (page navigation, DOM analysis) | 8A.1 | 5 | 2 days | 3 |
+| 8A.3 | LLM integration with Cerebras (element detection, semantic analysis) | 8A.2 | 5 | 2 days | 5 |
+| 8A.4 | Hybrid observation: Playwright baseline + LLM enhancement | 8A.3 | 3 | 1 day | 7 |
+| 8A.5 | Integration with Phase 2 Stagehand service | 8A.4 | 5 | 2 days | 8 |
+| 8A.6 | Unit tests for ObservationAgent (30+ tests, LLM mocking) | 8A.5 | 2 | 1 day | 10 |
 
-**Total: 23 points, 9 days**
+**Total: 28 points, 11 days**
 
 #### Developer B Tasks (19 points, parallel)
 
 | Task ID | Description | Dependencies | Points | Duration |
 |---------|-------------|--------------|--------|----------|
 | 8B.1 | Implement RequirementsAgent class | Sprint 7 | 8 | 3 days |
-| 8B.2 | NLP for test requirement extraction | 8B.1 | 5 | 2 days |
-| 8B.3 | Pattern matching (Given/When/Then) | 8B.2 | 3 | 1 day |
-| 8B.4 | Unit tests for RequirementsAgent (30+ tests) | 8B.3 | 3 | 1 day |
-| 8B.5 | Integration tests (Observation → Requirements) | 8A.5, 8B.4 | 5 | 2 days |
+| 8B.2 | LLM integration for test scenario generation (Given/When/Then) | 8B.1 | 5 | 2 days |
+| 8B.3 | Pattern matching and priority assignment (critical/high/medium/low) | 8B.2 | 3 | 1 day |
+| 8B.4 | Unit tests for RequirementsAgent (30+ tests, LLM mocking) | 8B.3 | 3 | 1 day |
+| 8B.5 | Integration tests (Observation → Requirements) | 8A.6, 8B.4 | 5 | 2 days |
 | 8B.6 | Collect first 100+ user feedback samples | Sprint 7 | 3 | Continuous |
 
-**Total: 19 points, 6 days**
+**Total: 27 points, 6 days**
 
 #### Sprint 8 Success Criteria
 
-- ✅ Observation Agent analyzes Python files (functions, classes, complexity)
-- ✅ Requirements Agent extracts test requirements (Given/When/Then)
-- ✅ Integration test: Observation → Requirements end-to-end
+- ✅ Observation Agent crawls web application pages (buttons, forms, navigation)
+- ✅ LLM integration finds 65% more elements than Playwright-only
+- ✅ Hybrid observation: Playwright baseline (200ms) + LLM enhancement (3s)
+- ✅ Cerebras API configured with llama3.1-8b model
+- ✅ Graceful degradation: Works without LLM (Playwright-only fallback)
+- ✅ Requirements Agent extracts test scenarios from UI elements (Given/When/Then)
+- ✅ Integration test: Observation → Requirements end-to-end (web app → test requirements)
 - ✅ 30+ unit tests per agent, 95%+ coverage
 - ✅ 100+ user feedback samples collected
 - ✅ First 2 agents registered and operational
@@ -165,35 +455,36 @@
 | Task ID | Description | Dependencies | Points | Duration | Critical Path |
 |---------|-------------|--------------|--------|----------|---------------|
 | 9A.1 | Implement EvolutionAgent class | Sprint 8 | 13 | 5 days | 0 (START) |
-| 9A.2 | LLM integration (OpenAI GPT-4 API) | 9A.1 | 8 | 3 days | 5 |
-| 9A.3 | Test generation prompt templates (3 variants) | 9A.2 | 5 | 2 days | 8 |
-| 9A.4 | Caching layer (30% cost reduction) | 9A.3 | 3 | 1 day | 10 |
-| 9A.5 | Unit tests for EvolutionAgent (30+ tests) | 9A.4 | 1 | 1 day | 11 |
+| 9A.2 | LLM integration with Cerebras (test code generation) | 9A.1 | 8 | 3 days | 5 |
+| 9A.3 | Test generation prompt templates (Playwright/Stagehand, 3 variants) | 9A.2 | 5 | 2 days | 8 |
+| 9A.4 | Caching layer with pattern storage (90% cost reduction after Sprint 10) | 9A.3 | 3 | 1 day | 10 |
+| 9A.5 | Unit tests for EvolutionAgent (30+ tests, LLM mocking) | 9A.4 | 1 | 1 day | 11 |
 
-**Total: 26 points, 11 days**
+**Total: 30 points, 12 days**
 
 #### Developer B Tasks (21 points, parallel)
 
 | Task ID | Description | Dependencies | Points | Duration |
 |---------|-------------|--------------|--------|----------|
 | 9B.1 | Implement AnalysisAgent class | Sprint 8 | 8 | 3 days |
-| 9B.2 | Dependency graph analysis (imports, calls) | 9B.1 | 5 | 2 days |
-| 9B.3 | Risk scoring (complexity, churn, bugs) | 9B.2 | 5 | 2 days |
-| 9B.4 | Unit tests for AnalysisAgent (30+ tests) | 9B.3 | 3 | 1 day |
-| 9B.5 | Integration tests (4-agent coordination) | 9A.5, 9B.4 | 5 | 2 days |
-| 9B.6 | First automated prompt optimization | Sprint 8 feedback | 3 | 1 day |
+| 9B.2 | LLM integration for risk assessment (UI element risk scoring) | 9B.1 | 5 | 2 days |
+| 9B.3 | Priority assignment (critical/high/medium/low based on LLM analysis) | 9B.2 | 5 | 2 days |
+| 9B.4 | Unit tests for AnalysisAgent (30+ tests, LLM mocking) | 9B.3 | 3 | 1 day |
+| 9B.5 | Integration tests (4-agent coordination: Observe → Requirements → Analyze → Evolve) | 9A.5, 9B.4 | 5 | 2 days |
+| 9B.6 | First automated prompt optimization (A/B testing) | Sprint 8 feedback | 3 | 1 day |
 
-**Total: 21 points, 7 days**
+**Total: 29 points, 7 days**
 
 #### Sprint 9 Success Criteria
 
-- ✅ Evolution Agent generates 10+ valid pytest tests
-- ✅ Analysis Agent produces risk scores (0.0-1.0)
-- ✅ LLM integration with GPT-4 operational
-- ✅ Caching reduces LLM calls by 30%
-- ✅ 4-agent workflow: Observe → Require → Analyze → Evolve
-- ✅ First optimized prompt variant deployed (A/B tested)
-- ✅ Token usage <10,000 per test cycle
+- ✅ Evolution Agent generates 10+ valid Playwright/Stagehand tests from test scenarios
+- ✅ LLM generates executable test code (async/await, page navigation, assertions)
+- ✅ Analysis Agent produces risk scores for UI elements (0.0-1.0, LLM-based)
+- ✅ LLM integration with Cerebras operational (llama3.1-8b for code generation)
+- ✅ Caching reduces LLM calls by 30% (pattern reuse for similar pages)
+- ✅ 4-agent workflow: Observe Web App → Extract Requirements → Analyze UI Risks → Generate Test Code
+- ✅ First optimized prompt variant deployed (A/B tested for accuracy)
+- ✅ Token usage <10,000 per test cycle (with caching)
 
 ---
 
