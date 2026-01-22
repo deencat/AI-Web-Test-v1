@@ -9,6 +9,7 @@ import re
 import json
 import logging
 from enum import Enum
+from llm.azure_client import AzureClient, get_azure_client
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,22 @@ class RequirementsAgent(BaseAgent):
     - Page Object Model organization
     """
     
+    def __init__(self, agent_id: str, agent_type: str, priority: int, 
+                 message_queue, config: Optional[Dict] = None):
+        """Initialize RequirementsAgent with optional LLM support"""
+        super().__init__(agent_id, agent_type, priority, message_queue, config)
+        
+        # Initialize LLM client if enabled
+        self.use_llm = config.get("use_llm", False) if config else False
+        self.llm_client = None
+        if self.use_llm:
+            self.llm_client = get_azure_client()
+            if self.llm_client.enabled:
+                logger.info("RequirementsAgent initialized with LLM enhancement (Azure OpenAI)")
+            else:
+                logger.warning("LLM requested but not available, falling back to pattern-based generation")
+                self.use_llm = False
+    
     @property
     def capabilities(self) -> List[AgentCapability]:
         return [
@@ -104,7 +121,7 @@ class RequirementsAgent(BaseAgent):
             
             # Stage 3: Generate functional test scenarios
             functional_scenarios = await self._generate_functional_scenarios(
-                user_journeys, element_groups, page_context
+                user_journeys, element_groups, page_context, page_structure
             )
             logger.debug(f"Generated {len(functional_scenarios)} functional scenarios")
             
@@ -160,7 +177,7 @@ class RequirementsAgent(BaseAgent):
                 result=result,
                 confidence=result["quality_indicators"]["confidence"],
                 execution_time_seconds=time.time() - start_time,
-                token_usage=self._estimate_token_usage(ui_elements, all_scenarios)
+                metadata={"token_usage": self._estimate_token_usage(ui_elements, all_scenarios)}
             )
             
         except Exception as e:
@@ -251,11 +268,33 @@ class RequirementsAgent(BaseAgent):
     
     async def _generate_functional_scenarios(self, user_journeys: List[Dict],
                                              element_groups: Dict,
-                                             page_context: Dict) -> List[Scenario]:
-        """Generate functional test scenarios using patterns"""
+                                             page_context: Dict,
+                                             page_structure: Dict) -> List[Scenario]:
+        """Generate functional test scenarios using LLM or patterns"""
         scenarios = []
         
-        # Pattern-based scenario generation
+        # Try LLM-based generation first if enabled
+        if self.use_llm and self.llm_client:
+            logger.info("Using LLM for high-quality scenario generation")
+            # Reconstruct ui_elements from element_groups
+            ui_elements = []
+            for group_elements in element_groups.values():
+                ui_elements.extend(group_elements)
+            
+            llm_scenarios = await self._generate_scenarios_with_llm(
+                ui_elements, page_structure, page_context
+            )
+            
+            if llm_scenarios:
+                scenarios.extend(llm_scenarios)
+                logger.info(f"LLM generated {len(llm_scenarios)} scenarios with avg confidence "
+                           f"{sum(s.confidence for s in llm_scenarios)/len(llm_scenarios):.2f}")
+                return scenarios  # Return LLM scenarios if successful
+            else:
+                logger.warning("LLM scenario generation failed, falling back to patterns")
+        
+        # Fallback: Pattern-based scenario generation
+        logger.info("Using pattern-based scenario generation")
         pattern_scenarios = self._generate_scenarios_from_patterns(
             user_journeys, element_groups
         )
@@ -600,6 +639,171 @@ class RequirementsAgent(BaseAgent):
             "tags": scenario.tags,
             "confidence": scenario.confidence
         }
+    
+    async def _generate_scenarios_with_llm(self, ui_elements: List[Dict], 
+                                           page_structure: Dict,
+                                           page_context: Dict) -> List[Scenario]:
+        """Generate high-quality test scenarios using LLM"""
+        if not self.llm_client or not self.llm_client.enabled:
+            logger.warning("LLM not available, falling back to pattern-based generation")
+            return []
+        
+        try:
+            # Build prompt for LLM
+            prompt = self._build_scenario_generation_prompt(
+                ui_elements, page_structure, page_context
+            )
+            
+            # Call Azure OpenAI
+            response = self.llm_client.client.chat.completions.create(
+                model=self.llm_client.deployment,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": """You are an expert test analyst specializing in BDD (Behavior-Driven Development) test scenarios.
+Generate comprehensive test scenarios following these standards:
+- BDD (Gherkin): Given/When/Then format
+- ISTQB: Equivalence partitioning, boundary value analysis
+- WCAG 2.1: Accessibility testing (keyboard, screen readers, contrast)
+- OWASP Top 10: Security testing (XSS, SQL injection, CSRF)
+
+Always respond with valid JSON containing high-quality test scenarios."""
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.4,  # Balance creativity with consistency
+                max_tokens=3000,
+                response_format={"type": "json_object"}
+            )
+            
+            # Parse response
+            result = json.loads(response.choices[0].message.content)
+            scenarios = []
+            
+            # Convert LLM output to Scenario objects
+            for idx, scenario_data in enumerate(result.get("scenarios", [])[:15]):  # Limit to 15
+                scenario = Scenario(
+                    scenario_id=scenario_data.get("scenario_id", f"REQ-LLM-{idx+1:03d}"),
+                    title=scenario_data.get("title", "Untitled Scenario"),
+                    given=scenario_data.get("given", ""),
+                    when=scenario_data.get("when", ""),
+                    then=scenario_data.get("then", ""),
+                    priority=self._map_priority(scenario_data.get("priority", "medium")),
+                    scenario_type=self._map_scenario_type(scenario_data.get("scenario_type", "functional")),
+                    tags=scenario_data.get("tags", [])
+                )
+                scenario.confidence = scenario_data.get("confidence", 0.90)
+                scenarios.append(scenario)
+            
+            logger.info(f"LLM generated {len(scenarios)} high-quality scenarios")
+            return scenarios
+            
+        except Exception as e:
+            logger.error(f"Error generating scenarios with LLM: {e}")
+            return []
+    
+    def _build_scenario_generation_prompt(self, ui_elements: List[Dict], 
+                                          page_structure: Dict,
+                                          page_context: Dict) -> str:
+        """Build prompt for LLM scenario generation"""
+        # Summarize UI elements
+        element_summary = self._summarize_elements(ui_elements)
+        
+        url = page_structure.get("url", "unknown")
+        page_type = page_context.get("page_type", "unknown")
+        framework = page_context.get("framework", "unknown")
+        
+        prompt = f"""Generate comprehensive BDD test scenarios for this web page.
+
+**Page Information:**
+- URL: {url}
+- Page Type: {page_type}
+- Framework: {framework}
+- UI Elements: {len(ui_elements)} total
+
+**UI Elements Summary:**
+{element_summary}
+
+**Requirements:**
+1. Generate 10-15 high-quality test scenarios
+2. Cover multiple scenario types:
+   - Functional: Core features and user workflows
+   - Accessibility: WCAG 2.1 (keyboard navigation, screen readers, ARIA labels)
+   - Security: OWASP Top 10 (input validation, XSS, CSRF)
+   - Edge Cases: Boundary values, error handling
+3. Follow BDD Given/When/Then format
+4. Assign priorities: critical, high, medium, low
+5. Include confidence scores (0.0-1.0)
+
+**Required JSON Response Format:**
+{{
+  "scenarios": [
+    {{
+      "scenario_id": "REQ-F-001",
+      "title": "Short descriptive title",
+      "given": "Preconditions (user state, page state)",
+      "when": "User action or trigger event",
+      "then": "Expected outcome or system behavior",
+      "priority": "critical|high|medium|low",
+      "scenario_type": "functional|accessibility|security|edge_case",
+      "tags": ["tag1", "tag2"],
+      "confidence": 0.90
+    }}
+  ]
+}}
+
+Focus on **realistic user scenarios** and **important test coverage**. Be specific and actionable."""
+        
+        return prompt
+    
+    def _summarize_elements(self, ui_elements: List[Dict]) -> str:
+        """Summarize UI elements for LLM prompt"""
+        element_counts = {}
+        for elem in ui_elements:
+            elem_type = elem.get("type", "unknown")
+            element_counts[elem_type] = element_counts.get(elem_type, 0) + 1
+        
+        summary_lines = [f"- {count} {elem_type}(s)" 
+                         for elem_type, count in sorted(element_counts.items())]
+        
+        # Add sample elements
+        sample_elements = []
+        for elem in ui_elements[:10]:
+            elem_type = elem.get("type", "unknown")
+            text = elem.get("text", "")[:50]
+            if text:
+                sample_elements.append(f"  • [{elem_type}] {text}")
+        
+        summary = "\n".join(summary_lines)
+        if sample_elements:
+            summary += "\n\nSample Elements:\n" + "\n".join(sample_elements)
+        
+        return summary
+    
+    def _map_priority(self, priority_str: str) -> ScenarioPriority:
+        """Map string priority to enum"""
+        mapping = {
+            "critical": ScenarioPriority.CRITICAL,
+            "high": ScenarioPriority.HIGH,
+            "medium": ScenarioPriority.MEDIUM,
+            "low": ScenarioPriority.LOW
+        }
+        return mapping.get(priority_str.lower(), ScenarioPriority.MEDIUM)
+    
+    def _map_scenario_type(self, type_str: str) -> ScenarioType:
+        """Map string scenario type to enum"""
+        mapping = {
+            "functional": ScenarioType.FUNCTIONAL,
+            "accessibility": ScenarioType.ACCESSIBILITY,
+            "security": ScenarioType.SECURITY,
+            "edge_case": ScenarioType.EDGE_CASE,
+            "performance": ScenarioType.PERFORMANCE,
+            "usability": ScenarioType.USABILITY
+        }
+        return mapping.get(type_str.lower(), ScenarioType.FUNCTIONAL)
     
     def _estimate_token_usage(self, ui_elements: List[Dict], 
                               scenarios: List[Scenario]) -> int:

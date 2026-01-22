@@ -294,7 +294,7 @@ This document is part of the Phase 3 documentation suite. For complete context, 
 | **EA.2** | ✅ | Create `backend/messaging/message_bus_stub.py` | 2 days | In-memory message bus stub (80+ lines) |
 | **EA.3** | ✅ | Create `backend/agents/agent_registry_stub.py` | 1 day | In-memory agent registry (60+ lines) |
 | **EA.4** | ✅ | Create `backend/agents/observation_agent.py` with **Azure OpenAI LLM** | 2 days | ObservationAgent with Playwright + Azure GPT-4o (250+ lines) - Tested with Three HK website ✅ |
-| **EA.5** | ⏳ | Create `backend/agents/requirements_agent.py` following **industry best practices** (BDD, WCAG 2.1, OWASP, ISTQB) | 2 days | RequirementsAgent: 800+ lines with functional scenarios, accessibility (WCAG 2.1), security (OWASP Top 10), edge cases, test data extraction, coverage metrics, LLM integration |
+| **EA.5** | ✅ | Create `backend/agents/requirements_agent.py` following **industry best practices** (BDD, WCAG 2.1, OWASP, ISTQB) | 2 days | RequirementsAgent: 800+ lines with Azure GPT-4o LLM integration - **E2E Tested:** Three HK (261 elements → 18 scenarios, conf: 0.90, 20.9s) ✅ |
 | **EA.6** | ⏳ | Write unit tests (`tests/agents/`) | 1 day | 50+ unit tests, 95%+ coverage |
 
 **Total: 11 days, 26 story points, ZERO dependencies on Developer B or Phase 2**
@@ -316,8 +316,9 @@ This document is part of the Phase 3 documentation suite. For complete context, 
   6. Edge case scenario generation (boundary value analysis, negative tests)
   7. Test data extraction with validation rules
   8. Coverage metrics calculation
-- **Output:** 12+ test scenarios per page (functional, accessibility, security, edge cases) with Given/When/Then format, priority (critical/high/medium/low), confidence scores, test data patterns
-- **LLM Integration:** Azure GPT-4o for complex scenario generation (~2,000 tokens), pattern-based fallback for reliability
+- **Output:** 18 test scenarios per page (functional: 3, accessibility: 8, security: 4, edge cases: 3) with Given/When/Then format, priority (critical/high/medium/low), confidence scores (0.90), test data patterns
+- **LLM Integration:** Azure GPT-4o for complex scenario generation (~12,500 tokens), pattern-based fallback for reliability
+- **E2E Verified:** Three HK website (261 UI elements → 18 BDD scenarios in 20.9s, confidence: 0.90) ✅
 - **Quality Metrics:** 100% UI coverage, 0.85+ confidence, traceability to UI elements
 
 **Status Update (Jan 21):** ✅ Tasks EA.1-EA.4 complete (21 points), EA.5-EA.6 remaining (5 points). **Documentation updated with comprehensive RequirementsAgent specification following industry best practices.**

@@ -64,13 +64,13 @@ def three_hk_observation_data():
             {"type": "button", "selector": "#newsletter-submit", "text": "訂閱", "actions": ["click"]},
             
             # Footer
-            {"type": "link", "selector": "#footer-privacy", "text": "私隱?��?", "href": "/privacy"},
-            {"type": "link", "selector": "#footer-terms", "text": "條款?�細??, "href": "/terms"},
-            {"type": "link", "selector": "#footer-contact", "text": "?�絡?��?, "href": "/contact"}
+            {"type": "link", "selector": "#footer-privacy", "text": "Privacy Policy", "href": "/privacy"},
+            {"type": "link", "selector": "#footer-terms", "text": "Terms & Conditions", "href": "/terms"},
+            {"type": "link", "selector": "#footer-contact", "text": "Contact Us", "href": "/contact"}
         ],
         "page_structure": {
             "url": "https://www.three.com.hk/",
-            "title": "3香港 - 5G網絡?��?",
+            "title": "3HK - 5G Network Provider",
             "forms": ["#newsletter-form"],
             "navigation": ["#nav-5g-plans", "#nav-broadband", "#nav-roaming"]
         },
@@ -89,6 +89,7 @@ class TestObservationToRequirements:
     async def test_process_three_hk_observation(self, requirements_agent, three_hk_observation_data):
         """Test processing real Three HK observation data"""
         task = TaskContext(
+            conversation_id="integration-test-conv",
             task_id="integration-three-hk",
             task_type="requirement_extraction",
             payload=three_hk_observation_data
@@ -161,6 +162,7 @@ class TestObservationToRequirements:
     async def test_scenario_traceability(self, requirements_agent, three_hk_observation_data):
         """Test scenarios are traceable to UI elements"""
         task = TaskContext(
+            conversation_id="integration-test-conv",
             task_id="traceability-test",
             task_type="requirement_extraction",
             payload=three_hk_observation_data
@@ -190,6 +192,7 @@ class TestObservationToRequirements:
     async def test_coverage_calculation_accuracy(self, requirements_agent, three_hk_observation_data):
         """Test coverage calculation is accurate"""
         task = TaskContext(
+            conversation_id="integration-test-conv",
             task_id="coverage-test",
             task_type="requirement_extraction",
             payload=three_hk_observation_data
@@ -210,6 +213,7 @@ class TestObservationToRequirements:
     async def test_scenario_quality(self, requirements_agent, three_hk_observation_data):
         """Test generated scenarios follow BDD format"""
         task = TaskContext(
+            conversation_id="integration-test-conv",
             task_id="quality-test",
             task_type="requirement_extraction",
             payload=three_hk_observation_data
@@ -258,6 +262,7 @@ class TestMinimalObservation:
         }
         
         task = TaskContext(
+            conversation_id="integration-test-conv",
             task_id="minimal-test",
             task_type="requirement_extraction",
             payload=minimal_data
@@ -294,6 +299,7 @@ class TestComplexObservation:
         }
         
         task = TaskContext(
+            conversation_id="integration-test-conv",
             task_id="complex-test",
             task_type="requirement_extraction",
             payload=complex_data
@@ -319,6 +325,7 @@ class TestErrorHandling:
     async def test_missing_ui_elements(self, requirements_agent):
         """Test with missing UI elements"""
         task = TaskContext(
+            conversation_id="integration-test-conv",
             task_id="error-test-1",
             task_type="requirement_extraction",
             payload={
@@ -338,6 +345,7 @@ class TestErrorHandling:
     async def test_malformed_ui_elements(self, requirements_agent):
         """Test with malformed UI elements"""
         task = TaskContext(
+            conversation_id="integration-test-conv",
             task_id="error-test-2",
             task_type="requirement_extraction",
             payload={
