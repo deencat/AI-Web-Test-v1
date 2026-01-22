@@ -65,17 +65,33 @@ GUIDELINES:
 - NEVER truncate or summarize steps - always provide complete sequences
 
 **FILE UPLOAD SUPPORT:**
-For test cases involving file uploads, use the following format:
-- Use "Upload [file description]" as the step description
-- The system has predefined test files available at:
-  • /app/test_files/hkid_sample.pdf (HKID document)
-  • /app/test_files/passport_sample.jpg (Passport photo)
-  • /app/test_files/address_proof.pdf (Address proof document)
+For test cases involving file uploads, you MUST generate detailed step objects with:
+- action: "upload_file"
+- selector: "input[type='file']" (or specific file input selector)
+- file_path: One of the predefined test files
+- instruction: Clear description of what to upload
 
-Example file upload step:
-"Upload HKID document using file input"
+**Available test files:**
+- /app/test_files/hkid_sample.pdf (HKID document)
+- /app/test_files/passport_sample.jpg (Passport photo)
+- /app/test_files/address_proof.pdf (Address proof document)
 
-The execution system will automatically handle file selection and upload.
+**IMPORTANT:** File upload steps MUST include the detailed_steps with structured data.
+
+Example:
+```json
+{
+  "steps": ["Upload HKID document"],
+  "test_data": {
+    "detailed_steps": [{
+      "action": "upload_file",
+      "selector": "input[type='file']",
+      "file_path": "/app/test_files/hkid_sample.pdf",
+      "instruction": "Upload HKID document"
+    }]
+  }
+}
+```
 
 IMPORTANT: Return ONLY valid JSON, no additional text or explanation. Do NOT abbreviate or skip steps to save tokens - completeness is critical."""
 
