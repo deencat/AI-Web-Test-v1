@@ -46,6 +46,16 @@ export interface User {
   created_at: string;
 }
 
+// Loop Block type
+export interface LoopBlock {
+  id: string;
+  start_step: number;
+  end_step: number;
+  iterations: number;
+  description: string;
+  variables?: Record<string, string>;
+}
+
 // Test types
 export interface Test {
   id: string;
@@ -59,6 +69,10 @@ export interface Test {
   last_run?: string;
   execution_time?: number;
   steps?: TestStep[];
+  test_data?: {
+    loop_blocks?: LoopBlock[];
+    [key: string]: any;
+  };
 }
 
 export interface TestStep {

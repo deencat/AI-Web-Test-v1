@@ -734,7 +734,8 @@ class ExecutionService:
                             step_data["selector"] = "input[type='file']"
                 
                 # Extract XPath/CSS selector from instruction text if not already provided
-                if not step_data["selector"]:
+                # Skip selector extraction for navigate actions (to avoid matching URLs)
+                if not step_data["selector"] and step_data["action"] != "navigate":
                     # Try to extract XPath first (pattern: xpath "//..." or with xpath "//...")
                     xpath_patterns = [
                         r'xpath\s*"([^"]+)"',  # xpath "//button[@class='btn']" - double quotes
@@ -768,11 +769,23 @@ class ExecutionService:
                     if not step_data["value"]:
                         step_data["value"] = base_url
                         if "http" in step_description:
-                            urls = re.findall(r'https?://[^\s]+', step_description)
-                            if urls:
-                                # Strip trailing quotes, commas, periods, etc.
-                                url = urls[0].rstrip("'\",.;:)")
-                                step_data["value"] = url
+                            # Try to extract URL from quotes first (most reliable)
+                            # Pattern: "https://example.com" or 'https://example.com' (handles spaces after URL)
+                            quoted_url_match = re.search(r'["\']+(https?://[^\s"\']+)\s*["\']', step_description)
+                            if quoted_url_match:
+                                step_data["value"] = quoted_url_match.group(1)
+                                print(f"[DEBUG] Extracted URL from quotes: {step_data['value']}")
+                            else:
+                                # Fallback: extract URL and aggressively clean it
+                                urls = re.findall(r'https?://[^\s]+', step_description)
+                                if urls:
+                                    # Remove ALL trailing non-URL characters (quotes, punctuation, etc.)
+                                    url = urls[0]
+                                    # Strip trailing characters that shouldn't be in URLs
+                                    while url and url[-1] in '"\',.;:!?) \t\n':
+                                        url = url[:-1]
+                                    step_data["value"] = url
+                                    print(f"[DEBUG] Extracted URL (fallback, cleaned): {step_data['value']}")
                 
                 # For fill actions, extract value from instruction if not provided
                 if step_data["action"] == "fill" and not step_data["value"]:

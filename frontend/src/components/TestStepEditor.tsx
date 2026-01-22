@@ -1,25 +1,21 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { debounce } from 'lodash';
+import { LoopBlockEditor, LoopBlock } from './LoopBlockEditor';
 
 interface TestStepEditorProps {
   testId: number;
   initialSteps: string;
   initialVersion?: number;
-  loopBlocks?: Array<{
-    id: string;
-    start_step: number;
-    end_step: number;
-    iterations: number;
-    description: string;
-    variables?: Record<string, string>;
-  }>;
+  loopBlocks?: LoopBlock[];
   onSave?: (versionNumber: number) => void;
+  onLoopBlocksChange?: (loopBlocks: LoopBlock[]) => void;
 }
 
 interface SaveResponse {
   id: number;
-  version_number: number;
-  message: string;
+  current_version?: number;
+  title?: string;
+  [key: string]: any;
 }
 
 export const TestStepEditor: React.FC<TestStepEditorProps> = ({
@@ -27,7 +23,8 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
   initialSteps,
   initialVersion = 1,
   loopBlocks = [],
-  onSave
+  onSave,
+  onLoopBlocksChange
 }) => {
   const [steps, setSteps] = useState(initialSteps);
   const [savedSteps, setSavedSteps] = useState(initialSteps); // Track last saved content
@@ -36,6 +33,7 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showLoopBlocks, setShowLoopBlocks] = useState(true);
+  const [localLoopBlocks, setLocalLoopBlocks] = useState<LoopBlock[]>(loopBlocks);
 
   // Auto-save function (debounced)
   const autoSave = useCallback(
@@ -56,7 +54,7 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
           throw new Error('Not authenticated');
         }
 
-        const response = await fetch(`http://localhost:8000/api/v1/tests/${testId}/steps`, {
+        const response = await fetch(`http://localhost:8000/api/v1/tests/${testId}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -64,7 +62,9 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
           },
           body: JSON.stringify({
             steps: content.split('\n').filter(line => line.trim() !== ''),
-            change_reason: 'Auto-save edit'
+            test_data: {
+              loop_blocks: localLoopBlocks
+            }
           })
         });
 
@@ -74,13 +74,13 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
         }
 
         const data: SaveResponse = await response.json();
-        setCurrentVersion(data.version_number);
+        setCurrentVersion(data.current_version || currentVersion);
         setSavedSteps(content); // Update saved baseline
         setLastSaved(new Date());
-        console.log('✅ Auto-save complete - version', data.version_number);
+        console.log('✅ Auto-save complete - version', data.current_version);
         
         if (onSave) {
-          onSave(data.version_number);
+          onSave(data.current_version || currentVersion);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to save');
@@ -116,7 +116,7 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
         throw new Error('Not authenticated');
       }
 
-      const response = await fetch(`http://localhost:8000/api/v1/tests/${testId}/steps`, {
+      const response = await fetch(`http://localhost:8000/api/v1/tests/${testId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -124,7 +124,9 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
         },
         body: JSON.stringify({
           steps: steps.split('\n').filter(line => line.trim() !== ''),
-          change_reason: 'Manual save'
+          test_data: {
+            loop_blocks: localLoopBlocks
+          }
         })
       });
 
@@ -134,13 +136,13 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
       }
 
       const data: SaveResponse = await response.json();
-      setCurrentVersion(data.version_number);
+      setCurrentVersion(data.current_version || currentVersion);
       setSavedSteps(steps); // Update saved baseline
       setLastSaved(new Date());
-      console.log('✅ Manual save complete - version', data.version_number);
+      console.log('✅ Manual save complete - version', data.current_version);
       
       if (onSave) {
-        onSave(data.version_number);
+        onSave(data.current_version || currentVersion);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save');
@@ -173,6 +175,18 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
 
   return (
     <div className="test-step-editor">
+      {/* Loop Block Editor */}
+      <LoopBlockEditor
+        totalSteps={steps.split('\n').filter(line => line.trim() !== '').length}
+        loopBlocks={localLoopBlocks}
+        onChange={(newLoopBlocks) => {
+          setLocalLoopBlocks(newLoopBlocks);
+          if (onLoopBlocksChange) {
+            onLoopBlocksChange(newLoopBlocks);
+          }
+        }}
+      />
+
       {/* Loop Blocks Display */}
       {loopBlocks && loopBlocks.length > 0 && (
         <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
