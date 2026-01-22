@@ -34,12 +34,14 @@
    - **Technology:** Playwright for browser automation, DOM parsing
    - **Example:** Given `https://myapp.com/login`, finds login form with username/password fields, submit button
 
-2. **RequirementsAgent** - Test Requirement Extractor
-   - **What it does:** Converts UI observations into test scenarios
-   - **Inputs:** Page map from ObservationAgent
-   - **Outputs:** Test requirements in Given/When/Then format
-   - **Technology:** Pattern matching, NLP
-   - **Example:** "Given user is on login page, When user enters valid credentials and clicks submit, Then user should be redirected to dashboard"
+2. **RequirementsAgent** - Test Requirement Extractor ✅ E2E VERIFIED
+   - **What it does:** Converts UI observations into BDD test scenarios with industry standards
+   - **Inputs:** Page map from ObservationAgent (261 UI elements)
+   - **Outputs:** 18 test scenarios in Given/When/Then format (functional, WCAG 2.1 accessibility, OWASP security, edge cases)
+   - **Technology:** Azure GPT-4o LLM (~12,500 tokens), pattern-based fallback
+   - **Performance:** Confidence 0.90, 20.9s execution time
+   - **E2E Tested:** Three HK website (261 elements → 18 scenarios) ✅
+   - **Example:** "Given user is on 5G broadband pricing page, When user clicks '立即登記' button, Then registration form opens"
 
 3. **AnalysisAgent** - Risk & Priority Analyzer
    - **What it does:** Identifies which UI flows are most critical to test

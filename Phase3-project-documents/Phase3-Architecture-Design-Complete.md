@@ -333,8 +333,8 @@ user_feedback (generation_id, rating, comments, created_at)
 
 | Agent | Input | Output | LLM Usage |
 |-------|-------|--------|-----------|
-| **ObservationAgent** | URL | UI elements (262 found in Three HK test) | Azure GPT-4o |
-| **RequirementsAgent** | UI elements | Test scenarios (Given/When/Then) | Azure GPT-4o |
+| **ObservationAgent** | URL | UI elements (261 in Three HK test) | Azure GPT-4o ✅ |
+| **RequirementsAgent** | UI elements | 18 BDD scenarios (conf: 0.90) | Azure GPT-4o ✅ |
 | **AnalysisAgent** | Test scenarios | Risk scores (0.0-1.0) | Azure GPT-4o |
 | **EvolutionAgent** | Test scenarios | Playwright test code | Azure GPT-4o |
 | **OrchestrationAgent** | User request | Coordinated workflow | No LLM |
@@ -378,7 +378,7 @@ user_feedback (generation_id, rating, comments, created_at)
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ Stage 2: RequirementsAgent (INDUSTRY BEST PRACTICES)                   │
+│ Stage 2: RequirementsAgent (INDUSTRY BEST PRACTICES) ✅ VERIFIED E2E    │
 │ Input:   ObservationAgent output                                        │
 │ Process: - Group elements by page/component (Page Object Model)        │
 │          - Map user journeys (login flow, checkout flow)                │
@@ -388,7 +388,8 @@ user_feedback (generation_id, rating, comments, created_at)
 │          - Generate edge case scenarios (boundary tests)                │
 │          - Extract test data with validation rules                      │
 │          - Calculate coverage metrics                                   │
-│          - Azure GPT-4o scenario generation (~2,000 tokens)             │
+│          - Azure GPT-4o scenario generation (~12,500 tokens)            │
+│ VERIFIED: Three HK test: 261 elements → 18 scenarios in 20.9s          │
 │ Output:  {                                                              │
 │            "scenarios": [                                               │
 │              {                                                          │
@@ -410,19 +411,20 @@ user_feedback (generation_id, rating, comments, created_at)
 │              {field_name, field_type, validation, example_values}       │
 │            ],                                                           │
 │            "coverage_metrics": {                                        │
-│              ui_coverage_percent: 100.0,                                │
-│              scenario_count: 12,                                        │
-│              scenarios_by_type: {functional: 5, accessibility: 4,       │
-│                                  security: 2, edge_case: 1}             │
+│              ui_coverage_percent: 0.8,                                  │
+│              scenario_count: 18,                                        │
+│              scenarios_by_type: {functional: 3, accessibility: 8,       │
+│                                  security: 4, edge_case: 3}             │
 │            },                                                           │
 │            "quality_indicators": {                                      │
-│              completeness: 100.0,                                       │
-│              confidence: 0.89,                                          │
-│              priority_distribution: {critical: 3, high: 5, medium: 4}   │
+│              completeness: 0.8,                                         │
+│              confidence: 0.90,                                          │
+│              priority_distribution: {critical: 5, high: 9, medium: 4}   │
 │            }                                                            │
 │          }                                                              │
-│ Quality: confidence=0.89, 12+ scenarios/page, cost=$0.018/page         │
+│ Quality: confidence=0.90, 18 scenarios/page, cost=$0.020/page          │
 │ Standards: BDD (Gherkin), WCAG 2.1, OWASP, ISTQB, IEEE 830            │
+│ E2E Tested: Three HK (261 UI elements → 18 scenarios, 20.9s) ✅        │
 └────────────────────────────┬────────────────────────────────────────────┘
                              │
                              ▼
