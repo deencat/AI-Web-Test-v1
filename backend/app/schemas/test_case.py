@@ -27,7 +27,26 @@ class TestCaseBase(BaseModel):
     )
     expected_result: str = Field(..., min_length=1, description="Expected test result")
     preconditions: Optional[str] = Field(None, description="Test preconditions")
-    test_data: Optional[Dict[str, Any]] = Field(None, description="Optional test data as JSON")
+    test_data: Optional[Dict[str, Any]] = Field(
+        None, 
+        description="""Optional test data as JSON. Can include:
+        - detailed_steps: Array of step objects with action, selector, value fields
+        - loop_blocks: Array of loop definitions for repeating step sequences
+          Example loop block:
+          {
+            "id": "file_upload_loop",
+            "start_step": 2,
+            "end_step": 4,
+            "iterations": 5,
+            "description": "Upload 5 HKID documents",
+            "variables": {
+              "file_path": "/app/test_files/document_{iteration}.pdf"
+            }
+          }
+        Loop blocks allow repeating steps without duplication. Variable substitution 
+        supports {iteration} placeholder for current iteration number (1-based).
+        """
+    )
     
     # Day 7 Integration fields
     category_id: Optional[int] = Field(None, description="Knowledge base category ID")

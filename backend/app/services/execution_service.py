@@ -293,17 +293,182 @@ class ExecutionService:
             
             # Try to get detailed steps with selectors from test_data
             detailed_steps = None
+            loop_blocks = []
             if test_case.test_data:
                 test_data = test_case.test_data if isinstance(test_case.test_data, dict) else json.loads(test_case.test_data)
                 detailed_steps = test_data.get('detailed_steps', [])
+                loop_blocks = test_data.get('loop_blocks', [])
+            
+            # Validate and log loop blocks
+            if loop_blocks:
+                logger.info(f"[LOOP] Found {len(loop_blocks)} loop block(s): {loop_blocks}")
             
             total_steps = len(steps)
             passed_steps = 0
             failed_steps = 0
             
-            for idx, step_desc in enumerate(steps, start=1):
+            # Step execution with loop support
+            idx = 1  # Current step index (1-based)
+            
+            while idx <= total_steps:
+                step_desc = steps[idx - 1]  # 0-based list access
                 step_start = datetime.utcnow()
                 
+                # Check if this step starts a loop block
+                active_loop = self._find_loop_starting_at(idx, loop_blocks)
+                
+                if active_loop:
+                    logger.info(f"[LOOP] Starting loop block '{active_loop['id']}' at step {idx} for {active_loop['iterations']} iterations")
+                    
+                    # Execute loop body N times
+                    loop_passed = 0
+                    loop_failed = 0
+                    
+                    for iteration in range(1, active_loop["iterations"] + 1):
+                        logger.info(f"[LOOP] Iteration {iteration}/{active_loop['iterations']} of loop '{active_loop['id']}'")
+                        
+                        # Execute each step in the loop range
+                        for loop_step_idx in range(active_loop["start_step"], active_loop["end_step"] + 1):
+                            loop_step_desc = steps[loop_step_idx - 1]
+                            loop_step_start = datetime.utcnow()
+                            
+                            # Get detailed step data if available
+                            detailed_step = None
+                            if detailed_steps and loop_step_idx <= len(detailed_steps):
+                                detailed_step = detailed_steps[loop_step_idx - 1]
+                                
+                                # Apply variable substitution for this iteration
+                                detailed_step = self._apply_loop_variables(
+                                    detailed_step, 
+                                    iteration, 
+                                    active_loop.get("variables", {})
+                                )
+                            
+                            # Apply variable substitution to step description
+                            loop_step_desc_substituted = self._substitute_loop_variables(
+                                loop_step_desc, 
+                                iteration, 
+                                active_loop.get("variables", {})
+                            )
+                            
+                            try:
+                                if progress_callback:
+                                    await progress_callback({
+                                        "execution_id": execution.id,
+                                        "step": loop_step_idx,
+                                        "total_steps": total_steps,
+                                        "loop_iteration": iteration,
+                                        "loop_total": active_loop["iterations"],
+                                        "message": f"Executing step {loop_step_idx} (iteration {iteration}/{active_loop['iterations']}): {loop_step_desc_substituted}"
+                                    })
+                                
+                                # Execute the step with detailed data
+                                result = await self._execute_step(page, loop_step_desc_substituted, loop_step_idx, base_url, detailed_step)
+                                
+                                loop_step_end = datetime.utcnow()
+                                duration = (loop_step_end - loop_step_start).total_seconds()
+                                
+                                # Determine result for screenshot naming
+                                step_result = ExecutionResult.PASS if result["success"] else ExecutionResult.FAIL
+                                
+                                # Save screenshot with iteration number
+                                screenshot_path = await self._capture_screenshot_with_iteration(
+                                    page, 
+                                    execution.id, 
+                                    loop_step_idx,
+                                    iteration,
+                                    step_result
+                                )
+                                
+                                # Create step record with iteration info
+                                crud_execution.create_execution_step(
+                                    db=db,
+                                    execution_id=execution.id,
+                                    step_number=loop_step_idx,
+                                    step_description=f"{loop_step_desc_substituted} (iter {iteration}/{active_loop['iterations']})",
+                                    expected_result=result.get("expected", "Step completes successfully"),
+                                    result=step_result,
+                                    actual_result=result.get("actual", ""),
+                                    error_message=result.get("error"),
+                                    screenshot_path=screenshot_path,
+                                    duration_seconds=duration
+                                )
+                                
+                                if result["success"]:
+                                    loop_passed += 1
+                                else:
+                                    loop_failed += 1
+                                    
+                                    # Capture execution feedback for failed step
+                                    await self._capture_execution_feedback(
+                                        db=db,
+                                        execution_id=execution.id,
+                                        step_index=loop_step_idx - 1,
+                                        step_description=f"{loop_step_desc_substituted} (iter {iteration})",
+                                        error_message=result.get("error", "Step failed"),
+                                        page=page,
+                                        screenshot_path=screenshot_path,
+                                        duration_ms=int(duration * 1000),
+                                        tier_info=result.get("execution_history"),
+                                        strategy_used=result.get("strategy_used")
+                                    )
+                                    
+                                    # If step is critical and failed, stop loop execution
+                                    if result.get("critical", False):
+                                        logger.warning(f"[LOOP] Critical step {loop_step_idx} failed in iteration {iteration}, stopping loop")
+                                        break
+                            
+                            except Exception as e:
+                                loop_failed += 1
+                                loop_step_end = datetime.utcnow()
+                                duration = (loop_step_end - loop_step_start).total_seconds()
+                                
+                                # Capture failure screenshot
+                                screenshot_path = await self._capture_screenshot_with_iteration(
+                                    page, 
+                                    execution.id, 
+                                    loop_step_idx,
+                                    iteration,
+                                    ExecutionResult.ERROR
+                                )
+                                
+                                crud_execution.create_execution_step(
+                                    db=db,
+                                    execution_id=execution.id,
+                                    step_number=loop_step_idx,
+                                    step_description=f"{loop_step_desc} (iter {iteration}/{active_loop['iterations']})",
+                                    result=ExecutionResult.ERROR,
+                                    error_message=str(e),
+                                    screenshot_path=screenshot_path,
+                                    duration_seconds=duration
+                                )
+                                
+                                # Capture execution feedback
+                                await self._capture_execution_feedback(
+                                    db=db,
+                                    execution_id=execution.id,
+                                    step_index=loop_step_idx - 1,
+                                    step_description=f"{loop_step_desc} (iter {iteration})",
+                                    error_message=str(e),
+                                    page=page,
+                                    screenshot_path=screenshot_path,
+                                    duration_ms=int(duration * 1000)
+                                )
+                                
+                                logger.error(f"[LOOP] Exception in step {loop_step_idx} iteration {iteration}: {e}")
+                                break
+                    
+                    # Update counters with loop results
+                    passed_steps += loop_passed
+                    failed_steps += loop_failed
+                    
+                    logger.info(f"[LOOP] Completed loop '{active_loop['id']}': {loop_passed} passed, {loop_failed} failed")
+                    
+                    # Skip to after loop end
+                    idx = active_loop["end_step"] + 1
+                    continue
+                
+                # Execute single step normally (not in a loop)
                 # Get detailed step data if available (includes selector, action, etc.)
                 detailed_step = None
                 if detailed_steps and idx <= len(detailed_steps):
@@ -410,6 +575,9 @@ class ExecutionService:
                     
                     # Critical error, stop execution
                     break
+                
+                # Move to next step
+                idx += 1
             
             # Get video path if recorded
             video_path = None
@@ -823,6 +991,114 @@ class ExecutionService:
                 "actual": f"Error: {str(e)}",
                 "expected": step_description
             }
+    
+    def _find_loop_starting_at(self, step_idx: int, loop_blocks: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """
+        Find loop block that starts at the given step index.
+        
+        Args:
+            step_idx: Current step index (1-based)
+            loop_blocks: List of loop block definitions
+            
+        Returns:
+            Loop block definition or None
+        """
+        for loop in loop_blocks:
+            if loop.get("start_step") == step_idx:
+                # Validate loop block structure
+                if "end_step" in loop and "iterations" in loop:
+                    return loop
+                else:
+                    logger.warning(f"[LOOP] Invalid loop block structure: {loop}")
+        return None
+    
+    def _apply_loop_variables(
+        self, 
+        detailed_step: Dict[str, Any], 
+        iteration: int, 
+        loop_variables: Dict[str, str]
+    ) -> Dict[str, Any]:
+        """
+        Apply variable substitution to detailed step data.
+        
+        Args:
+            detailed_step: Step data with action, selector, value, file_path
+            iteration: Current iteration number (1-based)
+            loop_variables: Variable substitution templates
+            
+        Returns:
+            Modified detailed step with substituted values
+        """
+        if not detailed_step:
+            return detailed_step
+        
+        # Create a copy to avoid modifying original
+        modified_step = detailed_step.copy()
+        
+        # Apply iteration substitution to all string fields
+        for key, value in modified_step.items():
+            if isinstance(value, str):
+                # Replace {iteration} placeholder
+                modified_step[key] = value.replace("{iteration}", str(iteration))
+        
+        # Apply custom loop variables if provided
+        if loop_variables:
+            for key, template in loop_variables.items():
+                if key in modified_step and isinstance(template, str):
+                    # Replace {iteration} in template
+                    modified_step[key] = template.replace("{iteration}", str(iteration))
+        
+        return modified_step
+    
+    def _substitute_loop_variables(
+        self, 
+        text: str, 
+        iteration: int, 
+        loop_variables: Dict[str, str]
+    ) -> str:
+        """
+        Substitute loop variables in text string.
+        
+        Args:
+            text: Text containing placeholders
+            iteration: Current iteration number (1-based)
+            loop_variables: Variable substitution templates
+            
+        Returns:
+            Text with substituted values
+        """
+        # Replace {iteration} placeholder
+        result = text.replace("{iteration}", str(iteration))
+        
+        # Apply custom variables if provided
+        if loop_variables:
+            for key, template in loop_variables.items():
+                placeholder = f"{{{key}}}"
+                if placeholder in result:
+                    value = template.replace("{iteration}", str(iteration))
+                    result = result.replace(placeholder, value)
+        
+        return result
+    
+    async def _capture_screenshot_with_iteration(
+        self, 
+        page: Page, 
+        execution_id: int, 
+        step_number: int,
+        iteration: int,
+        result: ExecutionResult
+    ) -> Optional[str]:
+        """Capture screenshot for a step within a loop iteration."""
+        try:
+            filename = f"exec_{execution_id}_step_{step_number}_iter_{iteration}_{result.value}.png"
+            filepath = self.config.screenshot_dir / filename
+            
+            await page.screenshot(path=str(filepath), full_page=True)
+            
+            return str(filepath)
+        except Exception as e:
+            logger.error(f"Failed to capture screenshot: {e}")
+            return None
     
     async def _capture_screenshot(
         self, 

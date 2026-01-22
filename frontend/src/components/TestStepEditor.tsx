@@ -5,6 +5,14 @@ interface TestStepEditorProps {
   testId: number;
   initialSteps: string;
   initialVersion?: number;
+  loopBlocks?: Array<{
+    id: string;
+    start_step: number;
+    end_step: number;
+    iterations: number;
+    description: string;
+    variables?: Record<string, string>;
+  }>;
   onSave?: (versionNumber: number) => void;
 }
 
@@ -18,6 +26,7 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
   testId,
   initialSteps,
   initialVersion = 1,
+  loopBlocks = [],
   onSave
 }) => {
   const [steps, setSteps] = useState(initialSteps);
@@ -26,6 +35,7 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showLoopBlocks, setShowLoopBlocks] = useState(true);
 
   // Auto-save function (debounced)
   const autoSave = useCallback(
@@ -163,6 +173,69 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
 
   return (
     <div className="test-step-editor">
+      {/* Loop Blocks Display */}
+      {loopBlocks && loopBlocks.length > 0 && (
+        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex justify-between items-center mb-2">
+            <h3 className="text-sm font-semibold text-blue-800">
+              🔁 Loop Blocks ({loopBlocks.length})
+            </h3>
+            <button
+              onClick={() => setShowLoopBlocks(!showLoopBlocks)}
+              className="text-xs text-blue-600 hover:text-blue-800"
+            >
+              {showLoopBlocks ? '▼ Collapse' : '▶ Expand'}
+            </button>
+          </div>
+          
+          {showLoopBlocks && (
+            <div className="space-y-2">
+              {loopBlocks.map((loop) => (
+                <div key={loop.id} className="bg-white p-3 rounded border border-blue-200">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="font-medium text-sm text-gray-800">
+                        {loop.description}
+                      </div>
+                      <div className="mt-1 text-xs text-gray-600">
+                        <span className="inline-block mr-3">
+                          📍 Steps: {loop.start_step}-{loop.end_step}
+                        </span>
+                        <span className="inline-block mr-3">
+                          🔢 Iterations: {loop.iterations}
+                        </span>
+                        {loop.variables && Object.keys(loop.variables).length > 0 && (
+                          <span className="inline-block">
+                            🔀 Variables: {Object.keys(loop.variables).length}
+                          </span>
+                        )}
+                      </div>
+                      {loop.variables && Object.keys(loop.variables).length > 0 && (
+                        <div className="mt-2 text-xs bg-gray-50 p-2 rounded font-mono">
+                          {Object.entries(loop.variables).map(([key, value]) => (
+                            <div key={key} className="text-gray-700">
+                              {key}: <span className="text-blue-600">{value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="ml-3 px-2 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded">
+                      {loop.id}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          <div className="mt-3 text-xs text-gray-600">
+            <span className="mr-2">ℹ️</span>
+            Loop blocks repeat step sequences automatically without duplication.
+          </div>
+        </div>
+      )}
+      
       {/* Header with version and save button */}
       <div className="flex justify-between items-center mb-2">
         <label className="block text-sm font-medium text-gray-700">
