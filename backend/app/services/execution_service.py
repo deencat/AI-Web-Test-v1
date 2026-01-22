@@ -502,6 +502,7 @@ class ExecutionService:
                     "action": detailed_step.get('action', '') if detailed_step else None,
                     "selector": detailed_step.get('selector', '') if detailed_step else None,
                     "value": detailed_step.get('value', '') if detailed_step else None,
+                    "file_path": detailed_step.get('file_path', '') if detailed_step else None,
                     "instruction": step_description
                 }
                 
@@ -521,6 +522,48 @@ class ExecutionService:
                         step_data["action"] = "uncheck"
                     elif "verify" in desc_lower or "check" in desc_lower or "assert" in desc_lower:
                         step_data["action"] = "verify"
+                    # Detect file upload actions
+                    elif "upload" in desc_lower:
+                        step_data["action"] = "upload_file"
+                        # Auto-detect file path from description ONLY if not already provided
+                        if not step_data.get("file_path"):
+                            # First, try to extract explicit file path from description
+                            # Pattern: /path/to/file.ext or path/to/file.ext
+                            file_path_pattern = r'(/[\w\-/.]+\.(pdf|jpg|jpeg|png|gif|doc|docx|xls|xlsx|txt|csv))\b'
+                            file_path_match = re.search(file_path_pattern, step_description, re.IGNORECASE)
+                            
+                            if file_path_match:
+                                # User specified explicit file path in description
+                                step_data["file_path"] = file_path_match.group(1)
+                                logger.info(f"[Extracted from description] File path: {step_data['file_path']}")
+                            else:
+                                # Fallback to keyword-based auto-detection
+                                # Determine base path: /app/test_files/ (Docker) or backend/test_files/ (host)
+                                if os.path.exists("/app/test_files"):
+                                    base_path = "/app/test_files"
+                                else:
+                                    # Running on host - use absolute path from backend directory
+                                    backend_dir = Path(__file__).parent.parent.parent
+                                    base_path = str(backend_dir / "test_files")
+                                
+                                # Default to passport_sample.jpg for uploads (jpg/png accepted by most webapps)
+                                if "passport" in desc_lower:
+                                    step_data["file_path"] = f"{base_path}/passport_sample.jpg"
+                                elif "hkid" in desc_lower:
+                                    step_data["file_path"] = f"{base_path}/hkid_sample.pdf"
+                                elif "address" in desc_lower or "proof" in desc_lower:
+                                    step_data["file_path"] = f"{base_path}/address_proof.pdf"
+                                else:
+                                    # Default to jpg file for generic uploads (most widely accepted)
+                                    step_data["file_path"] = f"{base_path}/passport_sample.jpg"
+                                
+                                logger.info(f"[Auto-detected from keywords] File upload with file_path: {step_data.get('file_path')}")
+                        else:
+                            logger.info(f"[User-specified in detailed_step] File upload with file_path: {step_data.get('file_path')}")
+                        
+                        # Default file input selector for upload actions
+                        if not step_data["selector"]:
+                            step_data["selector"] = "input[type='file']"
                 
                 # Extract XPath/CSS selector from instruction text if not already provided
                 if not step_data["selector"]:
