@@ -76,6 +76,7 @@ class Tier2HybridExecutor:
             action = step.get("action", "").lower()
             instruction = step.get("instruction", "")
             value = step.get("value", "")
+            file_path = step.get("file_path", "")
             page_url = page.url
             
             logger.info(f"[Tier 2] Executing step: {action} - {instruction}")
@@ -96,6 +97,10 @@ class Tier2HybridExecutor:
                     "xpath": None,
                     "error": None
                 }
+            
+            # For upload_file actions, use file_path instead of value
+            if action == "upload_file":
+                value = file_path or value
             
             # Step 1: Try to get XPath from cache
             cached_xpath = self.cache_service.get_cached_xpath(page_url, instruction)
@@ -345,5 +350,32 @@ class Tier2HybridExecutor:
         elif action == "wait":
             # Element already waited for above
             pass
+        elif action == "upload_file":
+            # value contains the file_path for upload_file actions
+            file_path = value
+            if not file_path:
+                raise ValueError("No file_path provided for upload_file action")
+            
+            import os
+            if not os.path.exists(file_path):
+                raise FileNotFoundError(f"File not found: {file_path}")
+            
+            # Verify it's a file input element
+            tag_name = await element.evaluate("el => el.tagName")
+            input_type = await element.evaluate("el => el.type")
+            
+            if tag_name.lower() != "input" or input_type.lower() != "file":
+                logger.warning(
+                    f"[Tier 2] ⚠️ Element is not a file input "
+                    f"(tag={tag_name}, type={input_type}). Attempting upload anyway..."
+                )
+            
+            # Upload file using Playwright's set_input_files method
+            logger.info(f"[Tier 2] 📤 Uploading file via XPath: {file_path}")
+            await element.set_input_files(file_path, timeout=self.timeout_ms)
+            
+            # Small delay to allow file upload event handlers to complete
+            await asyncio.sleep(0.5)
+            logger.info(f"[Tier 2] ✅ File uploaded successfully")
         else:
             raise ValueError(f"Unsupported action type: {action}")

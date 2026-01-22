@@ -57,6 +57,7 @@ class Tier3StagehandExecutor:
             action = step.get("action", "").lower()
             instruction = step.get("instruction", "")
             value = step.get("value", "")
+            file_path = step.get("file_path", "")
             
             logger.info(f"[Tier 3] Executing step with full AI reasoning: {instruction}")
             
@@ -87,6 +88,37 @@ class Tier3StagehandExecutor:
                     raise AssertionError(
                         f"Expected '{value}' in extracted text, got '{result}'"
                     )
+            
+            elif action == "upload_file":
+                # Handle file upload action
+                upload_file_path = file_path or value
+                if not upload_file_path:
+                    raise ValueError("No file_path provided for upload_file action")
+                
+                import os
+                if not os.path.exists(upload_file_path):
+                    raise FileNotFoundError(f"File not found: {upload_file_path}")
+                
+                logger.info(f"[Tier 3] 📤 Uploading file: {upload_file_path}")
+                
+                # Try AI act() first with file upload instruction
+                try:
+                    # Attempt to use Stagehand's AI to find and interact with file input
+                    upload_instruction = f"{instruction}. File path: {upload_file_path}"
+                    result = await self.stagehand.page.act(upload_instruction)
+                    logger.info(f"[Tier 3] ✅ File upload via AI act() succeeded")
+                except Exception as act_error:
+                    # Fallback: Use programmatic file input
+                    logger.warning(f"[Tier 3] ⚠️ AI act() failed for upload, using fallback: {str(act_error)}")
+                    
+                    # Find file input element programmatically
+                    file_input = self.stagehand.page.locator("input[type='file']").first
+                    await file_input.wait_for(state="attached", timeout=self.timeout_ms)
+                    await file_input.set_input_files(upload_file_path, timeout=self.timeout_ms)
+                    logger.info(f"[Tier 3] ✅ File uploaded via fallback method")
+                
+                # Small delay to allow file upload handlers to complete
+                await asyncio.sleep(0.5)
                     
             else:
                 # Use act() for all other actions
