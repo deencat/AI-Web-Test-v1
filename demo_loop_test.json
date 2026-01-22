@@ -1,0 +1,59 @@
+{
+  "title": "DEMO: Upload 5 Documents with Loop",
+  "description": "Demonstrates loop execution by uploading 5 HKID documents using a loop block. Watch backend logs for [LOOP] messages and check screenshots for iteration numbers.",
+  "test_type": "e2e",
+  "priority": "medium",
+  "steps": [
+    "Navigate to document upload page",
+    "Click upload button",
+    "Select file from dialog",
+    "Click confirm button",
+    "Verify success message appears"
+  ],
+  "expected_result": "All 5 documents uploaded successfully with iteration tracking in logs and screenshots",
+  "preconditions": "Test files exist in backend/test_files/ directory",
+  "test_data": {
+    "detailed_steps": [
+      {
+        "action": "navigate",
+        "value": "http://localhost:3000/upload",
+        "instruction": "Navigate to upload page"
+      },
+      {
+        "action": "click",
+        "selector": "#upload-btn",
+        "instruction": "Click the upload button"
+      },
+      {
+        "action": "upload_file",
+        "selector": "input[type='file']",
+        "file_path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/backend/test_files/hkid_sample.pdf",
+        "instruction": "Upload HKID document {iteration}"
+      },
+      {
+        "action": "click",
+        "selector": "#confirm-btn",
+        "instruction": "Click confirm button"
+      },
+      {
+        "action": "verify",
+        "selector": ".success-message",
+        "expected": "Upload successful",
+        "instruction": "Verify success message"
+      }
+    ],
+    "loop_blocks": [
+      {
+        "id": "file_upload_loop",
+        "start_step": 2,
+        "end_step": 4,
+        "iterations": 5,
+        "description": "Upload 5 HKID documents with variable substitution",
+        "variables": {
+          "file_path": "/home/dt-qa/alex_workspace/AI-Web-Test-v1-main/backend/test_files/hkid_sample.pdf"
+        }
+      }
+    ]
+  },
+  "tags": ["loop", "demo", "file-upload", "enhancement-2"]
+}
