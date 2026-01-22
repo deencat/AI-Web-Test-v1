@@ -88,6 +88,13 @@ class Tier1PlaywrightExecutor:
                 await self._execute_assert(page, selector, value)
             elif action == "wait":
                 await self._execute_wait(page, selector or value or "1000")
+            elif action == "upload_file":
+                file_path = step.get("file_path")
+                if not file_path:
+                    raise ValueError(f"No file_path provided for upload_file action: {instruction}")
+                if not selector:
+                    raise ValueError(f"No selector provided for upload_file action: {instruction}")
+                await self._execute_upload_file(page, selector, file_path)
             else:
                 raise ValueError(f"Unsupported action type: {action}")
             
@@ -263,3 +270,44 @@ class Tier1PlaywrightExecutor:
             # Treat as selector
             element = page.locator(selector_or_time).first
             await element.wait_for(state="visible", timeout=self.timeout_ms)
+    
+    async def _execute_upload_file(self, page: Page, selector: str, file_path: str):
+        """
+        Upload file to file input element.
+        
+        Args:
+            page: Playwright Page object
+            selector: Selector for file input element (e.g., 'input[type="file"]')
+            file_path: Absolute path to file to upload
+        
+        Raises:
+            FileNotFoundError: If file doesn't exist
+            ValueError: If element is not a file input
+        """
+        import os
+        
+        # Validate file exists
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+        
+        # Locate file input element
+        element = page.locator(selector).first
+        await element.wait_for(state="attached", timeout=self.timeout_ms)
+        
+        # Verify it's a file input
+        tag_name = await element.evaluate("el => el.tagName")
+        input_type = await element.evaluate("el => el.type")
+        
+        if tag_name.lower() != "input" or input_type.lower() != "file":
+            logger.warning(
+                f"[Tier 1] ⚠️ Element {selector} is not a file input "
+                f"(tag={tag_name}, type={input_type}). Attempting upload anyway..."
+            )
+        
+        # Upload file using Playwright's set_input_files method
+        logger.info(f"[Tier 1] 📤 Uploading file: {file_path}")
+        await element.set_input_files(file_path, timeout=self.timeout_ms)
+        
+        # Small delay to allow file upload event handlers to complete
+        await asyncio.sleep(0.5)
+        logger.info(f"[Tier 1] ✅ File uploaded successfully")

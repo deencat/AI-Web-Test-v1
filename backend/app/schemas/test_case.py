@@ -12,7 +12,19 @@ class TestCaseBase(BaseModel):
     description: str = Field(..., min_length=1, description="Test case description")
     test_type: TestType = Field(..., description="Type of test (e2e, unit, integration, api)")
     priority: Priority = Field(default=Priority.MEDIUM, description="Test priority level")
-    steps: List[str | Dict[str, Any]] = Field(..., min_items=1, description="List of test steps (strings or step objects)")
+    steps: List[str | Dict[str, Any]] = Field(
+        ..., 
+        min_items=1, 
+        description="""List of test steps (strings or step objects). 
+        Step objects can include:
+        - action: 'click', 'fill', 'navigate', 'verify', 'upload_file', etc.
+        - selector: CSS/XPath selector for element
+        - value: Text value for fill actions
+        - file_path: Absolute file path for upload_file actions (e.g., '/app/test_files/hkid_sample.pdf')
+        - instruction: Natural language instruction for AI execution
+        - expected: Expected value for verify actions
+        """
+    )
     expected_result: str = Field(..., min_length=1, description="Expected test result")
     preconditions: Optional[str] = Field(None, description="Test preconditions")
     test_data: Optional[Dict[str, Any]] = Field(None, description="Optional test data as JSON")

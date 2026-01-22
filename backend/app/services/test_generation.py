@@ -64,6 +64,19 @@ GUIDELINES:
 - For complex workflows, break down into 15-20 granular steps if needed
 - NEVER truncate or summarize steps - always provide complete sequences
 
+**FILE UPLOAD SUPPORT:**
+For test cases involving file uploads, use the following format:
+- Use "Upload [file description]" as the step description
+- The system has predefined test files available at:
+  • /app/test_files/hkid_sample.pdf (HKID document)
+  • /app/test_files/passport_sample.jpg (Passport photo)
+  • /app/test_files/address_proof.pdf (Address proof document)
+
+Example file upload step:
+"Upload HKID document using file input"
+
+The execution system will automatically handle file selection and upload.
+
 IMPORTANT: Return ONLY valid JSON, no additional text or explanation. Do NOT abbreviate or skip steps to save tokens - completeness is critical."""
 
     def _build_user_prompt(
