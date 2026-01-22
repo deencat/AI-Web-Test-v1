@@ -9,8 +9,8 @@
 
 ## 📍 CURRENT STATUS
 
-**Phase:** 2 Complete 🎉 (Week 14)  
-**Progress:** Phase 2 = 100% | Ready for Phase 3  
+**Phase:** 2 Complete 🎉 + Enhancements Planned (Week 14)  
+**Progress:** Phase 2 Core = 100% | Enhancements = Planned (3-5 hours)  
 **Date:** January 21, 2026
 
 ### Phase 2 Sprint Summary
@@ -24,10 +24,12 @@ DEVELOPER A:
 DEVELOPER B:
 ├─ Sprint 5: Execution Feedback System ✅ 100%
 ├─ Sprint 5.5: 3-Tier Execution Engine ✅ 100% (FULLY DEPLOYED - Production Ready)
+│   ├─ Enhancement 1: File Upload Support 📋 Planned (1-2 hours)
+│   └─ Enhancement 2: Step Group Loop Support 📋 Planned (2-3 hours)
 └─ Sprint 6: Prompt A/B Testing ✅ 100%
 ```
 
-**Next Milestone:** Phase 3 Multi-Agent Architecture (Week 15)
+**Next Milestone:** Complete Sprint 5.5 Enhancements (3-5 hours), then Phase 3 Multi-Agent Architecture
 
 ---
 
@@ -114,6 +116,24 @@ AI Web Test v1.0 is a multi-agent test automation platform that automatically ge
 - **Status:** Fully deployed and operational in production system
 - **Key Fix (Jan 21):** Navigation wait enhancement eliminates race conditions on page transitions
 
+**Sprint 5.5 Enhancement 1: File Upload Support** 📋 Planned (1-2 hours)
+- Add `upload_file` action to all 3 tiers
+- Tier 1: Playwright `set_input_files()` method (~20 lines)
+- Tier 2: XPath extraction + Playwright upload (~30 lines)
+- Tier 3: Stagehand act() with file path (~25 lines)
+- Test file repository: `backend/test_files/` with sample files
+- Schema update: Add `file_path` field to test steps
+- **Benefit:** Native file upload support, no manual workarounds
+
+**Sprint 5.5 Enhancement 2: Step Group Loop Support** 📋 Planned (2-3 hours)
+- Loop block schema in test_data (~20 lines)
+- Execution service loop logic (~100 lines modified)
+- Step number management with iteration tracking
+- Variable substitution: `file_{iteration}.pdf`
+- Frontend UI: Loop block visualization (~70 lines)
+- Test generation: AI learns to detect repeated patterns
+- **Benefit:** Repeat step sequences (e.g., upload 5 files) without duplication
+
 **Sprint 6: Prompt A/B Testing (1 week)** ✅ 100% Complete
 - Prompt management API (7 endpoints)
 - PromptTemplate model with performance tracking
@@ -124,9 +144,10 @@ AI Web Test v1.0 is a multi-agent test automation platform that automatically ge
 **Total Contribution:**
 - **Backend:** 15+ API endpoints, 5+ models, 8+ services
 - **Frontend:** 6+ components (Feedback Viewer, ExecutionSettingsPanel, TierAnalyticsPanel, Prompt UI)
-- **Code Volume:** 8,000+ lines of production code
+- **Code Volume:** 8,000+ lines of production code (deployed) + ~250 lines planned (enhancements)
 - **Testing:** Unit tests, integration tests, E2E validation
 - **Impact:** Transformed execution reliability from 60-70% to 90-98% with configurable strategies
+- **Enhancements (Planned):** File upload support + Step group loop support (3-5 hours total)
 
 ---
 
@@ -1154,6 +1175,319 @@ User submits test → Queue Manager → ExecutionService → ThreeTierExecutionS
 - ✅ Fallback strategies (A/B/C) all operational
 
 **Ready for Phase 3:** Multi-Agent Architecture can begin. Sprint 5.5 fully deployed and operational in production.
+
+---
+
+### Sprint 5.5 Enhancement 1: File Upload Support (Developer B)
+
+**Duration:** 1-2 hours  
+**Status:** 📋 Planned (January 21, 2026)
+
+#### Problem Statement
+
+Current 3-tier execution system treats file uploads as regular click actions, resulting in:
+- File picker dialog opens but no file is uploaded
+- `upload_file` action not recognized by any tier
+- Manual workarounds required for file upload test cases
+
+#### Solution: Add File Upload Action Type
+
+Enhance all 3 tiers to properly handle `upload_file` actions with dedicated file handling logic.
+
+#### Implementation Plan
+
+**1. Tier 1 (Playwright Direct) - 15 mins**
+- Add `upload_file` action handler
+- Use Playwright's `set_input_files()` method
+- Support absolute file paths
+- File path from `file_path` field in step data
+
+**2. Tier 2 (Hybrid Mode) - 20 mins**
+- Extract file input element XPath via `observe()`
+- Cache XPath for file input selectors
+- Execute upload with Playwright using cached XPath
+- Validate file input element before upload
+
+**3. Tier 3 (Stagehand Full AI) - 15 mins**
+- Pass file path to Stagehand `act()` method
+- Fallback to programmatic `set_input_files()` if AI fails
+- Handle file dialog interactions
+
+**4. Test File Repository - 10 mins**
+- Create `backend/test_files/` directory
+- Add sample test files:
+  - `hkid_sample.pdf` (HKID document)
+  - `passport_sample.jpg` (Passport photo)
+  - `address_proof.pdf` (Address proof)
+- Update test generation prompt to use known file paths
+
+**5. Schema Update - 5 mins**
+- Add `file_path` field to test step schema
+- Update test generation to produce `upload_file` actions
+- Backward compatible (existing tests unaffected)
+
+#### Implementation Files
+
+**Backend Services:**
+- `backend/app/services/tier1_playwright.py` - Add upload_file handler (~20 lines)
+- `backend/app/services/tier2_hybrid.py` - Add upload_file handler (~30 lines)
+- `backend/app/services/tier3_stagehand.py` - Add upload_file handler (~25 lines)
+- `backend/app/services/test_generator.py` - Update prompt with upload_file examples (~15 lines)
+
+**Test Files:**
+- `backend/test_files/hkid_sample.pdf` - Sample HKID document
+- `backend/test_files/passport_sample.jpg` - Sample passport photo
+- `backend/test_files/address_proof.pdf` - Sample address proof
+- `backend/test_files/README.md` - Test file documentation
+
+**Testing:**
+- Unit tests for each tier's upload handler
+- Integration test: Upload file end-to-end
+- Validation: File exists before upload
+
+#### Expected Benefits
+
+- ✅ Native file upload support across all 3 tiers
+- ✅ No manual workarounds needed
+- ✅ Test generation AI learns to create upload steps
+- ✅ Reusable test file repository
+- ✅ ~1-2 hour implementation time
+
+#### Example Test Step Format
+
+```json
+{
+  "action": "upload_file",
+  "selector": "input[type='file']",
+  "file_path": "/app/test_files/hkid_sample.pdf",
+  "instruction": "Upload HKID document"
+}
+```
+
+---
+
+### Sprint 5.5 Enhancement 2: Step Group Loop Support (Developer B)
+
+**Duration:** 2-3 hours  
+**Status:** 📋 Planned (January 21, 2026)
+
+#### Problem Statement
+
+Many test scenarios require **repeating a sequence of steps multiple times**:
+- Upload 5 documents: (Click Upload → Select File → Click Confirm) × 5
+- Fill multiple form sections: (Click Next → Fill Fields → Validate) × N
+- Add multiple items: (Click Add → Enter Details → Save) × N
+
+Current system requires:
+- Manually duplicating steps 5× (15 steps instead of 3)
+- No loop control structure
+- Difficult to maintain and update
+
+#### Solution: Loop Block with Step Range
+
+Add loop metadata to test cases that references step index ranges to repeat.
+
+#### Implementation Plan
+
+**1. Loop Block Schema - 10 mins**
+Define loop structure in `test_data`:
+```json
+{
+  "loop_blocks": [
+    {
+      "id": "file_upload_loop",
+      "start_step": 2,
+      "end_step": 4,
+      "iterations": 5,
+      "description": "Upload 5 HKID documents"
+    }
+  ]
+}
+```
+
+**2. Execution Service Loop Logic - 60 mins**
+- Parse loop blocks from test_data
+- Track loop state (current iteration, step index)
+- Execute loop body multiple times
+- Support variable substitution (e.g., `file{iteration}.pdf`)
+- Nested loop support (future)
+
+**3. Step Number Management - 20 mins**
+- Actual step number vs logical step number
+- Progress reporting: "Step 2 (iteration 3/5)"
+- Screenshot naming: `step_2_iter_3.png`
+- Execution logs track iteration context
+
+**4. Test Generation Prompt Update - 15 mins**
+- Teach AI to recognize repeated patterns
+- Generate loop_blocks metadata
+- Example: "Upload 5 documents" → loop with 5 iterations
+
+**5. Frontend UI Enhancement - 30 mins**
+- Display loop blocks in test step editor
+- Show iteration progress during execution
+- Loop block visualization (collapsible group)
+
+#### Implementation Files
+
+**Backend Services:**
+- `backend/app/services/execution_service.py` - Loop execution logic (~100 lines modified)
+- `backend/app/services/test_generator.py` - Loop detection in prompt (~25 lines)
+
+**Backend Schemas:**
+- `backend/app/schemas/test_case.py` - Loop block schema documentation (~20 lines)
+
+**Frontend Components:**
+- `frontend/src/components/TestStepEditor.tsx` - Loop block display (~40 lines)
+- `frontend/src/components/ExecutionProgress.tsx` - Iteration progress (~30 lines)
+
+**Testing:**
+- Unit tests: Loop parsing and execution
+- Integration tests: 5-iteration file upload loop
+- Edge cases: Nested loops, loop with failure, iteration variable substitution
+
+#### Loop Execution Algorithm
+
+```python
+# Parse loop blocks from test_data
+loop_blocks = test_data.get("loop_blocks", [])
+
+# Execute steps with loop awareness
+idx = 0  # Current step index (0-based)
+while idx < len(steps):
+    step = steps[idx]
+    detailed_step = detailed_steps[idx]
+    
+    # Check if this step starts a loop block
+    active_loop = find_loop_starting_at(idx, loop_blocks)
+    
+    if active_loop:
+        # Execute loop body N times
+        for iteration in range(1, active_loop["iterations"] + 1):
+            # Execute steps from start_step to end_step
+            for loop_idx in range(active_loop["start_step"], active_loop["end_step"] + 1):
+                loop_step = steps[loop_idx]
+                loop_detailed = detailed_steps[loop_idx]
+                
+                # Variable substitution: {iteration} → current iteration number
+                loop_detailed = substitute_variables(loop_detailed, {
+                    "iteration": iteration,
+                    "total_iterations": active_loop["iterations"]
+                })
+                
+                # Execute step
+                result = await execute_step(
+                    page, 
+                    loop_step, 
+                    loop_idx,
+                    loop_detailed,
+                    iteration_context={"current": iteration, "total": active_loop["iterations"]}
+                )
+                
+                # Log: "Step 2 (iteration 3/5): Click Upload"
+        
+        # Skip to after loop end
+        idx = active_loop["end_step"] + 1
+    else:
+        # Execute single step normally
+        result = await execute_step(page, step, idx, detailed_step)
+        idx += 1
+```
+
+#### Example Test Case with Loop
+
+```json
+{
+  "title": "Upload 5 HKID Documents",
+  "steps": [
+    "Navigate to document upload page",
+    "Click 'Upload Document' button",
+    "Select HKID file from local filesystem",
+    "Click 'Confirm' to upload",
+    "Verify all 5 documents uploaded successfully"
+  ],
+  "test_data": {
+    "detailed_steps": [
+      {
+        "action": "navigate",
+        "instruction": "Navigate to document upload page"
+      },
+      {
+        "action": "click",
+        "selector": "button.upload-btn",
+        "instruction": "Click 'Upload Document' button"
+      },
+      {
+        "action": "upload_file",
+        "selector": "input[type='file']",
+        "file_path": "/app/test_files/hkid_{iteration}.pdf",
+        "instruction": "Select HKID file from local filesystem"
+      },
+      {
+        "action": "click",
+        "selector": "button.confirm",
+        "instruction": "Click 'Confirm' to upload"
+      },
+      {
+        "action": "verify",
+        "selector": ".upload-status",
+        "expected": "5 documents uploaded",
+        "instruction": "Verify all 5 documents uploaded successfully"
+      }
+    ],
+    "loop_blocks": [
+      {
+        "id": "hkid_upload_loop",
+        "start_step": 1,
+        "end_step": 3,
+        "iterations": 5,
+        "description": "Upload 5 HKID documents sequentially",
+        "variable_substitution": {
+          "file_path": "/app/test_files/hkid_{iteration}.pdf"
+        }
+      }
+    ]
+  }
+}
+```
+
+#### Expected Benefits
+
+- ✅ Repeat step sequences without duplication
+- ✅ Cleaner test cases (3 steps instead of 15)
+- ✅ Easier maintenance (update once, applies to all iterations)
+- ✅ Variable substitution (dynamic file names, iteration counters)
+- ✅ Clear execution logs with iteration tracking
+- ✅ ~2-3 hour implementation time
+- ✅ Foundation for advanced control flow (conditionals, while loops)
+
+#### Future Enhancements (Phase 3)
+
+- **Conditional loops:** `while (condition)` instead of fixed iterations
+- **Nested loops:** Loop within a loop
+- **Loop break conditions:** Exit loop early on specific result
+- **Parallel loop execution:** Execute iterations concurrently
+- **Loop retry logic:** Retry failed iteration before continuing
+
+---
+
+### Sprint 5.5 Summary (Updated January 21, 2026)
+
+**Core Features (Deployed):**
+- ✅ 3-Tier Execution Engine (Options A/B/C)
+- ✅ XPath Caching (80-90% token savings)
+- ✅ CDP Integration (shared browser context)
+- ✅ Navigation Wait Enhancement (page transition handling)
+
+**Enhancement Features (Planned):**
+- 📋 Enhancement 1: File Upload Support (1-2 hours)
+- 📋 Enhancement 2: Step Group Loop Support (2-3 hours)
+
+**Total Sprint 5.5 Duration:**
+- Core: 5 days (complete)
+- Enhancements: 3-5 hours (planned)
+
+**Status:** Core deployed in production. Enhancements ready for implementation.
 
 ---
 
