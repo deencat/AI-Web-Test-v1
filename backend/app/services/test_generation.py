@@ -93,6 +93,56 @@ Example:
 }
 ```
 
+**LOOP SUPPORT FOR REPEATED STEP SEQUENCES:**
+When a test requires repeating the same sequence of steps multiple times (e.g., upload 5 documents, fill 3 forms, add N items), use loop_blocks instead of duplicating steps.
+
+**Loop block structure:**
+```json
+{
+  "steps": [
+    "Navigate to upload page",
+    "Click upload button",
+    "Select file from dialog",
+    "Click confirm button",
+    "Verify success message"
+  ],
+  "test_data": {
+    "detailed_steps": [/* step details */],
+    "loop_blocks": [
+      {
+        "id": "file_upload_loop",
+        "start_step": 2,
+        "end_step": 4,
+        "iterations": 5,
+        "description": "Upload 5 HKID documents",
+        "variables": {
+          "file_path": "/app/test_files/document_{iteration}.pdf"
+        }
+      }
+    ]
+  }
+}
+```
+
+**Loop block fields:**
+- id: Unique identifier for the loop
+- start_step: First step in loop (1-based index)
+- end_step: Last step in loop (inclusive)
+- iterations: Number of times to repeat
+- description: Human-readable description
+- variables: Optional variable substitution using {iteration} placeholder
+
+**When to use loops:**
+- Uploading multiple files (5+ files)
+- Filling multiple identical forms
+- Adding multiple items to cart/list
+- Repeating any sequence 3+ times
+
+**Benefits:**
+- Cleaner test cases (3 steps instead of 15)
+- Easier to maintain (update once, applies to all iterations)
+- Variable substitution for dynamic values
+
 IMPORTANT: Return ONLY valid JSON, no additional text or explanation. Do NOT abbreviate or skip steps to save tokens - completeness is critical."""
 
     def _build_user_prompt(
