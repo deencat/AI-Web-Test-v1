@@ -140,6 +140,17 @@ AI Web Test v1.0 is a multi-agent test automation platform that automatically ge
 - **Actual Files:** 17 files created/modified (4,848+ lines total)
 - **Benefit:** Repeat step sequences (e.g., upload 5 files) without duplication, visual UI editor for easy configuration
 
+**Sprint 5.5 Enhancement 3: Test Data Generator** 📋 Planned (3-4 hours)
+- HKID generator with MOD 11 check digit algorithm (~80 lines)
+- HKID part extraction: main (A123456), check (3), letter (A), digits (123456) (~30 lines)
+- HK phone number generator (8 digits, starts with 5-9) (~15 lines)
+- Email generator for test accounts (~10 lines)
+- Variable substitution with part extraction: `{generate:hkid:main}`, `{generate:hkid:check}` (~90 lines)
+- Value caching per test execution (consistent parts from same generated value) (~30 lines)
+- Test generation prompt enhancement with split field examples (~40 lines)
+- Unit tests: HKID validation, part extraction, consistency, caching (~180 lines)
+- **Benefit:** Auto-generate valid test data with part extraction for split fields (HKID main + check digit in separate fields), ensures consistency across related fields
+
 **Sprint 6: Prompt A/B Testing (1 week)** ✅ 100% Complete
 - Prompt management API (7 endpoints)
 - PromptTemplate model with performance tracking
@@ -156,6 +167,7 @@ AI Web Test v1.0 is a multi-agent test automation platform that automatically ge
 - **Enhancements:** 
   - ✅ Enhancement 1: File Upload Support (4 hours, 605+ lines - COMPLETE)
   - ✅ Enhancement 2: Step Group Loop Support (~8 hours, 800+ lines code + 3,600 lines docs - COMPLETE)
+  - 📋 Enhancement 3: Test Data Generator (3-4 hours, ~475 lines - PLANNED)
 
 ---
 
@@ -1402,6 +1414,295 @@ System auto-detects:
 
 ---
 
+### Sprint 5.5 Enhancement 3: Test Data Generator (Developer B)
+
+**Duration:** 3-4 hours estimated (January 23, 2026)  
+**Status:** 📋 Planned
+
+#### Problem Statement
+
+Many web applications require valid test data with specific formats during testing:
+- **HKID numbers** must have valid check digits (MOD 11 algorithm)
+- **Split HKID fields** - Main part (A123456) in one field, check digit (3) in another field
+- **Phone numbers** must follow HK format (8 digits, starts with 5-9)
+- **Email addresses** must be unique for account creation
+
+Current challenges:
+- ❌ Users cannot manually provide valid HKID check digits
+- ❌ **Split field problem**: HKID main and check digit must match but are in separate fields
+- ❌ Hardcoded test data becomes stale or causes conflicts
+- ❌ No automated way to generate valid test data during execution
+- ❌ Manual data preparation required before testing
+
+#### Solution: Composite Data Generator with Part Extraction
+
+Implement a test data generator service that:
+- Generates **complete valid data** once (e.g., full HKID with check digit)
+- Provides **part extraction** for split fields (`{generate:hkid:main}`, `{generate:hkid:check}`)
+- **Ensures consistency** - Parts extracted from the same generated value
+- Caches generated values per test to maintain consistency across steps
+- Extensible to other composite data types (credit card, passport, dates)
+
+#### Implementation Plan
+
+**Phase 1: Core Generator Utility (40 mins)**
+
+1. **TestDataGenerator Class** - 125 lines
+   - File: `backend/app/utils/test_data_generator.py`
+   - HKID generator with MOD 11 check digit algorithm (~80 lines)
+   - HKID part extraction method: main, check, letter, digits (~30 lines)
+   - HK phone number generator (8 digits, starts with 5-9) (~15 lines)
+   - Email generator with unique identifiers (~10 lines)
+   - Validation helpers for each data type
+
+**Phase 2: Execution Service Integration (90 mins)**
+
+2. **Variable Substitution with Part Extraction** - 90 lines
+   - File: `backend/app/services/execution_service.py`
+   - Pattern detection: `{generate:hkid:part}` where part = main|check|letter|digits|full
+   - Pattern detection: `{generate:phone}`, `{generate:email}`
+   - Value caching per test_id (generate once, extract multiple parts consistently)
+   - Integration with existing loop variable substitution
+   - Logging of generated values and extracted parts for debugging
+
+**Phase 3: Test Generation AI Enhancement (40 mins)**
+
+3. **Prompt Enhancement with Split Field Examples** - 40 lines
+   - File: `backend/app/services/test_generation.py`
+   - Add TEST DATA GENERATION SUPPORT section
+   - Document composite data with part extraction
+   - Explain split field pattern (main in one field, check in another)
+   - Example test case with `{generate:hkid:main}` and `{generate:hkid:check}`
+   - Guidance on consistency across related fields
+
+**Phase 4: Unit Tests (50 mins)**
+
+4. **Comprehensive Testing** - 180 lines
+   - File: `backend/tests/test_test_data_generator.py`
+   - Test classes:
+     - TestHKIDGeneration (3 tests): Format, check digit validation, uniqueness
+     - TestHKIDPartExtraction (4 tests): Main, check, letter, digits extraction
+     - TestHKIDConsistency (2 tests): Check digit matches main part, caching consistency
+     - TestPhoneGeneration (2 tests): Format, digit validation
+     - TestEmailGeneration (2 tests): Format, uniqueness
+   - Integration test: Variable substitution with part extraction in execution flow
+   - Caching test: Same HKID parts used across multiple steps
+
+#### Implementation Files (Planned)
+
+**Backend Utilities (1 file created):**
+- `backend/app/utils/test_data_generator.py` - Generator class with part extraction (~125 lines)
+
+**Backend Services (2 files modified):**
+- `backend/app/services/execution_service.py` - Variable substitution with part extraction (~90 lines added)
+- `backend/app/services/test_generation.py` - AI prompt enhancement with split field examples (~40 lines)
+
+**Testing (1 file created):**
+- `backend/tests/test_test_data_generator.py` - Unit tests with part extraction and caching (~180 lines)
+
+**Documentation (1 file created):**
+- `SPRINT-5.5-ENHANCEMENT-3-COMPLETE.md` - Implementation report (~450 lines)
+
+**Total Code:** ~475 lines (255 implementation + 180 tests + documentation)
+
+#### HKID Implementation Details
+
+**1. HKID Check Digit Algorithm (MOD 11)**
+
+```python
+def _calculate_hkid_check_digit(self, letter: str, digits: str) -> str:
+    """Calculate HKID check digit using MOD 11 algorithm
+    
+    Example: A123456 → Check digit = 3 → A123456(3)
+    
+    Algorithm:
+    1. Convert letter to number (A=10, B=11, ..., Z=35)
+    2. Multiply each digit by weight [9, 8, 7, 6, 5, 4, 3, 2]
+    3. Sum all weighted values
+    4. Calculate: check = 11 - (sum % 11)
+    5. Special cases: 10 → 'A', 11 → '0'
+    """
+    letter_value = ord(letter) - ord('A') + 10
+    weights = [9, 8, 7, 6, 5, 4, 3, 2]
+    
+    total = letter_value * 9
+    for i, digit in enumerate(digits):
+        total += int(digit) * weights[i + 1]
+    
+    remainder = total % 11
+    check = 11 - remainder
+    
+    if check == 10:
+        return 'A'
+    elif check == 11:
+        return '0'
+    else:
+        return str(check)
+```
+
+**2. HKID Part Extraction (for Split Fields)**
+
+```python
+@staticmethod
+def extract_hkid_part(hkid: str, part: str) -> str:
+    """Extract specific part from HKID for split field scenarios
+    
+    Args:
+        hkid: Full HKID like "A123456(3)"
+        part: "main" (A123456) | "check" (3) | "letter" (A) | "digits" (123456) | "full"
+    
+    Returns: Requested part as string
+    
+    Example usage for split fields:
+        Field 1 (main): extract_hkid_part("A123456(3)", "main") → "A123456"
+        Field 2 (check): extract_hkid_part("A123456(3)", "check") → "3"
+    """
+    clean = hkid.replace('(', '').replace(')', '')
+    
+    if part == "main":
+        return clean[:-1]  # A123456
+    elif part == "check":
+        return clean[-1]   # 3
+    elif part == "letter":
+        return clean[0]    # A
+    elif part == "digits":
+        return clean[1:7]  # 123456
+    elif part == "full":
+        return hkid        # A123456(3)
+    else:
+        raise ValueError(f"Unknown HKID part: {part}")
+```
+
+**3. Supported Variable Patterns**
+
+| Pattern | Output | Use Case |
+|---------|--------|----------|
+| `{generate:hkid}` | `A123456(3)` | Single HKID field (full format) |
+| `{generate:hkid:main}` | `A123456` | Split field 1: Main part (letter + 6 digits) |
+| `{generate:hkid:check}` | `3` | Split field 2: Check digit only |
+| `{generate:hkid:letter}` | `A` | Letter-only field |
+| `{generate:hkid:digits}` | `123456` | Digits-only field |
+| `{generate:phone}` | `91234567` | HK phone number |
+| `{generate:email}` | `testuser1234@example.com` | Unique email |
+
+#### Usage Examples
+
+**Example 1: Single HKID Field (Full Format)**
+```json
+{
+  "step": "Enter HKID number",
+  "detailed_steps": [{
+    "action": "input",
+    "selector": "input[name='hkid']",
+    "value": "{generate:hkid}",
+    "instruction": "Enter HKID number into the HKID field"
+  }]
+}
+```
+**Execution:** System generates `A123456(3)` and inputs it into the field.
+
+---
+
+**Example 2: Split HKID Fields (Main + Check Digit) ⭐ NEW**
+```json
+{
+  "steps": [
+    "Enter HKID main part (letter + 6 digits)",
+    "Enter HKID check digit"
+  ],
+  "detailed_steps": [
+    {
+      "action": "input",
+      "selector": "input[name='hkid_main']",
+      "value": "{generate:hkid:main}",
+      "instruction": "Enter HKID main part"
+    },
+    {
+      "action": "input",
+      "selector": "input[name='hkid_check']",
+      "value": "{generate:hkid:check}",
+      "instruction": "Enter HKID check digit"
+    }
+  ]
+}
+```
+**Execution:**
+- Step 1: System generates full HKID `A123456(3)`, extracts main part → `A123456`
+- Step 2: System extracts check digit from same HKID → `3`
+- **Consistency guaranteed**: Check digit always matches main part (same generated HKID)
+
+---
+
+**Example 3: Multiple Split Patterns**
+```json
+{
+  "steps": [
+    "Enter HKID letter",
+    "Enter HKID 6 digits", 
+    "Enter HKID check digit"
+  ],
+  "detailed_steps": [
+    {
+      "action": "input",
+      "selector": "input[name='hkid_letter']",
+      "value": "{generate:hkid:letter}"
+    },
+    {
+      "action": "input",
+      "selector": "input[name='hkid_digits']",
+      "value": "{generate:hkid:digits}"
+    },
+    {
+      "action": "input",
+      "selector": "input[name='hkid_check']",
+      "value": "{generate:hkid:check}"
+    }
+  ]
+}
+```
+**Execution:**
+- System generates one HKID: `A123456(3)`
+- Field 1: `A`, Field 2: `123456`, Field 3: `3`
+- All parts from same HKID (cached by test_id)
+
+#### Expected Benefits
+
+- ✅ **Zero user effort** - Users write `{generate:hkid:main}`, system handles generation and extraction
+- ✅ **Always valid** - Generated HKIDs pass validation checks, check digit always matches
+- ✅ **Split field support** ⭐ - Main part in field 1, check digit in field 2, guaranteed consistency
+- ✅ **Value caching** - Same HKID used across multiple fields/steps within a test
+- ✅ **Extensible** - Pattern works for other composite data (credit card number + CVV, date parts)
+- ✅ **Tier-agnostic** - Works in Tier 1, 2, and 3 execution
+- ✅ **Audit trail** - All generated values and extracted parts logged for debugging
+- ✅ **No conflicts** - Unique values prevent account creation failures
+
+#### Future Extensions
+
+- **Credit card numbers** with Luhn algorithm check digit + part extraction (number, CVV, expiry)
+- **Passport numbers** with country-specific formats + part extraction (country code, document number)
+- **Social Security Numbers** (SSN) with valid area codes + part extraction (area, group, serial)
+- **Date ranges** with part extraction (year, month, day) - e.g., birth dates, expiry dates
+- **Address data** with part extraction (street, city, state, postal code)
+- **Bank account** with part extraction (bank code, branch code, account number)
+
+#### Key Implementation Insight
+
+**Consistency Guarantee:**
+```python
+# Generate once, cache by test_id
+cache_key = f"test_{self.current_test_id}_hkid"
+full_hkid = "A123456(3)"  # Generated once
+
+# Extract multiple times from same cached value
+Field 1: extract_hkid_part(full_hkid, "main")  → "A123456"  ←┐
+Field 2: extract_hkid_part(full_hkid, "check") → "3"        ←┼─ Same HKID
+Field 3: extract_hkid_part(full_hkid, "letter")→ "A"        ←┘
+```
+
+This ensures the check digit in Field 2 **always** matches the main part in Field 1.
+
+---
+
 ### Sprint 5.5 Enhancement 2: Step Group Loop Support (Developer B)
 
 **Duration:** ~8 hours actual (January 22, 2026)  
@@ -1773,23 +2074,36 @@ async def _capture_screenshot_with_iteration(self, page, step_index: int, iterat
   - 8 comprehensive documentation files
   - Deployed January 22, 2026
 
+- 📋 **Enhancement 3: Test Data Generator** (3-4 hours - PLANNED)
+  - HKID generator with MOD 11 check digit validation
+  - HKID part extraction for split fields (main, check, letter, digits)
+  - HK phone and email generators
+  - Variable substitution with caching: {generate:hkid:main}, {generate:hkid:check}
+  - 13 unit tests planned (HKID format, check digit, part extraction, consistency, caching)
+  - Extensible to credit card, passport, SSN with part extraction
+  - Ready for implementation
+
 **Total Sprint 5.5 Duration:**
 - Core: 5 days (complete)
-- Enhancements: ~12 hours total (Enhancement 1: 4h, Enhancement 2: 8h)
 - Enhancement 1: 4 hours (complete)
-- Enhancement 2: 2-3 hours (planned)
-- **Total Enhancements**: 6-7 hours (4 hours complete, 2-3 hours remaining)
+- Enhancement 2: ~8 hours (complete)
+- Enhancement 3: 3-4 hours (planned)
+- **Total Enhancements**: 15-16 hours (12 hours complete, 3-4 hours remaining)
 
-**Status:** Core + Enhancement 1 deployed in production. Enhancement 2 ready for implementation.
+**Status:** Core + Enhancements 1 & 2 deployed in production. Enhancement 3 ready for implementation.
 
-**Code Delivered (Enhancement 1):**
-- Backend: 6 files modified (~225 lines)
-- Test Files: 4 files created (test repository)
-- Unit Tests: 1 file created (380 lines, 11 tests)
-- Documentation: 1 file created (518 lines)
-- **Total**: 12 files, 605+ lines of code
+**Code Delivered (Enhancements 1 & 2):**
+- Enhancement 1: 12 files, 605+ lines
+- Enhancement 2: 17 files, 4,848+ lines
+- **Total**: 29 files, 5,453+ lines deployed
 
-**Key Achievement:** Native file upload support with intelligent fallback detection operational across all 3 execution tiers.
+**Planned Code (Enhancement 3):**
+- Backend: 3 files, ~255 lines (125 generator + 90 execution + 40 AI prompt)
+- Unit Tests: 1 file, ~180 lines (13 tests)
+- Documentation: 1 file, ~450 lines
+- **Total**: 5 files, ~885 lines
+
+**Key Achievements:** Native file upload support + loop block editor + test data generator with **split field support** provide complete control over test execution patterns and data generation.
 
 ---
 
