@@ -310,6 +310,37 @@ class ExecutionService:
             passed_steps = 0
             failed_steps = 0
             
+            # Helper function to find matching detailed_step by instruction
+            def find_detailed_step_for_step(step_desc: str, detailed_steps: list) -> dict:
+                """Find detailed_step that matches the step description by instruction field"""
+                if not detailed_steps:
+                    return None
+                
+                import re
+                
+                # Normalize step description: remove {generate:*} patterns and trim punctuation
+                normalized_step = re.sub(r'\{generate:\w+(?::\w+)?\}', '', step_desc).strip().rstrip('.')
+                
+                # Try exact match first
+                for ds in detailed_steps:
+                    instruction = ds.get('instruction', '')
+                    if instruction == step_desc:
+                        return ds
+                
+                # Try normalized match (without patterns and trailing punctuation)
+                for ds in detailed_steps:
+                    instruction = ds.get('instruction', '').strip().rstrip('.')
+                    if instruction == normalized_step:
+                        return ds
+                
+                # Fallback: partial match (old behavior)
+                for ds in detailed_steps:
+                    instruction = ds.get('instruction', '')
+                    if instruction and instruction.strip() in step_desc.strip():
+                        return ds
+                
+                return None
+            
             # Step execution with loop support
             idx = 1  # Current step index (1-based)
             
@@ -335,11 +366,10 @@ class ExecutionService:
                             loop_step_desc = steps[loop_step_idx - 1]
                             loop_step_start = datetime.utcnow()
                             
-                            # Get detailed step data if available
-                            detailed_step = None
-                            if detailed_steps and loop_step_idx <= len(detailed_steps):
-                                detailed_step = detailed_steps[loop_step_idx - 1]
-                                
+                            # Get detailed step data by matching instruction field
+                            detailed_step = find_detailed_step_for_step(loop_step_desc, detailed_steps)
+                            
+                            if detailed_step:
                                 # Apply variable substitution for this iteration
                                 detailed_step = self._apply_loop_variables(
                                     detailed_step, 
@@ -378,7 +408,7 @@ class ExecutionService:
                                     })
                                 
                                 # Execute the step with detailed data
-                                result = await self._execute_step(page, loop_step_desc_substituted, loop_step_idx, base_url, detailed_step)
+                                result = await self._execute_step(page, loop_step_desc_substituted, loop_step_idx, base_url, detailed_step, execution.id)
                                 
                                 loop_step_end = datetime.utcnow()
                                 duration = (loop_step_end - loop_step_start).total_seconds()
@@ -484,11 +514,10 @@ class ExecutionService:
                     continue
                 
                 # Execute single step normally (not in a loop)
-                # Get detailed step data if available (includes selector, action, etc.)
-                detailed_step = None
-                if detailed_steps and idx <= len(detailed_steps):
-                    detailed_step = detailed_steps[idx - 1]
-                    
+                # Get detailed step data by matching instruction field
+                detailed_step = find_detailed_step_for_step(step_desc, detailed_steps)
+                
+                if detailed_step:
                     # Apply test data generation to detailed step
                     detailed_step = self._apply_test_data_generation(
                         detailed_step,
@@ -511,7 +540,7 @@ class ExecutionService:
                         })
                     
                     # Execute the step with detailed data
-                    result = await self._execute_step(page, step_desc_substituted, idx, base_url, detailed_step)
+                    result = await self._execute_step(page, step_desc_substituted, idx, base_url, detailed_step, execution.id)
                     
                     step_end = datetime.utcnow()
                     duration = (step_end - step_start).total_seconds()
@@ -664,7 +693,8 @@ class ExecutionService:
         step_description: str, 
         step_number: int,
         base_url: str,
-        detailed_step: Dict[str, Any] = None
+        detailed_step: Dict[str, Any] = None,
+        execution_id: int = None
     ) -> Dict[str, Any]:
         """
         Execute a single test step using 3-Tier Execution Engine.
@@ -679,6 +709,7 @@ class ExecutionService:
             step_number: Step number
             base_url: Base URL of the application
             detailed_step: Optional detailed step data with selector, action, value
+            execution_id: Test execution ID for test data generation caching
             
         Returns:
             Dictionary with execution result
@@ -689,6 +720,23 @@ class ExecutionService:
             # DEBUG: Log what we received
             print(f"\n[DEBUG _execute_step] Step {step_number}: {step_description}")
             print(f"[DEBUG] detailed_step = {detailed_step}")
+            
+            # Apply test data generation if execution_id is provided
+            if execution_id:
+                # Apply test data generation to detailed step
+                if detailed_step:
+                    detailed_step = self._apply_test_data_generation(
+                        detailed_step,
+                        execution_id
+                    )
+                    print(f"[DEBUG] After test data generation: detailed_step = {detailed_step}")
+                
+                # Apply test data generation to step description
+                step_description = self._substitute_test_data_patterns(
+                    step_description,
+                    execution_id
+                )
+                print(f"[DEBUG] After test data generation: step_description = {step_description}")
             
             # If 3-tier service is available, use it
             if self.three_tier_service:

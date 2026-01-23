@@ -317,7 +317,7 @@ class Tier2HybridExecutor:
                 await asyncio.sleep(2.0)
                 logger.debug(f"[Tier 2] ⏱️ Additional 2.0s wait after navigation button")
                     
-        elif action in ["fill", "type"]:
+        elif action in ["fill", "type", "input"]:
             await element.fill(value, timeout=self.timeout_ms)
             # Small delay to allow any input event handlers to complete
             await asyncio.sleep(0.3)

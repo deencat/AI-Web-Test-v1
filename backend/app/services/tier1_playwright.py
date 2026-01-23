@@ -62,7 +62,7 @@ class Tier1PlaywrightExecutor:
                 if not selector:
                     raise ValueError(f"No selector provided for step: {instruction}")
                 await self._execute_click(page, selector)
-            elif action == "fill" or action == "type":
+            elif action in ["fill", "type", "input"]:
                 if not selector:
                     raise ValueError(f"No selector provided for step: {instruction}")
                 await self._execute_fill(page, selector, value)
