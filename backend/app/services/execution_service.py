@@ -26,6 +26,7 @@ from app.crud import test_execution as crud_execution
 from app.crud import execution_feedback as crud_feedback
 from app.schemas.execution_feedback import ExecutionFeedbackCreate
 from app.services.three_tier_execution_service import ThreeTierExecutionService
+from app.utils.test_data_generator import TestDataGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,8 @@ class ExecutionService:
         self.context: Optional[BrowserContext] = None
         self.page: Optional[Page] = None
         self.three_tier_service: Optional[ThreeTierExecutionService] = None
+        self.test_data_generator = TestDataGenerator()
+        self._generated_data_cache: Dict[str, Dict[str, str]] = {}  # Cache per test_id
     
     def _get_user_execution_settings(self, db: Session, user_id: int) -> ExecutionSettings:
         """
@@ -343,12 +346,24 @@ class ExecutionService:
                                     iteration, 
                                     active_loop.get("variables", {})
                                 )
+                                
+                                # Apply test data generation (after loop variables)
+                                detailed_step = self._apply_test_data_generation(
+                                    detailed_step,
+                                    execution.id
+                                )
                             
                             # Apply variable substitution to step description
                             loop_step_desc_substituted = self._substitute_loop_variables(
                                 loop_step_desc, 
                                 iteration, 
                                 active_loop.get("variables", {})
+                            )
+                            
+                            # Apply test data generation to step description
+                            loop_step_desc_substituted = self._substitute_test_data_patterns(
+                                loop_step_desc_substituted,
+                                execution.id
                             )
                             
                             try:
@@ -473,6 +488,18 @@ class ExecutionService:
                 detailed_step = None
                 if detailed_steps and idx <= len(detailed_steps):
                     detailed_step = detailed_steps[idx - 1]
+                    
+                    # Apply test data generation to detailed step
+                    detailed_step = self._apply_test_data_generation(
+                        detailed_step,
+                        execution.id
+                    )
+                
+                # Apply test data generation to step description
+                step_desc_substituted = self._substitute_test_data_patterns(
+                    step_desc,
+                    execution.id
+                )
                 
                 try:
                     if progress_callback:
@@ -480,11 +507,11 @@ class ExecutionService:
                             "execution_id": execution.id,
                             "step": idx,
                             "total_steps": total_steps,
-                            "message": f"Executing step {idx}: {step_desc}"
+                            "message": f"Executing step {idx}: {step_desc_substituted}"
                         })
                     
                     # Execute the step with detailed data
-                    result = await self._execute_step(page, step_desc, idx, base_url, detailed_step)
+                    result = await self._execute_step(page, step_desc_substituted, idx, base_url, detailed_step)
                     
                     step_end = datetime.utcnow()
                     duration = (step_end - step_start).total_seconds()
@@ -505,7 +532,7 @@ class ExecutionService:
                         db=db,
                         execution_id=execution.id,
                         step_number=idx,
-                        step_description=step_desc,
+                        step_description=step_desc_substituted,
                         expected_result=result.get("expected", "Step completes successfully"),
                         result=step_result,
                         actual_result=result.get("actual", ""),
@@ -524,7 +551,7 @@ class ExecutionService:
                             db=db,
                             execution_id=execution.id,
                             step_index=idx - 1,  # 0-based index
-                            step_description=step_desc,
+                            step_description=step_desc_substituted,
                             error_message=result.get("error", "Step failed"),
                             page=page,
                             screenshot_path=screenshot_path,
@@ -554,7 +581,7 @@ class ExecutionService:
                         db=db,
                         execution_id=execution.id,
                         step_number=idx,
-                        step_description=step_desc,
+                        step_description=step_desc_substituted,
                         result=ExecutionResult.ERROR,
                         error_message=str(e),
                         screenshot_path=screenshot_path,
@@ -566,7 +593,7 @@ class ExecutionService:
                         db=db,
                         execution_id=execution.id,
                         step_index=idx - 1,  # 0-based index
-                        step_description=step_desc,
+                        step_description=step_desc_substituted,
                         error_message=str(e),
                         page=page,
                         screenshot_path=screenshot_path,
@@ -1092,6 +1119,132 @@ class ExecutionService:
                     result = result.replace(placeholder, value)
         
         return result
+    
+    def _substitute_test_data_patterns(
+        self, 
+        text: str, 
+        test_id: int
+    ) -> str:
+        """
+        Substitute test data generation patterns in text string.
+        
+        Supports patterns like:
+        - {generate:hkid} → Full HKID with check digit (A123456(3))
+        - {generate:hkid:main} → Main part only (A123456)
+        - {generate:hkid:check} → Check digit only (3)
+        - {generate:hkid:letter} → Letter only (A)
+        - {generate:hkid:digits} → Digits only (123456)
+        - {generate:phone} → HK phone number (91234567)
+        - {generate:email} → Unique email (testuser1234@example.com)
+        
+        Maintains consistency within a test - same generated value used across multiple steps.
+        
+        Args:
+            text: Text containing generation patterns
+            test_id: Test execution ID for caching consistency
+            
+        Returns:
+            Text with substituted generated values
+            
+        Example:
+            >>> # Step 1: {generate:hkid:main} → A123456
+            >>> # Step 2: {generate:hkid:check} → 3 (matches Step 1)
+        """
+        import re
+        
+        if not text or not isinstance(text, str):
+            return text
+        
+        # Initialize cache for this test if not exists
+        cache_key = str(test_id)
+        if cache_key not in self._generated_data_cache:
+            self._generated_data_cache[cache_key] = {}
+        
+        test_cache = self._generated_data_cache[cache_key]
+        
+        # Pattern: {generate:type} or {generate:type:part}
+        pattern = r'\{generate:(\w+)(?::(\w+))?\}'
+        
+        def replace_pattern(match):
+            data_type = match.group(1)  # hkid, phone, email
+            part = match.group(2)  # main, check, letter, digits (for HKID)
+            
+            try:
+                if data_type == "hkid":
+                    # Generate full HKID once and cache it
+                    if "hkid" not in test_cache:
+                        test_cache["hkid"] = self.test_data_generator.generate_hkid()
+                        logger.info(f"[TestData] Generated HKID for test {test_id}: {test_cache['hkid']}")
+                    
+                    full_hkid = test_cache["hkid"]
+                    
+                    # Extract requested part
+                    if part:
+                        result = TestDataGenerator.extract_hkid_part(full_hkid, part)
+                        logger.info(f"[TestData] Extracted HKID part '{part}': {result}")
+                        return result
+                    else:
+                        # Return full HKID
+                        return full_hkid
+                
+                elif data_type == "phone":
+                    # Generate phone once and cache
+                    if "phone" not in test_cache:
+                        test_cache["phone"] = self.test_data_generator.generate_phone()
+                        logger.info(f"[TestData] Generated phone for test {test_id}: {test_cache['phone']}")
+                    
+                    return test_cache["phone"]
+                
+                elif data_type == "email":
+                    # Generate email once and cache
+                    if "email" not in test_cache:
+                        test_cache["email"] = self.test_data_generator.generate_email()
+                        logger.info(f"[TestData] Generated email for test {test_id}: {test_cache['email']}")
+                    
+                    return test_cache["email"]
+                
+                else:
+                    logger.warning(f"[TestData] Unknown data type: {data_type}")
+                    return match.group(0)  # Return original pattern
+            
+            except Exception as e:
+                logger.error(f"[TestData] Error generating {data_type}: {e}")
+                return match.group(0)  # Return original pattern on error
+        
+        # Replace all patterns
+        result = re.sub(pattern, replace_pattern, text)
+        
+        return result
+    
+    def _apply_test_data_generation(
+        self, 
+        detailed_step: Dict[str, Any], 
+        test_id: int
+    ) -> Dict[str, Any]:
+        """
+        Apply test data generation to detailed step data.
+        
+        Substitutes {generate:...} patterns in all string fields (selector, value, file_path).
+        
+        Args:
+            detailed_step: Step data with action, selector, value, file_path
+            test_id: Test execution ID for caching consistency
+            
+        Returns:
+            Modified detailed step with substituted generated values
+        """
+        if not detailed_step:
+            return detailed_step
+        
+        # Create a copy to avoid modifying original
+        modified_step = detailed_step.copy()
+        
+        # Apply test data generation to all string fields
+        for key, value in modified_step.items():
+            if isinstance(value, str):
+                modified_step[key] = self._substitute_test_data_patterns(value, test_id)
+        
+        return modified_step
     
     async def _capture_screenshot_with_iteration(
         self, 
