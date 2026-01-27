@@ -2312,6 +2312,284 @@ Implement Reinforcement Learning from Human Feedback (RLHF) to enable continuous
 
 **Phase 2 Status:** All targets achieved. Ready for user testing and Phase 3 transition.
 
+---
+
+### Sprint 5.5 Enhancement 4: Debug Mode Improvements (Developer B)
+
+**Duration:** 1 hour actual (January 27, 2026)  
+**Status:** ✅ 100% Complete (Deployed)
+
+#### Problem Statement
+
+During testing of Sprint 5.5 Enhancement 3 (Test Data Generator), discovered critical issues with debug mode:
+
+1. **Browser Profile Pollution** 
+   - `user_data/` directories created in wrong location (backend root instead of artifacts)
+   - Path inconsistency between `debug_session_service.py` and `python_stagehand_adapter.py`
+   - No cleanup mechanism → disk space grows unbounded
+   - 29 old browser profiles (450MB+) accumulating over time
+
+2. **Single-Step Limitation**
+   - Debug mode only executes ONE target step
+   - No way to debug multiple consecutive steps on same browser session
+   - Users must restart debug session for each step (time-consuming)
+   - Loss of browser state between debug sessions
+
+#### Solution Implemented (Phase 1: Cleanup)
+
+**Path Standardization & Auto-Cleanup ✅**
+
+**Implementation Details:**
+
+1. **Fixed Path Inconsistency** - 5 lines modified ✅
+   - File: `backend/app/services/python_stagehand_adapter.py`
+   - Changed hardcoded `Path("user_data")` to `Path("artifacts/debug_sessions")`
+   - Now consistent with `debug_session_service.py` architecture
+   - All browser profiles stored in correct location
+
+2. **Added Cleanup Method** - 45 lines added ✅
+   - File: `backend/app/services/debug_session_service.py`
+   - Implemented `cleanup_old_sessions(max_age_hours: int = 48)`
+   - Automatically removes sessions older than specified threshold
+   - Safely handles errors (logs warnings, continues cleanup)
+   - Returns count of removed directories
+
+3. **Created Cleanup Script** - 75 lines created ✅
+   - File: `backend/cleanup_debug_sessions.py`
+   - Standalone script for manual or cron execution
+   - `--dry-run` flag for preview mode
+   - `--max-age-hours` for configurable threshold
+   - Example: `python cleanup_debug_sessions.py --max-age-hours 24`
+
+4. **Updated .gitignore** - 2 lines added ✅
+   - File: `.gitignore`
+   - Added `backend/artifacts/debug_sessions/` (correct location)
+   - Added `backend/user_data/` (legacy path, just in case)
+   - Prevents git tracking of browser profiles
+
+5. **Migrated Existing Data** ✅
+   - Moved all 29 existing browser profiles to correct location
+   - Ran cleanup script: **Removed 20 old sessions (48+ hours old)**
+   - Reclaimed **~390MB disk space**
+   - Removed empty legacy `backend/user_data/` directory
+
+#### Results (Phase 1)
+
+**Before:**
+- 29 browser profiles in 2 locations (`user_data/` + `artifacts/debug_sessions/`)
+- Total size: ~450MB
+- No cleanup mechanism
+- Path inconsistency bug
+
+**After:**
+- 8 recent browser profiles in correct location (`artifacts/debug_sessions/`)
+- Total size: ~57MB
+- Automated cleanup available
+- Consistent architecture
+- **Space saved: 390MB (87% reduction)**
+
+#### Solution Proposed (Phase 2: Multi-Step Debugging) 🔄
+
+**Three Options Evaluated:**
+
+**Option 1: Sequential Step API (Recommended)** ⭐
+
+Add "execute next step" endpoint for continuous debugging:
+
+**Advantages:**
+- ✅ Quick implementation (~1-2 hours, ~100 lines)
+- ✅ Reuses existing browser session (no reconnection)
+- ✅ Maintains browser state (cookies, localStorage, page context)
+- ✅ User controls pace (execute when ready)
+- ✅ Backward compatible with single-step flow
+
+**Implementation Plan:**
+1. Add `POST /api/v1/debug/{session_id}/execute-next` endpoint
+2. Track `current_step_number` in DebugSession model
+3. Auto-increment step counter on each call
+4. Execute next step using existing execute_single_step logic
+5. Return result with continue/stop options
+
+**API Flow:**
+```bash
+# Start at step 7
+POST /api/v1/debug/start 
+{
+  "execution_id": 123,
+  "target_step_number": 7,
+  "mode": "auto"
+}
+→ Returns: session_id, browser_port
+
+# Continue to step 8
+POST /api/v1/debug/{session_id}/execute-next
+→ Executes step 8, returns result
+
+# Continue to step 9
+POST /api/v1/debug/{session_id}/execute-next
+→ Executes step 9, returns result
+
+# Stop when done
+POST /api/v1/debug/{session_id}/stop
+→ Closes browser, cleans up session
+```
+
+**Example Response:**
+```json
+{
+  "success": true,
+  "step_number": 8,
+  "step_description": "Enter HKID check digit",
+  "result": {
+    "success": true,
+    "execution_time_ms": 542
+  },
+  "has_more_steps": true,
+  "next_step_preview": "Click Submit button"
+}
+```
+
+---
+
+**Option 2: Step Range Execution**
+
+Allow debugging a range of steps in one request:
+
+**Request:**
+```json
+{
+  "execution_id": 123,
+  "start_step": 7,
+  "end_step": 10,
+  "mode": "auto"
+}
+```
+
+**Advantages:**
+- ✅ Debug related sequences (e.g., form filling steps 5-10)
+- ✅ Single API call for multiple steps
+- ❌ Less control (can't stop mid-range)
+- ❌ More complex error handling
+
+---
+
+**Option 3: Interactive Debug UI Panel**
+
+Build frontend debug control panel:
+
+**Features:**
+- Step list with checkboxes
+- Play/Pause/Step Forward buttons
+- Live screenshot preview
+- Real-time execution logs
+
+**Advantages:**
+- ✅ Best UX for developers
+- ✅ Visual feedback during execution
+- ❌ Requires 4-6 hours frontend development
+- ❌ More complex state management
+
+---
+
+**Developer B's Recommendation:** **Start with Option 1** (Sequential Step API)
+
+**Rationale:**
+1. Solves immediate pain point (debugging multiple steps)
+2. Fast implementation (1-2 hours)
+3. Can be implemented independently by Developer B
+4. Provides foundation for Option 3 later
+5. Minimal risk, high value
+
+**Implementation Priority:**
+- **Phase 1: Cleanup** ✅ COMPLETE (1 hour) - Deployed January 27, 2026
+- **Phase 2: Sequential API** 🔄 RECOMMENDED (1-2 hours) - Scheduled for next sprint
+- **Phase 3: UI Panel** 🔮 FUTURE (4-6 hours) - After Phase 2 validation
+
+#### Implementation Files (Phase 1 - Actual)
+
+**Backend Services (2 files modified):**
+- `backend/app/services/python_stagehand_adapter.py` - Path fix (~5 lines)
+- `backend/app/services/debug_session_service.py` - Cleanup method (~45 lines)
+
+**Scripts (1 file created):**
+- `backend/cleanup_debug_sessions.py` - Cleanup utility (75 lines)
+
+**Configuration (1 file modified):**
+- `.gitignore` - Browser profile exclusions (~2 lines)
+
+**Total Code (Phase 1):** 127 lines (5 modified + 45 added + 75 new + 2 config)
+
+#### Cleanup Script Usage
+
+**Manual Cleanup:**
+```bash
+# Clean sessions older than 48 hours (default)
+python backend/cleanup_debug_sessions.py
+
+# Clean sessions older than 24 hours
+python backend/cleanup_debug_sessions.py --max-age-hours 24
+
+# Preview what would be deleted
+python backend/cleanup_debug_sessions.py --dry-run
+```
+
+**Automated Cleanup (Cron Job):**
+```bash
+# Add to crontab: Run daily at 2 AM
+0 2 * * * cd /path/to/AI-Web-Test-v1-main && python backend/cleanup_debug_sessions.py --max-age-hours 48
+```
+
+**Output:**
+```
+Cleaning up debug sessions older than 48 hours...
+Removed 20 old debug session(s)
+```
+
+#### Achieved Benefits (Phase 1)
+
+- ✅ **Path consistency** - All browser profiles in `artifacts/debug_sessions/`
+- ✅ **Automated cleanup** - Script removes old sessions (configurable threshold)
+- ✅ **Disk space recovered** - 390MB reclaimed (87% reduction)
+- ✅ **Git cleanliness** - Browser profiles excluded from version control
+- ✅ **Maintainability** - Can run cleanup manually or via cron
+- ✅ **Zero downtime** - Changes deployed without service interruption
+
+#### Production Status (Phase 1)
+
+- ✅ **Deployed**: January 27, 2026
+- ✅ **Backend**: Path fix operational in python_stagehand_adapter
+- ✅ **Cleanup**: 20/29 old sessions removed (8 recent sessions retained)
+- ✅ **Verification**: New debug sessions create profiles in correct location
+- ✅ **Documentation**: Complete implementation summary available
+
+**Test Execution:**
+```bash
+# Before fix
+$ ls backend/user_data/
+18716d8d-b3cc-4cf3-89fd-6c634db8ae56/  # Wrong location
+f73a1cc6-9eb8-4ca7-9abc-0d10ab9aab3c/
+fde4c824-d2e6-4280-9217-4d6967584340/
+
+# After fix + cleanup
+$ ls backend/artifacts/debug_sessions/
+18716d8d-b3cc-4cf3-89fd-6c634db8ae56/  # Correct location (recent)
+ee547206-c822-4143-ba86-d32726b3b1aa/  # Only 8 sessions
+f73a1cc6-9eb8-4ca7-9abc-0d10ab9aab3c/  # (< 48 hours old)
+fde4c824-d2e6-4280-9217-4d6967584340/
+...
+
+$ du -sh backend/artifacts/debug_sessions/
+57M  # Down from 450MB
+```
+
+**Enhancement 4 Phase 1 Status:** ✅ **100% COMPLETE** - Path fixes deployed, cleanup operational
+
+**Enhancement 4 Phase 2 Status:** 🔄 **RECOMMENDED** - Sequential Step API awaiting approval for next sprint
+
+---
+
+**Phase 2 Status:** All targets achieved. Ready for user testing and Phase 3 transition.
+
 ### Phase 3 (Planned)
 
 - 95%+ test generation accuracy
