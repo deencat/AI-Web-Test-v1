@@ -12,9 +12,10 @@ import { InteractiveDebugPanel } from '../components/InteractiveDebugPanel';
 import { Layout } from '../components/layout/Layout';
 
 export const DebugSessionPage: React.FC = () => {
-  const { executionId, targetStep, mode } = useParams<{
+  const { executionId, targetStep, endStep, mode } = useParams<{
     executionId: string;
     targetStep: string;
+    endStep?: string;
     mode: string;
   }>();
   const navigate = useNavigate();
@@ -43,6 +44,7 @@ export const DebugSessionPage: React.FC = () => {
 
   const executionIdNum = parseInt(executionId, 10);
   const targetStepNum = parseInt(targetStep, 10);
+  const endStepNum = endStep ? parseInt(endStep, 10) : undefined;
   const debugMode = mode as 'auto' | 'manual';
 
   // Validate mode
@@ -88,6 +90,7 @@ export const DebugSessionPage: React.FC = () => {
       <InteractiveDebugPanel
         executionId={executionIdNum}
         targetStepNumber={targetStepNum}
+        endStepNumber={endStepNum}
         mode={debugMode}
         onClose={handleClose}
       />

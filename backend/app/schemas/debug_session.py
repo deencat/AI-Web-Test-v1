@@ -12,8 +12,10 @@ from app.models.debug_session import DebugMode, DebugSessionStatus
 class DebugSessionStartRequest(BaseModel):
     """Request to start a debug session."""
     execution_id: int = Field(..., description="Test execution ID to debug")
-    target_step_number: int = Field(..., ge=1, description="Step number to debug (1-based)")
+    target_step_number: int = Field(..., ge=1, description="Step number to debug (1-based, start of range)")
+    end_step_number: Optional[int] = Field(None, ge=1, description="End of step range (optional, for range debugging)")
     mode: DebugMode = Field(..., description="Debug mode: auto (AI setup) or manual (user setup)")
+    skip_prerequisites: bool = Field(False, description="Skip prerequisite steps (for manual navigation mode)")
     
     model_config = ConfigDict(use_enum_values=True)
 
@@ -24,7 +26,9 @@ class DebugSessionStartResponse(BaseModel):
     mode: DebugMode
     status: DebugSessionStatus
     target_step_number: int
+    end_step_number: Optional[int] = Field(None, description="End of step range (if specified)")
     prerequisite_steps_count: int
+    skip_prerequisites: bool = Field(False, description="Whether prerequisites were skipped")
     message: str
     devtools_url: Optional[str] = Field(None, description="DevTools URL for browser inspection (if available)")
     
@@ -167,5 +171,7 @@ class DebugNextStepResponse(BaseModel):
     has_more_steps: bool = Field(..., description="Whether there are more steps to execute")
     next_step_preview: Optional[str] = Field(None, description="Description of next step (if available)")
     total_steps: int = Field(..., description="Total number of steps in test case")
+    end_step_number: Optional[int] = Field(None, description="End of step range (if specified)")
+    range_complete: bool = Field(False, description="Whether the step range has been completed")
     
     model_config = ConfigDict(from_attributes=True)

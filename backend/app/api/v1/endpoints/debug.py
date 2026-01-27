@@ -95,11 +95,18 @@ async def start_debug_session(
         
         # Build response message
         if request.mode == "auto":
-            message = (
-                f"Debug session started with AUTO mode. "
-                f"AI is executing {session.prerequisite_steps_count} prerequisite steps. "
-                f"This will take approximately {session.prerequisite_steps_count * 6} seconds."
-            )
+            if request.skip_prerequisites:
+                message = (
+                    f"Debug session started with AUTO mode (prerequisites skipped). "
+                    f"Browser ready for debugging step {session.target_step_number}"
+                    + (f" to {session.end_step_number}." if session.end_step_number else ".")
+                )
+            else:
+                message = (
+                    f"Debug session started with AUTO mode. "
+                    f"AI is executing {session.prerequisite_steps_count} prerequisite steps. "
+                    f"This will take approximately {session.prerequisite_steps_count * 6} seconds."
+                )
         else:
             message = (
                 f"Debug session started with MANUAL mode. "
@@ -107,12 +114,18 @@ async def start_debug_session(
                 f"Use GET /debug/{session.session_id}/instructions to view steps."
             )
         
+        # Add range info to message if applicable
+        if session.end_step_number:
+            message += f" Debugging step range: {session.target_step_number} to {session.end_step_number}."
+        
         return DebugSessionStartResponse(
             session_id=session.session_id,
             mode=session.mode,
             status=session.status,
             target_step_number=session.target_step_number,
+            end_step_number=session.end_step_number,
             prerequisite_steps_count=session.prerequisite_steps_count,
+            skip_prerequisites=session.skip_prerequisites,
             message=message,
             devtools_url=devtools_url
         )

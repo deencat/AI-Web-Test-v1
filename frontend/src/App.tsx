@@ -110,6 +110,14 @@ function App() {
           }
         />
         <Route
+          path="/debug/:executionId/:targetStep/:endStep/:mode"
+          element={
+            <ProtectedRoute>
+              <DebugSessionPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/feedback"
           element={
             <ProtectedRoute>

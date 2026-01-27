@@ -65,6 +65,18 @@ class DebugSessionService:
                 f"(execution has {execution.total_steps} steps)"
             )
         
+        # Verify end step if provided
+        if request.end_step_number:
+            if request.end_step_number < request.target_step_number:
+                raise ValueError(
+                    f"End step {request.end_step_number} must be >= start step {request.target_step_number}"
+                )
+            if request.end_step_number > execution.total_steps:
+                raise ValueError(
+                    f"End step {request.end_step_number} out of range "
+                    f"(execution has {execution.total_steps} steps)"
+                )
+        
         # Generate unique session ID
         session_id = str(uuid.uuid4())
         
@@ -121,8 +133,8 @@ class DebugSessionService:
             self.active_sessions[session_id] = browser_service
             
             # Execute prerequisite steps based on mode
-            if request.mode == DebugMode.AUTO:
-                # Auto mode: Execute steps 1 to target-1 with AI
+            if request.mode == DebugMode.AUTO and not request.skip_prerequisites:
+                # Auto mode: Execute steps 1 to target-1 with AI (unless skipped)
                 await self._execute_auto_setup(
                     db=db,
                     session_id=session_id,
@@ -131,12 +143,15 @@ class DebugSessionService:
                     browser_service=browser_service
                 )
             else:
-                # Manual mode: Update status to ready (user will do setup)
+                # Manual mode or skip_prerequisites: Update status to ready (user will do setup or already navigated)
                 crud_debug.update_debug_session_status(
                     db=db,
                     session_id=session_id,
                     status=DebugSessionStatus.READY
                 )
+                # If skipping prerequisites, mark setup as completed
+                if request.skip_prerequisites:
+                    crud_debug.mark_setup_completed(db, session_id)
             
             # Refresh session from DB
             debug_session = crud_debug.get_debug_session(db, session_id)
@@ -479,7 +494,26 @@ class DebugSessionService:
                 "tokens_used": 0,
                 "has_more_steps": False,
                 "next_step_preview": None,
-                "total_steps": total_steps
+                "total_steps": total_steps,
+                "end_step_number": debug_session.end_step_number,
+                "range_complete": True
+            }
+        
+        # Check if we've reached the end of the range (if end_step_number is set)
+        if debug_session.end_step_number and next_step_num > debug_session.end_step_number:
+            return {
+                "success": True,
+                "step_number": debug_session.current_step or debug_session.end_step_number,
+                "step_description": "",
+                "error_message": None,
+                "screenshot_path": None,
+                "duration_seconds": 0.0,
+                "tokens_used": 0,
+                "has_more_steps": False,
+                "next_step_preview": None,
+                "total_steps": total_steps,
+                "end_step_number": debug_session.end_step_number,
+                "range_complete": True
             }
         
         # Update status to executing
@@ -536,8 +570,15 @@ class DebugSessionService:
             )
             
             # Determine if more steps available
-            has_more = next_step_num < total_steps
-            next_preview = steps[next_step_num] if has_more else None
+            # If end_step_number is set, check against that; otherwise check against total_steps
+            if debug_session.end_step_number:
+                has_more = next_step_num < debug_session.end_step_number
+                range_complete = next_step_num >= debug_session.end_step_number
+            else:
+                has_more = next_step_num < total_steps
+                range_complete = False
+            
+            next_preview = steps[next_step_num] if (next_step_num < total_steps and has_more) else None
             
             # Build response
             return {
@@ -550,7 +591,9 @@ class DebugSessionService:
                 "tokens_used": tokens_used,
                 "has_more_steps": has_more,
                 "next_step_preview": next_preview,
-                "total_steps": total_steps
+                "total_steps": total_steps,
+                "end_step_number": debug_session.end_step_number,
+                "range_complete": range_complete
             }
             
         except Exception as e:
@@ -574,7 +617,9 @@ class DebugSessionService:
                 "tokens_used": 0,
                 "has_more_steps": False,
                 "next_step_preview": None,
-                "total_steps": total_steps
+                "total_steps": total_steps,
+                "end_step_number": debug_session.end_step_number,
+                "range_complete": False
             }
     
     async def stop_session(

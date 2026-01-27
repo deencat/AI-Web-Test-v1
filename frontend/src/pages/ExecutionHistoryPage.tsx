@@ -4,6 +4,7 @@ import { Bug } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
+import { DebugRangeDialog } from '../components/DebugRangeDialog';
 import executionService from '../services/executionService';
 import type {
   TestExecutionListItem,
@@ -18,6 +19,8 @@ export function ExecutionHistoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<string>('');
   const [selectedResult, setSelectedResult] = useState<string>('');
+  const [debugDialogOpen, setDebugDialogOpen] = useState(false);
+  const [selectedExecution, setSelectedExecution] = useState<TestExecutionListItem | null>(null);
 
   const fetchExecutions = async () => {
     setIsLoading(true);
@@ -59,6 +62,25 @@ export function ExecutionHistoryPage() {
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to delete execution');
     }
+  };
+
+  const handleOpenDebugDialog = (execution: TestExecutionListItem) => {
+    setSelectedExecution(execution);
+    setDebugDialogOpen(true);
+  };
+
+  const handleDebugConfirm = (startStep: number, endStep: number | null, skipPrerequisites: boolean) => {
+    if (!selectedExecution) return;
+
+    // Build URL with parameters
+    let url = `/debug/${selectedExecution.id}/${startStep}`;
+    if (endStep) {
+      url += `/${endStep}`;
+    }
+    url += skipPrerequisites ? '/manual' : '/auto';
+    
+    navigate(url);
+    setDebugDialogOpen(false);
   };
 
   return (
@@ -201,10 +223,10 @@ export function ExecutionHistoryPage() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            navigate(`/debug/${execution.id}/1/auto`);
+                            handleOpenDebugDialog(execution);
                           }}
                           className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-800 font-medium"
-                          title="Open Interactive Debug Mode"
+                          title="Open Debug Range Dialog"
                         >
                           <Bug className="w-4 h-4" />
                           Debug
@@ -233,6 +255,16 @@ export function ExecutionHistoryPage() {
           </Card>
         )}
       </div>
+
+      {/* Debug Range Dialog */}
+      {selectedExecution && (
+        <DebugRangeDialog
+          open={debugDialogOpen}
+          execution={selectedExecution}
+          onConfirm={handleDebugConfirm}
+          onCancel={() => setDebugDialogOpen(false)}
+        />
+      )}
     </Layout>
   );
 }
