@@ -163,6 +163,24 @@ def increment_debug_session_iterations(db: Session, session_id: str) -> Optional
     return session
 
 
+def update_current_step(
+    db: Session,
+    session_id: str,
+    step_number: int
+) -> Optional[DebugSession]:
+    """Update current step number in debug session."""
+    session = get_debug_session(db, session_id)
+    if not session:
+        return None
+    
+    session.current_step = step_number
+    session.last_activity_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(session)
+    return session
+
+
 # ============================================================================
 # Debug Step Execution CRUD
 # ============================================================================

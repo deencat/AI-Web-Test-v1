@@ -391,6 +391,192 @@ class DebugSessionService:
             )
             raise
     
+    async def execute_next_step(
+        self,
+        db: Session,
+        session_id: str,
+        user_id: int
+    ) -> Dict:
+        """
+        Execute the next step in sequence (multi-step debugging).
+        
+        This enables debugging multiple consecutive steps on the same browser session,
+        maintaining state (cookies, localStorage, page context) between steps.
+        
+        Args:
+            db: Database session
+            session_id: Debug session ID
+            user_id: User ID (for authorization)
+            
+        Returns:
+            Dict with execution result and navigation info:
+            {
+                "success": bool,
+                "step_number": int,
+                "step_description": str,
+                "error_message": Optional[str],
+                "screenshot_path": Optional[str],
+                "duration_seconds": float,
+                "tokens_used": int,
+                "has_more_steps": bool,
+                "next_step_preview": Optional[str],
+                "total_steps": int
+            }
+        """
+        # Get debug session
+        debug_session = crud_debug.get_debug_session(db, session_id)
+        if not debug_session:
+            raise ValueError(f"Debug session {session_id} not found")
+        
+        # Verify ownership
+        if debug_session.user_id != user_id:
+            raise PermissionError("Not authorized to access this debug session")
+        
+        # Verify session is ready
+        if debug_session.status not in [DebugSessionStatus.READY, DebugSessionStatus.EXECUTING]:
+            raise ValueError(f"Debug session not ready (current status: {debug_session.status})")
+        
+        # Get browser service
+        if session_id not in self.active_sessions:
+            raise ValueError(f"Browser session {session_id} not found (may have expired)")
+        
+        browser_service = self.active_sessions[session_id]
+        
+        # Determine next step number
+        # Priority: current_step + 1, or target_step_number if no current_step set
+        if debug_session.current_step:
+            next_step_num = debug_session.current_step + 1
+        else:
+            # First time executing after setup
+            next_step_num = debug_session.target_step_number
+        
+        # Get execution and test case
+        execution = debug_session.execution
+        test_case = execution.test_case
+        
+        # Parse steps
+        import json
+        steps = test_case.steps
+        if isinstance(steps, str):
+            try:
+                steps = json.loads(steps)
+            except:
+                steps = [steps]
+        elif not isinstance(steps, list):
+            steps = []
+        
+        total_steps = len(steps)
+        
+        # Check bounds
+        if next_step_num > total_steps:
+            return {
+                "success": False,
+                "step_number": debug_session.current_step or debug_session.target_step_number,
+                "step_description": "",
+                "error_message": f"No more steps to execute (total: {total_steps})",
+                "screenshot_path": None,
+                "duration_seconds": 0.0,
+                "tokens_used": 0,
+                "has_more_steps": False,
+                "next_step_preview": None,
+                "total_steps": total_steps
+            }
+        
+        # Update status to executing
+        crud_debug.update_debug_session_status(
+            db=db,
+            session_id=session_id,
+            status=DebugSessionStatus.EXECUTING
+        )
+        
+        try:
+            # Get step description
+            step_desc = steps[next_step_num - 1]
+            
+            # Apply test data substitution (for {generate:hkid:main}, etc.)
+            from app.services.execution_service import ExecutionService
+            execution_service = ExecutionService(db)
+            step_desc_substituted = execution_service._substitute_test_data_patterns(
+                step_desc, 
+                execution.id
+            )
+            logger.info(f"[DEBUG] Multi-step: Executing step {next_step_num}: '{step_desc}' -> '{step_desc_substituted}'")
+            
+            # Execute step
+            result = await browser_service.execute_single_step(
+                step_description=step_desc_substituted,
+                step_number=next_step_num,
+                execution_id=execution.id
+            )
+            
+            # Record step execution
+            tokens_used = result.get("tokens_used", 100)
+            crud_debug.create_debug_step_execution(
+                db=db,
+                session_id=session_id,
+                step_number=next_step_num,
+                step_description=step_desc,
+                success=result["success"],
+                error_message=result.get("error"),
+                screenshot_path=result.get("screenshot_path"),
+                duration_seconds=result.get("duration_seconds"),
+                tokens_used=tokens_used
+            )
+            
+            # Update session tracking
+            crud_debug.increment_debug_session_tokens(db, session_id, tokens_used)
+            crud_debug.increment_debug_session_iterations(db, session_id)
+            crud_debug.update_current_step(db, session_id, next_step_num)
+            
+            # Update status back to ready
+            crud_debug.update_debug_session_status(
+                db=db,
+                session_id=session_id,
+                status=DebugSessionStatus.READY
+            )
+            
+            # Determine if more steps available
+            has_more = next_step_num < total_steps
+            next_preview = steps[next_step_num] if has_more else None
+            
+            # Build response
+            return {
+                "success": result["success"],
+                "step_number": next_step_num,
+                "step_description": step_desc,
+                "error_message": result.get("error"),
+                "screenshot_path": result.get("screenshot_path"),
+                "duration_seconds": result.get("duration_seconds", 0.0),
+                "tokens_used": tokens_used,
+                "has_more_steps": has_more,
+                "next_step_preview": next_preview,
+                "total_steps": total_steps
+            }
+            
+        except Exception as e:
+            # Mark session as failed
+            error_msg = str(e)
+            crud_debug.update_debug_session_status(
+                db=db,
+                session_id=session_id,
+                status=DebugSessionStatus.FAILED,
+                error_message=error_msg
+            )
+            
+            # Return error response instead of raising
+            return {
+                "success": False,
+                "step_number": next_step_num,
+                "step_description": step_desc if 'step_desc' in locals() else "",
+                "error_message": error_msg,
+                "screenshot_path": None,
+                "duration_seconds": 0.0,
+                "tokens_used": 0,
+                "has_more_steps": False,
+                "next_step_preview": None,
+                "total_steps": total_steps
+            }
+    
     async def stop_session(
         self,
         db: Session,
