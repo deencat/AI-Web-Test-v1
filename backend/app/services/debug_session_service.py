@@ -2,10 +2,13 @@
 import asyncio
 import os
 import uuid
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, List
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.models.debug_session import DebugSession, DebugMode, DebugSessionStatus
 from app.models.test_execution import TestExecution
@@ -89,9 +92,11 @@ class DebugSessionService:
             
             try:
                 browser_metadata = await browser_service.initialize_persistent(
-                    user_data_dir=str(user_data_dir),
-                    user_config=user_config,
-                    devtools=True
+                    session_id=session_id,
+                    test_id=execution.test_case_id,
+                    user_id=user_id,
+                    db=db,
+                    user_config=user_config
                 )
             except Exception as browser_error:
                 print(f"[ERROR] Failed to initialize persistent browser: {browser_error}")
@@ -333,9 +338,18 @@ class DebugSessionService:
             
             step_desc = steps[target_step_num - 1]
             
-            # Execute target step
+            # Apply test data substitution (for {generate:hkid:main}, etc.)
+            from app.services.execution_service import ExecutionService
+            execution_service = ExecutionService(db)
+            step_desc_substituted = execution_service._substitute_test_data_patterns(
+                step_desc, 
+                execution.id
+            )
+            logger.info(f"[DEBUG] Test data substitution: '{step_desc}' -> '{step_desc_substituted}'")
+            
+            # Execute target step with substituted description
             result = await browser_service.execute_single_step(
-                step_description=step_desc,
+                step_description=step_desc_substituted,
                 step_number=target_step_num,
                 execution_id=execution.id
             )
@@ -553,6 +567,45 @@ class DebugSessionService:
         debug_session = crud_debug.mark_setup_completed(db, session_id)
         
         return debug_session
+    
+    def cleanup_old_sessions(self, max_age_hours: int = 48) -> int:
+        """
+        Clean up old debug session directories.
+        
+        Args:
+            max_age_hours: Maximum age in hours (default: 48 hours)
+            
+        Returns:
+            Number of directories removed
+        """
+        import time
+        import shutil
+        
+        removed_count = 0
+        current_time = time.time()
+        cutoff_time = current_time - (max_age_hours * 3600)
+        
+        if not self.user_data_base.exists():
+            return 0
+        
+        try:
+            for session_dir in self.user_data_base.iterdir():
+                if not session_dir.is_dir():
+                    continue
+                
+                # Check directory age
+                dir_mtime = session_dir.stat().st_mtime
+                if dir_mtime < cutoff_time:
+                    try:
+                        logger.info(f"Cleaning up old debug session: {session_dir.name}")
+                        shutil.rmtree(session_dir)
+                        removed_count += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to remove {session_dir}: {e}")
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}")
+        
+        return removed_count
 
 
 # Singleton instance

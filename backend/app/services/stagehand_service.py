@@ -1642,6 +1642,33 @@ class StagehandExecutionService:
                 "expected": step_description
             }
     
+    async def _ensure_page_connected(self):
+        """
+        Ensure the page context is still connected. If not, reconnect to the active page.
+        This is important for debug mode where the browser stays open between executions.
+        """
+        try:
+            # Try to get the current title - if page is closed, this will fail
+            await self.page.title()
+        except Exception as e:
+            print(f"[DEBUG] Page context lost: {e}")
+            print(f"[DEBUG] Attempting to reconnect to active page...")
+            
+            try:
+                # Get all pages from the context
+                pages = self.context.pages
+                if pages:
+                    # Use the first active page
+                    self.page = pages[0]
+                    print(f"[DEBUG] Reconnected to page: {await self.page.title()}")
+                else:
+                    # Create a new page if none exist
+                    self.page = await self.context.new_page()
+                    print(f"[DEBUG] Created new page")
+            except Exception as reconnect_error:
+                print(f"[ERROR] Failed to reconnect page: {reconnect_error}")
+                raise ValueError(f"Page context lost and could not reconnect: {reconnect_error}")
+
     async def execute_single_step(
         self,
         step_description: str,
@@ -1670,6 +1697,9 @@ class StagehandExecutionService:
         
         try:
             print(f"[DEBUG] Executing single step #{step_number}: {step_description}")
+            
+            # Ensure page is still connected (important for debug mode)
+            await self._ensure_page_connected()
             
             # Use hybrid execution strategy
             USE_AI_ONLY = os.getenv("USE_AI_EXECUTION", "false").lower() == "true"

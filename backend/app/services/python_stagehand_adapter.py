@@ -127,7 +127,7 @@ class PythonStagehandAdapter(StagehandAdapter):
         user_id: int,
         db: Session,
         user_config: Optional[Dict[str, Any]] = None
-    ) -> None:
+    ) -> Dict[str, Any]:
         """
         Initialize a persistent debug session using Python Stagehand.
         
@@ -137,13 +137,22 @@ class PythonStagehandAdapter(StagehandAdapter):
             user_id: User ID
             db: Database session
             user_config: Optional configuration overrides
+            
+        Returns:
+            Dict with browser_pid, browser_port, and other metadata
         """
-        await self._service.initialize_persistent(
-            session_id=session_id,
-            test_id=test_id,
-            user_id=user_id,
-            db=db,
-            user_config=user_config
+        from pathlib import Path
+        
+        # Build user data directory path (consistent with debug_session_service)
+        user_data_base = Path("artifacts/debug_sessions")
+        user_data_dir = user_data_base / session_id
+        user_data_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Call the underlying service with correct parameters
+        return await self._service.initialize_persistent(
+            user_data_dir=str(user_data_dir),
+            user_config=user_config,
+            devtools=True
         )
     
     @property
