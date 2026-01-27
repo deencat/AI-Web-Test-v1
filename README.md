@@ -1,9 +1,9 @@
-# AI Web Test v1.0
+# AI Web Test v1.1
 ## Multi-Agent Test Automation Platform
 
-**Status:** ✅ Sprint 3 Complete | � Production Ready MVP  
-**Version:** 1.0.0  
-**Last Updated:** December 9, 2025
+**Status:** 🔄 Phase 3 In Progress - Multi-Agent System (Sprint 7-9)  
+**Version:** 1.1.0  
+**Last Updated:** January 27, 2026
 
 ---
 
@@ -63,39 +63,71 @@ AI Web Test is a multi-agent test automation platform that reduces test creation
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.12.x
-- Node.js 18.x or 20.x LTS
-- Git
+- **Python 3.13.x** (or 3.12.x)
+- **Node.js 18.x or 20.x LTS**
+- **Git**
+- **pytest 9.0.2+** (for Phase 3 agent testing)
 
 ### Backend Setup (5 minutes)
 
 ```bash
 # Clone repository
 git clone https://github.com/deencat/AI-Web-Test-v1.git
-cd AI-Web-Test-v1/backend
+cd AI-Web-Test-v1-1/backend
 
 # Create virtual environment
 python -m venv venv
 .\venv\Scripts\activate  # Windows
 # source venv/bin/activate  # Mac/Linux
 
-# Install dependencies (includes Stagehand + Playwright)
+# Install dependencies (includes Stagehand + Playwright + pytest)
 pip install -r requirements.txt
+
+# Install pytest for Phase 3 agent testing
+pip install pytest pytest-asyncio
 
 # Install Chromium browser for Playwright/Stagehand
 playwright install chromium
 
 # Configure environment
-copy .env.example .env
-# Edit .env with your OpenRouter API key
+copy env.example .env
+# Edit .env with your API keys (OpenRouter, Google AI Studio, Cerebras)
 
 # Start server
 python start_server.py
 ```
 
-**Verify:**
-- Open: http://127.0.0.1:8000/docs
-- Login: admin@aiwebtest.com / admin123
+**Verify Backend:**
+- Open API docs: http://127.0.0.1:8000/docs
+- Default login: admin@aiwebtest.com / admin123
+
+### Phase 3 Development Setup (Additional)
+
+```bash
+# Switch to Phase 3 feature branch
+git checkout feature/phase3-agent-foundation
+
+# Verify pytest installation
+python -m pytest --version  # Should show 9.0.2+
+
+# Run Phase 3 agent tests (55 tests)
+cd backend
+python -m pytest tests/agents/ -v
+
+# Run RequirementsAgent tests only (26 tests)
+python -m pytest tests/agents/test_requirements_agent.py -v
+
+# Run Three HK E2E tests (21 tests)
+python -m pytest tests/agents/test_requirements_agent_three_hk.py -v
+
+# Run E2E integration (8 tests)
+python -m pytest tests/agents/test_requirements_integration.py -v
+```
+
+**Phase 3 Status:**
+- ✅ EA.6 Complete: RequirementsAgent (55/55 tests passing)
+- 🔄 Sprint 9: AnalysisAgent + EvolutionAgent (in planning)
+- 📚 Documentation: Phase3-project-documents/ folder
 
 ### Frontend Setup (Coming Soon)
 
@@ -113,7 +145,12 @@ npm run dev
 - **[NEW-PC-SETUP.md](NEW-PC-SETUP.md)** - Complete setup guide for new PC
 - **[API-CHANGELOG.md](API-CHANGELOG.md)** - API version history
 
-### Project Documentation
+### Phase 3 Documentation (Current)
+- **[Phase 3 Architecture](Phase3-project-documents/Phase3-Architecture-Design-Complete.md)** - Multi-agent system design (845 lines)
+- **[Phase 3 Implementation Guide](Phase3-project-documents/Phase3-Implementation-Guide-Complete.md)** - Sprint 7-12 tasks (2201 lines)
+- **[Phase 3 Project Plan](Phase3-project-documents/Phase3-Project-Management-Plan-Complete.md)** - Timeline and deliverables
+
+### Project Documentation (Phase 1-2)
 - **[Project Management Plan](project-documents/AI-Web-Test-v1-Project-Management-Plan.md)** - Complete project plan
 - **[Sprint 3 Frontend Guide](project-documents/SPRINT-3-FRONTEND-GUIDE.md)** - Frontend development guide (900+ lines)
 - **[API Quick Reference](project-documents/SPRINT-3-API-QUICK-REFERENCE.md)** - API endpoint reference
@@ -130,12 +167,14 @@ npm run dev
 ### Technology Stack
 
 **Backend:**
-- FastAPI 0.104.1
+- FastAPI 0.115.0+
 - SQLAlchemy 2.0.23
-- Pydantic 2.5.0
+- Pydantic 2.5.0+
 - Playwright 1.56.0
-- Stagehand 0.5.6
-- Python 3.12.10
+- Stagehand 0.5.7
+- Python 3.13.3 (or 3.12.x)
+- pytest 9.0.2 (Phase 3)
+- Cerebras Cloud SDK 1.0.0+ (Phase 3)
 
 **Database:**
 - SQLite (development)
@@ -218,8 +257,11 @@ Import `backend/AI-Web-Test-Postman-Collection.json` to test all API endpoints.
 ## 📦 Project Structure
 
 ```
-AI-Web-Test-v1/
+AI-Web-Test-v1-1/
 ├── backend/                    # FastAPI backend
+│   ├── agents/                # Phase 3: Multi-agent system
+│   │   ├── requirements_agent.py  # EA.6 Complete (815 lines)
+│   │   └── ... (AnalysisAgent, EvolutionAgent coming)
 │   ├── app/
 │   │   ├── api/               # API endpoints
 │   │   ├── core/              # Configuration
@@ -228,18 +270,28 @@ AI-Web-Test-v1/
 │   │   ├── models/            # SQLAlchemy models
 │   │   ├── schemas/           # Pydantic schemas
 │   │   └── services/          # Business logic
+│   ├── tests/
+│   │   └── agents/            # Phase 3: Agent unit tests
+│   │       ├── test_requirements_agent.py  # 26 tests
+│   │       ├── test_requirements_agent_three_hk.py  # 21 tests
+│   │       └── test_requirements_integration.py  # 8 tests
 │   ├── artifacts/
 │   │   └── screenshots/       # Test screenshots
 │   ├── venv/                  # Virtual environment
 │   ├── requirements.txt       # Python dependencies
-│   ├── .env                   # Environment config
+│   ├── env.example            # Environment template
+│   ├── .env                   # Environment config (gitignored)
 │   ├── start_server.py        # Server startup
-│   └── test_*.py             # Test files
+│   └── test_*.py              # Integration test files
 ├── frontend/                   # React frontend (in progress)
 │   ├── src/
 │   ├── package.json
 │   └── ... (to be developed)
-├── project-documents/          # Documentation
+├── Phase3-project-documents/   # Phase 3 Documentation
+│   ├── Phase3-Architecture-Design-Complete.md  # 845 lines
+│   ├── Phase3-Implementation-Guide-Complete.md # 2201 lines
+│   └── Phase3-Project-Management-Plan-Complete.md
+├── project-documents/          # Phase 1-2 Documentation
 │   ├── AI-Web-Test-v1-Project-Management-Plan.md
 │   ├── SPRINT-3-FRONTEND-GUIDE.md
 │   ├── SPRINT-3-API-QUICK-REFERENCE.md
@@ -253,31 +305,25 @@ AI-Web-Test-v1/
 
 ## 🎯 Roadmap
 
-### Sprint 3 (Current)
-- ✅ Backend: Browser automation + queue system
-- 🎯 Frontend: Execution UI + history
+### Phase 3 (Current - January 2026)
+- ✅ Sprint 7 (EA.4-EA.5): ObservationAgent + Communication infrastructure
+- ✅ Sprint 8 (EA.6): RequirementsAgent implementation (55/55 tests passing)
+- 🔄 Sprint 9 (EA.7-EA.8): AnalysisAgent + EvolutionAgent (in planning)
+- 📅 Sprint 10: Integration + E2E testing
+- 📅 Sprint 11: Performance optimization
+- 📅 Sprint 12: Production deployment
 
-### Sprint 4 (Next)
-- Scheduled test execution
-- Webhook notifications
-- Advanced analytics
-- Email notifications
+### Completed Sprints
+- ✅ Sprint 1-3 (Nov 2025): Core API + Authentication + Knowledge Base
+- ✅ Sprint 4 (Dec 2025): Browser automation + Queue system + Execution feedback
+- ✅ Sprint 5 (Dec 2025): 3-tier execution (Playwright → XPath → Stagehand AI)
+- ✅ Sprint 6 (Jan 2026): Self-healing tests + Learning mechanism
 
-### Phase 2 (Weeks 9-16)
-- Self-healing tests
-- Advanced agents
-- KB full-text search
-- Scheduled runs
-
-### Phase 3 (Weeks 17-24)
+### Phase 4 (Planned - Q2 2026)
 - CI/CD integration
-- Enterprise features
-- Production monitoring
-
-### Phase 4 (Weeks 25-32)
-- Reinforcement Learning
-- Continuous improvement
 - Advanced ML features
+- Enterprise deployment
+- Production monitoring
 
 ---
 
@@ -369,9 +415,12 @@ Proprietary - All rights reserved
 **Backend (.env):**
 ```bash
 # Required
-OPENROUTER_API_KEY=sk-or-v1-...
+OPENROUTER_API_KEY=sk-or-v1-...          # Get from https://openrouter.ai/keys
+GOOGLE_API_KEY=...                       # Get from https://aistudio.google.com/app/apikey
+CEREBRAS_API_KEY=...                     # Get from https://cloud.cerebras.ai/ (Phase 3)
+AZURE_OPENAI_API_KEY=...                 # Azure GPT-4o for RequirementsAgent
 DATABASE_URL=sqlite:///./aiwebtest.db
-SECRET_KEY=your-secret-key-here
+SECRET_KEY=your-secret-key-here          # Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 # Optional
 MAX_CONCURRENT_EXECUTIONS=5
@@ -439,11 +488,40 @@ playwright install chromium --with-deps
 
 ---
 
-**Last Updated:** November 25, 2025  
-**Status:** Production-ready backend, frontend in development  
-**Next Sprint:** Sprint 3 Frontend + Sprint 4 Planning
+**Last Updated:** January 27, 2026  
+**Status:** Phase 3 Sprint 9 - AnalysisAgent & EvolutionAgent Planning  
+**Current Branch:** feature/phase3-agent-foundation  
+**Next Sprint:** Sprint 9 Implementation (AnalysisAgent + EvolutionAgent)
 
 ---
 
-**🚀 Ready to automate your testing! Start with [NEW-PC-SETUP.md](NEW-PC-SETUP.md)**
+## 🚀 Quick Resume Development (Cursor IDE)
+
+```bash
+# 1. Activate Python environment
+cd backend
+.\venv\Scripts\activate
+
+# 2. Verify Python & pytest
+python --version  # Should be 3.13.x or 3.12.x
+python -m pytest --version  # Should be 9.0.2+
+
+# 3. Verify current branch
+git branch  # Should show: * feature/phase3-agent-foundation
+
+# 4. Run Phase 3 tests to verify setup
+python -m pytest tests/agents/ -v  # Should see 55/55 passing
+
+# 5. Review Phase 3 documentation
+# - Phase3-project-documents/Phase3-Architecture-Design-Complete.md
+# - Phase3-project-documents/Phase3-Implementation-Guide-Complete.md
+
+# 6. Check current agent implementation
+# - backend/agents/requirements_agent.py (815 lines - EA.6 Complete)
+
+# 7. Start server (if needed)
+python start_server.py  # API: http://127.0.0.1:8000/docs
+```
+
+**✅ You're ready to continue Sprint 9 development!**
 
