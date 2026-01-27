@@ -1,5 +1,7 @@
 """Debug session API endpoints for Local Persistent Browser Debug Mode."""
 from typing import Optional
+import logging
+import traceback
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
@@ -25,6 +27,7 @@ from app.services.user_settings_service import UserSettingsService
 from app.crud import debug_session as crud_debug
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post("/debug/start", response_model=DebugSessionStartResponse, status_code=status.HTTP_201_CREATED)
@@ -61,21 +64,27 @@ async def start_debug_session(
     debug_service = get_debug_session_service()
     
     try:
+        logger.info(f"Starting debug session for user {current_user.id}, execution {request.execution_id}, step {request.target_step_number}, mode {request.mode}")
+        
         # Get user's execution settings (for correct model configuration)
         settings_service = UserSettingsService()
+        logger.debug(f"Fetching user config for user {current_user.id}")
         user_config = settings_service.get_provider_config(
             db=db,
             user_id=current_user.id,
             config_type="execution"
         )
+        logger.debug(f"User config retrieved: {user_config}")
         
         # Start debug session
+        logger.info(f"Calling debug_service.start_session...")
         session = await debug_service.start_session(
             db=db,
             user_id=current_user.id,
             request=request,
             user_config=user_config
         )
+        logger.info(f"Debug session created successfully: {session.session_id}")
         
         # Build DevTools URL if available
         devtools_url = None
@@ -109,11 +118,17 @@ async def start_debug_session(
         )
         
     except ValueError as e:
+        logger.error(f"ValueError starting debug session: {str(e)}")
+        logger.error(f"Traceback:\n{traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
     except Exception as e:
+        logger.error(f"CRITICAL ERROR starting debug session: {str(e)}")
+        logger.error(f"Full traceback:\n{traceback.format_exc()}")
+        logger.error(f"Request details - execution_id: {request.execution_id}, target_step: {request.target_step_number}, mode: {request.mode}")
+        logger.error(f"User ID: {current_user.id}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to start debug session: {str(e)}"

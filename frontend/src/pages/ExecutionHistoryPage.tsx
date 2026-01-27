@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Bug } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
@@ -196,7 +197,18 @@ export function ExecutionHistoryPage() {
                       <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                         {new Date(execution.created_at).toLocaleString()}
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm">
+                      <td className="px-4 py-4 whitespace-nowrap text-sm space-x-3">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/debug/${execution.id}/1/auto`);
+                          }}
+                          className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-800 font-medium"
+                          title="Open Interactive Debug Mode"
+                        >
+                          <Bug className="w-4 h-4" />
+                          Debug
+                        </button>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();

@@ -164,3 +164,13 @@ class PythonStagehandAdapter(StagehandAdapter):
             'python'
         """
         return "python"
+    
+    @property
+    def page(self):
+        """
+        Get the current browser page from the underlying service.
+        
+        Returns:
+            The Stagehand page object, or None if not initialized
+        """
+        return self._service.page

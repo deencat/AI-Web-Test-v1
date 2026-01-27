@@ -4,6 +4,7 @@ import type {
   DebugSessionStartResponse,
   DebugStepExecuteRequest,
   DebugStepExecuteResponse,
+  DebugNextStepResponse,
   DebugSessionStatusResponse,
   DebugSessionStopResponse,
   DebugSessionManualInstructionsResponse,
@@ -102,9 +103,8 @@ class DebugService {
           session_id: request.session_id,
           iteration_number: Math.floor(Math.random() * 5) + 1,
           result: 'fail',
-          actual_result: 'Element not found on page',
-          error_message: 'Could not locate button with text "Submit"',
-          duration_seconds: 2.5,
+          error_message: 'Element not found or interaction failed',
+          duration_seconds: 1.8,
           screenshot_path: '/screenshots/debug-step-fail.png',
           message: 'Step execution failed',
         };
@@ -121,6 +121,42 @@ class DebugService {
   }
 
   /**
+   * Execute the next step in sequence (multi-step debugging)
+   */
+  async executeNextStep(sessionId: string): Promise<DebugNextStepResponse> {
+    if (apiHelpers.useMockData()) {
+      // Mock implementation
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      const currentStep = Math.floor(Math.random() * 8) + 1;
+      const totalSteps = 10;
+      const success = Math.random() > 0.2; // 80% success rate
+      
+      return {
+        session_id: sessionId,
+        step_number: currentStep,
+        step_description: `Mock step ${currentStep} description`,
+        success,
+        error_message: success ? undefined : 'Element not found',
+        screenshot_path: `/screenshots/step_${currentStep}.png`,
+        duration_seconds: 0.5 + Math.random(),
+        tokens_used: 100,
+        has_more_steps: currentStep < totalSteps,
+        next_step_preview: currentStep < totalSteps ? `Step ${currentStep + 1} description` : undefined,
+        total_steps: totalSteps,
+      };
+    }
+
+    // Real API call
+    try {
+      const response = await api.post<DebugNextStepResponse>(`/debug/${sessionId}/execute-next`);
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  /**
    * Get debug session status
    */
   async getSessionStatus(sessionId: string): Promise<DebugSessionStatusResponse> {
@@ -130,16 +166,15 @@ class DebugService {
         session_id: sessionId,
         mode: 'auto',
         status: 'ready',
-        execution_id: 1,
         target_step_number: 4,
-        current_iteration: 2,
-        max_iterations: 10,
-        total_tokens_used: 800,
-        setup_tokens_used: 600,
-        execution_tokens_per_step: 100,
+        prerequisite_steps_count: 3,
+        current_step: 4,
+        setup_completed: true,
+        tokens_used: 800,
+        iterations_count: 2,
         started_at: new Date(Date.now() - 300000).toISOString(),
         last_activity_at: new Date().toISOString(),
-        browser_url: 'chrome://inspect',
+        devtools_url: 'chrome://inspect',
       };
     }
 

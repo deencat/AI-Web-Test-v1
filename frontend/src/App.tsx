@@ -10,6 +10,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { ExecutionProgressPage } from './pages/ExecutionProgressPage';
 import { ExecutionHistoryPage } from './pages/ExecutionHistoryPage';
 import { FeedbackListPage } from './pages/FeedbackListPage';
+import { DebugSessionPage } from './pages/DebugSessionPage';
 import './index.css';
 
 // Protected Route wrapper
@@ -97,6 +98,14 @@ function App() {
           element={
             <ProtectedRoute>
               <ExecutionProgressPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/debug/:executionId/:targetStep/:mode"
+          element={
+            <ProtectedRoute>
+              <DebugSessionPage />
             </ProtectedRoute>
           }
         />
