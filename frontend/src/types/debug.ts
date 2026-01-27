@@ -64,6 +64,20 @@ export interface DebugStepExecuteResponse {
   message: string;
 }
 
+export interface DebugNextStepResponse {
+  session_id: string;
+  step_number: number;
+  step_description: string;
+  success: boolean;
+  error_message?: string;
+  screenshot_path?: string;
+  duration_seconds: number;
+  tokens_used: number;
+  has_more_steps: boolean;
+  next_step_preview?: string;
+  total_steps: number;
+}
+
 export interface DebugSessionStatusResponse {
   session_id: string;
   mode: DebugMode;
