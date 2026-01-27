@@ -29,6 +29,7 @@ import type {
 interface InteractiveDebugPanelProps {
   executionId: number;
   targetStepNumber: number;
+  endStepNumber?: number;
   mode: 'auto' | 'manual';
   onClose?: () => void;
 }
@@ -51,6 +52,7 @@ interface ExecutionLogEntry {
 export const InteractiveDebugPanel: React.FC<InteractiveDebugPanelProps> = ({
   executionId,
   targetStepNumber,
+  endStepNumber,
   mode,
   onClose,
 }) => {
@@ -72,12 +74,14 @@ export const InteractiveDebugPanel: React.FC<InteractiveDebugPanelProps> = ({
   useEffect(() => {
     const initializeSession = async () => {
       try {
-        addLog('info', `Starting debug session for execution ${executionId}, step ${targetStepNumber}...`);
+        addLog('info', `Starting debug session for execution ${executionId}, step ${targetStepNumber}${endStepNumber ? ` to ${endStepNumber}` : ''}...`);
         
         const request: DebugSessionStartRequest = {
           execution_id: executionId,
           target_step_number: targetStepNumber,
+          end_step_number: endStepNumber || null,
           mode,
+          skip_prerequisites: mode === 'manual',
         };
 
         const response = await debugService.startSession(request);
@@ -193,7 +197,7 @@ export const InteractiveDebugPanel: React.FC<InteractiveDebugPanelProps> = ({
       }
 
       // Move to next step
-      if (result.has_more_steps) {
+      if (result.has_more_steps && !result.range_complete) {
         setCurrentStepIndex(prev => prev + 1);
         
         // Continue playing if not paused
@@ -201,7 +205,11 @@ export const InteractiveDebugPanel: React.FC<InteractiveDebugPanelProps> = ({
           setTimeout(() => executeNextStep(), 500);
         }
       } else {
-        addLog('success', `All steps completed! Total: ${result.total_steps}`);
+        if (result.range_complete) {
+          addLog('success', `Debug range completed! Steps ${targetStepNumber} to ${result.end_step_number || result.total_steps}`);
+        } else {
+          addLog('success', `All steps completed! Total: ${result.total_steps}`);
+        }
         setIsPlaying(false);
       }
     } catch (err) {

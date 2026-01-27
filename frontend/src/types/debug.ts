@@ -28,6 +28,8 @@ export interface DebugSessionStartRequest {
   execution_id: number;
   mode: DebugMode;
   target_step_number: number;
+  end_step_number?: number | null;
+  skip_prerequisites?: boolean;
 }
 
 export interface ManualSetupInstruction {
@@ -76,6 +78,8 @@ export interface DebugNextStepResponse {
   has_more_steps: boolean;
   next_step_preview?: string;
   total_steps: number;
+  end_step_number?: number | null;
+  range_complete?: boolean;
 }
 
 export interface DebugSessionStatusResponse {

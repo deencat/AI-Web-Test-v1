@@ -15,7 +15,11 @@ def create_debug_session(
 ) -> DebugSession:
     """Create a new debug session."""
     # Calculate prerequisite steps count (target_step - 1)
-    prerequisite_steps = max(0, request.target_step_number - 1)
+    # If skip_prerequisites is True, set to 0
+    if request.skip_prerequisites:
+        prerequisite_steps = 0
+    else:
+        prerequisite_steps = max(0, request.target_step_number - 1)
     
     session = DebugSession(
         session_id=session_id,
@@ -23,6 +27,8 @@ def create_debug_session(
         status=DebugSessionStatus.INITIALIZING,
         execution_id=request.execution_id,
         target_step_number=request.target_step_number,
+        end_step_number=request.end_step_number,
+        skip_prerequisites=request.skip_prerequisites,
         prerequisite_steps_count=prerequisite_steps,
         user_id=user_id,
         started_at=datetime.utcnow(),
