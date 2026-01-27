@@ -101,7 +101,7 @@ class StagehandAdapter(ABC):
         user_id: int,
         db: Session,
         user_config: Optional[Dict[str, Any]] = None
-    ) -> None:
+    ) -> Dict[str, Any]:
         """
         Initialize a persistent debug session.
         
@@ -111,6 +111,9 @@ class StagehandAdapter(ABC):
             user_id: User ID
             db: Database session
             user_config: Optional configuration overrides
+            
+        Returns:
+            Dict with browser_pid, browser_port, and other metadata
         """
         pass
     
