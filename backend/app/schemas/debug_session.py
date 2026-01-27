@@ -152,3 +152,20 @@ class DebugSessionListResponse(BaseModel):
     sessions: List[DebugSessionListItem]
     
     model_config = ConfigDict(from_attributes=True)
+
+
+class DebugNextStepResponse(BaseModel):
+    """Response after executing next step in sequence."""
+    session_id: str
+    step_number: int = Field(..., description="Current step number that was executed")
+    step_description: str = Field(..., description="Description of the executed step")
+    success: bool
+    error_message: Optional[str] = None
+    screenshot_path: Optional[str] = None
+    duration_seconds: float
+    tokens_used: int
+    has_more_steps: bool = Field(..., description="Whether there are more steps to execute")
+    next_step_preview: Optional[str] = Field(None, description="Description of next step (if available)")
+    total_steps: int = Field(..., description="Total number of steps in test case")
+    
+    model_config = ConfigDict(from_attributes=True)

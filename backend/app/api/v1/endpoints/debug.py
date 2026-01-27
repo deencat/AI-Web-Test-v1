@@ -17,7 +17,8 @@ from app.schemas.debug_session import (
     DebugSessionInstructionsResponse,
     DebugSessionConfirmSetupRequest,
     DebugSessionConfirmSetupResponse,
-    DebugSessionListResponse
+    DebugSessionListResponse,
+    DebugNextStepResponse
 )
 from app.services.debug_session_service import get_debug_session_service
 from app.services.user_settings_service import UserSettingsService
@@ -180,6 +181,81 @@ async def execute_debug_step(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to execute debug step: {str(e)}"
+        )
+
+
+@router.post("/debug/{session_id}/execute-next", response_model=DebugNextStepResponse)
+async def execute_next_debug_step(
+    session_id: str,
+    current_user: User = Depends(deps.get_current_user),
+    db: Session = Depends(deps.get_db)
+):
+    """
+    Execute the next step in the debug session sequence.
+    
+    **Authentication required**
+    
+    Continues debugging on the same browser session, maintaining state
+    (cookies, localStorage, page context) between steps. This enables
+    multi-step debugging without restarting the browser.
+    
+    **Use Case:**
+    - Debug steps 7, 8, 9 in sequence without losing form state
+    - Test split field scenarios (HKID main + check digit)
+    - Validate multi-step workflows with state dependencies
+    
+    **Path Parameters:**
+    - `session_id`: Debug session ID
+    
+    **Response:**
+    - `success`: Whether step executed successfully
+    - `step_number`: Current step number that was executed
+    - `step_description`: Description of the executed step
+    - `has_more_steps`: Whether there are more steps to execute
+    - `next_step_preview`: Description of next step (if available)
+    - `total_steps`: Total number of steps in test case
+    
+    **Example:**
+    ```bash
+    # After starting debug session and executing target step 7
+    POST /api/v1/debug/{session_id}/execute-next
+    
+    # Response shows step 8 executed, can continue to step 9
+    {
+      "success": true,
+      "step_number": 8,
+      "step_description": "Enter HKID check digit",
+      "has_more_steps": true,
+      "next_step_preview": "Click Submit button",
+      "total_steps": 10
+    }
+    ```
+    """
+    debug_service = get_debug_session_service()
+    
+    try:
+        result = await debug_service.execute_next_step(
+            db=db,
+            session_id=session_id,
+            user_id=current_user.id
+        )
+        
+        return DebugNextStepResponse(**result)
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to execute next debug step: {str(e)}"
         )
 
 
