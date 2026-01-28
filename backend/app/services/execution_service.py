@@ -758,7 +758,8 @@ class ExecutionService:
                     # Try to extract the generated/substituted value from the step description
                     # This handles cases where {generate:hkid:main} was replaced with actual value
                     desc_lower = step_description.lower()
-                    if "fill" in desc_lower or "type" in desc_lower or "enter" in desc_lower or "input" in desc_lower:
+                    # FIX: Also extract values for 'select' and 'choose' actions (for dropdowns)
+                    if "fill" in desc_lower or "type" in desc_lower or "enter" in desc_lower or "input" in desc_lower or "select" in desc_lower or "choose" in desc_lower:
                         print(f"[DEBUG] Action keyword found in description, attempting value extraction")
                         # Look for common data patterns after keywords
                         value_patterns = [
@@ -771,6 +772,13 @@ class ExecutionService:
                             r'(?:cvv|cvc|security.*code).*?(\d{3,4})',  # CVV/CVC codes
                             # Pattern 4: Expiry date (MM/YY or MM/YYYY)
                             r'(?:expiry|expiration|exp.*date).*?(\d{2}/\d{2,4})',  # Expiry date
+                            
+                            # Dropdown/Select patterns - Extract month, year, day values
+                            r'(?:select|choose)\s+(?:expiry\s+)?month\s+(\d{1,2})',  # "select month 01" or "select expiry month 1"
+                            r'(?:select|choose)\s+(?:expiry\s+)?year\s+(\d{2,4})',  # "select year 39" or "select expiry year 2039"
+                            r'(?:select|choose)\s+day\s+(\d{1,2})',  # "select day 15"
+                            r'(?:select|choose)\s+(\d{1,2})\s+as\s+(?:month|day)',  # "select 01 as month"
+                            r'(?:select|choose)\s+(\d{2,4})\s+as\s+year',  # "select 39 as year"
                             
                             # HKID patterns - Extract specific values mentioned in the description
                             # Pattern 1: "input hkid number Q496157 on id no. first field" -> Extract Q496157
@@ -816,6 +824,17 @@ class ExecutionService:
                 if not step_data["action"]:
                     if "navigate" in desc_lower or "go to" in desc_lower or "open" in desc_lower:
                         step_data["action"] = "navigate"
+                    # Check for signature/sign actions first
+                    elif "sign" in desc_lower or "signature" in desc_lower or "draw" in desc_lower:
+                        step_data["action"] = "draw_signature"
+                    # Check for dropdown/select actions (select month/year/etc.)
+                    # More precise: must have "select/choose" followed by specific dropdown keywords
+                    # Exclude cases like "select the $288/month plan" where "month" is part of price
+                    elif (("select" in desc_lower or "choose" in desc_lower) and 
+                          any(f"{verb} {kw}" in desc_lower or f"{verb} expiry {kw}" in desc_lower or f"{kw} dropdown" in desc_lower or f"{kw} menu" in desc_lower or f"from {kw}" in desc_lower
+                              for verb in ["select", "choose", "pick"]
+                              for kw in ["month", "year", "day", "country", "date", "dropdown", "option"])):
+                        step_data["action"] = "select"
                     elif "click" in desc_lower or "select" in desc_lower or "choose" in desc_lower:
                         step_data["action"] = "click"
                     elif "fill" in desc_lower or "type" in desc_lower or "enter" in desc_lower or "input" in desc_lower:
