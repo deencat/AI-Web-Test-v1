@@ -30,8 +30,8 @@ This document is part of the Phase 3 documentation suite. For complete context, 
 
 - **[Phase3-Architecture-Design-Complete.md](Phase3-Architecture-Design-Complete.md)** - Technical architecture, agent design, system components
 - **[Phase3-Implementation-Guide-Complete.md](Phase3-Implementation-Guide-Complete.md)** - Detailed implementation tasks, code templates, testing strategy
-- **[DOCUMENTATION-GUIDE.md](DOCUMENTATION-GUIDE.md)** - Navigation guide for all Phase 3 documents
-- **[CONSOLIDATION-COMPLETE.md](CONSOLIDATION-COMPLETE.md)** - Documentation consolidation summary
+
+These three documents form the complete Phase 3 documentation suite.
 
 ---
 
@@ -399,38 +399,53 @@ This document is part of the Phase 3 documentation suite. For complete context, 
 
 ---
 
-### Sprint 9: Orchestration & Reporting (Feb 20 - Mar 5, 2026)
+### Sprint 9: Analysis & Evolution Agents (Enhanced) (Feb 20 - Mar 5, 2026)
 
-#### Developer A Tasks (29 points)
+**Goal:** Deploy enhanced AnalysisAgent with FMEA risk scoring and EvolutionAgent for test generation
 
-| Task | Description | Duration | Dependencies |
-|------|-------------|----------|--------------|
-| **9A.1** | Implement OrchestrationAgent (workflow coordinator) | 5 days | Sprint 8 |
-| **9A.2** | Workflow state machine (PENDING→RUNNING→COMPLETED) | 2 days | 9A.1 |
-| **9A.3** | Task allocation (Contract Net Protocol) | 3 days | 9A.2 |
-| **9A.4** | Deadlock detection (5min timeout + auto-recovery) | 2 days | 9A.3 |
-| **9A.5** | Unit tests for OrchestrationAgent (50+ tests) | 1 day | 9A.1-9A.4 |
+**Story Points:** 76 (13 days duration, enhanced from 47 points)
 
-**Total: 29 points, 13 days**
+#### Developer A Tasks (30 points, CRITICAL PATH)
 
-#### Developer B Tasks (21 points)
+| Task ID | Description | Dependencies | Points | Duration | Critical Path |
+|---------|-------------|--------------|--------|----------|---------------|
+| 9A.1 | Implement EvolutionAgent class | Sprint 8 | 13 | 5 days | 0 (START) |
+| 9A.2 | LLM integration with Cerebras (test code generation) | 9A.1 | 8 | 3 days | 5 |
+| 9A.3 | Test generation prompt templates (Playwright/Stagehand, 3 variants) | 9A.2 | 5 | 2 days | 8 |
+| 9A.4 | Caching layer with pattern storage (90% cost reduction after Sprint 10) | 9A.3 | 3 | 1 day | 10 |
+| 9A.5 | Unit tests for EvolutionAgent (30+ tests, LLM mocking) | 9A.4 | 1 | 1 day | 11 |
 
-| Task | Description | Duration | Dependencies |
-|------|-------------|----------|--------------|
-| **9B.1** | Implement ReportingAgent (Markdown + PDF generation) | 3 days | Sprint 8 |
-| **9B.2** | Coverage visualization (charts with matplotlib) | 2 days | 9B.1 |
-| **9B.3** | Integration with Phase 2 UI (display reports) | 2 days | 9B.2 |
-| **9B.4** | Unit tests for ReportingAgent (30+ tests) | 1 day | 9B.1-9B.3 |
-| **9B.5** | End-to-end workflow test (6 agents orchestrated) | 2 days | 9A.5, 9B.4 |
+**Total: 30 points, 12 days**
 
-**Total: 21 points, 10 days**
+#### Developer B Tasks (46 points, parallel - Enhanced)
 
-**Sprint 9 Success Criteria:**
-- ✅ OrchestrationAgent coordinates all 6 agents
-- ✅ Complete workflow: User request → PDF report (end-to-end)
-- ✅ Deadlock detection prevents stuck workflows
-- ✅ Reports display in Phase 2 UI
-- ✅ All 6 agents registered and operational
+| Task ID | Description | Dependencies | Points | Duration |
+|---------|-------------|--------------|--------|----------|
+| 9B.1 | Implement AnalysisAgent class with FMEA risk scoring (RPN calculation) | Sprint 8 | 13 | 5 days |
+| 9B.2 | LLM integration for structured risk analysis (severity/occurrence/detection) | 9B.1 | 8 | 3 days |
+| 9B.3 | Historical data integration (Phase 2 execution history queries) | 9B.1 | 5 | 2 days |
+| 9B.4 | ROI calculation and execution time estimation | 9B.2 | 5 | 2 days |
+| 9B.5 | Dependency analysis with topological sort (cycle detection) | 9B.1 | 5 | 2 days |
+| 9B.6 | Business value scoring (revenue, users, compliance) | 9B.2 | 3 | 1 day |
+| 9B.7 | Unit tests for AnalysisAgent (40+ tests, LLM mocking) | 9B.4, 9B.5 | 3 | 1 day |
+| 9B.8 | Integration tests (4-agent coordination: Observe → Requirements → Analyze → Evolve) | 9A.5, 9B.7 | 5 | 2 days |
+
+**Total: 46 points, 13 days (enhanced from 21 points, 7 days)**
+
+**Sprint 9 Success Criteria (Enhanced):**
+- ✅ Evolution Agent generates 10+ valid Playwright/Stagehand tests from test scenarios
+- ✅ LLM generates executable test code (async/await, page navigation, assertions)
+- ✅ Analysis Agent produces FMEA-based risk scores (RPN = Severity × Occurrence × Detection)
+- ✅ Analysis Agent calculates ROI for each scenario (explicit formula with effort estimation)
+- ✅ Analysis Agent estimates execution times (heuristics-based, categorized as fast/medium/slow)
+- ✅ Analysis Agent performs dependency analysis (topological sort, cycle detection, parallel groups)
+- ✅ Analysis Agent integrates historical data (Phase 2 execution history, failure rates)
+- ✅ Analysis Agent calculates business value (revenue impact, user impact, compliance)
+- ✅ LLM integration with Azure GPT-4o operational (structured risk analysis output)
+- ✅ Caching reduces LLM calls by 30% (pattern reuse for similar pages)
+- ✅ 4-agent workflow: Observe Web App → Extract Requirements → Analyze Risks/ROI/Dependencies → Generate Test Code
+- ✅ First optimized prompt variant deployed (A/B tested for accuracy)
+- ✅ Token usage <12,000 per test cycle (with caching, enhanced analysis)
 
 ---
 
