@@ -3,6 +3,7 @@ Tier 3: Stagehand Only Execution
 Full AI reasoning with Stagehand act() for complex interactions
 Sprint 5.5: 3-Tier Execution Engine
 """
+import asyncio
 import time
 from typing import Dict, Any, Optional
 from stagehand import Stagehand
@@ -76,8 +77,11 @@ class Tier3StagehandExecutor:
             instruction_lower = instruction.lower()
             is_navigation_action = any(
                 keyword in instruction_lower 
-                for keyword in ["next", "continue", "submit", "proceed", "upload", "confirm", "click"]
+                for keyword in ["next", "continue", "submit", "proceed", "upload", "confirm", "click", "checkout", "payment", "pay"]
             )
+            
+            # Capture current URL before action to detect navigation
+            current_url = self.stagehand.page.url
             
             # Build action instruction for Stagehand
             if action == "navigate":
@@ -89,6 +93,15 @@ class Tier3StagehandExecutor:
                 # Combine action with value for better instruction
                 full_instruction = f"{instruction} with value '{value}'"
                 result = await self.stagehand.page.act(full_instruction)
+                
+            elif action == "select" and value:
+                # Handle dropdown/select actions with explicit value
+                full_instruction = f"{instruction}. Select option with value or text '{value}'"
+                logger.info(f"[Tier 3] 🎯 Dropdown select: {full_instruction}")
+                result = await self.stagehand.page.act(full_instruction)
+                
+                # Small delay for onChange handlers
+                await asyncio.sleep(0.3)
                 
             elif action in ["assert", "verify"]:
                 # Use extract to verify content
@@ -152,6 +165,21 @@ class Tier3StagehandExecutor:
                 # Wait for page to stabilize after navigation actions
                 if is_navigation_action:
                     logger.info(f"[Tier 3] 🔄 Navigation action detected - waiting for page to stabilize")
+                    
+                    # Wait a bit for any redirect/navigation to start
+                    await asyncio.sleep(0.5)
+                    
+                    # Check if URL changed (indicates navigation/redirect)
+                    url_changed = self.stagehand.page.url != current_url
+                    if url_changed:
+                        logger.info(f"[Tier 3] 🌐 URL changed from {current_url} to {self.stagehand.page.url} - waiting for new page to load")
+                        # Wait for the new page to fully load
+                        try:
+                            await self.stagehand.page.wait_for_load_state("load", timeout=self.timeout_ms)
+                            logger.debug(f"[Tier 3] ✅ New page loaded")
+                        except Exception:
+                            logger.warning(f"[Tier 3] ⚠️ New page load timeout")
+                    
                     try:
                         await self.stagehand.page.wait_for_load_state("networkidle", timeout=self.timeout_ms)
                         logger.debug(f"[Tier 3] ✅ Page state stabilized after action")
@@ -175,7 +203,11 @@ class Tier3StagehandExecutor:
                             "[aria-busy='true']",
                             ".loading",
                             ".spinner",
-                            ".overlay"
+                            ".overlay",
+                            # Payment gateway specific loaders
+                            "iframe[class*='load']",
+                            "[id*='loading']",
+                            "[id*='spinner']"
                         ]
                         
                         for selector in loading_selectors:
@@ -184,7 +216,7 @@ class Tier3StagehandExecutor:
                                 # If loading element exists and is visible, wait for it to be hidden
                                 if await loading_element.count() > 0:
                                     logger.info(f"[Tier 3] ⏳ Detected loading indicator: {selector}")
-                                    await loading_element.wait_for(state="hidden", timeout=10000)
+                                    await loading_element.wait_for(state="hidden", timeout=15000)  # Increased to 15s for payment gateways
                                     logger.info(f"[Tier 3] ✅ Loading indicator disappeared")
                                     break
                             except Exception:
@@ -193,9 +225,42 @@ class Tier3StagehandExecutor:
                     except Exception as e:
                         logger.debug(f"[Tier 3] No loading indicators found or error checking: {str(e)}")
                     
-                    # Additional fixed delay to ensure content is fully rendered
-                    await asyncio.sleep(2.0)
-                    logger.debug(f"[Tier 3] ⏱️ Additional 2.0s wait after navigation action")
+                    # Additional fixed delay to ensure content is fully rendered (especially for payment gateways)
+                    await asyncio.sleep(3.0)  # Increased from 2.0s to 3.0s for payment gateway loading
+                    logger.debug(f"[Tier 3] ⏱️ Additional 3.0s wait after navigation action")
+                    
+                    # CRITICAL FIX: For checkout/payment buttons, wait for payment gateway input fields to appear
+                    if "checkout" in instruction_lower or "payment" in instruction_lower or "pay" in instruction_lower:
+                        logger.info(f"[Tier 3] 💳 Checkout/payment button detected - waiting for payment gateway input fields...")
+                        # Wait for common payment gateway input fields to appear
+                        payment_input_selectors = [
+                            "input[name*='card']",  # Card number input
+                            "input[placeholder*='card']",
+                            "input[id*='card']",
+                            "input[type='tel'][maxlength='19']",  # Common for card number fields
+                            "input[autocomplete='cc-number']",
+                            "input[name*='cardnumber']",
+                            "iframe[name*='card']",  # Payment gateway iframes
+                            "iframe[src*='payment']",
+                        ]
+                        
+                        input_found = False
+                        for selector in payment_input_selectors:
+                            try:
+                                payment_input = self.stagehand.page.locator(selector).first
+                                await payment_input.wait_for(state="visible", timeout=10000)
+                                logger.info(f"[Tier 3] ✅ Payment input field found: {selector}")
+                                input_found = True
+                                break
+                            except Exception:
+                                continue
+                        
+                        if input_found:
+                            # Additional small delay to ensure field is fully interactive
+                            await asyncio.sleep(1.0)
+                            logger.info(f"[Tier 3] ✅ Payment gateway ready")
+                        else:
+                            logger.warning(f"[Tier 3] ⚠️ No payment input fields detected (may be non-standard gateway)")
             
             execution_time_ms = (time.time() - start_time) * 1000
             
