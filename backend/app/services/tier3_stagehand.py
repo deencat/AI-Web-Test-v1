@@ -54,7 +54,18 @@ class Tier3StagehandExecutor:
         start_time = time.time()
         
         try:
-            action = step.get("action", "").lower()
+            action = step.get("action")
+            if action:
+                action = action.lower()
+            else:
+                # If no action provided, try to infer from instruction
+                instruction = step.get("instruction", "")
+                if any(word in instruction.lower() for word in ["sign", "signature", "draw"]):
+                    action = "draw_signature"
+                else:
+                    # Let Stagehand handle it with act()
+                    action = "act"
+            
             instruction = step.get("instruction", "")
             value = step.get("value", "")
             file_path = step.get("file_path", "")
@@ -119,6 +130,20 @@ class Tier3StagehandExecutor:
                 
                 # Small delay to allow file upload handlers to complete
                 await asyncio.sleep(0.5)
+            
+            elif action == "draw_signature" or action == "sign":
+                # Draw signature on canvas element
+                logger.info(f"[Tier 3] ✍️ Drawing signature using AI reasoning")
+                
+                # Try to use AI to find and draw on signature canvas
+                try:
+                    signature_instruction = f"{instruction}. Draw a signature on the signature pad or canvas."
+                    result = await self.stagehand.page.act(signature_instruction)
+                    logger.info(f"[Tier 3] ✅ Signature drawn via AI act()")
+                except Exception as act_error:
+                    # Fallback: Find canvas programmatically and draw
+                    logger.warning(f"[Tier 3] ⚠️ AI act() failed for signature, using fallback: {str(act_error)}")
+                    await self._execute_draw_signature_fallback()
                     
             else:
                 # Use act() for all other actions
@@ -208,7 +233,80 @@ class Tier3StagehandExecutor:
                 "error": error_msg,
                 "error_type": type(e).__name__
             }
+    
+    async def _execute_draw_signature_fallback(self):
+        """
+        Fallback method to draw signature programmatically when AI act() fails.
+        Finds canvas element and draws a signature pattern.
+        """
+        import asyncio
+        
+        # Find canvas element (common selectors for signature pads)
+        canvas_selectors = [
+            "canvas.signature-pad",
+            "canvas[id*='signature']",
+            "canvas[class*='signature']",
+            "canvas",  # Last resort: any canvas
+        ]
+        
+        canvas_element = None
+        for selector in canvas_selectors:
+            try:
+                element = self.stagehand.page.locator(selector).first
+                if await element.count() > 0:
+                    canvas_element = element
+                    logger.info(f"[Tier 3] 🎯 Found canvas using selector: {selector}")
+                    break
+            except Exception:
+                continue
+        
+        if not canvas_element:
+            raise ValueError("No canvas element found for signature drawing")
+        
+        await canvas_element.wait_for(state="visible", timeout=self.timeout_ms)
+        
+        # Get canvas dimensions and position
+        bbox = await canvas_element.bounding_box()
+        if not bbox:
+            raise ValueError("Cannot get bounding box for signature canvas")
+        
+        # Draw a simple signature path (cursive line pattern)
+        logger.info(f"[Tier 3] ✍️ Drawing signature programmatically")
+        
+        # Calculate signature path within canvas
+        canvas_x = bbox['x']
+        canvas_y = bbox['y']
+        canvas_width = bbox['width']
+        canvas_height = bbox['height']
+        
+        # Start position (left side, middle)
+        start_x = canvas_x + canvas_width * 0.1
+        start_y = canvas_y + canvas_height * 0.5
+        
+        # Create a cursive signature pattern with mouse movements
+        signature_points = [
+            (start_x, start_y),  # Start
+            (start_x + canvas_width * 0.2, start_y - canvas_height * 0.15),  # Up
+            (start_x + canvas_width * 0.35, start_y + canvas_height * 0.1),  # Down
+            (start_x + canvas_width * 0.5, start_y - canvas_height * 0.05),  # Up slight
+            (start_x + canvas_width * 0.65, start_y + canvas_height * 0.15),  # Down
+            (start_x + canvas_width * 0.8, start_y),  # End middle
+        ]
+        
+        # Move to start position
+        await self.stagehand.page.mouse.move(signature_points[0][0], signature_points[0][1])
+        await self.stagehand.page.mouse.down()
+        
+        # Draw the signature path
+        for x, y in signature_points[1:]:
+            await self.stagehand.page.mouse.move(x, y, steps=5)
+            await asyncio.sleep(0.01)  # Small delay for natural drawing
+        
+        await self.stagehand.page.mouse.up()
+        
+        logger.info(f"[Tier 3] ✅ Signature drawn successfully via fallback")
 
 
 # Import asyncio for timeout handling
 import asyncio
+
