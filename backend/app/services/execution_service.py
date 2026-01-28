@@ -749,17 +749,26 @@ class ExecutionService:
                     "instruction": step_description
                 }
                 
+                print(f"[DEBUG] Initial step_data[value]: {step_data['value']}")
+                print(f"[DEBUG] detailed_step: {detailed_step}")
+                
                 # If no value provided and this is a fill action, extract from substituted step description
                 if not step_data["value"] and (not detailed_step or not detailed_step.get('value')):
+                    print(f"[DEBUG] Entering value extraction logic")
                     # Try to extract the generated/substituted value from the step description
                     # This handles cases where {generate:hkid:main} was replaced with actual value
                     desc_lower = step_description.lower()
                     if "fill" in desc_lower or "type" in desc_lower or "enter" in desc_lower or "input" in desc_lower:
+                        print(f"[DEBUG] Action keyword found in description, attempting value extraction")
                         # Look for common data patterns after keywords
                         value_patterns = [
-                            # HKID patterns - value comes BEFORE "first field" or "second field"
-                            r'(?:hkid|id).*?([A-Z]\d{6})\s+(?:first|second)\s+field',  # "hkid number on id no. Y353499 first field"
-                            r'(?:hkid|id).*?(\d{1})\s+(?:second)\s+field',  # "hkid number on id no. 8 second field"
+                            # HKID patterns - Extract specific values mentioned in the description
+                            # Pattern 1: "input hkid number Q496157 on id no. first field" -> Extract Q496157
+                            r'(?:input|enter|fill|type)\s+(?:hkid|id)\s+(?:number\s+)?([A-Z]\d{6})\s+',  # Alphanumeric HKID (e.g., Q496157)
+                            # Pattern 2: "input hkid number 5 on id no. second field" -> Extract 5
+                            r'(?:input|enter|fill|type)\s+(?:hkid|id)\s+(?:number\s+)?(\d{1,2})\s+(?:on|in)',  # 1-2 digit number (e.g., 5)
+                            # Pattern 3: Check digit patterns (e.g., "(3)")
+                            r'(?:input|enter|fill|type)\s+(?:hkid|id)\s+(?:number\s+)?\((\d{1})\)',  # Check digit in parentheses
                             
                             # Contact/phone number - more flexible pattern
                             r'(?:contact|phone|mobile).*?(\d{8})\s*$',  # "contact number 90457537"
@@ -772,19 +781,25 @@ class ExecutionService:
                             r'(?:birth|date).*?([\d/]+)\s*$',  # "birth 2000/01/01"
                             
                             # Generic fallback patterns
-                            r'(?:input|enter|fill|type)\s+(?:hkid|id|number)\s+([A-Z]\d{6}|\d{1,2})\s+',  # "input hkid A123456 on"
-                            r'(?:input|enter|fill|type)\s+([A-Z]\d{6}|\d{8})\s+',  # Generic: "input A123456 on" or "input 12345678 on"
+                            r'(?:input|enter|fill|type)\s+([A-Z]\d{6})\s+',  # Generic: "input A123456 on"
+                            r'(?:input|enter|fill|type)\s+(\d{8})\s+',  # Generic: "input 12345678 on"
                         ]
                         
-                        for pattern in value_patterns:
+                        for i, pattern in enumerate(value_patterns):
                             match = re.search(pattern, step_description, re.IGNORECASE)
                             if match:
                                 potential_value = match.group(1)
+                                print(f"[DEBUG] Pattern {i} matched: {pattern[:50]}... => {potential_value}")
                                 # Skip if it looks like a field description
                                 if "field" not in potential_value.lower():
                                     step_data["value"] = potential_value
                                     print(f"[DEBUG] Extracted value from substituted description: {step_data['value']}")
                                     break
+                                else:
+                                    print(f"[DEBUG] Skipped potential_value '{potential_value}' (contains 'field')")
+                        
+                        if not step_data["value"]:
+                            print(f"[DEBUG] No value extracted from patterns")
                 
                 # Detect action from description if not provided
                 desc_lower = step_description.lower()
