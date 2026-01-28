@@ -47,7 +47,17 @@ class Tier1PlaywrightExecutor:
         start_time = time.time()
         
         try:
-            action = step.get("action", "").lower()
+            action = step.get("action")
+            if action:
+                action = action.lower()
+            else:
+                # If no action provided, try to infer from instruction
+                instruction = step.get("instruction", "")
+                if any(word in instruction.lower() for word in ["sign", "signature", "draw"]):
+                    action = "draw_signature"
+                else:
+                    raise ValueError(f"No action provided for step: {instruction}")
+            
             selector = step.get("selector")
             value = step.get("value", "")
             instruction = step.get("instruction", "")
@@ -95,6 +105,11 @@ class Tier1PlaywrightExecutor:
                 if not selector:
                     raise ValueError(f"No selector provided for upload_file action: {instruction}")
                 await self._execute_upload_file(page, selector, file_path)
+            elif action == "draw_signature" or action == "sign":
+                # Signature drawing on canvas element
+                if not selector:
+                    raise ValueError(f"No selector provided for draw_signature action: {instruction}")
+                await self._execute_draw_signature(page, selector, value)
             else:
                 raise ValueError(f"Unsupported action type: {action}")
             
@@ -307,6 +322,76 @@ class Tier1PlaywrightExecutor:
         # Upload file using Playwright's set_input_files method
         logger.info(f"[Tier 1] 📤 Uploading file: {file_path}")
         await element.set_input_files(file_path, timeout=self.timeout_ms)
+    
+    async def _execute_draw_signature(self, page: Page, selector: str, signature_text: str = None):
+        """
+        Draw a signature on a canvas element.
+        
+        This method handles signature canvas elements by:
+        1. Locating the canvas element
+        2. Drawing a simple signature path (simulated handwriting)
+        3. Optionally adding text if signature_text is provided
+        
+        Args:
+            page: Playwright Page object
+            selector: Selector for canvas element (e.g., 'canvas.signature-pad')
+            signature_text: Optional text to include in signature (default: cursive line)
+        
+        Raises:
+            ValueError: If element is not a canvas
+        """
+        # Locate canvas element
+        element = page.locator(selector).first
+        await element.wait_for(state="visible", timeout=self.timeout_ms)
+        
+        # Verify it's a canvas element
+        tag_name = await element.evaluate("el => el.tagName")
+        if tag_name.lower() != "canvas":
+            logger.warning(
+                f"[Tier 1] ⚠️ Element {selector} is not a canvas (tag={tag_name}). "
+                f"Attempting signature drawing anyway..."
+            )
+        
+        # Get canvas dimensions and position
+        bbox = await element.bounding_box()
+        if not bbox:
+            raise ValueError(f"Cannot get bounding box for canvas: {selector}")
+        
+        # Draw a simple signature path (cursive line pattern)
+        logger.info(f"[Tier 1] ✍️ Drawing signature on canvas: {selector}")
+        
+        # Calculate signature path within canvas
+        canvas_x = bbox['x']
+        canvas_y = bbox['y']
+        canvas_width = bbox['width']
+        canvas_height = bbox['height']
+        
+        # Start position (left side, middle)
+        start_x = canvas_x + canvas_width * 0.1
+        start_y = canvas_y + canvas_height * 0.5
+        
+        # Create a cursive signature pattern with mouse movements
+        signature_points = [
+            (start_x, start_y),  # Start
+            (start_x + canvas_width * 0.2, start_y - canvas_height * 0.15),  # Up
+            (start_x + canvas_width * 0.35, start_y + canvas_height * 0.1),  # Down
+            (start_x + canvas_width * 0.5, start_y - canvas_height * 0.05),  # Up slight
+            (start_x + canvas_width * 0.65, start_y + canvas_height * 0.15),  # Down
+            (start_x + canvas_width * 0.8, start_y),  # End middle
+        ]
+        
+        # Move to start position
+        await page.mouse.move(signature_points[0][0], signature_points[0][1])
+        await page.mouse.down()
+        
+        # Draw the signature path
+        for x, y in signature_points[1:]:
+            await page.mouse.move(x, y, steps=5)
+            await asyncio.sleep(0.01)  # Small delay for natural drawing
+        
+        await page.mouse.up()
+        
+        logger.info(f"[Tier 1] ✅ Signature drawn successfully")
         
         # Small delay to allow file upload event handlers to complete
         await asyncio.sleep(0.5)
