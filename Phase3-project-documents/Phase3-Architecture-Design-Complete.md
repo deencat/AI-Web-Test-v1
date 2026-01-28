@@ -4,7 +4,14 @@
 **Scope:** Framework selection, communication patterns, orchestration strategy, data flow  
 **Audience:** Technical architects, lead developers, stakeholders  
 **Status:** Final design for Sprint 7-12 implementation  
-**Last Updated:** January 21, 2026
+**Last Updated:** January 27, 2026
+
+> **📖 When to Use This Document:**
+> - **System Design:** Understanding overall architecture, agent patterns, data flow
+> - **Technology Decisions:** Framework selection, communication patterns, infrastructure
+> - **Agent Specifications:** Detailed agent design, capabilities, interactions
+> - **For Implementation:** See [Implementation Guide](Phase3-Implementation-Guide-Complete.md) Section 3
+> - **For Sprint Planning:** See [Project Management Plan](Phase3-Project-Management-Plan-Complete.md) Section 2.4
 
 > **Note:** For implementation details, code examples, and Sprint-specific tasks, see [Phase3-Implementation-Guide-Complete.md](./Phase3-Implementation-Guide-Complete.md)
 

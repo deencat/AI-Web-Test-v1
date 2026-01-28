@@ -3,7 +3,14 @@
 **Purpose:** Comprehensive implementation guide with code examples, sprint tasks, integration, testing, and security  
 **Scope:** Sprint 7-12 detailed tasks, Phase 2 integration, code templates, testing strategy, security design  
 **Status:** Ready for development  
-**Last Updated:** January 19, 2026
+**Last Updated:** January 27, 2026
+
+> **📖 When to Use This Document:**
+> - **Writing Code:** Code templates, implementation examples, API patterns
+> - **Sprint Tasks:** Detailed task breakdowns with dependencies and durations
+> - **Testing Strategy:** Unit test examples, integration test patterns
+> - **For Sprint Planning:** See [Project Management Plan](Phase3-Project-Management-Plan-Complete.md) Section 2.4
+> - **For Architecture Design:** See [Architecture Document](Phase3-Architecture-Design-Complete.md) Section 6
 
 ---
 
@@ -86,8 +93,8 @@
 
 | Sprint | Duration | Focus | Story Points | Critical Path |
 |--------|----------|-------|--------------|---------------|
-| **Sprint 7** | Weeks 1-2 | Infrastructure + BaseAgent | 31 | Developer A |
-| **Sprint 8** | Weeks 3-4 | Observation + Requirements | 42 | Developer A |
+| **Sprint 7** | Weeks 1-2 | Infrastructure Integration | 23 | Developer A |
+| **Sprint 8** | Weeks 3-4 | Analysis + Evolution | 47 | Developer A |
 | **Sprint 9** | Weeks 5-6 | Analysis + Evolution | 47 | Developer A |
 | **Sprint 10** | Weeks 7-8 | Orchestration + Reporting | 52 | Developer A |
 | **Sprint 11** | Weeks 9-10 | CI/CD Integration | 39 | Both (parallel) |
@@ -100,7 +107,8 @@
 - Redis Streams, PostgreSQL, BaseAgent, memory system, health checks
 
 **Weeks 3-6 (Sprints 8-9):** Core Agents
-- Observation, Requirements, Analysis, Evolution agents operational
+- ✅ Observation, Requirements agents already operational (Pre-Sprint 7)
+- Analysis, Evolution agents to be implemented
 
 **Weeks 7-8 (Sprint 10):** Coordination
 - Orchestration, Reporting agents, Contract Net Protocol
@@ -115,23 +123,31 @@
 
 ## 2. Sprint 7-12 Detailed Tasks
 
-### Sprint 7: Infrastructure & BaseAgent (Jan 23 - Feb 5, 2026)
+### Sprint 7: Infrastructure Integration (Jan 23 - Feb 5, 2026)
 
-**Goal:** Set up multi-agent infrastructure and implement BaseAgent abstract class
+**Goal:** Replace stubs with real infrastructure (Redis, PostgreSQL) and integrate existing agents
 
-**Story Points:** 31 (11 days duration)
+**Story Points:** 23 (11 days duration) - Reduced from 31 because BaseAgent, ObservationAgent, and RequirementsAgent are already complete
 
-#### Developer A Tasks (21 points, CRITICAL PATH)
+**✅ Pre-Sprint 7 Work (COMPLETE):**
+- ✅ BaseAgent abstract class (EA.1)
+- ✅ Message bus stub (EA.2)
+- ✅ Agent registry stub (EA.3)
+- ✅ ObservationAgent with Azure OpenAI (EA.4)
+- ✅ RequirementsAgent with industry best practices (EA.5)
+- ✅ Unit tests (55/55 passing) (EA.6)
+
+**See [Project Management Plan Section 2.4 Pre-Sprint 7](Phase3-Project-Management-Plan-Complete.md#pre-sprint-7-developer-a-early-start-jan-20-23-while-developer-b-on-phase-2) for completed tasks.**
+
+#### Developer A Tasks (5 points, CRITICAL PATH)
 
 | Task ID | Description | Dependencies | Points | Duration | Critical Path |
 |---------|-------------|--------------|--------|----------|---------------|
-| 7A.1 | Set up Redis Streams cluster (3 nodes) | None | 3 | 1 day | 0 (START) |
-| 7A.2 | Implement message bus wrapper (send/receive) | 7A.1 | 5 | 2 days | 1 |
-| 7A.3 | Implement BaseAgent abstract class | 7A.2 | 8 | 3 days | 3 |
-| 7A.4 | Implement agent registry (register/heartbeat) | 7A.3 | 3 | 1 day | 6 |
-| 7A.5 | Create health check endpoints (/health, /ready) | 7A.4 | 2 | 1 day | 7 |
+| 7A.1 | Replace message bus stub with real Redis pub/sub | 7B.1 | 2 | 1 day | 0 (START) |
+| 7A.2 | Replace agent registry stub with Redis-backed version | 7B.1 | 2 | 1 day | 1 |
+| 7A.3 | Integration tests (ObservationAgent + RequirementsAgent + real Redis) | 7A.1, 7A.2 | 1 | 1 day | 2 |
 
-**Total: 21 points, 8 days**
+**Total: 5 points, 3 days**
 
 #### Developer B Tasks (10 points, parallel)
 
@@ -399,50 +415,51 @@ All agents with LLM support include fallback logic to continue operation without
 
 ---
 
-### Sprint 8: Observation & Requirements Agents (Feb 6 - Feb 19, 2026)
+### Sprint 8: Analysis & Evolution Agents (Feb 6 - Feb 19, 2026)
 
-**Goal:** Deploy agents that observe web applications and extract test requirements
+**Goal:** Deploy AnalysisAgent and EvolutionAgent to complete the 4-agent workflow
 
-**Story Points:** 42 (11 days duration)
+**Story Points:** 47 (11 days duration)
 
-#### Developer A Tasks (23 points, CRITICAL PATH)
+**✅ Pre-Sprint 7 Work (ALREADY COMPLETE):**
+- ✅ ObservationAgent - See [Project Management Plan Section 2.4](Phase3-Project-Management-Plan-Complete.md#pre-sprint-7-developer-a-early-start-jan-20-23-while-developer-b-on-phase-2)
+- ✅ RequirementsAgent - See [Implementation Guide Section 3.4](Phase3-Implementation-Guide-Complete.md#34-requirements-agent-test-scenario-extraction)
+
+**Note:** ObservationAgent and RequirementsAgent were completed in Pre-Sprint 7 (EA.4 and EA.5). This sprint focuses on the remaining two agents.
+
+#### Developer A Tasks (26 points, CRITICAL PATH)
 
 | Task ID | Description | Dependencies | Points | Duration | Critical Path |
 |---------|-------------|--------------|--------|----------|---------------|
-| 8A.1 | Implement ObservationAgent class | Sprint 7 | 8 | 3 days | 0 (START) |
-| 8A.2 | Web crawling with Playwright (page navigation, DOM analysis) | 8A.1 | 5 | 2 days | 3 |
-| 8A.3 | LLM integration with Cerebras (element detection, semantic analysis) | 8A.2 | 5 | 2 days | 5 |
-| 8A.4 | Hybrid observation: Playwright baseline + LLM enhancement | 8A.3 | 3 | 1 day | 7 |
-| 8A.5 | Integration with Phase 2 Stagehand service | 8A.4 | 5 | 2 days | 8 |
-| 8A.6 | Unit tests for ObservationAgent (30+ tests, LLM mocking) | 8A.5 | 2 | 1 day | 10 |
+| 8A.1 | Implement EvolutionAgent class | Sprint 7 | 13 | 5 days | 0 (START) |
+| 8A.2 | LLM integration (OpenAI API client) | 8A.1 | 8 | 3 days | 5 |
+| 8A.3 | Prompt engineering (3 variants for A/B testing) | 8A.2 | 3 | 1 day | 8 |
+| 8A.4 | Caching layer (30% cost reduction) | 8A.2 | 2 | 1 day | 8 |
+| 8A.5 | Unit tests for EvolutionAgent (30+ tests) | 8A.1-8A.4 | 1 | 1 day | 9 |
 
-**Total: 28 points, 11 days**
+**Total: 26 points, 11 days**
 
-#### Developer B Tasks (19 points, parallel)
+#### Developer B Tasks (21 points, parallel)
 
 | Task ID | Description | Dependencies | Points | Duration |
 |---------|-------------|--------------|--------|----------|
-| 8B.1 | Implement RequirementsAgent class | Sprint 7 | 8 | 3 days |
-| 8B.2 | LLM integration for test scenario generation (Given/When/Then) | 8B.1 | 5 | 2 days |
-| 8B.3 | Pattern matching and priority assignment (critical/high/medium/low) | 8B.2 | 3 | 1 day |
-| 8B.4 | Unit tests for RequirementsAgent (30+ tests, LLM mocking) | 8B.3 | 3 | 1 day |
-| 8B.5 | Integration tests (Observation → Requirements) | 8A.6, 8B.4 | 5 | 2 days |
-| 8B.6 | Collect first 100+ user feedback samples | Sprint 7 | 3 | Continuous |
+| 8B.1 | Implement AnalysisAgent (dependency graph + risk scoring) | Sprint 7 | 8 | 3 days |
+| 8B.2 | Dependency graph analysis (AST + imports) | 8B.1 | 5 | 2 days |
+| 8B.3 | Risk scoring algorithm (complexity + churn) | 8B.2 | 5 | 2 days |
+| 8B.4 | Unit tests for AnalysisAgent (30+ tests) | 8B.1-8B.3 | 3 | 1 day |
+| 8B.5 | Integration tests (4-agent workflow: Observe → Requirements → Analyze → Evolve) | 8A.5, 8B.4 | 5 | 2 days |
+| 8B.6 | Collect 100+ user feedback samples (manual) | Sprint 7 | 3 | Continuous |
 
-**Total: 27 points, 6 days**
+**Total: 21 points, 9 days**
 
 #### Sprint 8 Success Criteria
 
-- ✅ Observation Agent crawls web application pages (buttons, forms, navigation)
-- ✅ LLM integration finds 65% more elements than Playwright-only
-- ✅ Hybrid observation: Playwright baseline (200ms) + LLM enhancement (3s)
-- ✅ Cerebras API configured with llama3.1-8b model
-- ✅ Graceful degradation: Works without LLM (Playwright-only fallback)
-- ✅ Requirements Agent extracts test scenarios from UI elements (Given/When/Then)
-- ✅ Integration test: Observation → Requirements end-to-end (web app → test requirements)
-- ✅ 30+ unit tests per agent, 95%+ coverage
-- ✅ 100+ user feedback samples collected
-- ✅ First 2 agents registered and operational
+- ✅ EvolutionAgent generates valid pytest tests (10+ samples)
+- ✅ AnalysisAgent produces risk scores (0.0-1.0)
+- ✅ 4-agent workflow operational: Observe → Require → Analyze → Evolve
+- ✅ LLM costs <$0.20 per test cycle (with caching)
+- ✅ 100+ feedback samples collected for learning system
+- ✅ Integration test: Full 4-agent workflow end-to-end
 
 ---
 
