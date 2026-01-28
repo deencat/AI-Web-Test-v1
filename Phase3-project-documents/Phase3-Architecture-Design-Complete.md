@@ -335,7 +335,7 @@ user_feedback (generation_id, rating, comments, created_at)
 |-------|-------|--------|-----------|
 | **ObservationAgent** | URL | UI elements (261 in Three HK test) | Azure GPT-4o ✅ |
 | **RequirementsAgent** | UI elements | 18 BDD scenarios (conf: 0.90) | Azure GPT-4o ✅ |
-| **AnalysisAgent** | Test scenarios | Risk scores (0.0-1.0) | Azure GPT-4o |
+| **AnalysisAgent** | Test scenarios | Risk scores (RPN), ROI, execution order | Azure GPT-4o |
 | **EvolutionAgent** | Test scenarios | Playwright test code | Azure GPT-4o |
 | **OrchestrationAgent** | User request | Coordinated workflow | No LLM |
 | **ReportingAgent** | Test results | HTML/PDF reports | Optional |
@@ -429,24 +429,69 @@ user_feedback (generation_id, rating, comments, created_at)
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ Stage 3: AnalysisAgent                                                  │
-│ Input:   RequirementsAgent output                                       │
-│ Process: - Score scenario risk (business impact × technical complexity) │
-│          - Analyze dependencies (scenario execution order)              │
-│          - Calculate ROI (effort vs. bug detection value)               │
-│          - Prioritize scenarios (critical-first, then high/med/low)     │
-│          - Azure GPT-4o risk analysis (~1,500 tokens)                   │
+│ Stage 3: AnalysisAgent (Enhanced - FMEA-Based Risk Analysis)           │
+│ Input:   RequirementsAgent output (scenarios, test_data, coverage)     │
+│ Process: - Historical data integration (Phase 2 execution history)     │
+│          - FMEA risk scoring (RPN = Severity × Occurrence × Detection) │
+│          - Business value scoring (revenue, users, compliance)           │
+│          - ROI calculation (explicit formula with effort estimation)   │
+│          - Execution time estimation (heuristics-based)                 │
+│          - Dependency analysis (topological sort, cycle detection)      │
+│          - Coverage impact analysis (coverage gaps, delta calculation)  │
+│          - Regression risk assessment (code churn, git history)         │
+│          - Real-time test execution (Phase 2 engine, 3-tier strategy)   │
+│            • Converts BDD scenarios → Executable test steps             │
+│            • Executes critical scenarios (RPN ≥ 80) via StagehandService│
+│            • Uses 3-tier strategy: Playwright → Hybrid → Stagehand AI  │
+│            • Measures actual success rates (passed_steps / total_steps) │
+│          - Execution success rate scoring (actual results, not estimates)│
+│          - Azure GPT-4o risk analysis (~2,000 tokens, structured output)│
 │ Output:  {                                                              │
 │            "risk_scores": [                                             │
-│              {scenario_id: "REQ-F-001", risk: 0.95, priority: 1},       │
-│              {scenario_id: "REQ-S-001", risk: 0.88, priority: 2}        │
+│              {scenario_id: "REQ-F-001", rpn: 100, severity: 5,          │
+│               occurrence: 4, detection: 5, priority: "critical"}       │
 │            ],                                                           │
-│            "dependencies": [                                            │
-│              {scenario: "REQ-F-001", depends_on: []}                    │
+│            "business_values": [                                         │
+│              {scenario_id: "REQ-F-001", revenue_impact: 1.0,           │
+│               user_impact: 0.9, compliance: 0.0, total_value: 0.87}   │
 │            ],                                                           │
-│            "execution_order": ["REQ-F-001", "REQ-S-001", ...]           │
+│            "roi_scores": [                                              │
+│              {scenario_id: "REQ-F-001", roi: 41.5,                      │
+│               bug_detection_value: 2700.0, test_cost: 65.0}            │
+│            ],                                                           │
+│            "execution_times": [                                          │
+│              {scenario_id: "REQ-F-001", estimated_seconds: 8.5,        │
+│               category: "fast"}                                         │
+│            ],                                                           │
+│            "dependencies": [                                             │
+│              {scenario_id: "REQ-F-001", depends_on: [],                 │
+│               execution_order: 1, can_run_parallel: true}               │
+│            ],                                                           │
+│            "coverage_impact": [                                          │
+│              {scenario_id: "REQ-F-001", coverage_delta: 0.15,          │
+│               covers_new_code: true, gap_priority: "high"}               │
+│            ],                                                           │
+│            "regression_risk": [                                          │
+│              {scenario_id: "REQ-F-001", churn_score: 0.8,              │
+│               recent_changes: 5, days_since_last_change: 2}             │
+│            ],                                                           │
+│            "execution_success": [                                        │
+│              {scenario_id: "REQ-F-001", success_rate: 0.95,            │
+│               passed_steps: 19, total_steps: 20, reliability: "high"}  │
+│            ],                                                           │
+│            "final_prioritization": [                                    │
+│              {scenario_id: "REQ-F-001", composite_score: 0.95,          │
+│               rank: 1, execution_group: "critical_smoke"}                 │
+│            ],                                                           │
+│            "execution_strategy": {                                       │
+│              "smoke_tests": ["REQ-F-001"],                              │
+│              "parallel_groups": [["REQ-F-001", "REQ-F-002"]],          │
+│              "estimated_total_time": 45.2,                              │
+│              "estimated_parallel_time": 25.8                            │
+│            }                                                            │
 │          }                                                              │
-│ Quality: confidence=0.87, cost=$0.012/page                              │
+│ Quality: confidence=0.87, cost=$0.015/page (enhanced analysis)       │
+│ Standards: ISTQB, IEEE 29119, FMEA, Risk-Based Testing                  │
 └────────────────────────────┬────────────────────────────────────────────┘
                              │
                              ▼
@@ -523,6 +568,454 @@ RequirementsAgent LLM Call
         └─Error──────> Log error, use pattern-based fallback
                        (confidence: 0.65)
 ```
+
+### 6.4 AnalysisAgent Detailed Design (Enhanced - Industry Best Practices)
+
+**AnalysisAgent** performs comprehensive risk analysis, prioritization, and dependency management following industry standards (ISTQB, IEEE 29119, FMEA).
+
+#### 6.4.1 Risk Scoring Framework (FMEA-Based)
+
+**Risk Priority Number (RPN) Calculation:**
+```
+RPN = Severity × Occurrence × Detection
+
+Where:
+- Severity (1-5): Impact if bug reaches production
+  1 = Cosmetic, 2 = Minor, 3 = Moderate, 4 = Major, 5 = System failure
+- Occurrence (1-5): Probability of bug occurring
+  1 = Rare (<1%), 2 = Unlikely (1-10%), 3 = Possible (10-30%),
+  4 = Likely (30-70%), 5 = Frequent (>70%)
+- Detection (1-5): Difficulty of detecting bug
+  1 = Always caught, 2 = Usually caught, 3 = Sometimes caught,
+  4 = Rarely caught, 5 = Never caught
+
+Priority Mapping:
+- RPN ≥ 80: Critical (immediate action required)
+- RPN ≥ 50: High (address soon)
+- RPN ≥ 20: Medium (address when possible)
+- RPN < 20: Low (address if time permits)
+```
+
+**Industry Standards Alignment:**
+- **ISTQB:** Risk-based testing approach
+- **IEEE 29119:** Test prioritization framework
+- **FMEA:** Failure Mode and Effects Analysis
+- **ISO 26262 (Automotive):** RPN threshold = 100 (critical)
+- **FDA (Medical Devices):** RPN threshold = 80 (requires mitigation)
+
+#### 6.4.2 Historical Data Integration
+
+**Data Sources:**
+1. **Phase 2 Execution History:**
+   - Query `executions` table for past failures
+   - Calculate failure rate per scenario type
+   - Track time-to-fix for bugs
+   - Analyze failure patterns (90-day window)
+
+2. **Git History Analysis:**
+   - Track code churn (commits per file/component)
+   - Identify recently changed code paths
+   - Calculate change frequency (high churn = higher regression risk)
+
+3. **Bug Frequency Analysis:**
+   ```sql
+   SELECT scenario_type, COUNT(*) as failure_count,
+          AVG(time_to_fix_hours) as avg_fix_time
+   FROM executions
+   WHERE status = 'failed' AND created_at > NOW() - INTERVAL '90 days'
+   GROUP BY scenario_type
+   ORDER BY failure_count DESC
+   ```
+
+**Usage in Risk Scoring:**
+- Historical failure rate → Influences Occurrence score
+- Recent code changes → Boosts regression risk
+- Time-to-fix → Influences Severity (longer fix = higher severity)
+
+#### 6.4.3 Business Value Scoring
+
+**Multi-Factor Business Value Calculation:**
+```
+Business Value = (Revenue Impact × 0.4) + 
+                 (User Impact × 0.3) + 
+                 (Compliance × 0.2) + 
+                 (Reputation × 0.1)
+
+Where:
+- Revenue Impact (0.0-1.0): Based on page type
+  - Checkout/Payment: 1.0 (highest)
+  - Pricing: 0.9
+  - Login: 0.8 (blocks all users)
+  - Dashboard: 0.6
+  - Footer: 0.1 (lowest)
+
+- User Impact (0.0-1.0): Estimated users affected
+  - Normalized to 10,000 users (1.0 = 10K+ users affected)
+
+- Compliance (0.0-1.0): Regulatory requirements
+  - GDPR data handling: 1.0 (critical)
+  - HIPAA health data: 1.0 (critical)
+  - PCI-DSS payment: 1.0 (critical)
+  - General compliance: 0.5
+  - No compliance: 0.0
+
+- Reputation (0.0-1.0): Public-facing vs internal
+  - Public-facing: 1.0
+  - Internal: 0.5
+```
+
+#### 6.4.4 ROI Calculation Formula
+
+**Explicit ROI Formula (Industry Standard):**
+```
+ROI = (Bug Detection Value - Test Cost) / Test Cost
+
+Where:
+Bug Detection Value = (P_bug × Cost_production_bug × Detection_rate)
+
+Test Cost = Dev_time_cost + Exec_time_cost + Maintenance_cost
+
+Components:
+- P_bug: Probability of bug (from historical data or LLM analysis)
+- Cost_production_bug: Business impact if bug reaches production
+  - Login flow: $10,000/hour downtime
+  - Payment flow: $50,000/hour revenue loss
+  - Dashboard: $5,000/hour user impact
+- Detection_rate: Test effectiveness (default: 0.9 = 90%)
+- Dev_time_cost: Development time × $50/hour
+- Exec_time_cost: Execution time × $0.10/minute
+- Maintenance_cost: Monthly maintenance × $20/month
+```
+
+**Example Calculation:**
+- Login flow bug in production: $10,000 (downtime, reputation)
+- Probability of bug: 0.3 (30% chance, from historical data)
+- Test detects bug: 0.9 (90% detection rate)
+- Bug Detection Value = $10,000 × 0.3 × 0.9 = $2,700
+- Test Cost = $50 (dev) + $5 (exec) + $10 (maintenance) = $65
+- ROI = ($2,700 - $65) / $65 = **41.5x return**
+
+#### 6.4.5 Execution Time Estimation
+
+**Heuristic-Based Time Estimation:**
+```
+Estimated Time = Base Time + Sum(Action Times) + Flakiness Buffer
+
+Where:
+- Base Time: 2.0 seconds (page load, setup)
+- Action Times:
+  - Navigation: 1.0s
+  - Click: 0.5s
+  - Type: 0.3s
+  - Wait: 2.0s (explicit waits)
+  - Assertion: 0.2s
+- Flakiness Buffer: 20% (multiply total by 1.2)
+
+Categories:
+- Fast: <30 seconds (smoke tests)
+- Medium: 30-120 seconds (standard tests)
+- Slow: >120 seconds (comprehensive tests)
+```
+
+**Fast-Fail Strategy:**
+- Prioritize fast tests (<30s) for smoke test suite
+- Run smoke tests first to catch critical issues quickly
+- Full test suite runs after smoke tests pass
+
+#### 6.4.6 Dependency Analysis Algorithm
+
+**Topological Sort (Kahn's Algorithm):**
+```
+1. Build dependency graph from scenario dependencies
+2. Calculate in-degree for each scenario
+3. Initialize queue with scenarios having in-degree = 0
+4. While queue is not empty:
+   a. Dequeue scenario (add to execution order)
+   b. Decrement in-degree for dependent scenarios
+   c. If in-degree becomes 0, enqueue dependent scenario
+5. If execution order length < total scenarios:
+   → Circular dependency detected (error)
+
+Parallel Execution Groups:
+- Scenarios with in-degree = 0 can run in parallel
+- Group independent scenarios for concurrent execution
+```
+
+**Cycle Detection:**
+- Detect circular dependencies (A → B → C → A)
+- Raise error if circular dependency found
+- Suggest dependency removal to break cycle
+
+#### 6.4.7 Coverage Impact Analysis
+
+**Coverage Gap Identification:**
+1. Identify untested code paths (0% coverage)
+2. Calculate coverage delta per test (how much coverage increases)
+3. Prioritize tests that cover new/uncovered code
+4. Focus on critical paths with 0% coverage
+
+**Coverage Metrics:**
+- Statement coverage: % of statements executed
+- Branch coverage: % of branches executed
+- Function coverage: % of functions called
+- Path coverage: % of execution paths tested
+
+**Prioritization:**
+- High priority: Tests covering 0% coverage areas
+- Medium priority: Tests increasing coverage by >10%
+- Low priority: Tests covering already-covered code
+
+#### 6.4.8 Regression Risk Assessment
+
+**Code Churn Analysis:**
+```
+Churn Score = (Commits in last 30 days) / (Total commits)
+
+Regression Risk Factors:
+- High churn (>5 commits/month): High regression risk
+- Recent changes (<7 days): Immediate priority
+- Critical components: Always high priority
+- Low test coverage: Higher regression risk
+```
+
+**Git History Integration:**
+- Analyze git commits per file/component
+- Track "blame" information (recently modified code)
+- Identify hot spots (frequently changed code)
+- Boost priority for recently changed code paths
+
+#### 6.4.9 Test Execution Success Rate Integration (Enhanced - Real-Time Execution)
+
+**Understanding Test Code in This System:**
+
+In Phase 2 (already in production), tests are stored as **executable test steps** (not compiled code):
+- **Test Steps:** Natural language instructions like "Click login button", "Enter email: test@example.com"
+- **Execution Engine:** Phase 2 uses `StagehandExecutionService` which executes these steps using 3-tier strategy
+- **No Code Generation Required:** Steps are directly executable via Phase 2 engine
+
+**3 Execution Modes (Phase 2 Production System):**
+
+The system uses a **3-tier cascading execution strategy**:
+
+1. **Tier 1: Playwright Direct** (Fast, Free, Reliable)
+   - Direct CSS/XPath selector execution
+   - 0ms LLM latency, 85% success rate
+   - Example: `page.click('#login-btn')`
+
+2. **Tier 2: Hybrid Mode** (Stagehand observe + Playwright execute)
+   - Stagehand `observe()` finds element → Extracts XPath
+   - Playwright executes action using XPath
+   - 90% success rate on Tier 1 failures
+   - Example: `observe("login button")` → `xpath=/html/body/button[1]` → `page.click(xpath)`
+
+3. **Tier 3: Stagehand AI** (Full AI Reasoning)
+   - Full Stagehand `act()` with natural language
+   - Highest flexibility, handles edge cases
+   - 60% success rate on Tier 2 failures
+   - Example: `page.act("click the login button")`
+
+**Why AnalysisAgent CAN Execute Tests:**
+
+- **Test Steps Already Exist:** RequirementsAgent generates BDD scenarios with Given/When/Then
+- **Steps Are Executable:** These can be converted to test steps and executed immediately
+- **Phase 2 Engine Available:** `StagehandExecutionService` is production-ready and can be used by AnalysisAgent
+- **Real-Time Execution:** AnalysisAgent can execute critical scenarios to measure actual success rates
+- **No Code Generation Needed:** Steps are executed directly, not compiled code
+
+**Execution Flow:**
+```
+RequirementsAgent → BDD Scenarios (Given/When/Then)
+    ↓
+AnalysisAgent → Converts to Test Steps
+    ↓
+AnalysisAgent → Executes via Phase 2 Engine (3-tier strategy)
+    ↓
+AnalysisAgent → Measures Success Rate → Refines Scores
+```
+
+**Three-Phase Analysis Approach:**
+
+**Phase 1: Pre-Execution Analysis (Initial Scoring)**
+- AnalysisAgent analyzes scenarios from RequirementsAgent
+- Uses historical data, risk scoring, ROI calculation
+- Provides initial prioritization
+
+**Phase 2: Real-Time Test Execution (NEW - Key Enhancement)**
+- AnalysisAgent executes test scenarios using Phase 2 execution engine
+- Uses 3-tier execution strategy (Playwright → Hybrid → Stagehand AI)
+- Measures actual success rates per scenario in real-time
+- Executes critical scenarios first for immediate feedback
+
+**Phase 3: Post-Execution Refinement (Feedback Loop)**
+- AnalysisAgent refines scores based on actual execution results
+- Incorporates real success rates into prioritization
+- Updates Detection score in RPN based on actual test reliability
+
+**Real-Time Test Execution Integration:**
+
+**AnalysisAgent Test Execution Flow:**
+```
+1. RequirementsAgent → Scenarios (BDD Given/When/Then)
+2. AnalysisAgent → Converts scenarios to executable test steps
+3. AnalysisAgent → Executes tests using Phase 2 execution engine
+4. AnalysisAgent → Measures success rates in real-time
+5. AnalysisAgent → Uses actual results for scoring and prioritization
+```
+
+**3-Tier Execution Strategy (Phase 2 Production System):**
+```
+Tier 1: Playwright Direct (Fast, Free, Reliable)
+  - Direct selector execution (CSS, XPath)
+  - 0ms LLM latency, 85% success rate
+  - Used for: Simple actions (click, type, navigate)
+
+Tier 2: Hybrid Mode (Stagehand observe + Playwright execute)
+  - Stagehand observe() finds element → Extract XPath
+  - Playwright executes action using XPath
+  - 90% success rate on Tier 1 failures
+  - Used for: Dynamic selectors, complex elements
+
+Tier 3: Stagehand AI (Full AI Reasoning)
+  - Full Stagehand act() with natural language
+  - Highest flexibility, handles edge cases
+  - 60% success rate on Tier 2 failures
+  - Used for: Complex interactions, AI-powered actions
+```
+
+**Execution Success Rate Scoring:**
+```
+Success Rate Score = (Passed Steps / Total Steps) × 100%
+
+Where:
+- Passed Steps: Steps that executed successfully (from actual execution)
+- Total Steps: All steps in the scenario
+- Success Rate influences Detection score in RPN calculation
+
+Adjusted Detection Score (Based on Real Execution):
+- If Success Rate > 90%: Detection = 1 (test is reliable)
+- If Success Rate 70-90%: Detection = 2 (usually caught)
+- If Success Rate 50-70%: Detection = 3 (sometimes caught)
+- If Success Rate < 50%: Detection = 4-5 (unreliable test)
+
+Updated RPN = Severity × Occurrence × Adjusted_Detection
+```
+
+**Real-Time Execution Architecture:**
+```
+1. Initial Analysis (Pre-Execution):
+   AnalysisAgent → Risk Scores (estimated) → Prioritize for execution
+
+2. Real-Time Test Execution (NEW):
+   AnalysisAgent → Execute critical scenarios → Phase 2 Execution Engine
+   → 3-Tier Strategy (Playwright → Hybrid → Stagehand AI)
+   → Real-time success rates per scenario
+
+3. Refined Analysis (Post-Execution):
+   Actual Execution Results → AnalysisAgent → Refined Risk Scores
+   → Updated Prioritization → EvolutionAgent
+```
+
+**Benefits:**
+- **Adaptive Scoring:** Scores adjust based on actual test reliability
+- **Quality Feedback:** Identifies flaky or unreliable tests
+- **Continuous Improvement:** Learning from execution history
+- **Better Prioritization:** Focus on tests that actually work
+
+**Implementation Strategy (Recommended):**
+
+**Real-Time Execution for Critical Scenarios:**
+- For critical scenarios (RPN ≥ 80), AnalysisAgent executes immediately
+- Converts BDD scenarios (Given/When/Then) to executable test steps
+- Uses Phase 2 execution engine with 3-tier fallback strategy
+- Measures actual success rates in real-time (not estimated)
+- Adjusts Detection score based on real execution results
+
+**Execution Process:**
+1. **Scenario to Test Steps Conversion:**
+   - Given: Preconditions → Navigate to page, setup state
+   - When: Actions → Click, type, navigate (executable steps)
+   - Then: Assertions → Verify, check, wait (validation steps)
+
+2. **Execute Using Phase 2 Engine:**
+   - Use existing `StagehandExecutionService` from Phase 2
+   - Leverage 3-tier execution strategy (Playwright → Hybrid → Stagehand AI)
+   - Track success rate per step and overall scenario
+
+3. **Real-Time Scoring:**
+   - Success rate = (passed_steps / total_steps) × 100%
+   - Adjust Detection score: High success → Lower detection (reliable)
+   - Recalculate RPN with adjusted Detection score
+   - Update prioritization based on real execution results
+
+**Benefits:**
+- **Immediate Feedback:** Know test reliability before full generation
+- **Real Data:** Actual execution results, not estimates
+- **Cost Efficient:** Only execute critical scenarios (RPN ≥ 80)
+- **Quality Assurance:** Identify flaky scenarios early
+- **Better Prioritization:** Focus on tests that actually work
+
+#### 6.4.10 Final Prioritization Algorithm (Enhanced with Execution Success)
+
+**Composite Scoring (Enhanced):**
+```
+Composite Score = (Risk Score × 0.25) + 
+                  (Business Value × 0.25) + 
+                  (ROI × 0.2) + 
+                  (Coverage Impact × 0.15) + 
+                  (Regression Risk × 0.1) +
+                  (Execution Success Rate × 0.05)  // NEW
+
+Where all scores normalized to 0.0-1.0 range
+
+Execution Success Rate Component:
+- If execution results available: Use actual success rate
+- If no execution results: Use estimated reliability (from historical data)
+- High success rate (>90%): Boost priority (reliable tests)
+- Low success rate (<50%): Lower priority (flaky tests)
+```
+
+**Execution Groups:**
+- critical_smoke: Critical priority + Fast execution (<30s) + High success rate (>90%)
+- critical_full: Critical priority + Medium/Slow execution
+- high: High priority scenarios
+- medium: Medium priority scenarios
+- low: Low priority scenarios
+- flaky: Low success rate (<50%) - marked for review
+
+**Business Rules:**
+- Compliance requirements: Always critical (override other scores)
+- RPN ≥ 80: Always critical priority
+- Smoke tests: Run first (fast + critical + reliable)
+- Flaky tests: Lower priority, marked for investigation
+- Parallel execution: Group independent scenarios
+- Execution success rate: Influences Detection score in RPN
+
+#### 6.4.11 LLM Integration (Azure GPT-4o)
+
+**Structured Risk Analysis Prompt:**
+```
+Analyze the following test scenario and provide risk assessment:
+
+Scenario: {scenario details}
+Historical Data: {failure rates, bug frequency}
+Page Context: {page_type, framework, complexity}
+
+Provide structured JSON output:
+{
+  "severity": 1-5,  // Impact if bug reaches production
+  "occurrence": 1-5,  // Probability from historical data
+  "detection": 1-5,  // Difficulty of detecting bug
+  "business_impact": {
+    "revenue_impact": 0.0-1.0,
+    "user_impact": 0.0-1.0,
+    "compliance": 0.0-1.0
+  },
+  "reasoning": "Explanation of scores"
+}
+```
+
+**Token Usage:** ~2,000 tokens per analysis (enhanced from 1,500)
+**Cost:** $0.015/page (slightly higher due to enhanced analysis)
 
 ---
 
