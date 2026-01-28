@@ -20,6 +20,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import debugService from '../services/debugService';
+import executionService from '../services/executionService';
 import type {
   DebugSessionStartRequest,
   DebugSessionStatusResponse,
@@ -64,6 +65,7 @@ export const InteractiveDebugPanel: React.FC<InteractiveDebugPanelProps> = ({
   const [logs, setLogs] = useState<ExecutionLogEntry[]>([]);
   const [isInitializing, setIsInitializing] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const autoStartTriggered = React.useRef(false);
 
   // Add log entry
   const addLog = useCallback((level: ExecutionLogEntry['level'], message: string) => {
@@ -72,8 +74,12 @@ export const InteractiveDebugPanel: React.FC<InteractiveDebugPanelProps> = ({
 
   // Initialize debug session
   useEffect(() => {
+    console.log('[DEBUG] InteractiveDebugPanel mounted/updated');
+    let isMounted = true; // Prevent race conditions
+
     const initializeSession = async () => {
       try {
+        console.log('[DEBUG] initializeSession starting...');
         addLog('info', `Starting debug session for execution ${executionId}, step ${targetStepNumber}${endStepNumber ? ` to ${endStepNumber}` : ''}...`);
         
         const request: DebugSessionStartRequest = {
@@ -84,16 +90,30 @@ export const InteractiveDebugPanel: React.FC<InteractiveDebugPanelProps> = ({
           skip_prerequisites: mode === 'manual',
         };
 
+        console.log('[DEBUG] Calling debugService.startSession with:', request);
         const response = await debugService.startSession(request);
+        
+        if (!isMounted) {
+          console.log('[DEBUG] Component unmounted, aborting session initialization');
+          return;
+        }
+        
+        console.log('[DEBUG] Session created:', response.session_id);
         setSessionId(response.session_id);
         
         addLog('success', `Debug session ${response.session_id} created successfully`);
         addLog('info', response.message);
 
         // Wait for setup to complete if auto mode
-        if (mode === 'auto') {
+        if (mode === 'auto' && !request.skip_prerequisites) {
           addLog('info', 'Waiting for prerequisite steps to complete...');
           await pollSessionStatus(response.session_id);
+          addLog('info', 'Prerequisites complete. Auto mode will start execution automatically...');
+        } else {
+          // Manual mode or skip_prerequisites: Load steps immediately
+          addLog('info', 'Loading test steps...');
+          await initializeSteps({ status: 'ready' } as DebugSessionStatusResponse);
+          addLog('success', 'Session is ready for debugging');
         }
 
         setIsInitializing(false);
@@ -106,7 +126,39 @@ export const InteractiveDebugPanel: React.FC<InteractiveDebugPanelProps> = ({
     };
 
     initializeSession();
-  }, [executionId, targetStepNumber, mode, addLog]);
+    
+    return () => {
+      console.log('[DEBUG] InteractiveDebugPanel unmounting, setting isMounted=false');
+      isMounted = false;
+    };
+  }, [executionId, targetStepNumber, endStepNumber, mode, addLog]);
+
+  // Auto-start execution in Auto mode after steps are loaded
+  React.useEffect(() => {
+    if (
+      mode === 'auto' && 
+      !isInitializing && 
+      steps.length > 0 && 
+      sessionId && 
+      !autoStartTriggered.current &&
+      !isPlaying &&
+      currentStepIndex === 0
+    ) {
+      console.log('[DEBUG] ✅ Auto-starting execution NOW!');
+      autoStartTriggered.current = true; // Prevent multiple triggers
+      addLog('info', '🚀 Auto-play starting...');
+      
+      // Use setTimeout to ensure state updates have propagated
+      setTimeout(() => {
+        setIsPlaying(true);
+        setIsPaused(false);
+        // The executeNextStep will be called by the play button logic
+        setTimeout(() => {
+          executeNextStep();
+        }, 100);
+      }, 500);
+    }
+  }, [mode, isInitializing, steps.length, sessionId, isPlaying, currentStepIndex, addLog]);
 
   // Poll session status until ready
   const pollSessionStatus = async (sid: string, maxAttempts = 30) => {
@@ -132,18 +184,53 @@ export const InteractiveDebugPanel: React.FC<InteractiveDebugPanelProps> = ({
     throw new Error('Session setup timed out');
   };
 
-  // Initialize steps array
-  const initializeSteps = (status: DebugSessionStatusResponse) => {
-    // For now, create a simple array of steps based on target step
-    // In a real app, you'd fetch the actual test case steps from the API
-    const totalSteps = targetStepNumber + 5; // Mock: assume 5 more steps after target
-    const stepsList: DebugStep[] = Array.from({ length: totalSteps }, (_, i) => ({
-      stepNumber: i + 1,
-      description: `Step ${i + 1}`,
-      status: i < status.current_step! ? 'success' : 'pending',
-    }));
-    setSteps(stepsList);
-    setCurrentStepIndex(status.current_step || targetStepNumber);
+  // Initialize steps array from actual test execution
+  const initializeSteps = async (_status: DebugSessionStatusResponse) => {
+    console.log('[DEBUG] initializeSteps called');
+    try {
+      // Fetch the actual test execution to get real steps
+      const executionDetail = await executionService.getExecutionDetail(executionId);
+      console.log('[DEBUG] Execution detail:', executionDetail);
+      
+      if (executionDetail.steps && Array.isArray(executionDetail.steps)) {
+        const stepsList: DebugStep[] = executionDetail.steps.map((step) => ({
+          stepNumber: step.step_number,
+          description: step.step_description,
+          status: step.step_number < targetStepNumber ? 'success' : 'pending',
+        }));
+        
+        // Filter to range if endStepNumber is provided
+        const filteredSteps = endStepNumber 
+          ? stepsList.filter(s => s.stepNumber >= targetStepNumber && s.stepNumber <= endStepNumber)
+          : stepsList.filter(s => s.stepNumber >= targetStepNumber);
+        
+        console.log('[DEBUG] Filtered steps:', filteredSteps.length, 'steps');
+        setSteps(filteredSteps);
+        setCurrentStepIndex(0); // Start at first step in the range
+        
+        addLog('info', `Loaded ${filteredSteps.length} steps ${endStepNumber ? `(${targetStepNumber}-${endStepNumber})` : `(${targetStepNumber}+)`}`);
+      } else {
+        // Fallback if steps not available
+        const mockSteps: DebugStep[] = Array.from({ length: 5 }, (_, i) => ({
+          stepNumber: targetStepNumber + i,
+          description: `Step ${targetStepNumber + i}`,
+          status: 'pending',
+        }));
+        setSteps(mockSteps);
+        setCurrentStepIndex(0);
+        addLog('info', 'Could not load actual steps, using placeholder steps');
+      }
+    } catch (err) {
+      addLog('error', `Failed to load steps: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      // Fallback to mock steps
+      const mockSteps: DebugStep[] = Array.from({ length: 5 }, (_, i) => ({
+        stepNumber: targetStepNumber + i,
+        description: `Step ${targetStepNumber + i}`,
+        status: 'pending',
+      }));
+      setSteps(mockSteps);
+      setCurrentStepIndex(0);
+    }
   };
 
   // Execute next step
@@ -200,9 +287,12 @@ export const InteractiveDebugPanel: React.FC<InteractiveDebugPanelProps> = ({
       if (result.has_more_steps && !result.range_complete) {
         setCurrentStepIndex(prev => prev + 1);
         
-        // Continue playing if not paused
+        // Continue playing ONLY if in auto-play mode (not single-step)
         if (isPlaying && !isPaused) {
           setTimeout(() => executeNextStep(), 500);
+        } else {
+          // Single-step mode: Stop after one step
+          addLog('info', 'Step completed. Click Next Step to continue.');
         }
       } else {
         if (result.range_complete) {
@@ -239,6 +329,9 @@ export const InteractiveDebugPanel: React.FC<InteractiveDebugPanelProps> = ({
   };
 
   const handleNext = () => {
+    // Single-step mode: Ensure isPlaying is false so it doesn't auto-continue
+    setIsPlaying(false);
+    setIsPaused(false);
     executeNextStep();
   };
 
@@ -387,8 +480,9 @@ export const InteractiveDebugPanel: React.FC<InteractiveDebugPanelProps> = ({
               {!isPlaying ? (
                 <button
                   onClick={handlePlay}
-                  disabled={currentStepIndex >= steps.length}
+                  disabled={currentStepIndex >= steps.length || steps.length === 0}
                   className="px-6 py-3 bg-green-500 hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+                  title={steps.length === 0 ? 'Waiting for steps to load...' : ''}
                 >
                   <Play className="w-5 h-5" />
                   {isPaused ? 'Resume' : 'Play'}
@@ -405,8 +499,9 @@ export const InteractiveDebugPanel: React.FC<InteractiveDebugPanelProps> = ({
 
               <button
                 onClick={handleNext}
-                disabled={isPlaying || currentStepIndex >= steps.length}
+                disabled={isPlaying || currentStepIndex >= steps.length || steps.length === 0}
                 className="px-6 py-3 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+                title={steps.length === 0 ? 'Waiting for steps to load...' : ''}
               >
                 <SkipForward className="w-5 h-5" />
                 Next Step
