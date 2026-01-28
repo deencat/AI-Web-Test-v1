@@ -819,7 +819,7 @@ class StagehandExecutionService:
             print(f"[DEBUG]   - Title: {title_after}")
             print(f"[DEBUG] Changes: URL changed={url_before != url_after}, Title changed={title_before != title_after}")
             
-            # FAILURE DETECTION: If it's a fill/type action and nothing changed, it probably failed
+            # FAILURE DETECTION: Check for actual failures vs expected non-changes
             desc_lower = step_description.lower()
             is_input_action = any(word in desc_lower for word in ['fill', 'type', 'enter', 'input'])
             is_navigation_action = any(word in desc_lower for word in ['navigate', 'goto', 'open'])
@@ -829,17 +829,18 @@ class StagehandExecutionService:
             title_changed = title_before != title_after
             something_changed = url_changed or title_changed
             
-            # If it's an input action and nothing changed, treat as failure
-            if is_input_action and not something_changed:
-                print(f"[DEBUG] ⚠️  INPUT ACTION but nothing changed - treating as FAILURE")
+            # For INPUT actions: Success if no error occurred
+            # (Filling form fields doesn't change URL/title - that's NORMAL)
+            if is_input_action:
+                if not something_changed:
+                    print(f"[DEBUG] ✓ Input action completed (no URL/title change is NORMAL for form inputs)")
                 print(f"[DEBUG] ========================================")
                 return {
-                    "success": False,
-                    "error": "Input action completed but no page changes detected. Element may not be fillable or action had no effect.",
-                    "actual": f"AI tried but no changes: XPath: {xpath_used}. Page: {title_after} | URL: {url_after}",
+                    "success": True,  # Trust Stagehand's completion
+                    "actual": f"Input completed via AI: XPath: {xpath_used}. Page: {title_after} | URL: {url_after}",
                     "expected": step_description,
                     "selector_used": xpath_used,
-                    "action_method": "stagehand_ai_failed"
+                    "action_method": "stagehand_ai"
                 }
             
             # If it's a navigation action and URL didn't change, treat as failure

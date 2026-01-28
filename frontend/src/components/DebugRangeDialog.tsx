@@ -206,13 +206,16 @@ export const DebugRangeDialog: React.FC<DebugRangeDialogProps> = ({
                   <div className="flex items-center gap-2">
                     <Play className="w-4 h-4 text-blue-600" />
                     <span className="font-medium text-gray-900">Auto Navigate</span>
+                    <span className="text-xs px-2 py-0.5 bg-green-100 text-green-800 rounded-full">
+                      ✓ Recommended
+                    </span>
                   </div>
                   <p className="text-sm text-gray-600 mt-1">
                     AI will automatically execute prerequisite steps (1 to {parseInt(startStep) - 1 || 0})
-                    to reach the target state before debugging starts.
+                    to reach the target state. Opens ONE browser ready for debugging.
                   </p>
                   <div className="mt-2 text-xs text-gray-500">
-                    ⚡ Uses ~{(parseInt(startStep) - 1) * 100 || 0} tokens • {(parseInt(startStep) - 1) * 6 || 0}s setup time
+                    ⚡ Uses ~{(parseInt(startStep) - 1) * 100 || 0} tokens • {Math.ceil((parseInt(startStep) - 1) * 1.5) || 0}s setup time
                   </div>
                 </div>
               </label>
@@ -236,13 +239,16 @@ export const DebugRangeDialog: React.FC<DebugRangeDialogProps> = ({
                   <div className="flex items-center gap-2">
                     <Navigation className="w-4 h-4 text-purple-600" />
                     <span className="font-medium text-gray-900">Manual Navigation</span>
+                    <span className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-800 rounded-full">
+                      ⚠️ Opens new browser
+                    </span>
                   </div>
                   <p className="text-sm text-gray-600 mt-1">
-                    You've already navigated to the desired state manually.
-                    Start debugging immediately without executing prerequisites.
+                    <strong>Note:</strong> This mode will still open a new browser window.
+                    Use "Auto Navigate" instead to avoid managing multiple browsers.
                   </p>
                   <div className="mt-2 text-xs text-gray-500">
-                    ⚡ Uses 0 tokens • Instant start
+                    ⚡ Uses 0 tokens • But requires manual setup in new browser
                   </div>
                 </div>
               </label>

@@ -132,9 +132,16 @@ class DebugSessionService:
             # Store browser instance in memory
             self.active_sessions[session_id] = browser_service
             
-            # Execute prerequisite steps based on mode
-            if request.mode == DebugMode.AUTO and not request.skip_prerequisites:
-                # Auto mode: Execute steps 1 to target-1 with AI (unless skipped)
+            # Execute prerequisite steps based on mode and skip_prerequisites flag
+            # Note: For range debugging (target_step > 1), we MUST execute prerequisites
+            # even in Manual mode, otherwise browser will be at homepage instead of target step
+            should_auto_setup = (
+                (request.mode == DebugMode.AUTO and not request.skip_prerequisites) or
+                (request.target_step_number > 1 and not request.skip_prerequisites)
+            )
+            
+            if should_auto_setup:
+                # Execute steps 1 to target-1 with AI to reach the target step
                 await self._execute_auto_setup(
                     db=db,
                     session_id=session_id,
@@ -143,13 +150,14 @@ class DebugSessionService:
                     browser_service=browser_service
                 )
             else:
-                # Manual mode or skip_prerequisites: Update status to ready (user will do setup or already navigated)
+                # Skip prerequisites: Update status to ready
+                # (Assumes user has already manually navigated to the target step)
                 crud_debug.update_debug_session_status(
                     db=db,
                     session_id=session_id,
                     status=DebugSessionStatus.READY
                 )
-                # If skipping prerequisites, mark setup as completed
+                # Mark setup as completed since we're skipping it
                 if request.skip_prerequisites:
                     crud_debug.mark_setup_completed(db, session_id)
             
@@ -485,6 +493,7 @@ class DebugSessionService:
         # Check bounds
         if next_step_num > total_steps:
             return {
+                "session_id": session_id,
                 "success": False,
                 "step_number": debug_session.current_step or debug_session.target_step_number,
                 "step_description": "",
@@ -502,6 +511,7 @@ class DebugSessionService:
         # Check if we've reached the end of the range (if end_step_number is set)
         if debug_session.end_step_number and next_step_num > debug_session.end_step_number:
             return {
+                "session_id": session_id,
                 "success": True,
                 "step_number": debug_session.current_step or debug_session.end_step_number,
                 "step_description": "",
@@ -582,6 +592,7 @@ class DebugSessionService:
             
             # Build response
             return {
+                "session_id": session_id,
                 "success": result["success"],
                 "step_number": next_step_num,
                 "step_description": step_desc,
@@ -608,6 +619,7 @@ class DebugSessionService:
             
             # Return error response instead of raising
             return {
+                "session_id": session_id,
                 "success": False,
                 "step_number": next_step_num,
                 "step_description": step_desc if 'step_desc' in locals() else "",

@@ -108,11 +108,18 @@ async def start_debug_session(
                     f"This will take approximately {session.prerequisite_steps_count * 6} seconds."
                 )
         else:
-            message = (
-                f"Debug session started with MANUAL mode. "
-                f"Please complete {session.prerequisite_steps_count} setup steps manually. "
-                f"Use GET /debug/{session.session_id}/instructions to view steps."
-            )
+            if request.skip_prerequisites:
+                message = (
+                    f"Debug session started with MANUAL mode (prerequisites skipped). "
+                    f"Using current browser state. Ready to debug step {session.target_step_number}"
+                    + (f" to {session.end_step_number}." if session.end_step_number else ".")
+                )
+            else:
+                message = (
+                    f"Debug session started with MANUAL mode. "
+                    f"Please complete {session.prerequisite_steps_count} setup steps manually. "
+                    f"Use GET /debug/{session.session_id}/instructions to view steps."
+                )
         
         # Add range info to message if applicable
         if session.end_step_number:
