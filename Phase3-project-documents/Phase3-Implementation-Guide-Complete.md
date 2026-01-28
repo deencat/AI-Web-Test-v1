@@ -123,62 +123,80 @@
 
 ## 2. Sprint 7-12 Detailed Tasks
 
-### Sprint 7: Infrastructure Integration (Jan 23 - Feb 5, 2026)
+### Sprint 7: Infrastructure & BaseAgent (Jan 23 - Feb 5, 2026)
 
-**Goal:** Replace stubs with real infrastructure (Redis, PostgreSQL) and integrate existing agents
+**Goal:** Set up multi-agent infrastructure and implement BaseAgent abstract class
 
-**Story Points:** 23 (11 days duration) - Reduced from 31 because BaseAgent, ObservationAgent, and RequirementsAgent are already complete
+**Story Points:** 31 (11 days duration)
 
-**✅ Pre-Sprint 7 Work (COMPLETE):**
-- ✅ BaseAgent abstract class (EA.1)
-- ✅ Message bus stub (EA.2)
-- ✅ Agent registry stub (EA.3)
-- ✅ ObservationAgent with Azure OpenAI (EA.4)
-- ✅ RequirementsAgent with industry best practices (EA.5)
-- ✅ Unit tests (55/55 passing) (EA.6)
-
-**See [Project Management Plan Section 2.4 Pre-Sprint 7](Phase3-Project-Management-Plan-Complete.md#pre-sprint-7-developer-a-early-start-jan-20-23-while-developer-b-on-phase-2) for completed tasks.**
-
-#### Developer A Tasks (5 points, CRITICAL PATH)
+#### Developer A Tasks (21 points, CRITICAL PATH)
 
 | Task ID | Description | Dependencies | Points | Duration | Critical Path |
 |---------|-------------|--------------|--------|----------|---------------|
-| 7A.1 | Replace message bus stub with real Redis pub/sub | 7B.1 | 2 | 1 day | 0 (START) |
-| 7A.2 | Replace agent registry stub with Redis-backed version | 7B.1 | 2 | 1 day | 1 |
-| 7A.3 | Integration tests (ObservationAgent + RequirementsAgent + real Redis) | 7A.1, 7A.2 | 1 | 1 day | 2 |
+| 7A.1 | Set up Redis Streams cluster (3 nodes) | None | 3 | 1 day | 0 (START) |
+| 7A.2 | Implement message bus wrapper (send/receive) | 7A.1 | 5 | 2 days | 1 |
+| 7A.3 | Implement BaseAgent abstract class | 7A.2 | 8 | 3 days | 3 |
+| 7A.4 | Implement agent registry (register/heartbeat) | 7A.3 | 3 | 1 day | 6 |
+| 7A.5 | Create health check endpoints (/health, /ready) | 7A.4 | 2 | 1 day | 7 |
 
-**Total: 5 points, 3 days**
+**Total: 21 points, 8 days**
 
 #### Developer B Tasks (10 points, parallel)
 
 | Task ID | Description | Dependencies | Points | Duration |
 |---------|-------------|--------------|--------|----------|
-| 7B.1 | Set up PostgreSQL with pgvector extension | None | 5 | 2 days |
-| 7B.2 | Implement three-layer memory system | 7B.1 | 5 | 2 days |
-| 7B.3 | Unit tests for BaseAgent (50+ tests) | 7A.3 | 3 | 1 day |
-| 7B.4 | Add 8 learning system database tables | 7B.1 | 5 | 2 days |
-| 7B.5 | Implement FeedbackCollector foundation | 7B.4 | 3 | 1 day |
+| 7A.13 | Install Redis locally (or use Docker) | None | 1 | 0.5 day |
+| 7A.14 | Replace message bus stub with simple Redis pub/sub | 7A.13 | 2 | 1 day |
+| 7A.15 | Replace agent registry stub with Redis-backed version | 7A.14 | 2 | 1 day |
+| 7A.16 | Integration tests (agents + real Redis) | 7A.15 | 1 | 0.5 day |
 
-**Total: 10 points, 5 days**
+**Total: 6 points, 3 days - OPTIONAL, SIMPLE SETUP**
 
-#### Sprint 7 Success Criteria
+**Note:** 
+- All AnalysisAgent implementation details are documented in [Section 3.3](#33-analysisagent-implementation-enhanced---fmea-based-risk-analysis)
+- Developer A can use stub infrastructure (message bus stub, agent registry stub) - no need to wait for Developer B or Phase 2 completion
+- **Use existing database as-is** (SQLite for local dev, PostgreSQL in production) - no schema changes needed
+- Historical data queries work with existing `test_executions` table
+- **Redis pub/sub is optional** - simple setup (just `publish`/`subscribe`), can be added if Developer A has time
+- **PostgreSQL optimizations deferred** to Sprint 10+ when Developer B is ready or when we need scale
 
-- ✅ Redis Streams operational (3-node cluster, <1ms latency)
-- ✅ PostgreSQL with pgvector extension deployed
-- ✅ BaseAgent class implemented with rich defaults
-- ✅ Message bus sends/receives 1000+ msg/sec
-- ✅ Health checks return 200 OK
-- ✅ 50+ unit tests passing, 95%+ coverage
-- ✅ 8 learning database tables created
-- ✅ First generation tracked in test_generations table
+#### Developer B Tasks (When Phase 2 Complete - DEFERRED TO LATER SPRINT)
+
+**PostgreSQL Setup Deferred:** No need to add agent tables now. Use existing database as-is. PostgreSQL-specific optimizations can be added later when needed.
+
+| Task ID | Description | Dependencies | Points | Duration | Sprint |
+|---------|-------------|--------------|--------|----------|--------|
+| 7B.1 | Add agent-related tables to existing database (PostgreSQL) | Phase 2 DB | 5 | 2 days | Sprint 10+ |
+| 7B.2 | Implement three-layer memory system (working memory + database) | 7B.1 | 5 | 3 days | Sprint 10+ |
+| 7B.3 | Add 8 learning system tables to database | 7B.1 | 3 | 1 day | Sprint 10+ |
+| 7B.4 | Implement FeedbackCollector class | 7B.3 | 3 | 2 days | Sprint 10+ |
+| 7B.5 | Unit tests for infrastructure (30+ tests) | 7B.1-7B.4 | 3 | 1 day | Sprint 10+ |
+
+**Total: 19 points, 6 days - DEFERRED TO SPRINT 10+ (When Developer B Ready)**
+
+#### Sprint 7 Success Criteria (Developer A Independent Path)
+
+- ✅ AnalysisAgent class implemented with FMEA risk scoring (RPN calculation)
+- ✅ LLM integration with Azure GPT-4o operational (structured risk analysis output)
+- ✅ AnalysisAgent calculates ROI for each scenario (explicit formula with effort estimation)
+- ✅ AnalysisAgent estimates execution times (heuristics-based, categorized as fast/medium/slow)
+- ✅ AnalysisAgent performs dependency analysis (topological sort, cycle detection, parallel groups)
+- ✅ AnalysisAgent calculates business value (revenue impact, user impact, compliance)
+- ✅ AnalysisAgent uses existing database (SQLite/PostgreSQL) for historical data queries
+- ✅ 3-agent workflow operational: Observe → Requirements → Analyze (using stubs or Redis if added)
+- ✅ 95+ unit tests passing (55 from pre-sprint + 40 new for AnalysisAgent)
+- ✅ Integration test: Observation → Requirements → Analysis workflow end-to-end
+- ✅ Optional: Redis pub/sub setup (if Developer A has time) - simple setup
+- ✅ PostgreSQL optimizations deferred to Sprint 10+ (when Developer B ready or when we need scale)
 
 #### Sprint 7 Risks
 
 | Risk | Probability | Impact | Mitigation |
 |------|------------|--------|------------|
-| DevOps delays Kubernetes setup | High | High | Start with local Docker Compose, migrate later |
-| Redis Streams learning curve | Medium | Medium | Pre-study docs, use examples from research |
-| pgvector extension issues | Low | Medium | Use Docker image with extension pre-installed |
+| AnalysisAgent complexity | Medium | Medium | Use prepared implementation details, break into smaller tasks |
+| LLM API rate limits | Low | Medium | Use Azure OpenAI (enterprise SLA), implement retry logic |
+| Database query performance (SQLite) | Low | Low | Use existing database as-is, optimize later if needed |
+| Redis setup complexity | Low | Low | Simple pub/sub only (not Streams), optional task |
 
 ---
 
@@ -415,102 +433,96 @@ All agents with LLM support include fallback logic to continue operation without
 
 ---
 
-### Sprint 8: Analysis & Evolution Agents (Feb 6 - Feb 19, 2026)
+### Sprint 8: Observation & Requirements Agents (Feb 6 - Feb 19, 2026)
 
-**Goal:** Deploy AnalysisAgent and EvolutionAgent to complete the 4-agent workflow
+**Goal:** Deploy agents that observe web applications and extract test requirements
 
-**Story Points:** 47 (11 days duration)
+**Story Points:** 42 (11 days duration)
 
-**✅ Pre-Sprint 7 Work (ALREADY COMPLETE):**
-- ✅ ObservationAgent - See [Project Management Plan Section 2.4](Phase3-Project-Management-Plan-Complete.md#pre-sprint-7-developer-a-early-start-jan-20-23-while-developer-b-on-phase-2)
-- ✅ RequirementsAgent - See [Implementation Guide Section 3.4](Phase3-Implementation-Guide-Complete.md#34-requirements-agent-test-scenario-extraction)
-
-**Note:** ObservationAgent and RequirementsAgent were completed in Pre-Sprint 7 (EA.4 and EA.5). This sprint focuses on the remaining two agents.
-
-#### Developer A Tasks (26 points, CRITICAL PATH)
+#### Developer A Tasks (23 points, CRITICAL PATH)
 
 | Task ID | Description | Dependencies | Points | Duration | Critical Path |
 |---------|-------------|--------------|--------|----------|---------------|
-| 8A.1 | Implement EvolutionAgent class | Sprint 7 | 13 | 5 days | 0 (START) |
-| 8A.2 | LLM integration (OpenAI API client) | 8A.1 | 8 | 3 days | 5 |
-| 8A.3 | Prompt engineering (3 variants for A/B testing) | 8A.2 | 3 | 1 day | 8 |
-| 8A.4 | Caching layer (30% cost reduction) | 8A.2 | 2 | 1 day | 8 |
-| 8A.5 | Unit tests for EvolutionAgent (30+ tests) | 8A.1-8A.4 | 1 | 1 day | 9 |
+| 8A.1 | Implement ObservationAgent class | Sprint 7 | 8 | 3 days | 0 (START) |
+| 8A.2 | Web crawling with Playwright (page navigation, DOM analysis) | 8A.1 | 5 | 2 days | 3 |
+| 8A.3 | LLM integration with Cerebras (element detection, semantic analysis) | 8A.2 | 5 | 2 days | 5 |
+| 8A.4 | Hybrid observation: Playwright baseline + LLM enhancement | 8A.3 | 3 | 1 day | 7 |
+| 8A.5 | Integration with Phase 2 Stagehand service | 8A.4 | 5 | 2 days | 8 |
+| 8A.6 | Unit tests for ObservationAgent (30+ tests, LLM mocking) | 8A.5 | 2 | 1 day | 10 |
 
-**Total: 26 points, 11 days**
+**Total: 28 points, 11 days**
 
-#### Developer B Tasks (21 points, parallel)
+#### Developer B Tasks (19 points, parallel)
 
 | Task ID | Description | Dependencies | Points | Duration |
 |---------|-------------|--------------|--------|----------|
-| 8B.1 | Implement AnalysisAgent (dependency graph + risk scoring) | Sprint 7 | 8 | 3 days |
-| 8B.2 | Dependency graph analysis (AST + imports) | 8B.1 | 5 | 2 days |
-| 8B.3 | Risk scoring algorithm (complexity + churn) | 8B.2 | 5 | 2 days |
-| 8B.4 | Unit tests for AnalysisAgent (30+ tests) | 8B.1-8B.3 | 3 | 1 day |
-| 8B.5 | Integration tests (4-agent workflow: Observe → Requirements → Analyze → Evolve) | 8A.5, 8B.4 | 5 | 2 days |
-| 8B.6 | Collect 100+ user feedback samples (manual) | Sprint 7 | 3 | Continuous |
+| 8B.1 | Implement RequirementsAgent class | Sprint 7 | 8 | 3 days |
+| 8B.2 | LLM integration for test scenario generation (Given/When/Then) | 8B.1 | 5 | 2 days |
+| 8B.3 | Pattern matching and priority assignment (critical/high/medium/low) | 8B.2 | 3 | 1 day |
+| 8B.4 | Unit tests for RequirementsAgent (30+ tests, LLM mocking) | 8B.3 | 3 | 1 day |
+| 8B.5 | Integration tests (Observation → Requirements) | 8A.6, 8B.4 | 5 | 2 days |
+| 8B.6 | Collect first 100+ user feedback samples | Sprint 7 | 3 | Continuous |
 
-**Total: 21 points, 9 days**
+**Total: 27 points, 6 days**
 
 #### Sprint 8 Success Criteria
 
-- ✅ EvolutionAgent generates valid pytest tests (10+ samples)
-- ✅ AnalysisAgent produces risk scores (0.0-1.0)
-- ✅ 4-agent workflow operational: Observe → Require → Analyze → Evolve
-- ✅ LLM costs <$0.20 per test cycle (with caching)
-- ✅ 100+ feedback samples collected for learning system
-- ✅ Integration test: Full 4-agent workflow end-to-end
+- ✅ Observation Agent crawls web application pages (buttons, forms, navigation)
+- ✅ LLM integration finds 65% more elements than Playwright-only
+- ✅ Hybrid observation: Playwright baseline (200ms) + LLM enhancement (3s)
+- ✅ Cerebras API configured with llama3.1-8b model
+- ✅ Graceful degradation: Works without LLM (Playwright-only fallback)
+- ✅ Requirements Agent extracts test scenarios from UI elements (Given/When/Then)
+- ✅ Integration test: Observation → Requirements end-to-end (web app → test requirements)
+- ✅ 30+ unit tests per agent, 95%+ coverage
+- ✅ 100+ user feedback samples collected
+- ✅ First 2 agents registered and operational
 
 ---
 
-### Sprint 9: Analysis & Evolution Agents (Enhanced) (Feb 20 - Mar 5, 2026)
+### Sprint 9: Analysis & Evolution Agents (Feb 20 - Mar 5, 2026)
 
-**Goal:** Deploy enhanced AnalysisAgent with FMEA risk scoring and EvolutionAgent for test generation
+**Goal:** Deploy agents that analyze dependencies and generate tests
 
-**Story Points:** 76 (13 days duration, enhanced from 47 points)
+**Story Points:** 47 (12 days duration)
 
 #### Developer A Tasks (30 points, CRITICAL PATH)
 
 | Task ID | Description | Dependencies | Points | Duration | Critical Path |
 |---------|-------------|--------------|--------|----------|---------------|
-| 9A.1 | Implement EvolutionAgent class | Sprint 8 | 13 | 5 days | 0 (START) |
-| 9A.2 | LLM integration with Cerebras (test code generation) | 9A.1 | 8 | 3 days | 5 |
-| 9A.3 | Test generation prompt templates (Playwright/Stagehand, 3 variants) | 9A.2 | 5 | 2 days | 8 |
-| 9A.4 | Caching layer with pattern storage (90% cost reduction after Sprint 10) | 9A.3 | 3 | 1 day | 10 |
-| 9A.5 | Unit tests for EvolutionAgent (30+ tests, LLM mocking) | 9A.4 | 1 | 1 day | 11 |
+| 9A.1 | Complete EvolutionAgent implementation (from Sprint 8) | Sprint 8 (8A.5-8A.8) | 5 | 2 days | 0 (START) |
+| 9A.2 | LLM integration with Cerebras (test code generation) | 9A.1 | 8 | 3 days | 2 |
+| 9A.3 | Test generation prompt templates (Playwright/Stagehand, 3 variants) | 9A.2 | 5 | 2 days | 5 |
+| 9A.4 | Caching layer with pattern storage (90% cost reduction after Sprint 10) | 9A.3 | 3 | 1 day | 7 |
+| 9A.5 | Unit tests for EvolutionAgent (30+ tests, LLM mocking) | 9A.4 | 1 | 1 day | 8 |
+| 9A.6 | Integration tests (4-agent coordination: Observe → Requirements → Analyze → Evolve) | 9A.5, Sprint 8 (8A.4) | 5 | 2 days | 9 |
+| 9A.7 | Replace AnalysisAgent stubs with real infrastructure (when Developer B ready) | 9B.1 (optional) | 3 | 1 day | 10 |
 
 **Total: 30 points, 12 days**
 
-#### Developer B Tasks (46 points, parallel - Enhanced)
+#### Developer B Tasks (21 points, parallel)
 
 | Task ID | Description | Dependencies | Points | Duration |
 |---------|-------------|--------------|--------|----------|
-| 9B.1 | Implement AnalysisAgent class with FMEA risk scoring | Sprint 8 | 13 | 5 days |
-| 9B.2 | LLM integration for structured risk analysis (severity/occurrence/detection) | 9B.1 | 8 | 3 days |
-| 9B.3 | Historical data integration (Phase 2 execution history queries) | 9B.1 | 5 | 2 days |
-| 9B.4 | ROI calculation and execution time estimation | 9B.2 | 5 | 2 days |
-| 9B.5 | Dependency analysis with topological sort (cycle detection) | 9B.1 | 5 | 2 days |
-| 9B.6 | Business value scoring (revenue, users, compliance) | 9B.2 | 3 | 1 day |
-| 9B.7 | Unit tests for AnalysisAgent (40+ tests, LLM mocking) | 9B.4, 9B.5 | 3 | 1 day |
-| 9B.8 | Integration tests (4-agent coordination: Observe → Requirements → Analyze → Evolve) | 9A.5, 9B.7 | 5 | 2 days |
+| 9B.1 | Implement AnalysisAgent class | Sprint 8 | 8 | 3 days |
+| 9B.2 | LLM integration for risk assessment (UI element risk scoring) | 9B.1 | 5 | 2 days |
+| 9B.3 | Priority assignment (critical/high/medium/low based on LLM analysis) | 9B.2 | 5 | 2 days |
+| 9B.4 | Unit tests for AnalysisAgent (30+ tests, LLM mocking) | 9B.3 | 3 | 1 day |
+| 9B.5 | Integration tests (4-agent coordination: Observe → Requirements → Analyze → Evolve) | 9A.5, 9B.4 | 5 | 2 days |
+| 9B.6 | First automated prompt optimization (A/B testing) | Sprint 8 feedback | 3 | 1 day |
 
-**Total: 46 points, 13 days (enhanced from 21 points, 7 days)**
+**Total: 29 points, 7 days**
 
 #### Sprint 9 Success Criteria (Enhanced)
 
 - ✅ Evolution Agent generates 10+ valid Playwright/Stagehand tests from test scenarios
 - ✅ LLM generates executable test code (async/await, page navigation, assertions)
-- ✅ Analysis Agent produces FMEA-based risk scores (RPN = Severity × Occurrence × Detection)
-- ✅ Analysis Agent calculates ROI for each scenario (explicit formula with effort estimation)
-- ✅ Analysis Agent estimates execution times (heuristics-based, categorized as fast/medium/slow)
-- ✅ Analysis Agent performs dependency analysis (topological sort, cycle detection, parallel groups)
-- ✅ Analysis Agent integrates historical data (Phase 2 execution history, failure rates)
-- ✅ Analysis Agent calculates business value (revenue impact, user impact, compliance)
-- ✅ LLM integration with Azure GPT-4o operational (structured risk analysis output)
+- ✅ Analysis Agent produces risk scores for UI elements (0.0-1.0, LLM-based)
+- ✅ LLM integration with Cerebras operational (llama3.1-8b for code generation)
 - ✅ Caching reduces LLM calls by 30% (pattern reuse for similar pages)
 - ✅ 4-agent workflow: Observe Web App → Extract Requirements → Analyze Risks/ROI/Dependencies → Generate Test Code
 - ✅ First optimized prompt variant deployed (A/B tested for accuracy)
-- ✅ Token usage <12,000 per test cycle (with caching, enhanced analysis)
+- ✅ Token usage <10,000 per test cycle (with caching)
 
 ---
 
