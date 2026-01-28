@@ -762,6 +762,16 @@ class ExecutionService:
                         print(f"[DEBUG] Action keyword found in description, attempting value extraction")
                         # Look for common data patterns after keywords
                         value_patterns = [
+                            # Credit card patterns - Extract credit card numbers from descriptions
+                            # Pattern 1: 16-digit credit card (e.g., "1234567812345678" or "1234 5678 1234 5678")
+                            r'(?:credit.*card|card.*number|card).*?(\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4})',  # Credit card with/without spaces/dashes
+                            # Pattern 2: Direct input of credit card number
+                            r'(?:input|enter|fill|type)\s+(?:credit.*card|card.*number|card)?\s*(\d{16})',  # 16-digit number
+                            # Pattern 3: CVV/CVC (3-4 digits)
+                            r'(?:cvv|cvc|security.*code).*?(\d{3,4})',  # CVV/CVC codes
+                            # Pattern 4: Expiry date (MM/YY or MM/YYYY)
+                            r'(?:expiry|expiration|exp.*date).*?(\d{2}/\d{2,4})',  # Expiry date
+                            
                             # HKID patterns - Extract specific values mentioned in the description
                             # Pattern 1: "input hkid number Q496157 on id no. first field" -> Extract Q496157
                             r'(?:input|enter|fill|type)\s+(?:hkid|id)\s+(?:number\s+)?([A-Z]\d{6})\s+',  # Alphanumeric HKID (e.g., Q496157)
