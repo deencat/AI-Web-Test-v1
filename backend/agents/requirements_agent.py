@@ -735,8 +735,11 @@ Always respond with valid JSON containing high-quality test scenarios."""
    - Security: OWASP Top 10 (input validation, XSS, CSRF)
    - Edge Cases: Boundary values, error handling
 3. Follow BDD Given/When/Then format
-4. Assign priorities: critical, high, medium, low
-5. Include confidence scores (0.0-1.0)
+4. **IMPORTANT**: The "when" clause should include MULTIPLE comma-separated actions for complex scenarios
+   - Example: "Click on plan 'Plan A', Select contract term '12 months', Verify price shows '$100', Click button 'Subscribe'"
+   - Simple scenarios can have single actions, but complex workflows should have 3-5 actions
+5. Assign priorities: critical, high, medium, low
+6. Include confidence scores (0.0-1.0)
 
 **Required JSON Response Format:**
 {{
@@ -745,7 +748,7 @@ Always respond with valid JSON containing high-quality test scenarios."""
       "scenario_id": "REQ-F-001",
       "title": "Short descriptive title",
       "given": "Preconditions (user state, page state)",
-      "when": "User action or trigger event",
+      "when": "User action or multiple comma-separated actions (e.g., 'Click button A, Enter text in field B, Click submit')",
       "then": "Expected outcome or system behavior",
       "priority": "critical|high|medium|low",
       "scenario_type": "functional|accessibility|security|edge_case",
@@ -755,7 +758,7 @@ Always respond with valid JSON containing high-quality test scenarios."""
   ]
 }}
 
-Focus on **realistic user scenarios** and **important test coverage**. Be specific and actionable."""
+Focus on **realistic user scenarios** and **important test coverage**. Be specific and actionable. For functional scenarios, include multiple steps in the "when" clause to create comprehensive test flows."""
         
         return prompt
     

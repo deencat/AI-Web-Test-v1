@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     QUEUE_CHECK_INTERVAL: int = 2  # How often to check queue (seconds)
     EXECUTION_TIMEOUT: int = 300  # Execution timeout (seconds)
     
+    # Browser Settings
+    HEADLESS_BROWSER: bool = True  # Set to False to see browser during test execution
+    BROWSER_SLOWMO: int = 0  # Browser action delay in milliseconds (0 = no delay)
+    
     class Config:
         env_file = ".env"
         case_sensitive = True

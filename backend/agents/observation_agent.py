@@ -244,8 +244,15 @@ class ObservationAgent(BaseAgent):
             logger.info(f"Crawling web application: {url} (task {task.task_id})")
             
             # Start Playwright browser
+            # Read headless mode from env (default: True for CI/CD compatibility)
+            # Support both HEADLESS_BROWSER (existing) and BROWSER_HEADLESS (for consistency)
+            import os
+            headless_str = os.getenv("HEADLESS_BROWSER") or os.getenv("BROWSER_HEADLESS", "true")
+            headless_str = headless_str.lower()
+            headless_mode = headless_str in ("true", "1", "yes")
+            
             async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)
+                browser = await p.chromium.launch(headless=headless_mode)
                 context = await browser.new_context(
                     viewport={"width": 1920, "height": 1080},
                     user_agent="AI-Web-Test ObservationAgent/1.0"
@@ -322,6 +329,15 @@ class ObservationAgent(BaseAgent):
                 "ui_elements": all_elements,
                 "forms": all_forms,
                 "navigation_flows": flows,
+                "page_context": {
+                    "url": url,  # Primary URL for navigation
+                    "title": pages[0].title if pages else "",
+                    "page_structure": {
+                        "total_pages": len(pages),
+                        "total_elements": len(all_elements),
+                        "total_forms": len(all_forms)
+                    }
+                },
                 "llm_analysis": {
                     "used": bool(llm_enhanced_elements),
                     "elements_found": len(llm_enhanced_elements),
@@ -402,6 +418,15 @@ class ObservationAgent(BaseAgent):
             "navigation_flows": [
                 ["Home Page", "Login Page", "Dashboard"]
             ],
+            "page_context": {
+                "url": url,  # Primary URL for navigation
+                "title": "Home Page",
+                "page_structure": {
+                    "total_pages": 3,
+                    "total_elements": 15,
+                    "total_forms": 2
+                }
+            },
             "summary": {
                 "buttons": 3,
                 "inputs": 5,

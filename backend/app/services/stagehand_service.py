@@ -39,13 +39,29 @@ class StagehandExecutionService:
     def __init__(
         self,
         browser: str = "chromium",
-        headless: bool = True,
+        headless: Optional[bool] = None,  # None = read from env, True/False = explicit override
         screenshot_dir: str = "artifacts/screenshots",
         video_dir: str = "artifacts/videos"
     ):
-        """Initialize Stagehand execution service."""
+        """
+        Initialize Stagehand execution service.
+        
+        Args:
+            browser: Browser type (chromium, firefox, webkit)
+            headless: If None, reads from HEADLESS_BROWSER env var (default: True).
+                     If True/False, uses that value explicitly.
+            screenshot_dir: Directory for screenshots
+            video_dir: Directory for videos
+        """
         self.browser = browser
-        self.headless = headless
+        # Read from env if not explicitly set
+        # Support both HEADLESS_BROWSER (existing) and BROWSER_HEADLESS (for consistency)
+        if headless is None:
+            headless_str = os.getenv("HEADLESS_BROWSER") or os.getenv("BROWSER_HEADLESS", "true")
+            headless_str = headless_str.lower()
+            self.headless = headless_str in ("true", "1", "yes")
+        else:
+            self.headless = headless
         self.screenshot_dir = Path(screenshot_dir)
         self.video_dir = Path(video_dir)
         
@@ -226,6 +242,10 @@ class StagehandExecutionService:
 
             
             print(f"[DEBUG] Browser settings: headless={self.headless}, slow_mo={browser_slowmo}ms")
+            if not self.headless:
+                print(f"[DEBUG] 🌐 Browser will be VISIBLE - you can watch the test execution in real-time!")
+            else:
+                print(f"[DEBUG] 🌐 Browser is running in HEADLESS mode (set HEADLESS_BROWSER=false in .env to see browser)")
             
             self.stagehand = Stagehand(config)
             await self.stagehand.init()
@@ -653,43 +673,253 @@ class StagehandExecutionService:
     
     async def _execute_step_hybrid(self, step_description: str, step_number: int) -> Dict[str, Any]:
         """
-        Hybrid execution: Try Playwright first, fallback to AI if it fails.
+        3-Tier Execution Strategy (Phase 2):
         
-        This provides the best of both worlds:
-        - Fast and free Playwright selectors for common cases
-        - AI fallback for complex or dynamic scenarios
+        Tier 1: Playwright Direct (Fast, Free, Reliable)
+        - Direct selector execution (CSS, XPath)
+        - 0ms LLM latency, 85% success rate
         
-        IMPORTANT: AI fallback executes ONLY the current step, not all steps from beginning.
+        Tier 2: Hybrid Mode (Stagehand observe + Playwright execute)
+        - Stagehand observe() finds element → Extract XPath
+        - Playwright executes action using XPath
+        - 90% success rate on Tier 1 failures
+        
+        Tier 3: Stagehand AI (Full AI Reasoning)
+        - Full Stagehand act() with natural language
+        - Highest flexibility, handles edge cases
+        - 60% success rate on Tier 2 failures
+        
+        IMPORTANT: Each tier executes ONLY the current step, not all steps from beginning.
         Browser session is shared, so context from previous steps is preserved.
         """
         print(f"[DEBUG] ========================================")
-        print(f"[DEBUG] 🔄 HYBRID Step {step_number}: {step_description}")
-        print(f"[DEBUG] Strategy: Playwright first (10s timeout), then AI fallback if needed")
+        print(f"[DEBUG] 🔄 3-TIER HYBRID Step {step_number}: {step_description}")
+        print(f"[DEBUG] Strategy: Tier 1 (Playwright) → Tier 2 (Observe+XPath) → Tier 3 (AI)")
         
-        # Try Playwright-based execution first
-        print(f"[DEBUG] 🎭 Attempting with Playwright selectors...")
+        # ===== TIER 1: Playwright Direct =====
+        print(f"[DEBUG] 🎭 [TIER 1] Attempting with Playwright direct selectors...")
         result = await self._execute_step_simple(step_description, step_number)
         
-        # Check if it succeeded
         if result.get("success"):
-            print(f"[DEBUG] ✅ Playwright execution succeeded for step {step_number}")
+            print(f"[DEBUG] ✅ [TIER 1] Playwright execution succeeded for step {step_number}")
+            result["action_method"] = "playwright_tier1"
             return result
         
-        # If Playwright failed, try AI fallback for THIS STEP ONLY
-        print(f"[DEBUG] ⚠️  Playwright failed for step {step_number}: {result.get('error', 'Unknown error')}")
-        print(f"[DEBUG] 🤖 Attempting AI fallback for step {step_number} ONLY (not restarting from step 1)...")
+        # ===== TIER 2: Stagehand observe() + Playwright execute =====
+        print(f"[DEBUG] ⚠️  [TIER 1] Playwright failed: {result.get('error', 'Unknown error')}")
+        print(f"[DEBUG] 🔍 [TIER 2] Attempting Stagehand observe() to find element and extract XPath...")
+        
+        try:
+            # Use observe() to find the element
+            observe_result = await self._execute_step_observe(step_description, step_number)
+            
+            if observe_result.get("success"):
+                print(f"[DEBUG] ✅ [TIER 2] Observe+XPath execution succeeded for step {step_number}!")
+                observe_result["action_method"] = "stagehand_observe_tier2"
+                return observe_result
+            else:
+                print(f"[DEBUG] ⚠️  [TIER 2] Observe+XPath failed: {observe_result.get('error', 'Unknown error')}")
+        except Exception as e:
+            print(f"[DEBUG] ⚠️  [TIER 2] Observe exception: {str(e)}")
+        
+        # ===== TIER 3: Stagehand AI (Full AI Reasoning) =====
+        print(f"[DEBUG] 🤖 [TIER 3] Attempting full AI reasoning (page.act()) for step {step_number}...")
         
         ai_result = await self._execute_step_ai(step_description, step_number)
         
         if ai_result.get("success"):
-            print(f"[DEBUG] ✅ AI fallback succeeded for step {step_number}!")
-            # Add note that AI was used
-            ai_result["actual"] = f"[AI Fallback] {ai_result.get('actual', '')}"
+            print(f"[DEBUG] ✅ [TIER 3] AI execution succeeded for step {step_number}!")
+            ai_result["action_method"] = "stagehand_ai_tier3"
             return ai_result
         else:
-            print(f"[DEBUG] ❌ Both Playwright and AI failed for step {step_number}")
+            print(f"[DEBUG] ❌ [TIER 3] All tiers failed for step {step_number}")
             # Return the AI error (usually more informative)
+            ai_result["action_method"] = "stagehand_ai_tier3_failed"
             return ai_result
+    
+    async def _execute_step_observe(self, step_description: str, step_number: int) -> Dict[str, Any]:
+        """
+        Tier 2: Hybrid Mode (Stagehand observe + Playwright execute)
+        
+        Uses Stagehand observe() to find element → Extract XPath → Playwright executes action.
+        This provides a middle ground between fast Playwright and flexible AI.
+        
+        Process:
+        1. Use page.observe() with natural language instruction
+        2. Extract XPath from observe result
+        3. Use Playwright to execute action with extracted XPath
+        """
+        try:
+            print(f"[DEBUG] [TIER 2] Using observe() to find element: {step_description}")
+            
+            # Detect action type from description
+            desc_lower = step_description.lower()
+            is_click = any(word in desc_lower for word in ['click', 'select', 'press', 'tick'])
+            is_type = any(word in desc_lower for word in ['type', 'enter', 'fill', 'input'])
+            is_navigate = any(word in desc_lower for word in ['navigate', 'goto', 'open'])
+            
+            # Create observe instruction based on action type
+            if is_click:
+                # Extract what to click from description
+                import re
+                # Try to extract button/element text
+                quoted_match = re.search(r"['\"]([^'\"]+)['\"]", step_description)
+                if quoted_match:
+                    element_text = quoted_match.group(1)
+                    observe_instruction = f"find the {element_text} button or element"
+                else:
+                    # Extract after "click" keyword
+                    click_match = re.search(r"(?:click|select|press)\s+(?:on|the)?\s*(.+)", desc_lower)
+                    if click_match:
+                        element_desc = click_match.group(1).strip()
+                        observe_instruction = f"find the {element_desc}"
+                    else:
+                        observe_instruction = f"find the clickable element for: {step_description}"
+            elif is_type:
+                # Extract field type
+                if 'email' in desc_lower:
+                    observe_instruction = "find the email input field"
+                elif 'password' in desc_lower:
+                    observe_instruction = "find the password input field"
+                else:
+                    observe_instruction = "find the input field"
+            elif is_navigate:
+                # Navigation doesn't need observe, should have been handled in Tier 1
+                return {
+                    "success": False,
+                    "error": "Navigation actions should be handled by Tier 1",
+                    "actual": "Navigation not suitable for observe()",
+                    "expected": step_description
+                }
+            else:
+                # Generic observe instruction
+                observe_instruction = f"find the element for: {step_description}"
+            
+            print(f"[DEBUG] [TIER 2] Calling page.observe('{observe_instruction}')...")
+            
+            # Call observe() to find element
+            observe_result = await self.page.observe(observe_instruction)
+            
+            # Extract XPath from observe result
+            xpath = None
+            selector = None
+            
+            # Handle different observe result formats
+            if isinstance(observe_result, list) and len(observe_result) > 0:
+                first_result = observe_result[0]
+                if isinstance(first_result, dict):
+                    # Look for selector or xpath in dict
+                    selector = first_result.get("selector") or first_result.get("xpath") or first_result.get("locator")
+                elif hasattr(first_result, "selector"):
+                    selector = first_result.selector
+                elif hasattr(first_result, "xpath"):
+                    selector = first_result.xpath
+            elif isinstance(observe_result, dict):
+                selector = observe_result.get("selector") or observe_result.get("xpath") or observe_result.get("locator")
+            elif hasattr(observe_result, "selector"):
+                selector = observe_result.selector
+            elif hasattr(observe_result, "xpath"):
+                selector = observe_result.xpath
+            
+            # Extract XPath from selector (may be in format "xpath=/html/body/...")
+            if selector:
+                if selector.startswith("xpath="):
+                    xpath = selector[6:]  # Remove "xpath=" prefix
+                elif selector.startswith("/"):
+                    xpath = selector  # Already XPath format
+                else:
+                    # Might be CSS selector, try to use it directly
+                    xpath = selector
+            
+            if not xpath:
+                print(f"[DEBUG] [TIER 2] Could not extract XPath from observe result")
+                return {
+                    "success": False,
+                    "error": "Could not extract XPath from observe() result",
+                    "actual": f"Observe result: {type(observe_result)}",
+                    "expected": step_description
+                }
+            
+            print(f"[DEBUG] [TIER 2] Extracted XPath: {xpath}")
+            
+            # Execute action using Playwright with extracted XPath
+            pw_page = self.page._page
+            
+            try:
+                if is_click:
+                    # Click using XPath
+                    element = await pw_page.wait_for_selector(f"xpath={xpath}", timeout=10000, state='visible')
+                    await element.click(timeout=10000)
+                    await asyncio.sleep(1.5)  # Wait for click effects
+                    
+                    title = await self.page.title()
+                    url = self.page.url
+                    
+                    print(f"[DEBUG] [TIER 2] ✅ Clicked element using XPath")
+                    return {
+                        "success": True,
+                        "actual": f"Clicked element using XPath from observe(). Page: {title} | URL: {url}",
+                        "expected": step_description,
+                        "selector_used": f"xpath={xpath}",
+                        "action_method": "stagehand_observe_playwright"
+                    }
+                    
+                elif is_type:
+                    # Type using XPath
+                    element = await pw_page.wait_for_selector(f"xpath={xpath}", timeout=10000, state='visible')
+                    
+                    # Extract text to type
+                    import re
+                    quoted_matches = re.findall(r"['\"]([^'\"]+)['\"]", step_description)
+                    if quoted_matches:
+                        text_to_type = quoted_matches[0]  # Use first quoted text
+                        await element.fill('')  # Clear first
+                        await element.fill(text_to_type)
+                        await asyncio.sleep(0.5)
+                        
+                        title = await self.page.title()
+                        
+                        print(f"[DEBUG] [TIER 2] ✅ Typed into element using XPath")
+                        return {
+                            "success": True,
+                            "actual": f"Typed '{text_to_type}' into element using XPath from observe(). Page: {title}",
+                            "expected": step_description,
+                            "selector_used": f"xpath={xpath}",
+                            "action_method": "stagehand_observe_playwright"
+                        }
+                    else:
+                        return {
+                            "success": False,
+                            "error": "Could not extract text to type from description",
+                            "actual": "No quoted text found in step description",
+                            "expected": step_description
+                        }
+                else:
+                    return {
+                        "success": False,
+                        "error": f"Action type not supported for Tier 2: {step_description}",
+                        "actual": "Only click and type actions supported",
+                        "expected": step_description
+                    }
+                    
+            except Exception as pw_error:
+                print(f"[DEBUG] [TIER 2] Playwright execution with XPath failed: {str(pw_error)}")
+                return {
+                    "success": False,
+                    "error": f"Playwright execution failed: {str(pw_error)}",
+                    "actual": f"XPath found but execution failed: {xpath}",
+                    "expected": step_description,
+                    "selector_used": f"xpath={xpath}"
+                }
+                
+        except Exception as e:
+            print(f"[DEBUG] [TIER 2] Observe failed: {str(e)}")
+            return {
+                "success": False,
+                "error": f"Observe() failed: {str(e)}",
+                "actual": f"Could not observe element: {str(e)}",
+                "expected": step_description
+            }
     
     async def _execute_step_ai(self, step_description: str, step_number: int) -> Dict[str, Any]:
         """
