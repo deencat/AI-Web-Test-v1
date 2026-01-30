@@ -110,11 +110,12 @@ def analysis_agent_real(mock_message_queue, db_session):
 
 
 @pytest.fixture
-def evolution_agent_real(mock_message_queue):
-    """Create EvolutionAgent instance with REAL LLM enabled"""
+def evolution_agent_real(mock_message_queue, db_session):
+    """Create EvolutionAgent instance with REAL LLM enabled and database session"""
     config = {
-        "use_llm": True,  # ENABLE LLM for real code generation
-        "cache_enabled": False  # DISABLE caching for real E2E test
+        "use_llm": True,  # ENABLE LLM for real test steps generation
+        "cache_enabled": False,  # DISABLE caching for real E2E test
+        "db": db_session  # Use database session if available
     }
     return EvolutionAgent(
         agent_id="e2e_test_evolution_agent",
@@ -135,7 +136,8 @@ class TestFourAgentE2EReal:
         observation_agent_real,
         requirements_agent_real,
         analysis_agent_real,
-        evolution_agent_real
+        evolution_agent_real,
+        db_session
     ):
         """
         REAL 4-Agent E2E Test: Complete workflow with actual execution
@@ -144,7 +146,7 @@ class TestFourAgentE2EReal:
         1. Actually crawls the Three HK 5G Broadband page (ObservationAgent)
         2. Uses real LLM to generate BDD scenarios (RequirementsAgent)
         3. Uses real LLM to analyze risk and executes real test scenarios (AnalysisAgent)
-        4. Uses real LLM to generate Playwright test code (EvolutionAgent)
+        4. Uses real LLM to generate test steps and stores in database (EvolutionAgent)
         
         Expected duration: 45-155 seconds
         """
@@ -247,8 +249,8 @@ class TestFourAgentE2EReal:
         assert "final_prioritization" in analysis_result.result
         assert "execution_strategy" in analysis_result.result
         
-        # Step 4: EvolutionAgent - Generate Playwright test code
-        print("\nStep 4: Generating Playwright test code with EvolutionAgent...")
+        # Step 4: EvolutionAgent - Generate test steps and store in database
+        print("\nStep 4: Generating test steps with EvolutionAgent...")
         evolution_task = TaskContext(
             conversation_id=conversation_id,
             task_id="evolution-task-real-001",
@@ -258,7 +260,8 @@ class TestFourAgentE2EReal:
                 "risk_scores": analysis_result.result["risk_scores"],
                 "final_prioritization": analysis_result.result["final_prioritization"],
                 "page_context": observation_data["page_context"],
-                "test_data": requirements_result.result.get("test_data", [])
+                "test_data": requirements_result.result.get("test_data", []),
+                "db": db_session  # Pass database session if available
             }
         )
         
@@ -267,39 +270,69 @@ class TestFourAgentE2EReal:
         # Verify EvolutionAgent succeeded
         assert evolution_result.success is True, f"EvolutionAgent failed: {evolution_result.error}"
         assert "generation_id" in evolution_result.result
-        assert "test_file" in evolution_result.result
-        assert "code" in evolution_result.result
         assert "test_count" in evolution_result.result
+        assert "test_cases" in evolution_result.result
         assert evolution_result.result["test_count"] == len(scenarios)
         
-        test_code = evolution_result.result["code"]
-        test_file_path = evolution_result.result.get("test_file_path")
-        print(f"[OK] Evolution complete: {evolution_result.result['test_count']} tests generated")
-        print(f"        Test file: {evolution_result.result['test_file']}")
-        if test_file_path:
-            print(f"        Saved to: {test_file_path}")
-        else:
-            print(f"        Note: Test file content is in result (not saved to disk)")
-        print(f"        Code length: {len(test_code)} characters")
+        generation_id = evolution_result.result["generation_id"]
+        test_case_ids = evolution_result.result.get("test_case_ids", [])
+        stored_in_db = evolution_result.result.get("stored_in_database", False)
         
-        # Verify generated code contains Playwright imports
-        assert "@playwright/test" in test_code or "playwright" in test_code.lower(), \
-            "Generated code should contain Playwright imports"
-        assert "test(" in test_code or "test(" in test_code, \
-            "Generated code should contain test() functions"
+        print(f"[OK] Evolution complete: {evolution_result.result['test_count']} test cases generated")
+        print(f"        Generation ID: {generation_id}")
+        print(f"        Stored in database: {stored_in_db}")
+        if test_case_ids:
+            print(f"        Database IDs: {test_case_ids[:5]}{'...' if len(test_case_ids) > 5 else ''}")
         
-        # Verify each scenario has corresponding test code
-        assert len(evolution_result.result["scenarios"]) == len(scenarios)
-        for scenario_data in evolution_result.result["scenarios"][:3]:  # Check first 3
-            assert "test_code" in scenario_data, \
-                f"Scenario {scenario_data.get('scenario_id')} missing test_code"
-            assert len(scenario_data["test_code"]) > 0, \
-                f"Scenario {scenario_data.get('scenario_id')} has empty test_code"
+        # Verify each scenario has corresponding test steps
+        test_cases = evolution_result.result["test_cases"]
+        assert len(test_cases) == len(scenarios)
+        for test_case_data in test_cases[:3]:  # Check first 3
+            assert "steps" in test_case_data, \
+                f"Test case {test_case_data.get('scenario_id')} missing steps"
+            assert isinstance(test_case_data["steps"], list), \
+                f"Test case {test_case_data.get('scenario_id')} steps should be a list"
+            assert len(test_case_data["steps"]) > 0, \
+                f"Test case {test_case_data.get('scenario_id')} has empty steps"
         
         # Verify confidence score
         assert evolution_result.confidence > 0.0
         assert evolution_result.result["confidence"] > 0.0
         print(f"        Confidence: {evolution_result.result['confidence']:.2f}")
+        
+        # Step 4.5: Verify test cases are stored in database (if database available)
+        if db_session and stored_in_db and test_case_ids:
+            print("\nStep 4.5: Verifying test cases in database...")
+            from app.models.test_case import TestCase
+            import json
+            
+            # Query database for test cases by IDs (more reliable than JSON query)
+            db_test_cases = db_session.query(TestCase).filter(
+                TestCase.id.in_(test_case_ids)
+            ).all()
+            
+            assert len(db_test_cases) == len(test_case_ids), \
+                f"Expected {len(test_case_ids)} test cases in database, got {len(db_test_cases)}"
+            
+            print(f"[OK] Verified {len(db_test_cases)} test cases in database")
+            
+            # Verify test case structure
+            for db_tc in db_test_cases[:3]:  # Check first 3
+                assert db_tc.title is not None and len(db_tc.title) > 0, "Test case title should not be empty"
+                assert db_tc.steps is not None and isinstance(db_tc.steps, list), "Test case steps should be a list"
+                assert len(db_tc.steps) > 0, "Test case should have at least one step"
+                assert db_tc.expected_result is not None, "Test case should have expected result"
+                
+                # Verify metadata contains generation_id
+                if db_tc.test_metadata:
+                    metadata = db_tc.test_metadata if isinstance(db_tc.test_metadata, dict) else json.loads(db_tc.test_metadata)
+                    assert metadata.get("generation_id") == generation_id, \
+                        f"Test case metadata should contain generation_id: {generation_id}"
+                
+                print(f"        - {db_tc.title}: {len(db_tc.steps)} steps")
+                print(f"          Steps: {db_tc.steps[:2]}{'...' if len(db_tc.steps) > 2 else ''}")
+        else:
+            print("\nStep 4.5: Skipping database verification (database not available or not stored)")
         
         # Step 5: Print summary
         print(f"\n{'='*80}")
@@ -311,7 +344,9 @@ class TestFourAgentE2EReal:
         print(f"Risk Scores Calculated: {len(analysis_result.result['risk_scores'])}")
         print(f"Scenarios Prioritized: {len(analysis_result.result['final_prioritization'])}")
         print(f"Scenarios Executed (REAL): {real_execution_count}")
-        print(f"Tests Generated: {evolution_result.result['test_count']}")
+        print(f"Test Cases Generated: {evolution_result.result['test_count']}")
+        if evolution_result.result.get("stored_in_database"):
+            print(f"Test Cases Stored in DB: {len(evolution_result.result.get('test_case_ids', []))}")
         
         # Show top 3 prioritized scenarios
         print(f"\nTop 3 Prioritized Scenarios:")
