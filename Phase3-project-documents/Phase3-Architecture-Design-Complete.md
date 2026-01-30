@@ -3,8 +3,8 @@
 **Purpose:** High-level architecture and design decisions for multi-agent test generation system  
 **Scope:** Framework selection, communication patterns, orchestration strategy, data flow  
 **Audience:** Technical architects, lead developers, stakeholders  
-**Status:** Final design for Sprint 7-12 implementation  
-**Last Updated:** January 27, 2026
+**Status:** ✅ Sprint 7 Complete - AnalysisAgent Implementation Done  
+**Last Updated:** January 29, 2026
 
 > **📖 When to Use This Document:**
 > - **System Design:** Understanding overall architecture, agent patterns, data flow
@@ -27,13 +27,15 @@
 5. [Data Architecture](#5-data-architecture) - Memory layers, observation caching, cost optimization
 
 ### System Design
-6. [Agent Design Patterns](#6-agent-design-patterns) - Base contract, agent specialization, confidence scoring
+6. [Agent Design Patterns](#6-agent-design-patterns) - Base contract, agent specialization, confidence scoring, performance metrics
 7. [Architecture Diagrams](#7-architecture-diagrams-c4-model) - C4 model (context/container/component/code), deployment
 8. [Continuous Learning](#8-continuous-learning-sprint-10-12) - 5-layer learning, feedback collection, A/B testing, ROI
+9. [Agent Performance Scoring](#9-agent-performance-scoring-framework) - Performance metrics, quality validation, industry standards
 
 ### Reference
-9. [Technology Stack](#9-technology-stack-summary) - Core technologies, infrastructure, security
-10. [References](#-references) - Key sources, industry research
+10. [Technology Stack](#10-technology-stack-summary) - Core technologies, infrastructure, security
+11. [References](#-references) - Key sources, industry research
+12. [Supporting Documents](#12-supporting-documents) - Detailed analysis, strategies, and frameworks
 
 ---
 
@@ -332,7 +334,14 @@ user_feedback (generation_id, rating, comments, created_at)
 - Heartbeat loop (health status every 30s)
 - Registration/deregistration (with agent registry)
 - Metrics tracking (tasks completed, tokens used, errors)
+- Performance scoring (accuracy, completeness, efficiency, reliability)
 - Graceful shutdown (wait for active tasks to complete)
+
+**Performance Scoring:**
+- Each agent implements `calculate_performance_score()` method
+- Multi-dimensional scoring: Accuracy, Completeness, Efficiency, Reliability
+- Industry standards: ISTQB, IEEE 29119, ISO/IEC 25010
+- See [Agent Performance Scoring Framework](supporting-documents/Phase3-Agent-Performance-Scoring-Framework.md) for detailed metrics
 
 ### 6.2 Agent Specialization
 
@@ -343,7 +352,7 @@ user_feedback (generation_id, rating, comments, created_at)
 | **ObservationAgent** | URL | UI elements (261 in Three HK test) | Azure GPT-4o ✅ |
 | **RequirementsAgent** | UI elements | 18 BDD scenarios (conf: 0.90) | Azure GPT-4o ✅ |
 | **AnalysisAgent** | Test scenarios | Risk scores (RPN), ROI, execution order | Azure GPT-4o |
-| **EvolutionAgent** | Test scenarios | Playwright test code | Azure GPT-4o |
+| **EvolutionAgent** | BDD scenarios (Given/When/Then) | Playwright test code (.spec.ts) | Azure GPT-4o |
 | **OrchestrationAgent** | User request | Coordinated workflow | No LLM |
 | **ReportingAgent** | Test results | HTML/PDF reports | Optional |
 
@@ -503,30 +512,55 @@ user_feedback (generation_id, rating, comments, created_at)
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ Stage 4: EvolutionAgent                                                 │
-│ Input:   AnalysisAgent output + RequirementsAgent scenarios             │
-│ Process: - Generate Playwright test code (.spec.ts)                    │
-│          - Implement Given/When/Then as code                            │
-│          - Add assertions, waits, error handling                        │
+│ Stage 4: EvolutionAgent (Test Code Generator)                          │
+│ Input:   AnalysisAgent output + RequirementsAgent scenarios (BDD)       │
+│ Process: - Convert BDD scenarios (Given/When/Then) → Test steps        │
+│          - Generate executable test steps (array of strings)            │
+│          - Store test cases in database (TestCase objects)              │
+│          - Convert steps to executable format for Phase 2 engine         │
 │          - Azure GPT-4o code generation (~2,500 tokens)                 │
 │ Output:  {                                                              │
-│            "test_file": "login.spec.ts",                                │
-│            "code": "import { test, expect } from '@playwright/test';   │
-│                     test('User Login - Happy Path', async ({page}) => { │
-│                       // Given: User on login page                      │
-│                       await page.goto('https://...');                   │
-│                       // When: User enters credentials                  │
-│                       await page.fill('#email', 'test@example.com');    │
-│                       await page.fill('#password', 'password123');      │
-│                       await page.click('#login-btn');                   │
-│                       // Then: User redirected to dashboard             │
-│                       await expect(page).toHaveURL(/dashboard/);        │
-│                     });",                                               │
+│            "test_cases": [                                              │
+│              {                                                          │
+│                "id": 123,                                               │
+│                "title": "User Login - Happy Path",                      │
+│                "steps": [                                                │
+│                  "Navigate to https://example.com/login",              │
+│                  "Enter email: test@example.com",                       │
+│                  "Enter password: password123",                         │
+│                  "Click Login button",                                  │
+│                  "Verify URL contains /dashboard"                       │
+│                ],                                                       │
+│                "expected_result": "User redirected to dashboard"        │
+│              }                                                          │
+│            ],                                                           │
 │            "test_count": 12,                                            │
-│            "confidence": 0.91                                           │
+│            "generation_id": "gen-001"                                   │
 │          }                                                              │
 │ Quality: confidence=0.91, 12+ tests/page, cost=$0.020/page             │
+│ Integration: Test cases stored in database, visible in frontend,       │
+│              executable via "Run Test" button                            │
+│ Feedback Loop: Execution results feed back to RequirementsAgent        │
+│                to improve future scenario generation                    │
 └────────────────────────────┬────────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│ FEEDBACK LOOP: Continuous Improvement                                   │
+│                                                                         │
+│ 1. EvolutionAgent generates test steps → Stored in database            │
+│ 2. Tests executed via Phase 2 engine → Results collected               │
+│ 3. Execution results analyzed → Success/failure patterns identified     │
+│ 4. Feedback provided to RequirementsAgent:                            │
+│    - Which scenario structures executed successfully                    │
+│    - Which scenario structures failed and why                          │
+│    - Recommendations for improving scenario quality                     │
+│ 5. RequirementsAgent uses feedback → Improves next scenario generation  │
+│                                                                         │
+│ Result: Agents collaborate for continuous improvement, not standalone  │
+└─────────────────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -1210,16 +1244,98 @@ graph TB
 
 ## 8. Continuous Learning (Sprint 10-12)
 
+### 8.0 Agent Collaboration & Feedback Loop
+
+**Key Principle:** Agents work together for continuous improvement, not as standalone parties. Each agent's output improves the others' future performance through a feedback loop.
+
+**Complete Feedback Loop Architecture:**
+
+```
+Forward Flow (Generation):
+RequirementsAgent → Generates BDD scenarios
+    ↓
+AnalysisAgent → Executes scenarios, measures success rates, prioritizes
+    ↓
+EvolutionAgent → Generates test steps, stores in database
+    ↓
+Phase 2 Execution → Runs tests, collects results
+    ↓
+Backward Flow (Learning):
+Execution Results → Analyzed for success/failure patterns
+    ↓
+EvolutionAgent → Provides feedback to RequirementsAgent:
+    - Which scenario structures generate good test code
+    - Which scenario structures are problematic
+    - Recommendations for improving scenario quality
+    ↓
+RequirementsAgent → Uses feedback to improve next scenario generation
+    - Learns from successful patterns
+    - Avoids problematic patterns
+    - Improves scenario quality over time
+```
+
+**Agent Collaboration Points:**
+
+1. **AnalysisAgent → EvolutionAgent:**
+   - Provides execution success rates (which scenarios executed successfully)
+   - Provides risk scores and prioritization (which scenarios are critical)
+   - Provides failure patterns (common failure reasons)
+
+2. **EvolutionAgent → RequirementsAgent:**
+   - Provides feedback on which scenario structures generate good test code
+   - Identifies problematic scenario structures
+   - Recommends improvements for scenario quality
+
+3. **Execution Results → RequirementsAgent:**
+   - Actual test pass/fail rates inform which scenario patterns work best
+   - Execution feedback improves future scenario generation
+
+**Result:** Continuous improvement where each iteration produces better scenarios, better test code, and better execution results.
+
 ### 8.1 Learning Architecture
+
+**Important:** The **Learning System** (this section) is the **core of continuous improvement**, not any individual agent. It operates at a meta-level above all agents, coordinating learning across the entire system. Individual agents (like EvolutionAgent and RequirementsAgent) participate in the feedback loop, while the Learning System coordinates optimization, A/B testing, and pattern extraction at a meta-level.
 
 **Five Learning Layers:**
 ```
 Layer 5: Meta-Learning → Which strategies work best overall?
+         (Learning System coordinates all agents)
 Layer 4: Cross-Agent → Pattern sharing between agents
+         (Learning System extracts patterns from all agents)
 Layer 3: Agent-Level → Prompt optimization per agent
+         (Learning System optimizes prompts for each agent)
 Layer 2: Task-Level → Best approach per code type
+         (Individual agents: EvolutionAgent generates code, etc.)
 Layer 1: Data Collection → Track all inputs/outputs/metrics
+         (All agents contribute data to Learning System)
 ```
+
+**Agent Roles in Learning:**
+- **EvolutionAgent:** Generates test steps/code (Layer 2), stores in database, provides execution feedback to RequirementsAgent
+- **RequirementsAgent:** Uses execution feedback from EvolutionAgent to improve scenario generation quality
+- **AnalysisAgent:** Executes scenarios, measures success rates, provides execution results to EvolutionAgent
+- **All Agents:** Contribute execution results, metrics, patterns to Learning System
+- **Learning System:** Coordinates optimization, A/B testing, pattern extraction across all agents
+
+**Continuous Improvement Feedback Loop:**
+```
+RequirementsAgent → Generates BDD scenarios
+    ↓
+AnalysisAgent → Executes scenarios, measures success rates
+    ↓
+EvolutionAgent → Generates test steps, stores in database
+    ↓
+Phase 2 Execution → Runs tests, collects results
+    ↓
+Feedback Analysis → Identifies successful/failed patterns
+    ↓
+RequirementsAgent ← Receives feedback, improves next generation
+```
+
+**Key Collaboration Points:**
+- **EvolutionAgent → RequirementsAgent:** Provides feedback on which scenario structures generate good test code, which are problematic
+- **AnalysisAgent → EvolutionAgent:** Provides execution success rates, risk scores, prioritization to guide test generation
+- **Execution Results → RequirementsAgent:** Actual test pass/fail rates inform which scenario patterns work best
 
 ### 8.2 Learning Components
 
@@ -1241,9 +1357,12 @@ Layer 1: Data Collection → Track all inputs/outputs/metrics
 - Apply patterns to similar tasks (90% cost savings)
 - Example: All "pricing page" crawls share button patterns
 
-**4. Performance Monitoring**
-- Track daily metrics per agent
-- Detect degradation (>20% quality drop)
+**4. Performance Monitoring & Scoring**
+- Track daily metrics per agent using [Agent Performance Scoring Framework](supporting-documents/Phase3-Agent-Performance-Scoring-Framework.md)
+- **ObservationAgent:** Selector accuracy, element detection completeness, classification accuracy, LLM enhancement effectiveness
+- **RequirementsAgent:** Scenario correctness, execution success rate, coverage completeness, scenario quality
+- **AnalysisAgent:** Risk prediction accuracy, ROI prediction accuracy, execution time accuracy, prioritization effectiveness
+- Detect degradation (>20% quality drop in overall score)
 - Auto-recovery: Revert to previous best prompt
 - Alert ops team via Slack/PagerDuty
 
@@ -1281,7 +1400,59 @@ Layer 1: Data Collection → Track all inputs/outputs/metrics
 
 ---
 
-## 9. Technology Stack Summary
+## 9. Agent Performance Scoring Framework
+
+### 9.1 Overview
+
+**Purpose:** Comprehensive performance scoring system for all Phase 3 agents based on industry best practices (ISTQB, IEEE 29119, ISO/IEC 25010).
+
+**Key Features:**
+- **Multi-Dimensional Scoring:** Each agent scored on 4 dimensions (Accuracy, Completeness, Efficiency, Reliability)
+- **Ground Truth Validation:** Compare agent outputs against actual execution results
+- **Industry Alignment:** Metrics align with ISTQB, IEEE 29119, ISO/IEC 25010 standards
+- **Actionable Insights:** Scores provide specific recommendations for improvement
+
+**Documentation:** See [Phase3-Agent-Performance-Scoring-Framework.md](supporting-documents/Phase3-Agent-Performance-Scoring-Framework.md) for complete specifications.
+
+### 9.2 Scoring Dimensions
+
+**ObservationAgent (4 dimensions):**
+1. **Selector/XPath Accuracy (35%):** Validates selectors by re-querying the page
+2. **Element Detection Completeness (30%):** Measures coverage of interactive elements
+3. **Element Classification Accuracy (20%):** Validates button vs. link vs. input classification
+4. **LLM Enhancement Effectiveness (15%):** Measures LLM contribution beyond Playwright
+
+**RequirementsAgent (4 dimensions):**
+1. **Test Scenario Correctness (40%):** Validates BDD format (Given/When/Then) and logical flow
+2. **Execution Success Rate (35%):** Measures how many scenarios execute successfully
+3. **Coverage Completeness (15%):** Measures coverage of critical UI elements and user journeys
+4. **Scenario Quality (10%):** Measures relevance and completeness
+
+**AnalysisAgent (4 dimensions):**
+1. **Risk Score Accuracy (30%):** Compares predicted high-risk scenarios vs. actual failures (F1 score)
+2. **ROI Prediction Accuracy (25%):** Pearson correlation between predicted and actual ROI
+3. **Execution Time Accuracy (20%):** Mean Absolute Percentage Error (MAPE) for time predictions
+4. **Prioritization Effectiveness (25%):** Measures if high-priority scenarios found bugs faster
+
+### 9.3 Implementation Status
+
+**Status:** 📋 Design Complete - Ready for Implementation (Jan 29, 2026)
+
+**Implementation Roadmap:**
+- **Phase 1 (Week 1):** ObservationAgent scoring
+- **Phase 2 (Week 2):** RequirementsAgent scoring
+- **Phase 3 (Week 3):** AnalysisAgent scoring
+- **Phase 4 (Week 4):** Integration & reporting
+
+**Integration Points:**
+- Performance scores stored in `agent_performance_scores` database table
+- Scores calculated after each agent task completion
+- Trend analysis tracks improvement over time
+- Dashboard/reporting endpoint for visualization
+
+---
+
+## 10. Technology Stack Summary
 
 ### 9.1 Core Technologies
 
@@ -1332,12 +1503,50 @@ Layer 1: Data Collection → Track all inputs/outputs/metrics
 8. "The C4 Model for Software Architecture" (Simon Brown, 2018)
 9. "Contract Net Protocol" (FIPA Specification, 2002)
 10. "Redis Streams Documentation" (Redis Labs, 2023)
+11. [Phase3-Agent-Performance-Scoring-Framework.md](supporting-documents/Phase3-Agent-Performance-Scoring-Framework.md) - Agent performance metrics and scoring methodology
 
 ---
 
-**Document Version:** 1.0  
-**Last Review:** January 19, 2026  
-**Next Review:** February 1, 2026 (Sprint 7 completion)
+## 12. Supporting Documents
+
+This document provides the high-level architecture and design. For detailed analysis, strategies, and implementation guidance, see the following supporting documents:
+
+### Detailed Analysis & Strategies
+
+- **[Multi-Agent Continuous Improvement Strategy](supporting-documents/MULTI-AGENT-CONTINUOUS-IMPROVEMENT-STRATEGY.md)** - Complete feedback loop architecture, agent collaboration patterns, and continuous improvement mechanisms
+- **[EvolutionAgent Frontend Integration Solution](supporting-documents/EVOLUTION-AGENT-FRONTEND-INTEGRATION-SOLUTION.md)** - Solution for integrating EvolutionAgent's generated tests with Phase 1/2 frontend system
+- **[4-Agent Workflow Purpose and Value](supporting-documents/4-AGENT-WORKFLOW-PURPOSE-AND-VALUE.md)** - Complete value chain explanation, use cases, and real-world workflow examples
+
+### Agent-Specific Documentation
+
+- **[EvolutionAgent Review and Gap Analysis](supporting-documents/EvolutionAgent-Review-and-Gap-Analysis.md)** - Comprehensive review of EvolutionAgent implementation against industrial best practices, identifying gaps and recommendations
+- **[Agent Performance Scoring Framework](supporting-documents/Phase3-Agent-Performance-Scoring-Framework.md)** - Detailed performance metrics, scoring formulas, validation methods, and industry best practices for all agents
+
+### Document Organization
+
+**Main Documents (Root Folder):**
+- `Phase3-Architecture-Design-Complete.md` - This document (high-level architecture)
+- `Phase3-Implementation-Guide-Complete.md` - Detailed implementation tasks and code examples
+- `Phase3-Project-Management-Plan-Complete.md` - Sprint planning, task breakdown, budget, timeline
+
+**Supporting Documents (supporting-documents/ folder):**
+- Detailed analysis documents
+- Agent-specific reviews
+- Strategy documents
+- Performance frameworks
+
+---
+
+**Document Version:** 1.1  
+**Last Review:** January 29, 2026  
+**Next Review:** February 19, 2026 (Sprint 8 completion)
+
+**Sprint 7 Implementation Status (Jan 29, 2026):**
+- ✅ AnalysisAgent fully implemented per architecture design
+- ✅ Real-time test execution integrated (3-tier strategy from Phase 2)
+- ✅ E2E testing validated with real Three HK page
+- ✅ Browser visibility control implemented
+- ✅ Ready for Sprint 8: EvolutionAgent implementation
 
 ---
 
