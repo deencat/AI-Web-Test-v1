@@ -2,8 +2,8 @@
 
 **Purpose:** Comprehensive implementation guide with code examples, sprint tasks, integration, testing, and security  
 **Scope:** Sprint 7-12 detailed tasks, Phase 2 integration, code templates, testing strategy, security design  
-**Status:** ✅ Sprint 7 Complete - AnalysisAgent Implementation Done  
-**Last Updated:** January 29, 2026
+**Status:** ✅ Sprint 8 In Progress (~75% Complete) - EvolutionAgent Operational  
+**Last Updated:** February 2, 2026
 
 > **📖 When to Use This Document:**
 > - **Writing Code:** Code templates, implementation examples, API patterns
@@ -44,9 +44,10 @@
 
 2. **RequirementsAgent** - Test Requirement Extractor ✅ E2E VERIFIED
    - **What it does:** Converts UI observations into BDD test scenarios with industry standards, continuously improves based on execution feedback
-   - **Inputs:** Page map from ObservationAgent (261 UI elements), execution feedback from EvolutionAgent (which scenarios worked/failed)
+   - **Inputs:** Page map from ObservationAgent (261 UI elements), execution feedback from EvolutionAgent (which scenarios worked/failed), optional user_instruction (user's specific test requirement)
    - **Outputs:** 18 test scenarios in Given/When/Then format (functional, WCAG 2.1 accessibility, OWASP security, edge cases)
    - **Technology:** Azure GPT-4o LLM (~12,500 tokens), pattern-based fallback, feedback-driven prompt optimization
+   - **User Instruction Support:** Accepts natural language requirements (e.g., "Test purchase flow for '5G寬頻數據無限任用' plan"), prioritizes matching scenarios with high/critical priority
    - **Performance:** Confidence 0.90, 20.9s execution time
    - **E2E Tested:** Three HK website (261 elements → 18 scenarios) ✅
    - **Example:** "Given user is on 5G broadband pricing page, When user clicks '立即登記' button, Then registration form opens"
@@ -59,17 +60,22 @@
    - **Technology:** Dependency graph analysis, risk scoring algorithms
    - **Example:** Login flow = 0.95 (critical), Footer links = 0.2 (low priority)
 
-4. **EvolutionAgent** - Test Code Generator
+4. **EvolutionAgent** - Test Code Generator ✅ OPERATIONAL
    - **What it does:** Converts BDD scenarios (Given/When/Then) into executable test steps and stores them in database
-   - **Inputs:** BDD test scenarios from RequirementsAgent, risk scores and execution results from AnalysisAgent
+   - **Inputs:** BDD test scenarios from RequirementsAgent, risk scores and execution results from AnalysisAgent, optional user_instruction and login_credentials
    - **Outputs:** Test cases stored in database (TestCase objects with test steps), visible in frontend, executable via "Run Test" button
-   - **Technology:** GPT-4 LLM with prompt templates, database integration
+   - **Technology:** Azure GPT-4o LLM with prompt templates (3 variants), database integration
+   - **Features:**
+     - ✅ Goal-aware generation: Complete flows to true completion (multi-page flows, final verification)
+     - ✅ Login-aware generation: Automatic login steps when credentials provided
+     - ✅ User instruction support: Incorporates user requirements into test step generation
    - **Example:** 
      - **Input (BDD):** "Given: User is on login page, When: User enters credentials, Then: User redirected to dashboard"
      - **Output (Test Steps):** ["Navigate to login page", "Enter email: test@example.com", "Enter password: password123", "Click Login button", "Verify URL contains /dashboard"]
      - **Storage:** TestCase object in database with steps array, linked to frontend UI
-   - **Feedback Loop:** Execution results from generated tests feed back to RequirementsAgent to improve future scenario generation
+   - **Feedback Loop:** Execution results from generated tests feed back to RequirementsAgent to improve future scenario generation (pending implementation)
    - **Integration:** Test cases appear in frontend automatically, can be executed via Phase 2 engine, results tracked for continuous improvement
+   - **Status:** Core implementation complete, 17+ test cases generated per page, confidence: 0.95
 
 5. **OrchestrationAgent** - Workflow Coordinator
    - **What it does:** Coordinates the 4 agents above in correct sequence
@@ -531,13 +537,21 @@ All agents with LLM support include fallback logic to continue operation without
 - ✅ AnalysisAgent enhanced with real-time test execution (Phase 2 execution engine integration) - **COMPLETE (Sprint 7)**
 - ✅ AnalysisAgent refines scores based on actual execution results - **COMPLETE (Sprint 7)**
 - ✅ AnalysisAgent adjusts Detection score in RPN based on execution success rates - **COMPLETE (Sprint 7)**
-- 🔄 EvolutionAgent generates test steps and stores in database (10+ test cases) - **IN PROGRESS**
-- 🔄 Test cases visible in frontend, executable via "Run Test" button - **IN PROGRESS**
-- 🔄 Feedback loop operational: Execution results → RequirementsAgent improvement - **IN PROGRESS**
-- 🔄 4-agent workflow operational: Observe → Requirements → Analyze → Evolve - **PENDING (needs EvolutionAgent)**
-- 🔄 LLM costs <$0.20 per test cycle (with caching) - **IN PROGRESS**
-- 🔄 Integration test: Full 4-agent workflow end-to-end - **PENDING (needs EvolutionAgent)**
+- ✅ EvolutionAgent generates test steps and stores in database (17+ test cases) - **COMPLETE**
+- ✅ Test cases visible in frontend, executable via "Run Test" button - **COMPLETE** (database storage working)
+- ✅ Goal-aware test generation - Complete flows to true completion - **COMPLETE** (bonus feature)
+- ✅ Login credentials support - Automatic login step generation - **COMPLETE** (bonus feature)
+- ✅ 4-agent workflow operational: Observe → Requirements → Analyze → Evolve - **COMPLETE** (E2E test working)
+- 🔄 Feedback loop operational: Execution results → RequirementsAgent improvement - **PENDING** (8A.10)
+- 🔄 LLM costs <$0.20 per test cycle (with caching) - **PENDING** (8A.8 caching layer)
+- 🔄 Integration test: Full 4-agent workflow end-to-end - **PARTIALLY DONE** (test file exists, needs comprehensive coverage)
 - 🔄 100+ feedback samples collected for learning system (if Developer B available) - **PENDING**
+
+**Sprint 8 Progress:** ~75% Complete (39 of 52 points)
+- ✅ EvolutionAgent core implementation (8A.5, 8A.6, 8A.7, 8A.9) - **COMPLETE**
+- ✅ AnalysisAgent enhancements (8A.1, 8A.2, 8A.3) - **COMPLETE**
+- ✅ Bonus features: User Instructions, Login Credentials, Goal-Aware Generation - **COMPLETE**
+- 🔄 Pending: Caching layer (8A.8), Feedback loop (8A.10), Comprehensive integration tests (8A.4)
 
 ---
 
@@ -1065,7 +1079,8 @@ RequirementsAgent follows industry standards:
 │  INPUT (from ObservationAgent)                              │
 │  ├─ UI Elements: [{type, selector, text, actions}]         │
 │  ├─ Page Structure: {url, title, forms, navigation}        │
-│  └─ Page Context: {framework, page_type, complexity}       │
+│  ├─ Page Context: {framework, page_type, complexity}       │
+│  └─ Optional: user_instruction (user's specific requirement)│
 │                                                              │
 │  PROCESSING PIPELINE                                         │
 │  ├─ 1. Element Grouping (by page/component)                │
@@ -1181,6 +1196,16 @@ class RequirementsAgent(BaseAgent):
             ui_elements = task.payload.get("ui_elements", [])
             page_structure = task.payload.get("page_structure", {})
             page_context = task.payload.get("page_context", {})
+            user_instruction = task.payload.get("user_instruction", "")  # NEW: User's specific test requirement
+            test_requirement = task.payload.get("test_requirement", "")  # Alternative field name
+            
+            # Use test_requirement if user_instruction is empty
+            if not user_instruction and test_requirement:
+                user_instruction = test_requirement
+            
+            if user_instruction:
+                logger.info(f"RequirementsAgent: User instruction provided: '{user_instruction}'")
+                logger.info(f"RequirementsAgent: Will prioritize scenarios matching user intent")
             
             # Stage 1: Group elements by page/component (Page Object Model)
             element_groups = self._group_elements_by_page(ui_elements, page_structure)
@@ -1190,7 +1215,7 @@ class RequirementsAgent(BaseAgent):
             
             # Stage 3: Generate functional test scenarios
             functional_scenarios = await self._generate_functional_scenarios(
-                user_journeys, element_groups, page_context
+                user_journeys, element_groups, page_context, page_structure, user_instruction
             )
             
             # Stage 4: Generate accessibility scenarios (WCAG 2.1)
@@ -1248,6 +1273,32 @@ class RequirementsAgent(BaseAgent):
                 confidence=0.0,
                 execution_time_seconds=time.time() - start_time
             )
+    
+    async def _generate_functional_scenarios(self, user_journeys: List[Dict],
+                                             element_groups: Dict,
+                                             page_context: Dict,
+                                             page_structure: Dict,
+                                             user_instruction: str = "") -> List[TestScenario]:
+        """Generate functional test scenarios using LLM + patterns"""
+        scenarios = []
+        
+        # Reconstruct ui_elements from element_groups
+        ui_elements = []
+        for group_elements in element_groups.values():
+            ui_elements.extend(group_elements)
+        
+        # Use LLM for complex scenario generation (with user instruction support)
+        if self.config.get("use_llm", True):
+            llm_scenarios = await self._generate_scenarios_with_llm(
+                ui_elements, page_structure, page_context, user_instruction
+            )
+            if llm_scenarios:
+                scenarios.extend(llm_scenarios)
+                return scenarios
+        
+        # Fallback: Pattern-based generation
+        # ... (pattern-based fallback code)
+        return scenarios
     
     def _group_elements_by_page(self, ui_elements: List[Dict], 
                                  page_structure: Dict) -> Dict[str, List[Dict]]:
@@ -1387,22 +1438,36 @@ class RequirementsAgent(BaseAgent):
         
         return scenarios
     
-    def _build_scenario_generation_prompt(self, user_journeys: List[Dict],
-                                          element_groups: Dict,
-                                          page_context: Dict) -> str:
-        """Build prompt for LLM scenario generation"""
+    def _build_scenario_generation_prompt(self, ui_elements: List[Dict],
+                                          page_structure: Dict,
+                                          page_context: Dict,
+                                          user_instruction: str = "") -> str:
+        """Build prompt for LLM scenario generation with user instruction support"""
+        # Build user instruction section if provided
+        user_instruction_section = ""
+        if user_instruction:
+            user_instruction_section = f"""
+**USER REQUIREMENT (HIGH PRIORITY):**
+The user wants to test: "{user_instruction}"
+
+**CRITICAL INSTRUCTIONS:**
+1. **MUST generate at least one scenario that specifically matches this user requirement**
+2. **PRIORITIZE scenarios matching the user's intent** - assign "critical" or "high" priority
+3. **Use semantic matching** to find UI elements related to the user's requirement
+4. **Include specific details** from the user requirement in the scenario
+5. **Mark matching scenarios** with tags like ["user-requirement", "priority-test"]
+"""
+        
         return f"""Generate test scenarios in BDD (Gherkin) format.
 
 Page Context:
+- URL: {page_structure.get("url", "unknown")}
 - Type: {page_context.get("page_type", "unknown")}
 - Framework: {page_context.get("framework", "unknown")}
 - Complexity: {page_context.get("complexity", "medium")}
+- UI Elements: {len(ui_elements)} total
 
-User Journeys:
-{json.dumps(user_journeys, indent=2)}
-
-UI Elements Available:
-{json.dumps(list(element_groups.keys()), indent=2)}
+{user_instruction_section}
 
 Generate 5-10 test scenarios following this format:
 {{
@@ -1447,6 +1512,96 @@ Focus on:
             scenarios.append(scenario)
         
         return scenarios
+    
+    #### User Instruction Support
+    
+    **NEW FEATURE:** RequirementsAgent now accepts user instructions to generate specific test scenarios matching user intent.
+    
+    **Usage Example:**
+    
+    ```python
+    # User provides URL and specific test requirement
+    user_instruction = "Test purchase flow for '5G寬頻數據無限任用' plan"
+    
+    # Pass user_instruction in task payload
+    requirements_task = TaskContext(
+        conversation_id="test-001",
+        task_id="req-task-001",
+        task_type="requirement_extraction",
+        payload={
+            "ui_elements": observation_result.result.get("ui_elements", []),
+            "page_structure": observation_result.result.get("page_structure", {}),
+            "page_context": observation_result.result.get("page_context", {}),
+            "user_instruction": user_instruction  # NEW: User's specific requirement
+        }
+    )
+    
+    # RequirementsAgent will:
+    # 1. Prioritize scenarios matching the user instruction
+    # 2. Use semantic matching to find relevant UI elements
+    # 3. Assign high/critical priority to matching scenarios
+    # 4. Generate at least one scenario specifically for the user requirement
+    
+    requirements_result = await requirements_agent.execute_task(requirements_task)
+    scenarios = requirements_result.result.get("scenarios", [])
+    
+    # Matching scenarios will have:
+    # - priority: "critical" or "high"
+    # - tags: ["user-requirement"]
+    # - title/when containing keywords from user instruction
+    ```
+    
+    **How It Works:**
+    
+    1. **User Instruction Parsing:**
+       - Extracts keywords from user instruction
+       - Identifies intent (e.g., "purchase flow", "login", "specific plan")
+    
+    2. **Semantic Matching:**
+       - Matches instruction keywords to UI elements
+       - Finds related elements (buttons, forms, text)
+       - Identifies user journey components
+    
+    3. **Scenario Generation:**
+       - LLM prompt includes user instruction with high priority
+       - LLM generates scenarios matching user intent
+       - Matching scenarios get "critical" or "high" priority
+       - Scenarios tagged with "user-requirement"
+    
+    4. **Priority Assignment:**
+       - Matching scenarios: `priority: "critical"` or `"high"`
+       - Other scenarios: `priority: "medium"` or `"low"`
+       - AnalysisAgent will prioritize critical scenarios for execution
+    
+    **Example Output:**
+    
+    ```python
+    scenarios = [
+        {
+            "scenario_id": "REQ-F-001",
+            "title": "Purchase 5G寬頻數據無限任用 plan - Complete flow",
+            "given": "User is on the Three HK 5G Broadband plan page",
+            "when": (
+                "Click on plan with text '5G寬頻數據無限任用', "
+                "Select contract term '48個月', "
+                "Verify price shows '$182', "
+                "Click button '立即登記', "
+                "Click button '下一步'"
+            ),
+            "then": "User successfully subscribes to 5G寬頻數據無限任用 48個月 plan",
+            "priority": "critical",  # High priority because it matches user requirement
+            "tags": ["user-requirement", "functional", "purchase-flow"]
+        },
+        # ... other generic scenarios with lower priority
+    ]
+    ```
+    
+    **Benefits:**
+    - ✅ Users can specify exactly what to test
+    - ✅ System generates targeted scenarios matching user intent
+    - ✅ Matching scenarios prioritized for execution
+    - ✅ Reduces need for manual scenario definition
+    - ✅ Works with natural language instructions
     
     def _generate_accessibility_scenarios(self, ui_elements: List[Dict]) -> List[TestScenario]:
         """Generate WCAG 2.1 accessibility test scenarios"""
@@ -3574,8 +3729,8 @@ if len(input_tokens) > MAX_TOKENS_PER_REQUEST:
 
 **END OF IMPLEMENTATION GUIDE**
 
-**Document Version:** 1.1  
-**Last Review:** January 29, 2026  
+**Document Version:** 1.2  
+**Last Review:** February 2, 2026  
 **Next Review:** Sprint 8 completion (Feb 19, 2026)
 
 ---
