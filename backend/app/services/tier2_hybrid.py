@@ -249,6 +249,9 @@ class Tier2HybridExecutor:
             xpath: XPath selector (may or may not have xpath= prefix)
             value: Value for fill/select actions
         """
+        print(f"\n🔥🔥🔥 [TIER2 DEBUG] _execute_action_with_xpath called with action='{action}', xpath='{xpath[:100] if len(xpath) > 100 else xpath}', value='{value}' 🔥🔥🔥\n", flush=True)
+        logger.info(f"[Tier 2] 🎬 _execute_action_with_xpath called with action='{action}', xpath='{xpath[:100]}', value='{value}'")
+        
         # Ensure xpath doesn't have double prefix
         # XPath should be just the path, e.g., "/html/body/..."
         if xpath.startswith('xpath='):
@@ -445,7 +448,9 @@ class Tier2HybridExecutor:
             logger.info(f"[Tier 2] ✅ File uploaded successfully")
         elif action == "draw_signature" or action == "sign":
             # Draw signature on canvas element
+            logger.info(f"[Tier 2] 🖊️ Starting signature drawing process for XPath: {xpath}")
             await self._execute_draw_signature(page, xpath, value)
+            logger.info(f"[Tier 2] ✅ Signature drawing completed")
         else:
             raise ValueError(f"Unsupported action type: {action}")
     
@@ -475,8 +480,12 @@ class Tier2HybridExecutor:
         if not bbox:
             raise ValueError(f"Cannot get bounding box for canvas with XPath: {xpath}")
         
-        # Draw a simple signature path (cursive line pattern)
-        logger.info(f"[Tier 2] ✍️ Drawing signature on canvas via XPath")
+        # Focus and scroll to canvas to ensure it's ready for interaction
+        await element.scroll_into_view_if_needed()
+        await element.focus()
+        await asyncio.sleep(0.2)  # Allow focus to settle
+        
+        logger.info(f"[Tier 2] ✍️ Drawing signature on canvas via XPath (bbox: {bbox})")
         
         # Calculate signature path within canvas
         canvas_x = bbox['x']
@@ -484,30 +493,137 @@ class Tier2HybridExecutor:
         canvas_width = bbox['width']
         canvas_height = bbox['height']
         
-        # Start position (left side, middle)
-        start_x = canvas_x + canvas_width * 0.1
+        start_x = canvas_x + canvas_width * 0.2
         start_y = canvas_y + canvas_height * 0.5
+        end_x = canvas_x + canvas_width * 0.8
+        end_y = canvas_y + canvas_height * 0.5
         
-        # Create a cursive signature pattern with mouse movements
-        signature_points = [
-            (start_x, start_y),  # Start
-            (start_x + canvas_width * 0.2, start_y - canvas_height * 0.15),  # Up
-            (start_x + canvas_width * 0.35, start_y + canvas_height * 0.1),  # Down
-            (start_x + canvas_width * 0.5, start_y - canvas_height * 0.05),  # Up slight
-            (start_x + canvas_width * 0.65, start_y + canvas_height * 0.15),  # Down
-            (start_x + canvas_width * 0.8, start_y),  # End middle
-        ]
-        
-        # Move to start position
-        await page.mouse.move(signature_points[0][0], signature_points[0][1])
+        # First attempt: click + mouse drag to create a stroke
+        await page.mouse.move(start_x, start_y)
         await page.mouse.down()
-        
-        # Draw the signature path
-        for x, y in signature_points[1:]:
-            await page.mouse.move(x, y, steps=5)
-            await asyncio.sleep(0.01)  # Small delay for natural drawing
-        
+        await page.mouse.move(end_x, end_y, steps=6)
         await page.mouse.up()
+        await asyncio.sleep(0.1)
+
+        # Second attempt: draw directly on the canvas via JS (reliable dot/line)
+        await element.evaluate(
+            """
+            (canvas) => {
+                const width = canvas.clientWidth || 300;
+                const height = canvas.clientHeight || 150;
+
+                if (!canvas.width || !canvas.height) {
+                    canvas.width = width;
+                    canvas.height = height;
+                }
+
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return false;
+
+                ctx.save();
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 2;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(width * 0.2, height * 0.5);
+                ctx.lineTo(width * 0.8, height * 0.5);
+                ctx.stroke();
+                ctx.restore();
+
+                ctx.fillStyle = '#000';
+                ctx.beginPath();
+                ctx.arc(width * 0.2, height * 0.5, 2, 0, Math.PI * 2);
+                ctx.fill();
+
+                return true;
+            }
+            """
+        )
+
+        # Third attempt: dispatch pointer/mouse/touch events to satisfy signature pad listeners
+        drag_start_x = canvas_x + canvas_width * 0.25
+        drag_start_y = canvas_y + canvas_height * 0.5
+        drag_end_x = canvas_x + canvas_width * 0.65
+        drag_end_y = canvas_y + canvas_height * 0.5
+
+        await element.dispatch_event(
+            "pointerdown",
+            {
+                "clientX": drag_start_x,
+                "clientY": drag_start_y,
+                "buttons": 1,
+                "pointerType": "pen",
+                "pressure": 0.5,
+                "bubbles": True,
+            },
+        )
+        await element.dispatch_event(
+            "pointermove",
+            {
+                "clientX": drag_end_x,
+                "clientY": drag_end_y,
+                "buttons": 1,
+                "pointerType": "pen",
+                "pressure": 0.5,
+                "bubbles": True,
+            },
+        )
+        await element.dispatch_event(
+            "pointerup",
+            {
+                "clientX": drag_end_x,
+                "clientY": drag_end_y,
+                "buttons": 0,
+                "pointerType": "pen",
+                "pressure": 0,
+                "bubbles": True,
+            },
+        )
+
+        await element.dispatch_event(
+            "mousedown",
+            {"clientX": drag_start_x, "clientY": drag_start_y, "buttons": 1, "bubbles": True},
+        )
+        await element.dispatch_event(
+            "mousemove",
+            {"clientX": drag_end_x, "clientY": drag_end_y, "buttons": 1, "bubbles": True},
+        )
+        await element.dispatch_event(
+            "mouseup",
+            {"clientX": drag_end_x, "clientY": drag_end_y, "buttons": 0, "bubbles": True},
+        )
+
+        await element.dispatch_event("click", {"bubbles": True})
+
+        await element.evaluate(
+            """
+            (canvas) => {
+                try {
+                    const rect = canvas.getBoundingClientRect();
+                    const x = rect.left + rect.width * 0.3;
+                    const y = rect.top + rect.height * 0.5;
+                    const touch = new Touch({
+                        identifier: Date.now(),
+                        target: canvas,
+                        clientX: x,
+                        clientY: y,
+                        radiusX: 2,
+                        radiusY: 2,
+                        rotationAngle: 0,
+                        force: 0.5,
+                    });
+                    canvas.dispatchEvent(new TouchEvent('touchstart', { touches: [touch], bubbles: true }));
+                    canvas.dispatchEvent(new TouchEvent('touchmove', { touches: [touch], bubbles: true }));
+                    canvas.dispatchEvent(new TouchEvent('touchend', { changedTouches: [touch], bubbles: true }));
+                } catch (err) {
+                    // Ignore if TouchEvent isn't supported
+                }
+            }
+            """
+        )
+
+        await element.dispatch_event("input", {"bubbles": True})
+        await element.dispatch_event("change", {"bubbles": True})
         
         logger.info(f"[Tier 2] ✅ Signature drawn successfully via XPath")
 
