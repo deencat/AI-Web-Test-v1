@@ -3,8 +3,8 @@
 **Purpose:** High-level architecture and design decisions for multi-agent test generation system  
 **Scope:** Framework selection, communication patterns, orchestration strategy, data flow  
 **Audience:** Technical architects, lead developers, stakeholders  
-**Status:** ✅ Sprint 7 Complete - AnalysisAgent Implementation Done  
-**Last Updated:** January 29, 2026
+**Status:** ✅ Sprint 8 In Progress (~75% Complete) - EvolutionAgent Operational  
+**Last Updated:** February 2, 2026
 
 > **📖 When to Use This Document:**
 > - **System Design:** Understanding overall architecture, agent patterns, data flow
@@ -396,15 +396,21 @@ user_feedback (generation_id, rating, comments, created_at)
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ Stage 2: RequirementsAgent (INDUSTRY BEST PRACTICES) ✅ VERIFIED E2E    │
 │ Input:   ObservationAgent output                                        │
+│          Optional: user_instruction (user's specific test requirement)   │
 │ Process: - Group elements by page/component (Page Object Model)        │
 │          - Map user journeys (login flow, checkout flow)                │
 │          - Generate functional scenarios (LLM + patterns)               │
+│            • If user_instruction provided: Prioritize matching scenarios│
+│            • Use semantic matching to find relevant UI elements          │
+│            • Assign high/critical priority to matching scenarios         │
 │          - Generate accessibility scenarios (WCAG 2.1)                  │
 │          - Generate security scenarios (OWASP Top 10)                   │
 │          - Generate edge case scenarios (boundary tests)                │
 │          - Extract test data with validation rules                      │
 │          - Calculate coverage metrics                                   │
 │          - Azure GPT-4o scenario generation (~12,500 tokens)            │
+│          - User instruction support: Accepts natural language requirements│
+│            Example: "Test purchase flow for '5G寬頻數據無限任用' plan"   │
 │ VERIFIED: Three HK test: 261 elements → 18 scenarios in 20.9s          │
 │ Output:  {                                                              │
 │            "scenarios": [                                               │
@@ -512,13 +518,15 @@ user_feedback (generation_id, rating, comments, created_at)
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ Stage 4: EvolutionAgent (Test Code Generator)                          │
+│ Stage 4: EvolutionAgent (Test Code Generator) ✅ OPERATIONAL           │
 │ Input:   AnalysisAgent output + RequirementsAgent scenarios (BDD)       │
+│          Optional: user_instruction, login_credentials                │
 │ Process: - Convert BDD scenarios (Given/When/Then) → Test steps        │
 │          - Generate executable test steps (array of strings)            │
+│          - Goal-aware generation: Complete flows to true completion    │
+│          - Login-aware generation: Include login steps if credentials provided│
 │          - Store test cases in database (TestCase objects)              │
-│          - Convert steps to executable format for Phase 2 engine         │
-│          - Azure GPT-4o code generation (~2,500 tokens)                 │
+│          - Azure GPT-4o code generation (~2,500 tokens, 3 prompt variants)│
 │ Output:  {                                                              │
 │            "test_cases": [                                              │
 │              {                                                          │
@@ -534,14 +542,17 @@ user_feedback (generation_id, rating, comments, created_at)
 │                "expected_result": "User redirected to dashboard"        │
 │              }                                                          │
 │            ],                                                           │
-│            "test_count": 12,                                            │
-│            "generation_id": "gen-001"                                   │
+│            "test_count": 17,                                            │
+│            "generation_id": "gen-001",                                  │
+│            "stored_in_database": true,                                  │
+│            "test_case_ids": [123, 124, ...]                            │
 │          }                                                              │
-│ Quality: confidence=0.91, 12+ tests/page, cost=$0.020/page             │
+│ Quality: confidence=0.95, 17+ tests/page, cost=$0.020/page             │
 │ Integration: Test cases stored in database, visible in frontend,       │
 │              executable via "Run Test" button                            │
+│ Features: Goal-aware (complete flows), Login-aware (credentials support)│
 │ Feedback Loop: Execution results feed back to RequirementsAgent        │
-│                to improve future scenario generation                    │
+│                to improve future scenario generation (pending)         │
 └────────────────────────────┬────────────────────────────────────────────┘
                              │
                              ▼
@@ -1537,16 +1548,21 @@ This document provides the high-level architecture and design. For detailed anal
 
 ---
 
-**Document Version:** 1.1  
-**Last Review:** January 29, 2026  
+**Document Version:** 1.2  
+**Last Review:** February 2, 2026  
 **Next Review:** February 19, 2026 (Sprint 8 completion)
 
-**Sprint 7 Implementation Status (Jan 29, 2026):**
-- ✅ AnalysisAgent fully implemented per architecture design
+**Sprint 8 Implementation Status (Feb 2, 2026):**
+- ✅ AnalysisAgent fully implemented per architecture design (Sprint 7)
 - ✅ Real-time test execution integrated (3-tier strategy from Phase 2)
-- ✅ E2E testing validated with real Three HK page
-- ✅ Browser visibility control implemented
-- ✅ Ready for Sprint 8: EvolutionAgent implementation
+- ✅ EvolutionAgent core implementation complete (8A.5, 8A.6, 8A.7, 8A.9)
+- ✅ Database integration working - Test cases stored and visible
+- ✅ Goal-aware test generation - Complete flows to true completion
+- ✅ Login credentials support - Automatic login step generation
+- ✅ User instruction support - RequirementsAgent prioritizes matching scenarios
+- ✅ 4-agent workflow operational - E2E test validated with real Three HK page
+- 🔄 Pending: Caching layer (8A.8), Feedback loop (8A.10)
+- **Progress:** ~75% of Sprint 8 complete (39 of 52 points)
 
 ---
 
