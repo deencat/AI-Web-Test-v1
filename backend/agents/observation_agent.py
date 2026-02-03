@@ -241,7 +241,7 @@ class ObservationAgent(BaseAgent):
             max_depth = task.payload.get("max_depth", self.max_depth)
             auth = task.payload.get("auth")  # Optional authentication
             
-            logger.info(f"Crawling web application: {url} (task {task.task_id})")
+            logger.info(f"ObservationAgent: Crawling web application: {url} (task {task.task_id})")
             
             # Start Playwright browser
             # Read headless mode from env (default: True for CI/CD compatibility)
@@ -250,6 +250,7 @@ class ObservationAgent(BaseAgent):
             headless_str = os.getenv("HEADLESS_BROWSER") or os.getenv("BROWSER_HEADLESS", "true")
             headless_str = headless_str.lower()
             headless_mode = headless_str in ("true", "1", "yes")
+            logger.info(f"ObservationAgent: Launching browser (headless={headless_mode})...")
             
             async with async_playwright() as p:
                 browser = await p.chromium.launch(headless=headless_mode)
@@ -260,6 +261,7 @@ class ObservationAgent(BaseAgent):
                 
                 # Add authentication if provided
                 if auth:
+                    logger.debug("ObservationAgent: Adding authentication to browser context...")
                     await context.add_init_script(f"""
                         localStorage.setItem('auth_token', '{auth.get('token', '')}');
                     """)
@@ -267,18 +269,23 @@ class ObservationAgent(BaseAgent):
                 page = await context.new_page()
                 
                 # Crawl pages
+                logger.info(f"ObservationAgent: Crawling pages (max_depth={max_depth})...")
                 pages = await self._crawl_pages(page, url, max_depth)
+                logger.info(f"ObservationAgent: Found {len(pages)} page(s) to analyze")
                 
                 # Extract UI elements from all pages (Playwright baseline)
+                logger.info("ObservationAgent: Extracting UI elements from pages...")
                 all_elements = []
                 all_forms = []
-                for page_info in pages:
+                for idx, page_info in enumerate(pages, 1):
+                    logger.debug(f"ObservationAgent: Extracting elements from page {idx}/{len(pages)}: {page_info.url}")
                     elements = await self._extract_ui_elements(page, page_info.url)
                     forms = await self._extract_forms(page, page_info.url)
                     all_elements.extend(elements)
                     all_forms.extend(forms)
+                    logger.debug(f"ObservationAgent: Page {idx} - {len(elements)} elements, {len(forms)} forms")
                 
-                logger.info(f"Playwright baseline: {len(all_elements)} elements, {len(all_forms)} forms")
+                logger.info(f"ObservationAgent: Playwright baseline complete - {len(all_elements)} elements, {len(all_forms)} forms")
                 
                 # ENHANCEMENT: Use LLM to find elements Playwright might miss
                 llm_enhanced_elements = []

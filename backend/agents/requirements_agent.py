@@ -108,34 +108,50 @@ class RequirementsAgent(BaseAgent):
             ui_elements = task.payload.get("ui_elements", [])
             page_structure = task.payload.get("page_structure", {})
             page_context = task.payload.get("page_context", {})
+            user_instruction = task.payload.get("user_instruction", "")  # NEW: User's specific test requirement
+            test_requirement = task.payload.get("test_requirement", "")  # Alternative field name
             
-            logger.info(f"RequirementsAgent processing {len(ui_elements)} UI elements for {page_structure.get('url', 'unknown')}")
+            # Use test_requirement if user_instruction is empty
+            if not user_instruction and test_requirement:
+                user_instruction = test_requirement
+            
+            if user_instruction:
+                logger.info(f"RequirementsAgent: User instruction provided: '{user_instruction}'")
+                logger.info(f"RequirementsAgent: Will prioritize scenarios matching user intent")
+            
+            logger.info(f"RequirementsAgent: Processing {len(ui_elements)} UI elements for {page_structure.get('url', 'unknown')}")
             
             # Stage 1: Group elements by page/component (Page Object Model)
+            logger.debug("RequirementsAgent: Stage 1 - Grouping elements by page/component...")
             element_groups = self._group_elements_by_page(ui_elements, page_structure)
-            logger.debug(f"Grouped elements into {len(element_groups)} sections")
+            logger.info(f"RequirementsAgent: Grouped elements into {len(element_groups)} sections")
             
             # Stage 2: Map user journeys (multi-step flows)
+            logger.debug("RequirementsAgent: Stage 2 - Mapping user journeys...")
             user_journeys = self._map_user_journeys(element_groups, page_context)
-            logger.debug(f"Mapped {len(user_journeys)} user journeys")
+            logger.info(f"RequirementsAgent: Mapped {len(user_journeys)} user journeys")
             
             # Stage 3: Generate functional test scenarios
+            logger.debug("RequirementsAgent: Stage 3 - Generating functional test scenarios...")
             functional_scenarios = await self._generate_functional_scenarios(
-                user_journeys, element_groups, page_context, page_structure
+                user_journeys, element_groups, page_context, page_structure, user_instruction
             )
-            logger.debug(f"Generated {len(functional_scenarios)} functional scenarios")
+            logger.info(f"RequirementsAgent: Generated {len(functional_scenarios)} functional scenarios")
             
             # Stage 4: Generate accessibility scenarios (WCAG 2.1)
+            logger.debug("RequirementsAgent: Stage 4 - Generating accessibility scenarios...")
             accessibility_scenarios = self._generate_accessibility_scenarios(ui_elements)
-            logger.debug(f"Generated {len(accessibility_scenarios)} accessibility scenarios")
+            logger.info(f"RequirementsAgent: Generated {len(accessibility_scenarios)} accessibility scenarios")
             
             # Stage 5: Generate security scenarios (OWASP)
+            logger.debug("RequirementsAgent: Stage 5 - Generating security scenarios...")
             security_scenarios = self._generate_security_scenarios(ui_elements, page_context)
-            logger.debug(f"Generated {len(security_scenarios)} security scenarios")
+            logger.info(f"RequirementsAgent: Generated {len(security_scenarios)} security scenarios")
             
             # Stage 6: Generate edge case scenarios
+            logger.debug("RequirementsAgent: Stage 6 - Generating edge case scenarios...")
             edge_case_scenarios = self._generate_edge_case_scenarios(ui_elements)
-            logger.debug(f"Generated {len(edge_case_scenarios)} edge case scenarios")
+            logger.info(f"RequirementsAgent: Generated {len(edge_case_scenarios)} edge case scenarios")
             
             # Combine all scenarios
             all_scenarios = (
@@ -269,7 +285,8 @@ class RequirementsAgent(BaseAgent):
     async def _generate_functional_scenarios(self, user_journeys: List[Dict],
                                              element_groups: Dict,
                                              page_context: Dict,
-                                             page_structure: Dict) -> List[Scenario]:
+                                             page_structure: Dict,
+                                             user_instruction: str = "") -> List[Scenario]:
         """Generate functional test scenarios using LLM or patterns"""
         scenarios = []
         
@@ -282,7 +299,7 @@ class RequirementsAgent(BaseAgent):
                 ui_elements.extend(group_elements)
             
             llm_scenarios = await self._generate_scenarios_with_llm(
-                ui_elements, page_structure, page_context
+                ui_elements, page_structure, page_context, user_instruction
             )
             
             if llm_scenarios:
@@ -642,7 +659,8 @@ class RequirementsAgent(BaseAgent):
     
     async def _generate_scenarios_with_llm(self, ui_elements: List[Dict], 
                                            page_structure: Dict,
-                                           page_context: Dict) -> List[Scenario]:
+                                           page_context: Dict,
+                                           user_instruction: str = "") -> List[Scenario]:
         """Generate high-quality test scenarios using LLM"""
         if not self.llm_client or not self.llm_client.enabled:
             logger.warning("LLM not available, falling back to pattern-based generation")
@@ -651,7 +669,7 @@ class RequirementsAgent(BaseAgent):
         try:
             # Build prompt for LLM
             prompt = self._build_scenario_generation_prompt(
-                ui_elements, page_structure, page_context
+                ui_elements, page_structure, page_context, user_instruction
             )
             
             # Call Azure OpenAI
@@ -685,6 +703,42 @@ Always respond with valid JSON containing high-quality test scenarios."""
             
             # Convert LLM output to Scenario objects
             for idx, scenario_data in enumerate(result.get("scenarios", [])[:15]):  # Limit to 15
+                # Check if this scenario matches user instruction (for logging and priority)
+                matches_user_requirement = False
+                if user_instruction:
+                    title_lower = scenario_data.get("title", "").lower()
+                    when_lower = scenario_data.get("when", "").lower()
+                    given_lower = scenario_data.get("given", "").lower()
+                    then_lower = scenario_data.get("then", "").lower()
+                    
+                    # Enhanced matching logic for user instructions
+                    matches_user_requirement = self._is_scenario_matching_instruction(
+                        scenario_data, user_instruction, title_lower, when_lower, given_lower, then_lower
+                    )
+                    
+                    # Debug logging to understand matching
+                    if user_instruction:
+                        logger.debug(f"Matching scenario '{scenario_data.get('title')}' against instruction: '{user_instruction}'")
+                        logger.debug(f"  Title: {title_lower[:100]}")
+                        logger.debug(f"  When: {when_lower[:100]}")
+                        logger.debug(f"  Match result: {matches_user_requirement}")
+                    
+                    if matches_user_requirement:
+                        logger.info(f"Scenario '{scenario_data.get('title')}' matches user requirement: '{user_instruction}'")
+                        # Ensure high/critical priority for matching scenarios
+                        current_priority = scenario_data.get("priority", "medium").lower()
+                        if current_priority in ["medium", "low"]:
+                            scenario_data["priority"] = "high"
+                        # If already high, consider making it critical for very strong matches
+                        elif current_priority == "high" and self._is_strong_match(scenario_data, user_instruction):
+                            scenario_data["priority"] = "critical"
+                
+                tags = scenario_data.get("tags", [])
+                if matches_user_requirement:
+                    tags.append("user-requirement")
+                    # Log the match with details
+                    logger.info(f"  -> Matched keywords/phrases found in scenario")
+                
                 scenario = Scenario(
                     scenario_id=scenario_data.get("scenario_id", f"REQ-LLM-{idx+1:03d}"),
                     title=scenario_data.get("title", "Untitled Scenario"),
@@ -693,10 +747,27 @@ Always respond with valid JSON containing high-quality test scenarios."""
                     then=scenario_data.get("then", ""),
                     priority=self._map_priority(scenario_data.get("priority", "medium")),
                     scenario_type=self._map_scenario_type(scenario_data.get("scenario_type", "functional")),
-                    tags=scenario_data.get("tags", [])
+                    tags=tags
                 )
                 scenario.confidence = scenario_data.get("confidence", 0.90)
                 scenarios.append(scenario)
+            
+            # Log summary of matching scenarios
+            if user_instruction:
+                matching_count = sum(1 for s in scenarios if "user-requirement" in s.tags)
+                # Always log the summary - use INFO level to ensure visibility
+                logger.info(f"RequirementsAgent: {matching_count}/{len(scenarios)} scenarios match user instruction: '{user_instruction}'")
+                if matching_count == 0:
+                    logger.warning(f"RequirementsAgent: No scenarios matched user instruction. This may indicate:")
+                    logger.warning(f"  - The instruction doesn't match available UI elements")
+                    logger.warning(f"  - The LLM didn't generate matching scenarios")
+                    logger.warning(f"  - Consider using more specific keywords or checking the generated scenarios")
+                else:
+                    # Log which scenarios matched
+                    matching_scenarios = [s for s in scenarios if "user-requirement" in s.tags]
+                    logger.info(f"RequirementsAgent: Matching scenarios:")
+                    for ms in matching_scenarios[:5]:  # Show first 5
+                        logger.info(f"  - {ms.scenario_id}: {ms.title} (Priority: {ms.priority.value})")
             
             logger.info(f"LLM generated {len(scenarios)} high-quality scenarios")
             return scenarios
@@ -707,7 +778,8 @@ Always respond with valid JSON containing high-quality test scenarios."""
     
     def _build_scenario_generation_prompt(self, ui_elements: List[Dict], 
                                           page_structure: Dict,
-                                          page_context: Dict) -> str:
+                                          page_context: Dict,
+                                          user_instruction: str = "") -> str:
         """Build prompt for LLM scenario generation"""
         # Summarize UI elements
         element_summary = self._summarize_elements(ui_elements)
@@ -715,6 +787,24 @@ Always respond with valid JSON containing high-quality test scenarios."""
         url = page_structure.get("url", "unknown")
         page_type = page_context.get("page_type", "unknown")
         framework = page_context.get("framework", "unknown")
+        
+        # Build user instruction section if provided
+        user_instruction_section = ""
+        if user_instruction:
+            user_instruction_section = f"""
+**USER REQUIREMENT (HIGH PRIORITY):**
+The user wants to test: "{user_instruction}"
+
+**CRITICAL INSTRUCTIONS:**
+1. **MUST generate at least one scenario that specifically matches this user requirement**
+2. **PRIORITIZE scenarios matching the user's intent** - assign "critical" or "high" priority
+3. **Use semantic matching** to find UI elements related to the user's requirement
+   - Example: If user says "Test purchase flow for '5G寬頻數據無限任用' plan"
+   - Find elements containing "5G寬頻數據無限任用" or related text
+   - Generate scenario: "Click on plan '5G寬頻數據無限任用', Select contract term, Verify price, Click subscribe button"
+4. **Include specific details** from the user requirement in the scenario
+5. **Mark matching scenarios** with tags like ["user-requirement", "priority-test"]
+"""
         
         prompt = f"""Generate comprehensive BDD test scenarios for this web page.
 
@@ -726,20 +816,22 @@ Always respond with valid JSON containing high-quality test scenarios."""
 
 **UI Elements Summary:**
 {element_summary}
-
+{user_instruction_section}
 **Requirements:**
 1. Generate 10-15 high-quality test scenarios
-2. Cover multiple scenario types:
+2. **IF user requirement is provided above:** Generate at least one scenario that specifically matches it with "critical" priority
+3. Cover multiple scenario types:
    - Functional: Core features and user workflows
    - Accessibility: WCAG 2.1 (keyboard navigation, screen readers, ARIA labels)
    - Security: OWASP Top 10 (input validation, XSS, CSRF)
    - Edge Cases: Boundary values, error handling
-3. Follow BDD Given/When/Then format
-4. **IMPORTANT**: The "when" clause should include MULTIPLE comma-separated actions for complex scenarios
+4. Follow BDD Given/When/Then format
+5. **IMPORTANT**: The "when" clause should include MULTIPLE comma-separated actions for complex scenarios
    - Example: "Click on plan 'Plan A', Select contract term '12 months', Verify price shows '$100', Click button 'Subscribe'"
    - Simple scenarios can have single actions, but complex workflows should have 3-5 actions
-5. Assign priorities: critical, high, medium, low
-6. Include confidence scores (0.0-1.0)
+6. Assign priorities: critical, high, medium, low
+   - **Scenarios matching user requirement should be "critical" or "high"**
+7. Include confidence scores (0.0-1.0)
 
 **Required JSON Response Format:**
 {{
@@ -758,7 +850,9 @@ Always respond with valid JSON containing high-quality test scenarios."""
   ]
 }}
 
-Focus on **realistic user scenarios** and **important test coverage**. Be specific and actionable. For functional scenarios, include multiple steps in the "when" clause to create comprehensive test flows."""
+Focus on **realistic user scenarios** and **important test coverage**. Be specific and actionable. For functional scenarios, include multiple steps in the "when" clause to create comprehensive test flows.
+
+{f"**REMINDER:** The user specifically wants to test: '{user_instruction}'. Ensure at least one scenario directly addresses this requirement with high priority." if user_instruction else ""}"""
         
         return prompt
     
@@ -807,6 +901,112 @@ Focus on **realistic user scenarios** and **important test coverage**. Be specif
             "usability": ScenarioType.USABILITY
         }
         return mapping.get(type_str.lower(), ScenarioType.FUNCTIONAL)
+    
+    def _is_scenario_matching_instruction(self, scenario_data: Dict, user_instruction: str,
+                                         title_lower: str, when_lower: str, 
+                                         given_lower: str, then_lower: str) -> bool:
+        """
+        Enhanced matching logic for user instructions.
+        Handles:
+        - Chinese text matching
+        - Semantic keywords (purchase/register/subscribe)
+        - Plan name matching
+        - Multiple matching strategies
+        """
+        if not user_instruction:
+            return False
+        
+        instruction_lower = user_instruction.lower()
+        
+        # Strategy 1: Direct text matching (including Chinese characters)
+        # Check if key phrases from instruction appear in scenario
+        key_phrases = [
+            "5g寬頻數據無限任用",  # The specific plan name
+            "5g寬頻",  # 5G broadband
+            "寬頻",  # broadband
+            "數據無限",  # unlimited data
+            "purchase",  # purchase flow
+            "subscribe",  # subscription
+            "register",  # registration
+            "立即登記",  # register button (common in purchase flow)
+        ]
+        
+        # Check all scenario fields for matches
+        scenario_text = f"{title_lower} {when_lower} {given_lower} {then_lower}"
+        
+        # Count matches for key phrases
+        phrase_matches = sum(1 for phrase in key_phrases if phrase in scenario_text)
+        
+        # Strategy 2: Extract meaningful keywords (skip common words)
+        common_words = {"test", "for", "the", "a", "an", "is", "are", "to", "of", "in", "on", "at", "by", "with"}
+        instruction_keywords = [
+            word.strip("'\".,!?;:()[]{}") 
+            for word in instruction_lower.split() 
+            if word.strip("'\".,!?;:()[]{}") not in common_words and len(word.strip("'\".,!?;:()[]{}")) > 2
+        ]
+        
+        # Also extract Chinese text (non-ASCII characters)
+        chinese_text = ""
+        for char in user_instruction:
+            if ord(char) > 127:  # Non-ASCII (likely Chinese)
+                chinese_text += char
+        
+        # Add Chinese text as a keyword if present
+        if chinese_text:
+            instruction_keywords.append(chinese_text.lower())
+        
+        # Count keyword matches
+        keyword_matches = sum(1 for keyword in instruction_keywords if keyword in scenario_text)
+        
+        # Strategy 3: Semantic matching for purchase/registration flows
+        purchase_keywords = ["purchase", "buy", "subscribe", "register", "sign up", "order", "checkout", "立即登記"]
+        has_purchase_intent = any(keyword in instruction_lower for keyword in purchase_keywords)
+        has_purchase_scenario = any(keyword in scenario_text for keyword in purchase_keywords)
+        
+        # Strategy 4: Plan name matching (specific product names)
+        # Extract quoted text (often product names)
+        import re
+        quoted_texts = re.findall(r"'([^']+)'", user_instruction)
+        plan_name_matches = sum(1 for quoted in quoted_texts if quoted.lower() in scenario_text)
+        
+        # Decision logic: Match if any strong indicator
+        # Strong match: Plan name found OR (phrase match + keyword match) OR (purchase intent + purchase scenario)
+        strong_match = (
+            plan_name_matches > 0 or  # Plan name found
+            (phrase_matches >= 2) or  # Multiple key phrases
+            (phrase_matches >= 1 and keyword_matches >= 2) or  # Phrase + keywords
+            (has_purchase_intent and has_purchase_scenario and keyword_matches >= 1)  # Purchase flow match
+        )
+        
+        # Medium match: Some keywords or phrases
+        medium_match = (
+            keyword_matches >= 2 or  # Multiple keywords
+            phrase_matches >= 1  # At least one key phrase
+        )
+        
+        return strong_match or medium_match
+    
+    def _is_strong_match(self, scenario_data: Dict, user_instruction: str) -> bool:
+        """
+        Check if scenario is a strong match (should be critical priority).
+        Strong matches include:
+        - Exact plan name match
+        - Multiple key phrases
+        - Purchase flow with specific plan
+        """
+        title_lower = scenario_data.get("title", "").lower()
+        when_lower = scenario_data.get("when", "").lower()
+        scenario_text = f"{title_lower} {when_lower}"
+        
+        # Extract plan name from instruction
+        import re
+        quoted_texts = re.findall(r"'([^']+)'", user_instruction.lower())
+        
+        # Strong match criteria
+        has_plan_name = any(quoted in scenario_text for quoted in quoted_texts)
+        has_purchase_flow = any(keyword in scenario_text for keyword in ["purchase", "subscribe", "register", "立即登記"])
+        
+        return has_plan_name and has_purchase_flow
     
     def _estimate_token_usage(self, ui_elements: List[Dict], 
                               scenarios: List[Scenario]) -> int:

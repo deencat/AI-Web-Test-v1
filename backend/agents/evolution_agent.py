@@ -114,6 +114,8 @@ class EvolutionAgent(BaseAgent):
             prioritization = task.payload.get("final_prioritization", [])
             page_context = task.payload.get("page_context", {})
             test_data = task.payload.get("test_data", [])
+            user_instruction = task.payload.get("user_instruction", "")  # Get user instruction for goal-aware generation
+            login_credentials = task.payload.get("login_credentials", {})  # Get login credentials if provided
             
             # Get database session from config or task payload
             db_session = self.db or task.payload.get("db")
@@ -133,13 +135,17 @@ class EvolutionAgent(BaseAgent):
             generated_test_cases = []
             total_tokens = 0
             
-            for scenario in scenarios:
+            logger.info(f"EvolutionAgent: Generating test steps for {len(scenarios)} scenarios...")
+            for idx, scenario in enumerate(scenarios, 1):
                 scenario_id = scenario.get("scenario_id", "UNKNOWN")
+                scenario_title = scenario.get("title", "Unknown")[:50]  # Truncate long titles
+                
+                logger.info(f"EvolutionAgent: Processing scenario {idx}/{len(scenarios)}: {scenario_id} - {scenario_title}")
                 
                 # Check cache first (if enabled)
                 cache_key = self._generate_cache_key(scenario, page_context)
                 if self.cache_enabled and cache_key in self.steps_cache:
-                    logger.info(f"Cache hit for scenario {scenario_id}")
+                    logger.info(f"EvolutionAgent: Cache hit for scenario {scenario_id}")
                     cached_result = self.steps_cache[cache_key]
                     generated_test_cases.append({
                         "scenario_id": scenario_id,
@@ -147,12 +153,14 @@ class EvolutionAgent(BaseAgent):
                         "confidence": cached_result["confidence"],
                         "from_cache": True
                     })
+                    logger.debug(f"EvolutionAgent: Cached scenario {scenario_id} has {len(cached_result['steps'])} steps")
                     continue
                 
                 # Generate test steps using LLM or template
+                logger.debug(f"EvolutionAgent: Generating steps for scenario {scenario_id} using {'LLM' if (self.use_llm and self.llm_client) else 'template'}")
                 if self.use_llm and self.llm_client:
                     steps_result = await self._generate_test_steps_with_llm(
-                        scenario, risk_scores, prioritization, page_context, test_data
+                        scenario, risk_scores, prioritization, page_context, test_data, user_instruction, login_credentials
                     )
                 else:
                     steps_result = self._generate_test_steps_from_template(
@@ -160,6 +168,10 @@ class EvolutionAgent(BaseAgent):
                     )
                 
                 if steps_result:
+                    steps_count = len(steps_result.get("steps", []))
+                    logger.info(f"EvolutionAgent: Generated {steps_count} steps for scenario {scenario_id} "
+                               f"(confidence: {steps_result.get('confidence', 0.85):.2f}, "
+                               f"tokens: {steps_result.get('tokens_used', 0)})")
                     generated_test_cases.append({
                         "scenario_id": scenario_id,
                         "steps": steps_result["steps"],
@@ -175,21 +187,25 @@ class EvolutionAgent(BaseAgent):
                             "confidence": steps_result.get("confidence", 0.85),
                             "cached_at": datetime.now(timezone.utc).isoformat()
                         }
+                else:
+                    logger.warning(f"EvolutionAgent: Failed to generate steps for scenario {scenario_id}")
             
             # Store test cases in database (if database session available)
             db_test_case_ids = []
             if db_session:
+                logger.info(f"EvolutionAgent: Storing {len(generated_test_cases)} test cases in database...")
                 try:
                     db_test_case_ids = await self._store_test_cases_in_database(
                         db_session, generated_test_cases, scenarios, 
                         risk_scores, prioritization, page_context, generation_id
                     )
-                    logger.info(f"Stored {len(db_test_case_ids)} test cases in database")
+                    logger.info(f"EvolutionAgent: Successfully stored {len(db_test_case_ids)} test cases in database "
+                               f"(IDs: {db_test_case_ids[:5]}{'...' if len(db_test_case_ids) > 5 else ''})")
                 except Exception as e:
-                    logger.error(f"Failed to store test cases in database: {e}", exc_info=True)
+                    logger.error(f"EvolutionAgent: Failed to store test cases in database: {e}", exc_info=True)
                     # Continue even if database storage fails
             else:
-                logger.warning("No database session available - test cases not stored in database")
+                logger.warning("EvolutionAgent: No database session available - test cases not stored in database")
             
             # Calculate overall confidence
             if generated_test_cases:
@@ -246,13 +262,15 @@ class EvolutionAgent(BaseAgent):
         risk_scores: List[Dict],
         prioritization: List[Dict],
         page_context: Dict,
-        test_data: List[Dict]
+        test_data: List[Dict],
+        user_instruction: str = "",
+        login_credentials: Dict = {}
     ) -> Optional[Dict]:
         """Generate test steps using Azure OpenAI GPT-4o"""
         try:
             # Build prompt using current variant
             prompt_builder = self.prompt_variants.get(self.current_variant, self._build_prompt_variant_1)
-            prompt = prompt_builder(scenario, risk_scores, prioritization, page_context, test_data)
+            prompt = prompt_builder(scenario, risk_scores, prioritization, page_context, test_data, user_instruction, login_credentials)
             
             # Call LLM (Azure OpenAI create is synchronous, not async)
             response = self.llm_client.client.chat.completions.create(
@@ -398,9 +416,11 @@ class EvolutionAgent(BaseAgent):
         risk_scores: List[Dict],
         prioritization: List[Dict],
         page_context: Dict,
-        test_data: List[Dict]
+        test_data: List[Dict],
+        user_instruction: str = "",
+        login_credentials: Dict = {}
     ) -> str:
-        """Variant 1: Detailed, explicit prompt with full context - generates test steps"""
+        """Variant 1: Detailed, explicit prompt with full context - generates test steps with goal-aware completion"""
         scenario_id = scenario.get("scenario_id", "UNKNOWN")
         title = scenario.get("title", "")
         given = scenario.get("given", "")
@@ -420,6 +440,60 @@ class EvolutionAgent(BaseAgent):
         url = page_context.get("url", "https://example.com")
         page_type = page_context.get("page_type", "unknown")
         
+        # Extract goal from user instruction or scenario title for goal-aware generation
+        goal = self._extract_goal_from_instruction(user_instruction, title)
+        completion_criteria = self._get_completion_criteria_for_goal(goal)
+        
+        # Build login credentials section if provided
+        login_section = ""
+        if login_credentials and login_credentials.get("email") and login_credentials.get("password"):
+            login_email = login_credentials.get("email", "")
+            login_password = login_credentials.get("password", "")
+            login_section = f"""
+**LOGIN CREDENTIALS PROVIDED:**
+- **Email:** {login_email}
+- **Password:** {login_credentials.get("password", "")[:3]}*** (masked for security)
+
+**CRITICAL: Login Requirements:**
+1. **If the flow requires login** (e.g., purchase flow, checkout, account access), include login steps BEFORE the main flow
+2. **Login steps should be:**
+   - Navigate to login page (if not already on it)
+   - Enter email: {login_email}
+   - Enter password: {login_password}
+   - Click Login/Submit button
+   - Verify successful login (e.g., URL changes, user menu appears, welcome message)
+3. **Place login steps BEFORE** the main flow steps (e.g., before plan selection in purchase flow)
+4. **If login is required for the goal**, ensure login is completed before proceeding with the main flow
+
+**Example for "Complete purchase flow" with login:**
+- Steps should be: Navigate to login page → Login with provided credentials → Verify login success → Navigate to plan page → Select plan → Continue with purchase flow
+
+"""
+        
+        # Build goal-aware section if goal is identified
+        goal_section = ""
+        if goal:
+            goal_section = f"""
+**GOAL-AWARE GENERATION:**
+- **User Goal:** {goal}
+- **Completion Criteria:** {completion_criteria}
+
+**CRITICAL: Goal Completion Requirements:**
+1. **DO NOT STOP** until the goal "{goal}" is TRULY achieved
+2. **Multi-Page Flows:** If the goal requires multiple pages, include ALL pages:
+   - For "complete purchase flow": Include plan selection → registration → payment → order confirmation
+   - For "user registration": Include registration form → email verification → welcome page
+   - For "checkout process": Include cart → checkout → payment → confirmation
+3. **State Verification:** After each major step, verify the current state and continue if goal not achieved
+4. **Final Verification:** The last step MUST verify that the goal is complete (e.g., order ID displayed, payment confirmed, registration complete)
+
+**Example for "Complete purchase flow":**
+- Steps must continue through: Plan selection → Registration → Payment entry → Payment confirmation → Order confirmation with order ID
+- Final step must verify: Order ID is displayed AND payment is confirmed AND order details are shown
+- DO NOT stop at "verify confirmation" if purchase is not actually complete
+
+"""
+        
         prompt = f"""Generate executable test steps for the following BDD scenario.
 
 **Scenario Information:**
@@ -436,7 +510,8 @@ Then: {then}
 **Page Context:**
 - URL: {url}
 - Page Type: {page_type}
-
+{login_section}
+{goal_section}
 **Requirements:**
 1. Generate an array of executable test steps (as strings)
 2. Each step should be a clear, actionable instruction
@@ -444,6 +519,7 @@ Then: {then}
 4. Include navigation, actions, and assertions
 5. Use natural language that can be executed by a test automation engine
 6. Be specific with selectors and values where applicable
+7. **IMPORTANT:** Generate steps until the goal is TRULY achieved (see Goal-Aware section above if provided)
 
 **Output Format:**
 Return a JSON object with a "steps" array:
@@ -468,6 +544,45 @@ Generate ONLY the JSON object with the steps array."""
         
         return prompt
     
+    def _extract_goal_from_instruction(self, user_instruction: str, scenario_title: str) -> str:
+        """Extract the goal from user instruction or scenario title"""
+        if user_instruction:
+            # Check for common goal patterns
+            goal_keywords = {
+                "complete purchase flow": "complete purchase flow",
+                "purchase flow": "complete purchase flow",
+                "complete registration": "complete user registration",
+                "user registration": "complete user registration",
+                "checkout process": "complete checkout process",
+                "checkout": "complete checkout process"
+            }
+            
+            instruction_lower = user_instruction.lower()
+            for keyword, goal in goal_keywords.items():
+                if keyword in instruction_lower:
+                    return goal
+        
+        # Fallback to scenario title if it contains goal indicators
+        title_lower = scenario_title.lower()
+        if "complete" in title_lower and ("purchase" in title_lower or "flow" in title_lower):
+            return "complete purchase flow"
+        elif "complete" in title_lower and "registration" in title_lower:
+            return "complete user registration"
+        elif "checkout" in title_lower:
+            return "complete checkout process"
+        
+        return ""
+    
+    def _get_completion_criteria_for_goal(self, goal: str) -> str:
+        """Get completion criteria description for a goal"""
+        criteria_map = {
+            "complete purchase flow": "Order confirmed with order ID, payment confirmed, and order details displayed",
+            "complete user registration": "User registered, email verified (if required), and logged in to welcome page",
+            "complete checkout process": "Order placed with order number, shipping confirmed, and payment confirmed"
+        }
+        
+        return criteria_map.get(goal, "Goal achieved with all required actions completed and final state verified")
+    
     def _build_prompt_variant_2(
         self,
         scenario: Dict,
@@ -483,12 +598,21 @@ Generate ONLY the JSON object with the steps array."""
         then = scenario.get("then", "")
         url = page_context.get("url", "https://example.com")
         
+        # Extract goal for goal-aware generation
+        goal = self._extract_goal_from_instruction(user_instruction, title)
+        goal_note = f"\n**Goal:** {goal} - Generate steps until goal is TRULY achieved." if goal else ""
+        
+        # Add login note if credentials provided
+        login_note = ""
+        if login_credentials and login_credentials.get("email") and login_credentials.get("password"):
+            login_note = f"\n**Login Required:** Use email '{login_credentials.get('email')}' and password '{login_credentials.get('password', '')[:3]}***' to login BEFORE main flow steps."
+        
         prompt = f"""Generate executable test steps as a JSON array:
 
 Given: {given}
 When: {when}
 Then: {then}
-URL: {url}
+URL: {url}{goal_note}{login_note}
 
 Return JSON: {{"steps": ["step1", "step2", ...]}}"""
         
@@ -500,7 +624,9 @@ Return JSON: {{"steps": ["step1", "step2", ...]}}"""
         risk_scores: List[Dict],
         prioritization: List[Dict],
         page_context: Dict,
-        test_data: List[Dict]
+        test_data: List[Dict],
+        user_instruction: str = "",
+        login_credentials: Dict = {}
     ) -> str:
         """Variant 3: Pattern-based prompt with reusable patterns - generates test steps"""
         title = scenario.get("title", "")
@@ -519,6 +645,15 @@ Return JSON: {{"steps": ["step1", "step2", ...]}}"""
         }
         pattern_hint = patterns.get(scenario_type, patterns["functional"])
         
+        # Extract goal for goal-aware generation
+        goal = self._extract_goal_from_instruction(user_instruction, title)
+        goal_note = f"\n**Goal:** {goal} - Generate steps until goal is TRULY achieved." if goal else ""
+        
+        # Add login note if credentials provided
+        login_note = ""
+        if login_credentials and login_credentials.get("email") and login_credentials.get("password"):
+            login_note = f"\n**Login Required:** Use email '{login_credentials.get('email')}' and password '{login_credentials.get('password', '')[:3]}***' to login BEFORE main flow steps."
+        
         prompt = f"""Generate test steps using pattern for {scenario_type} scenarios.
 
 Scenario: {title}
@@ -527,7 +662,7 @@ When: {when}
 Then: {then}
 URL: {url}
 
-Pattern: {pattern_hint}
+Pattern: {pattern_hint}{goal_note}{login_note}
 
 Return JSON: {{"steps": ["step1", "step2", ...]}}"""
         

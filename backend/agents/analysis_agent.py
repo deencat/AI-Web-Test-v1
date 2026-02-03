@@ -114,36 +114,46 @@ class AnalysisAgent(BaseAgent):
             coverage_metrics = task.payload.get("coverage_metrics", {})
             page_context = task.payload.get("page_context", {})
             
-            logger.info(f"AnalysisAgent processing {len(scenarios)} scenarios")
+            logger.info(f"AnalysisAgent: Processing {len(scenarios)} scenarios...")
             
             # Stage 1: Historical data integration
+            logger.debug("AnalysisAgent: Stage 1 - Loading historical data...")
             historical_data = await self._load_historical_data(scenarios)
+            logger.debug(f"AnalysisAgent: Loaded historical data for {len(historical_data)} scenarios")
             
             # Stage 2: Risk scoring (FMEA framework) - Initial scoring
+            logger.debug("AnalysisAgent: Stage 2 - Calculating risk scores (FMEA framework)...")
             risk_scores = await self._calculate_risk_scores(
                 scenarios, historical_data, page_context
             )
+            logger.info(f"AnalysisAgent: Calculated risk scores for {len(risk_scores)} scenarios")
             
             # Stage 3: Business value scoring
+            logger.debug("AnalysisAgent: Stage 3 - Calculating business values...")
             business_values = self._calculate_business_values(scenarios, page_context)
             
             # Stage 4: ROI calculation
+            logger.debug("AnalysisAgent: Stage 4 - Calculating ROI scores...")
             roi_scores = self._calculate_roi_scores(
                 scenarios, risk_scores, business_values, historical_data, page_context
             )
             
             # Stage 5: Execution time estimation
+            logger.debug("AnalysisAgent: Stage 5 - Estimating execution times...")
             execution_times = self._estimate_execution_times(scenarios)
             
             # Stage 6: Dependency analysis
+            logger.debug("AnalysisAgent: Stage 6 - Analyzing dependencies...")
             dependencies = self._analyze_dependencies(scenarios)
             
             # Stage 7: Coverage impact analysis
+            logger.debug("AnalysisAgent: Stage 7 - Analyzing coverage impact...")
             coverage_impact = self._analyze_coverage_impact(
                 scenarios, coverage_metrics
             )
             
             # Stage 8: Regression risk assessment
+            logger.debug("AnalysisAgent: Stage 8 - Assessing regression risk...")
             regression_risk = await self._assess_regression_risk(scenarios, page_context)
             
             # Stage 9: Real-time test execution for critical scenarios (NEW - Phase 2 integration)
@@ -174,16 +184,26 @@ class AnalysisAgent(BaseAgent):
                     critical_scenarios = [s for s, _ in scenarios_with_scores[:2]]
                 
                 if critical_scenarios:
-                    logger.info(f"Executing {len(critical_scenarios)} scenarios in real-time (RPN threshold: {rpn_threshold})")
-                    for scenario in critical_scenarios[:3]:  # Limit to top 3 for performance
+                    logger.info(f"AnalysisAgent: Executing {len(critical_scenarios)} scenarios in real-time (RPN threshold: {rpn_threshold})")
+                    for idx, scenario in enumerate(critical_scenarios[:3], 1):  # Limit to top 3 for performance
+                        scenario_id = scenario.get("scenario_id", "UNKNOWN")
+                        scenario_title = scenario.get("title", "Unknown")[:50]
+                        logger.info(f"AnalysisAgent: Executing scenario {idx}/{len(critical_scenarios[:3])}: {scenario_id} - {scenario_title}")
                         try:
                             exec_result = await self._execute_scenario_real_time(scenario, page_context)
                             if exec_result and "scenario_id" in exec_result:
                                 if not execution_results:
                                     execution_results = []
                                 execution_results.append(exec_result)
+                                logger.info(f"AnalysisAgent: Successfully executed scenario {scenario_id} "
+                                           f"(steps: {len(exec_result.get('steps', []))}, "
+                                           f"status: {exec_result.get('status', 'unknown')})")
+                            else:
+                                logger.warning(f"AnalysisAgent: Execution returned no result for scenario {scenario_id}")
                         except Exception as e:
-                            logger.warning(f"Real-time execution failed for {scenario.get('scenario_id')}: {e}")
+                            logger.warning(f"AnalysisAgent: Real-time execution failed for {scenario_id}: {e}", exc_info=True)
+                else:
+                    logger.info("AnalysisAgent: No critical scenarios found for real-time execution")
             
             # Stage 10: Execution success rate analysis (incorporates real-time results)
             execution_success = await self._analyze_execution_success(
@@ -363,6 +383,14 @@ class AnalysisAgent(BaseAgent):
                     if not all([scenario_id, severity, occurrence, detection]):
                         continue
                     
+                    # Get original scenario to check for user-requirement tag
+                    original_scenario = next(
+                        (s for s in scenarios if s.get("scenario_id") == scenario_id),
+                        {}
+                    )
+                    has_user_requirement = "user-requirement" in original_scenario.get("tags", [])
+                    original_priority = original_scenario.get("priority", "medium")
+                    
                     # Adjust occurrence based on historical data
                     scenario_type = next(
                         (s.get("scenario_type", "functional") for s in scenarios 
@@ -380,8 +408,21 @@ class AnalysisAgent(BaseAgent):
                     elif historical_failure_rate > 0.3:
                         occurrence_adjusted = min(5, occurrence + 0.5)
                     
+                    # BOOST risk scores for user-requirement scenarios
+                    # This ensures they get higher priority in final prioritization
+                    severity_adjusted = severity
+                    if has_user_requirement:
+                        # Boost severity for user-requirement scenarios (they're important to the user)
+                        severity_adjusted = min(5, severity + 1)
+                        logger.debug(f"AnalysisAgent: Boosting severity for user-requirement scenario {scenario_id}: {severity} -> {severity_adjusted}")
+                    
+                    # Also boost if original priority was high/critical
+                    if original_priority in ["critical", "high"] and not has_user_requirement:
+                        severity_adjusted = min(5, severity + 1)
+                        logger.debug(f"AnalysisAgent: Boosting severity for high-priority scenario {scenario_id}: {severity} -> {severity_adjusted}")
+                    
                     risk_scores[scenario_id] = RiskScore(
-                        severity=int(severity),
+                        severity=int(severity_adjusted),
                         occurrence=int(occurrence_adjusted),
                         detection=int(detection)
                     )
@@ -413,8 +454,21 @@ class AnalysisAgent(BaseAgent):
         self, scenarios: List[Dict], historical_data: Dict, page_context: Dict
     ) -> str:
         """Build LLM prompt for structured risk analysis"""
-        return f"""Analyze the following test scenarios and provide FMEA-based risk assessment.
+        # Check for user-requirement scenarios
+        user_requirement_scenarios = [s for s in scenarios if "user-requirement" in s.get("tags", [])]
+        user_requirement_section = ""
+        if user_requirement_scenarios:
+            user_requirement_section = f"""
+**IMPORTANT - USER REQUIREMENT SCENARIOS:**
+The following scenarios are tagged with "user-requirement" - they match specific user instructions:
+{chr(10).join(f"- {s.get('scenario_id')}: {s.get('title')} (Priority: {s.get('priority', 'medium')})" for s in user_requirement_scenarios[:5])}
 
+**CRITICAL INSTRUCTION:** These user-requirement scenarios MUST be assigned HIGH severity (4-5) and HIGH priority in your risk assessment.
+They represent specific user needs and should be prioritized accordingly. If a scenario has "user-requirement" tag, assign severity >= 4.
+"""
+        
+        return f"""Analyze the following test scenarios and provide FMEA-based risk assessment.
+{user_requirement_section}
 Page Context:
 - Type: {page_context.get("page_type", "unknown")}
 - Framework: {page_context.get("framework", "unknown")}
