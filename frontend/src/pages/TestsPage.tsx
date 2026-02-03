@@ -685,6 +685,7 @@ export const TestsPage: React.FC = () => {
                       <RunTestButton
                         testCaseId={parseInt(test.id.replace('test-', ''))}
                         onExecutionStart={handleExecutionStart}
+                        enableProfileUpload
                       />
                       <Button
                         variant="secondary"

@@ -25,9 +25,9 @@ class DebugSessionStartResponse(BaseModel):
     session_id: str = Field(..., description="Unique session ID")
     mode: DebugMode
     status: DebugSessionStatus
-    target_step_number: int
+    target_step_number: Optional[int] = Field(None, description="Target step number (None for standalone sessions)")
     end_step_number: Optional[int] = Field(None, description="End of step range (if specified)")
-    prerequisite_steps_count: int
+    prerequisite_steps_count: Optional[int] = Field(None, description="Number of prerequisite steps (None for standalone sessions)")
     skip_prerequisites: bool = Field(False, description="Whether prerequisites were skipped")
     message: str
     devtools_url: Optional[str] = Field(None, description="DevTools URL for browser inspection (if available)")

@@ -6,6 +6,7 @@ import { TestDetailPage } from './pages/TestDetailPage';
 import { SavedTestsPage } from './pages/SavedTestsPage';
 import TestSuitesPage from './pages/TestSuitesPage';
 import { KnowledgeBasePage } from './pages/KnowledgeBasePage';
+import { BrowserProfilesPage } from './pages/BrowserProfilesPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ExecutionProgressPage } from './pages/ExecutionProgressPage';
 import { ExecutionHistoryPage } from './pages/ExecutionHistoryPage';
@@ -74,6 +75,14 @@ function App() {
           element={
             <ProtectedRoute>
               <KnowledgeBasePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/browser-profiles"
+          element={
+            <ProtectedRoute>
+              <BrowserProfilesPage />
             </ProtectedRoute>
           }
         />

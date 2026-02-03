@@ -2,12 +2,13 @@
 from typing import Optional
 import logging
 import traceback
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.models.user import User
-from app.models.debug_session import DebugSessionStatus
+from app.models.debug_session import DebugSessionStatus, DebugMode
 from app.schemas.debug_session import (
     DebugSessionStartRequest,
     DebugSessionStartResponse,
@@ -589,3 +590,109 @@ async def list_debug_sessions(
         total=total,
         sessions=sessions
     )
+
+
+@router.post("/debug/standalone-browser", response_model=DebugSessionStartResponse, status_code=status.HTTP_201_CREATED)
+async def start_standalone_browser(
+    browser: str = Query("chromium", description="Browser type: chromium, firefox, or webkit"),
+    headless: bool = Query(False, description="Run browser in headless mode"),
+    current_user: User = Depends(deps.get_current_user),
+    db: Session = Depends(deps.get_db)
+):
+    """
+    Start a standalone browser session for manual browsing/login (for browser profile export).
+    
+    **Authentication required**
+    
+    This endpoint creates a persistent browser session WITHOUT requiring an execution_id.
+    Use this for:
+    - Exporting browser profiles after manual login
+    - Testing website navigation
+    - Capturing session data (cookies, localStorage, sessionStorage)
+    
+    **Query Parameters:**
+    - `browser`: Browser type (chromium, firefox, webkit) - default: chromium
+    - `headless`: Run in headless mode - default: false
+    
+    **Returns:**
+    - `session_id`: Unique session identifier (use this for profile export)
+    - `browser_url`: DevTools URL (if available)
+    - `message`: Instructions for next steps
+    
+    **Example:**
+    ```bash
+    curl -X POST "http://localhost:8000/api/v1/debug/standalone-browser?browser=chromium&headless=false" \
+      -H "Authorization: Bearer YOUR_TOKEN"
+    ```
+    
+    **Workflow:**
+    1. Call this endpoint to start browser
+    2. Browser window opens automatically
+    3. Manually navigate and log in to your website
+    4. Use the returned `session_id` to export profile via `/browser-profiles/{id}/export`
+    """
+    debug_service = get_debug_session_service()
+    
+    try:
+        logger.info(f"Starting standalone browser session for user {current_user.id}, browser {browser}, headless {headless}")
+        
+        # Generate unique session ID
+        session_id = f"standalone_{uuid.uuid4().hex[:12]}"
+        
+        # Create browser instance
+        from app.services.stagehand_factory import get_stagehand_adapter
+        
+        stagehand = get_stagehand_adapter(
+            db=db,
+            user_id=current_user.id,
+            browser=browser,
+            headless=headless
+        )
+        
+        # Initialize browser with persistent context
+        user_data_dir = debug_service.user_data_base / session_id
+        user_data_dir.mkdir(parents=True, exist_ok=True)
+        
+        logger.info(f"Initializing browser with userDataDir: {user_data_dir}")
+        
+        # Initialize persistent browser session (no test_id needed for standalone)
+        browser_metadata = await stagehand.initialize_persistent(
+            session_id=session_id,
+            test_id=None,  # No test associated with standalone session
+            user_id=current_user.id,
+            db=db,
+            user_config=None  # Use default config
+        )
+        
+        # Store in active sessions
+        debug_service.active_sessions[session_id] = stagehand
+        logger.info(f"Standalone browser session {session_id} stored in active sessions")
+        
+        # Note: We don't create a DB record for standalone sessions because:
+        # 1. They're temporary (only used for profile export)
+        # 2. DebugSession model requires execution_id and target_step_number (not applicable here)
+        # 3. The session is tracked in memory via debug_service.active_sessions
+        
+        logger.info(f"✅ Standalone browser session {session_id} created successfully")
+        
+        return DebugSessionStartResponse(
+            session_id=session_id,
+            mode=DebugMode.MANUAL,
+            status=DebugSessionStatus.READY,
+            target_step_number=None,  # No target step for standalone sessions
+            prerequisite_steps_count=None,  # No prerequisites for standalone sessions
+            message=(
+                "Standalone browser session started! "
+                "Navigate to your website and log in manually. "
+                "Keep the browser window open, then use this session_id to export your browser profile."
+            ),
+            devtools_url=None  # Not exposing DevTools URL for standalone sessions
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to start standalone browser: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to start standalone browser: {str(e)}"
+        )

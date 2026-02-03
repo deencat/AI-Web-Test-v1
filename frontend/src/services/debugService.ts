@@ -310,6 +310,34 @@ class DebugService {
       throw new Error(apiHelpers.getErrorMessage(error));
     }
   }
+
+  /**
+   * Start a standalone browser session for manual browsing/login
+   * (for browser profile export)
+   */
+  async startStandaloneBrowser(browser: 'chromium' | 'firefox' | 'webkit' = 'chromium', headless: boolean = false): Promise<DebugSessionStartResponse> {
+    if (apiHelpers.useMockData()) {
+      // Mock implementation
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      return {
+        session_id: 'standalone_' + Math.random().toString(36).substring(7),
+        mode: 'manual',
+        status: 'ready',
+        message: 'Standalone browser session started! Navigate to your website and log in manually.',
+      };
+    }
+
+    // Real API call
+    try {
+      const response = await api.post<DebugSessionStartResponse>(
+        `/debug/standalone-browser?browser=${browser}&headless=${headless}`
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
 }
 
 export default new DebugService();

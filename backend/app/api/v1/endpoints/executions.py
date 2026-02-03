@@ -3,6 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 from datetime import datetime
+import json
 import asyncio
 
 from app.api import deps
@@ -158,6 +159,15 @@ async def run_test_with_playwright(
         base_url=request.base_url
     )
     execution_id = execution.id
+
+    # Store trigger details and optional browser profile data
+    if request.triggered_by:
+        execution.triggered_by = request.triggered_by
+
+    if request.browser_profile_data:
+        execution.trigger_details = json.dumps({
+            "browser_profile_data": request.browser_profile_data
+        })
     
     # Set queued timestamp and priority
     execution.queued_at = datetime.utcnow()

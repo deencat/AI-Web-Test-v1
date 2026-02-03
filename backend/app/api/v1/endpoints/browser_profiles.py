@@ -175,7 +175,7 @@ async def delete_browser_profile(
         )
 
 
-@router.post("/browser-profiles/{profile_id}/export", response_model=BrowserProfileExportResponse)
+@router.post("/browser-profiles/{profile_id}/export")
 async def export_browser_profile(
     profile_id: int,
     request: BrowserProfileExportRequest,
@@ -256,17 +256,25 @@ async def export_browser_profile(
         # Return response with file download
         zip_buffer.seek(0)
         
+        # Create safe filename (replace spaces with underscores)
+        safe_filename = profile.profile_name.replace(" ", "_").replace("/", "_")
+        
         return StreamingResponse(
             zip_buffer,
             media_type="application/zip",
             headers={
-                "Content-Disposition": f"attachment; filename=profile_{profile_id}_{profile.profile_name}.zip"
+                "Content-Disposition": f'attachment; filename="{safe_filename}.zip"'
             }
         )
         
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"❌ Failed to export profile: {str(e)}")
+        logger.error(f"Traceback:\n{traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to export profile: {str(e)}"

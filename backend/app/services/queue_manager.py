@@ -6,6 +6,7 @@ Handles concurrent execution, resource management, and automatic queue processin
 import threading
 import time
 import logging
+import json
 from typing import Optional
 from datetime import datetime
 
@@ -180,6 +181,15 @@ class QueueManager:
                         
                         # Get base URL from test case or execution
                         base_url = execution.base_url or test_case.test_data.get("base_url", "https://example.com")
+
+                        # Extract browser profile data (if provided)
+                        browser_profile_data = None
+                        if execution.trigger_details:
+                            try:
+                                trigger_details = json.loads(execution.trigger_details)
+                                browser_profile_data = trigger_details.get("browser_profile_data")
+                            except Exception as e:
+                                logger.warning(f"Failed to parse trigger_details JSON: {e}")
                         
                         # Load user's execution provider settings (Sprint 3 - Settings Page Dynamic Configuration)
                         from app.services.user_settings_service import user_settings_service
@@ -220,7 +230,8 @@ class QueueManager:
                                     execution_id=queued_execution.execution_id,
                                     user_id=queued_execution.user_id,
                                     base_url=base_url,
-                                    environment=execution.environment or "dev"
+                                    environment=execution.environment or "dev",
+                                    browser_profile_data=browser_profile_data
                                 )
                             )
                             
