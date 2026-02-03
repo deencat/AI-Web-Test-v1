@@ -33,6 +33,18 @@ class DebugSessionService:
         # Base directory for user data dirs
         self.user_data_base = Path("artifacts/debug_sessions")
         self.user_data_base.mkdir(parents=True, exist_ok=True)
+
+    def get_stagehand_for_session(self, session_id: str) -> Optional[StagehandAdapter]:
+        """
+        Get the active stagehand adapter for a session.
+
+        Args:
+            session_id: Debug or standalone session ID
+
+        Returns:
+            StagehandAdapter if session is active, otherwise None
+        """
+        return self.active_sessions.get(session_id)
     
     async def start_session(
         self,

@@ -181,6 +181,10 @@ class ExecutionStartRequest(BaseModel):
     environment: str = Field(default="dev", max_length=50, description="Target environment")
     base_url: Optional[str] = Field(None, max_length=500, description="Base URL (overrides test case URL)")
     triggered_by: str = Field(default="manual", max_length=50, description="Execution trigger")
+    browser_profile_data: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Browser profile data (cookies, localStorage, sessionStorage) for session persistence"
+    )
 
 
 class ExecutionStartResponse(BaseModel):

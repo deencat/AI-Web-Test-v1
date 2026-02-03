@@ -123,7 +123,7 @@ class PythonStagehandAdapter(StagehandAdapter):
     async def initialize_persistent(
         self,
         session_id: str,
-        test_id: int,
+        test_id: Optional[int],
         user_id: int,
         db: Session,
         user_config: Optional[Dict[str, Any]] = None
@@ -133,7 +133,7 @@ class PythonStagehandAdapter(StagehandAdapter):
         
         Args:
             session_id: Unique session identifier
-            test_id: Test case ID being debugged
+            test_id: Test case ID being debugged (None for standalone sessions)
             user_id: User ID
             db: Database session
             user_config: Optional configuration overrides
@@ -154,6 +154,15 @@ class PythonStagehandAdapter(StagehandAdapter):
             user_config=user_config,
             devtools=True
         )
+    
+    async def export_browser_profile(self) -> Dict[str, Any]:
+        """
+        Export browser session data from the current page.
+        
+        Returns:
+            Dict with cookies, localStorage, sessionStorage, and timestamp
+        """
+        return await self._service.export_browser_profile()
     
     @property
     def provider_name(self) -> str:

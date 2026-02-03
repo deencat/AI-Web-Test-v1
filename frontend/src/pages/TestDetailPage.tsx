@@ -226,6 +226,7 @@ export const TestDetailPage: React.FC = () => {
               testCaseId={typeof test.id === 'string' ? parseInt(test.id) : test.id}
               testCaseName={test.title || test.name}
               onExecutionStart={handleExecutionStart}
+              enableProfileUpload
             />
           </div>
         </div>

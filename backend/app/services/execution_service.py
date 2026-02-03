@@ -198,6 +198,46 @@ class ExecutionService:
         
         self.page = await self.context.new_page()
         return self.page
+
+    async def _apply_profile_cookies(self, page: Page, profile_data: Dict[str, Any]) -> None:
+        """Apply cookie data to the browser context before navigation."""
+        cookies = profile_data.get("cookies") if profile_data else None
+        if cookies:
+            await page.context.add_cookies(cookies)
+            logger.info(f"[INFO] ✅ Injected {len(cookies)} cookies")
+
+    async def _apply_profile_storage(self, page: Page, profile_data: Dict[str, Any]) -> None:
+        """Apply localStorage and sessionStorage after navigation."""
+        if not profile_data:
+            return
+
+        local_storage = profile_data.get("localStorage")
+        if local_storage:
+            await page.evaluate(
+                """
+                (storage) => {
+                    for (const [key, value] of Object.entries(storage)) {
+                        localStorage.setItem(key, value);
+                    }
+                }
+                """,
+                local_storage
+            )
+            logger.info(f"[INFO] ✅ Injected {len(local_storage)} localStorage items")
+
+        session_storage = profile_data.get("sessionStorage")
+        if session_storage:
+            await page.evaluate(
+                """
+                (storage) => {
+                    for (const [key, value] of Object.entries(storage)) {
+                        sessionStorage.setItem(key, value);
+                    }
+                }
+                """,
+                session_storage
+            )
+            logger.info(f"[INFO] ✅ Injected {len(session_storage)} sessionStorage items")
     
     async def execute_test(
         self,
@@ -207,7 +247,8 @@ class ExecutionService:
         base_url: str,
         environment: str = "dev",
         execution_id: Optional[int] = None,
-        progress_callback: Optional[Callable] = None
+        progress_callback: Optional[Callable] = None,
+        browser_profile_data: Optional[Dict[str, Any]] = None
     ) -> TestExecution:
         """
         Execute a test case and track results.
@@ -256,6 +297,10 @@ class ExecutionService:
             await self.initialize()
             await self.create_context(record_video=True)
             page = await self.create_page()
+
+            # Apply browser profile cookies before navigation
+            if browser_profile_data:
+                await self._apply_profile_cookies(page, browser_profile_data)
             
             # Get CDP endpoint for shared browser context
             # Use fixed remote debugging port (set in initialize())
@@ -290,6 +335,10 @@ class ExecutionService:
             
             # Navigate to base URL
             await page.goto(base_url)
+
+            # Apply localStorage/sessionStorage after navigation
+            if browser_profile_data:
+                await self._apply_profile_storage(page, browser_profile_data)
             
             # Execute steps - Get detailed steps from test_data if available
             steps = test_case.steps if isinstance(test_case.steps, list) else json.loads(test_case.steps)

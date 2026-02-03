@@ -374,6 +374,30 @@ class TypeScriptStagehandAdapter(StagehandAdapter):
                     f"Cannot initialize persistent session: {e}"
                 )
     
+    async def export_browser_profile(self) -> Dict[str, Any]:
+        """
+        Export browser session data via TypeScript service.
+        
+        Returns:
+            Dict with cookies, localStorage, sessionStorage, and timestamp
+        """
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.post(
+                    f"{self.typescript_service_url}/export-profile"
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        raise RuntimeError(
+                            f"TypeScript service failed to export profile: {error_text}"
+                        )
+                    return await response.json()
+            
+            except aiohttp.ClientError as e:
+                raise ConnectionError(
+                    f"Cannot export browser profile: {e}"
+                )
+    
     @property
     def provider_name(self) -> str:
         """

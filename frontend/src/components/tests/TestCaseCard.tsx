@@ -47,6 +47,7 @@ export const TestCaseCard: React.FC<TestCaseCardProps> = ({
               <RunTestButton
                 testCaseId={parseInt(testCase.id.replace(/\D/g, '')) || 1}
                 onExecutionStart={onExecutionStart}
+                enableProfileUpload
               />
             )}
             {onEdit && (
