@@ -512,6 +512,133 @@ class StagehandExecutionService:
             
             return browser_metadata
     
+    async def inject_browser_profile(self, profile_data: Dict[str, Any]):
+        """
+        Inject browser profile data (cookies, localStorage) into current browser context.
+        Profile data is processed entirely in RAM - no disk writes.
+        
+        Args:
+            profile_data: Dictionary containing:
+                - cookies: List of cookie dicts [{name, value, domain, path, ...}]
+                - localStorage: Dict of key-value pairs {"key": "value"}
+                - sessionStorage: Dict of key-value pairs (optional)
+        
+        Security: All data handled in-memory only, auto-cleaned by garbage collection.
+        """
+        if not self.page:
+            raise RuntimeError("Cannot inject profile: browser not initialized")
+        
+        print(f"[INFO] 🔒 Injecting browser profile (in-memory only)...")
+        
+        try:
+            # Get Playwright page and context
+            playwright_page = self.page._page if hasattr(self.page, '_page') else self.page
+            context = playwright_page.context
+            
+            # 1. Inject cookies (if provided)
+            if profile_data.get("cookies"):
+                cookies = profile_data["cookies"]
+                await context.add_cookies(cookies)
+                print(f"[INFO] ✅ Injected {len(cookies)} cookies")
+            
+            # 2. Inject localStorage (if provided)
+            if profile_data.get("localStorage"):
+                local_storage = profile_data["localStorage"]
+                # Execute JS to set localStorage items
+                await playwright_page.evaluate("""
+                    (storage) => {
+                        for (const [key, value] of Object.entries(storage)) {
+                            localStorage.setItem(key, value);
+                        }
+                    }
+                """, local_storage)
+                print(f"[INFO] ✅ Injected {len(local_storage)} localStorage items")
+            
+            # 3. Inject sessionStorage (if provided)
+            if profile_data.get("sessionStorage"):
+                session_storage = profile_data["sessionStorage"]
+                await playwright_page.evaluate("""
+                    (storage) => {
+                        for (const [key, value] of Object.entries(storage)) {
+                            sessionStorage.setItem(key, value);
+                        }
+                    }
+                """, session_storage)
+                print(f"[INFO] ✅ Injected {len(session_storage)} sessionStorage items")
+            
+            print(f"[INFO] ✅ Profile injection complete (all data in RAM)")
+            
+        except Exception as e:
+            print(f"[ERROR] ❌ Profile injection failed: {str(e)}")
+            raise RuntimeError(f"Failed to inject browser profile: {str(e)}")
+    
+    async def export_browser_profile(self) -> Dict[str, Any]:
+        """
+        Export current browser session data (cookies, localStorage, sessionStorage).
+        Returns data as in-memory dict for packaging into ZIP.
+        
+        Returns:
+            Dictionary containing:
+                - cookies: List of cookie dicts
+                - localStorage: Dict of key-value pairs
+                - sessionStorage: Dict of key-value pairs
+        
+        Security: Data never written to disk, only held in RAM for immediate packaging.
+        """
+        if not self.page:
+            raise RuntimeError("Cannot export profile: browser not initialized")
+        
+        print(f"[INFO] 📤 Exporting browser profile (in-memory only)...")
+        
+        try:
+            # Get Playwright page and context
+            playwright_page = self.page._page if hasattr(self.page, '_page') else self.page
+            context = playwright_page.context
+            
+            # 1. Export cookies
+            cookies = await context.cookies()
+            print(f"[INFO] ✅ Exported {len(cookies)} cookies")
+            
+            # 2. Export localStorage
+            local_storage = await playwright_page.evaluate("""
+                () => {
+                    const storage = {};
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i);
+                        storage[key] = localStorage.getItem(key);
+                    }
+                    return storage;
+                }
+            """)
+            print(f"[INFO] ✅ Exported {len(local_storage)} localStorage items")
+            
+            # 3. Export sessionStorage
+            session_storage = await playwright_page.evaluate("""
+                () => {
+                    const storage = {};
+                    for (let i = 0; i < sessionStorage.length; i++) {
+                        const key = sessionStorage.key(i);
+                        storage[key] = sessionStorage.getItem(key);
+                    }
+                    return storage;
+                }
+            """)
+            print(f"[INFO] ✅ Exported {len(session_storage)} sessionStorage items")
+            
+            profile_data = {
+                "cookies": cookies,
+                "localStorage": local_storage,
+                "sessionStorage": session_storage,
+                "exported_at": datetime.utcnow().isoformat()
+            }
+            
+            print(f"[INFO] ✅ Profile export complete (all data in RAM)")
+            return profile_data
+            
+        except Exception as e:
+            print(f"[ERROR] ❌ Profile export failed: {str(e)}")
+            raise RuntimeError(f"Failed to export browser profile: {str(e)}")
+    
     async def execute_test(
         self,
         db: Session,
