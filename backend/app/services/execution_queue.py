@@ -4,7 +4,7 @@ Test Execution Queue System
 Provides thread-safe queue for managing test executions with priority support.
 """
 import threading
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 from dataclasses import dataclass, field
 from queue import PriorityQueue
@@ -28,6 +28,7 @@ class QueuedExecution:
     execution_id: int = field(compare=False)
     test_case_id: int = field(default=0, compare=False)
     user_id: int = field(default=0, compare=False)
+    http_credentials: Optional[Dict[str, Any]] = field(default=None, compare=False)
 
 
 class ExecutionQueue:
@@ -57,7 +58,8 @@ class ExecutionQueue:
         execution_id: int,
         test_case_id: int,
         user_id: int,
-        priority: int = 5
+        priority: int = 5,
+        http_credentials: Optional[Dict[str, Any]] = None
     ) -> int:
         """
         Add an execution to the queue.
@@ -77,7 +79,8 @@ class ExecutionQueue:
                 queued_at=datetime.utcnow(),
                 execution_id=execution_id,
                 test_case_id=test_case_id,
-                user_id=user_id
+                user_id=user_id,
+                http_credentials=http_credentials
             )
             
             self._queue.put(queued_execution)

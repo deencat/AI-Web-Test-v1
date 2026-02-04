@@ -149,6 +149,10 @@ export interface ExecutionStartRequest {
     localStorage: Record<string, string>;
     sessionStorage: Record<string, string>;
   };
+  http_credentials?: {
+    username: string;
+    password: string;
+  };
 }
 
 export interface ExecutionStartResponse {

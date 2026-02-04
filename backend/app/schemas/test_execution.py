@@ -175,6 +175,11 @@ class ExecutionStatistics(BaseModel):
 # Execution Request Schemas
 # ============================================================================
 
+class HttpCredentials(BaseModel):
+    """HTTP Basic Auth credentials."""
+    username: str = Field(..., min_length=1, max_length=255, description="Basic auth username")
+    password: str = Field(..., min_length=1, max_length=255, description="Basic auth password")
+
 class ExecutionStartRequest(BaseModel):
     """Schema for starting a test execution."""
     browser: str = Field(default="chromium", pattern="^(chromium|firefox|webkit)$", description="Browser to use")
@@ -184,6 +189,10 @@ class ExecutionStartRequest(BaseModel):
     browser_profile_data: Optional[Dict[str, Any]] = Field(
         None,
         description="Browser profile data (cookies, localStorage, sessionStorage) for session persistence"
+    )
+    http_credentials: Optional[HttpCredentials] = Field(
+        None,
+        description="HTTP Basic Auth credentials for the execution run (not stored)"
     )
 
 

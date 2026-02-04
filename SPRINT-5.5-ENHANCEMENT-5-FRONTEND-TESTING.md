@@ -145,6 +145,10 @@ Create 2 more profiles:
    - **Run without Profile**: Standard execution (no pre-auth)
 3. Click "Browse Files" or drag & drop the ZIP from Phase 2
 4. **Expected**: File name and size display (e.g., `windows_11_admin_session_2026-02-03.zip - 3.45 KB`)
+5. (Optional) Enable **HTTP Basic Auth**:
+   - Check **"Use HTTP Basic Auth"**
+   - Enter username and password
+   - Use this when the environment prompts for Basic Auth before the login page
 
 #### **Step 3.3: Execute Test with Profile**
 1. Click "Run with Profile" button

@@ -173,7 +173,11 @@ class ExecutionService:
             await self.playwright.stop()
             self.playwright = None
     
-    async def create_context(self, record_video: bool = False) -> BrowserContext:
+    async def create_context(
+        self,
+        record_video: bool = False,
+        http_credentials: Optional[Dict[str, Any]] = None
+    ) -> BrowserContext:
         """Create a new browser context with optional video recording."""
         if not self.browser:
             await self.initialize()
@@ -185,6 +189,9 @@ class ExecutionService:
         if record_video:
             context_options["record_video_dir"] = str(self.config.video_dir)
             context_options["record_video_size"] = self.config.viewport
+
+        if http_credentials:
+            context_options["http_credentials"] = http_credentials
         
         self.context = await self.browser.new_context(**context_options)
         self.context.set_default_timeout(self.config.timeout)
@@ -248,7 +255,8 @@ class ExecutionService:
         environment: str = "dev",
         execution_id: Optional[int] = None,
         progress_callback: Optional[Callable] = None,
-        browser_profile_data: Optional[Dict[str, Any]] = None
+        browser_profile_data: Optional[Dict[str, Any]] = None,
+        http_credentials: Optional[Dict[str, Any]] = None
     ) -> TestExecution:
         """
         Execute a test case and track results.
@@ -295,7 +303,7 @@ class ExecutionService:
             
             # Initialize browser
             await self.initialize()
-            await self.create_context(record_video=True)
+            await self.create_context(record_video=True, http_credentials=http_credentials)
             page = await self.create_page()
 
             # Apply browser profile cookies before navigation
