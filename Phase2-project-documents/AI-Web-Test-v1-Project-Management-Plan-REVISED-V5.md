@@ -2600,6 +2600,18 @@ Implement **in-memory profile system** that:
 - Backend tracks profile metadata only (no sensitive data)
 - Auto-cleanup via Python garbage collection (no manual cleanup needed)
 
+#### Add-On: HTTP Credentials Support (Basic Auth)
+
+Some environments (e.g., UAT) require **HTTP Basic Authentication**, which occurs **before** cookies/localStorage apply.
+To prevent `ERR_INVALID_AUTH_CREDENTIALS` during navigation, add explicit HTTP credentials support in execution.
+
+**Planned Scope:**
+- **Backend API:** Extend execution start request to accept optional `http_credentials` (username/password)
+- **Execution Pipeline:** Pass credentials to Playwright context via `httpCredentials`
+- **Frontend UI:** Add optional Basic Auth fields in Run Test dialog (hidden by default)
+- **Security:** Do not persist credentials in DB; only pass in-memory for the execution run
+- **Docs:** Update testing guide with Basic Auth troubleshooting and usage
+
 #### Implementation Plan
 
 **Day 1: Backend Profile Registry & Export (4 hours)**
