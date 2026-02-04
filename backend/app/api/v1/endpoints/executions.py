@@ -168,6 +168,12 @@ async def run_test_with_playwright(
         execution.trigger_details = json.dumps({
             "browser_profile_data": request.browser_profile_data
         })
+
+    http_credentials = (
+        request.http_credentials.model_dump()
+        if request.http_credentials
+        else None
+    )
     
     # Set queued timestamp and priority
     execution.queued_at = datetime.utcnow()
@@ -182,7 +188,8 @@ async def run_test_with_playwright(
         execution_id=execution_id,
         test_case_id=test_case_id,
         user_id=current_user.id,
-        priority=execution.priority
+        priority=execution.priority,
+        http_credentials=http_credentials
     )
     
     # Update queue position in database

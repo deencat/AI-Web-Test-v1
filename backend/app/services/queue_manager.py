@@ -121,7 +121,8 @@ class QueueManager:
                 queued_execution.execution_id,
                 queued_execution.test_case_id,
                 queued_execution.user_id,
-                queued_execution.priority
+                queued_execution.priority,
+                http_credentials=queued_execution.http_credentials
             )
             return
         
@@ -190,6 +191,8 @@ class QueueManager:
                                 browser_profile_data = trigger_details.get("browser_profile_data")
                             except Exception as e:
                                 logger.warning(f"Failed to parse trigger_details JSON: {e}")
+
+                        http_credentials = queued_execution.http_credentials
                         
                         # Load user's execution provider settings (Sprint 3 - Settings Page Dynamic Configuration)
                         from app.services.user_settings_service import user_settings_service
@@ -231,7 +234,8 @@ class QueueManager:
                                     user_id=queued_execution.user_id,
                                     base_url=base_url,
                                     environment=execution.environment or "dev",
-                                    browser_profile_data=browser_profile_data
+                                    browser_profile_data=browser_profile_data,
+                                    http_credentials=http_credentials
                                 )
                             )
                             

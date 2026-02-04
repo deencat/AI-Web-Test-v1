@@ -48,3 +48,23 @@ async def test_apply_profile_storage_injects_local_and_session_storage():
     await service._apply_profile_storage(page, profile_data)
 
     assert page.evaluate.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_create_context_passes_http_credentials():
+    service = ExecutionService(ExecutionConfig())
+
+    browser = MagicMock()
+    browser.new_context = AsyncMock(return_value=MagicMock())
+    service.browser = browser
+
+    http_credentials = {
+        "username": "basic-user",
+        "password": "basic-pass"
+    }
+
+    await service.create_context(http_credentials=http_credentials)
+
+    _, kwargs = browser.new_context.call_args
+    assert kwargs["http_credentials"] == http_credentials
+    assert kwargs["viewport"] == service.config.viewport
