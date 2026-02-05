@@ -8,7 +8,7 @@ import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
-import { Plus, Edit2, Trash2, Download, Upload, RefreshCw, Play, ExternalLink, Copy } from 'lucide-react';
+import { Plus, Edit2, Trash2, Download, Upload, RefreshCw, Play, ExternalLink, Copy, Lock } from 'lucide-react';
 import browserProfileService from '../services/browserProfileService';
 import debugService from '../services/debugService';
 import type { BrowserProfile, BrowserProfileFormData } from '../types/browserProfile';
@@ -31,10 +31,13 @@ export const BrowserProfilesPage: React.FC = () => {
     profile_name: '',
     os_type: 'windows',
     browser_type: 'chromium',
-    description: ''
+    description: '',
+    http_username: '',
+    http_password: ''
   });
   const [editingProfile, setEditingProfile] = useState<BrowserProfile | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [clearHttpCredentials, setClearHttpCredentials] = useState(false);
   
   // Export state
   const [exportProfileId, setExportProfileId] = useState<number | null>(null);
@@ -77,11 +80,21 @@ export const BrowserProfilesPage: React.FC = () => {
         profile_name: formData.profile_name,
         os_type: formData.os_type as 'windows' | 'linux' | 'macos',
         browser_type: formData.browser_type as 'chromium' | 'firefox' | 'webkit',
-        description: formData.description || undefined
+        description: formData.description || undefined,
+        http_username: formData.http_username || undefined,
+        http_password: formData.http_password || undefined
       });
       
       setShowCreateModal(false);
-      setFormData({ profile_name: '', os_type: 'windows', browser_type: 'chromium', description: '' });
+      setFormData({
+        profile_name: '',
+        os_type: 'windows',
+        browser_type: 'chromium',
+        description: '',
+        http_username: '',
+        http_password: ''
+      });
+      setClearHttpCredentials(false);
       await loadProfiles();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create profile');
@@ -96,8 +109,11 @@ export const BrowserProfilesPage: React.FC = () => {
       profile_name: profile.profile_name,
       os_type: profile.os_type,
       browser_type: profile.browser_type,
-      description: profile.description || ''
+      description: profile.description || '',
+      http_username: profile.http_username || '',
+      http_password: ''
     });
+    setClearHttpCredentials(false);
     setShowEditModal(true);
   };
 
@@ -113,11 +129,15 @@ export const BrowserProfilesPage: React.FC = () => {
         profile_name: formData.profile_name,
         os_type: formData.os_type as 'windows' | 'linux' | 'macos',
         browser_type: formData.browser_type as 'chromium' | 'firefox' | 'webkit',
-        description: formData.description || undefined
+        description: formData.description || undefined,
+        http_username: formData.http_username || undefined,
+        http_password: formData.http_password || undefined,
+        clear_http_credentials: clearHttpCredentials
       });
       
       setShowEditModal(false);
       setEditingProfile(null);
+  setClearHttpCredentials(false);
       await loadProfiles();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update profile');
@@ -306,6 +326,12 @@ export const BrowserProfilesPage: React.FC = () => {
                       <span>•</span>
                       <span>{browserProfileService.getBrowserIcon(profile.browser_type)} {profile.browser_type}</span>
                     </div>
+                    {profile.has_http_credentials && (
+                      <div className="mt-2 inline-flex items-center gap-1 text-xs text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded">
+                        <Lock className="w-3 h-3" />
+                        HTTP Auth: {profile.http_username || 'configured'}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -416,6 +442,39 @@ export const BrowserProfilesPage: React.FC = () => {
                       placeholder="Optional description"
                     />
                   </div>
+
+                  <div className="border-t pt-4">
+                    <div className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      <Lock className="w-4 h-4" />
+                      HTTP Basic Auth (Optional)
+                    </div>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">
+                          Username
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.http_username}
+                          onChange={(e) => setFormData({...formData, http_username: e.target.value})}
+                          className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                          placeholder="basic-auth-user"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">
+                          Password
+                        </label>
+                        <input
+                          type="password"
+                          value={formData.http_password}
+                          onChange={(e) => setFormData({...formData, http_password: e.target.value})}
+                          className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                          placeholder="••••••••"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex gap-3 mt-6">
@@ -502,6 +561,55 @@ export const BrowserProfilesPage: React.FC = () => {
                       rows={3}
                     />
                   </div>
+
+                  <div className="border-t pt-4">
+                    <div className="flex items-center justify-between text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      <span className="flex items-center gap-2">
+                        <Lock className="w-4 h-4" />
+                        HTTP Basic Auth (Optional)
+                      </span>
+                      {editingProfile.has_http_credentials && (
+                        <span className="text-xs text-green-600 dark:text-green-400">
+                          Configured
+                        </span>
+                      )}
+                    </div>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">
+                          Username
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.http_username}
+                          onChange={(e) => setFormData({...formData, http_username: e.target.value})}
+                          className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                          placeholder="basic-auth-user"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">
+                          Password
+                        </label>
+                        <input
+                          type="password"
+                          value={formData.http_password}
+                          onChange={(e) => setFormData({...formData, http_password: e.target.value})}
+                          className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                          placeholder="Leave blank to keep existing"
+                        />
+                      </div>
+                      <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                        <input
+                          type="checkbox"
+                          checked={clearHttpCredentials}
+                          onChange={(e) => setClearHttpCredentials(e.target.checked)}
+                          className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                        />
+                        Clear stored HTTP credentials
+                      </label>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex gap-3 mt-6">
@@ -513,6 +621,7 @@ export const BrowserProfilesPage: React.FC = () => {
                     onClick={() => {
                       setShowEditModal(false);
                       setEditingProfile(null);
+                      setClearHttpCredentials(false);
                     }}
                     className="flex-1 bg-gray-300 hover:bg-gray-400 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200"
                   >

@@ -594,36 +594,51 @@ class StagehandExecutionService:
             # Get Playwright page and context
             playwright_page = self.page._page if hasattr(self.page, '_page') else self.page
             context = playwright_page.context
+            page_url = (getattr(playwright_page, "url", "") or "").lower()
             
             # 1. Export cookies
             cookies = await context.cookies()
             print(f"[INFO] ✅ Exported {len(cookies)} cookies")
             
-            # 2. Export localStorage
-            local_storage = await playwright_page.evaluate("""
-                () => {
-                    const storage = {};
-                    for (let i = 0; i < localStorage.length; i++) {
-                        const key = localStorage.key(i);
-                        storage[key] = localStorage.getItem(key);
-                    }
-                    return storage;
-                }
-            """)
-            print(f"[INFO] ✅ Exported {len(local_storage)} localStorage items")
-            
-            # 3. Export sessionStorage
-            session_storage = await playwright_page.evaluate("""
-                () => {
-                    const storage = {};
-                    for (let i = 0; i < sessionStorage.length; i++) {
-                        const key = sessionStorage.key(i);
-                        storage[key] = sessionStorage.getItem(key);
-                    }
-                    return storage;
-                }
-            """)
-            print(f"[INFO] ✅ Exported {len(session_storage)} sessionStorage items")
+            async def _export_storage(storage_name: str) -> Dict[str, Any]:
+                try:
+                    storage = await playwright_page.evaluate("""
+                        (name) => {
+                            const storage = {};
+                            const target = window[name];
+                            if (!target) {
+                                return storage;
+                            }
+                            for (let i = 0; i < target.length; i++) {
+                                const key = target.key(i);
+                                storage[key] = target.getItem(key);
+                            }
+                            return storage;
+                        }
+                    """, storage_name)
+                    return storage
+                except Exception as e:
+                    print(
+                        f"[WARN] ⚠️ Failed to export {storage_name}: {str(e)}. "
+                        "Continuing with empty storage."
+                    )
+                    return {}
+
+            restricted_schemes = ("about:", "chrome:", "edge:", "data:")
+            if page_url.startswith(restricted_schemes):
+                print(
+                    f"[WARN] ⚠️ Skipping storage export for restricted page URL: {page_url or 'unknown'}"
+                )
+                local_storage = {}
+                session_storage = {}
+            else:
+                # 2. Export localStorage
+                local_storage = await _export_storage("localStorage")
+                print(f"[INFO] ✅ Exported {len(local_storage)} localStorage items")
+                
+                # 3. Export sessionStorage
+                session_storage = await _export_storage("sessionStorage")
+                print(f"[INFO] ✅ Exported {len(session_storage)} sessionStorage items")
             
             profile_data = {
                 "cookies": cookies,

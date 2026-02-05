@@ -135,6 +135,7 @@ export interface ExecutionStartRequest {
   environment?: EnvironmentType;
   base_url?: string;
   triggered_by?: TriggerType;
+  browser_profile_id?: number;
   browser_profile_data?: {
     cookies: Array<{
       name: string;

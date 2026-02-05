@@ -21,6 +21,7 @@ from app.schemas.test_execution import (
 )
 from app.crud import test_case as crud_tests
 from app.crud import test_execution as crud_executions
+from app.crud import browser_profile as crud_browser_profiles
 from app.services.stagehand_factory import get_stagehand_adapter
 from app.services.stagehand_adapter import StagehandAdapter
 from app.services.queue_manager import get_queue_manager
@@ -164,16 +165,28 @@ async def run_test_with_playwright(
     if request.triggered_by:
         execution.triggered_by = request.triggered_by
 
+    trigger_details = {}
     if request.browser_profile_data:
-        execution.trigger_details = json.dumps({
-            "browser_profile_data": request.browser_profile_data
-        })
+        trigger_details["browser_profile_data"] = request.browser_profile_data
+
+    if request.browser_profile_id:
+        trigger_details["browser_profile_id"] = request.browser_profile_id
+
+    if trigger_details:
+        execution.trigger_details = json.dumps(trigger_details)
 
     http_credentials = (
         request.http_credentials.model_dump()
         if request.http_credentials
         else None
     )
+
+    if not http_credentials and request.browser_profile_id:
+        http_credentials = crud_browser_profiles.get_http_credentials(
+            db=db,
+            profile_id=request.browser_profile_id,
+            user_id=current_user.id
+        )
     
     # Set queued timestamp and priority
     execution.queued_at = datetime.utcnow()

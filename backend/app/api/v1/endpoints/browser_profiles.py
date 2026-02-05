@@ -9,6 +9,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.api import deps
 from app.models.user import User
@@ -63,10 +64,23 @@ async def create_browser_profile(
             profile_data=profile_data
         )
         return profile
-    except Exception as e:
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc)
+        )
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Profile name already exists for this user."
+        )
+    except Exception as exc:
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create profile: {str(e)}"
+            detail=f"Failed to create profile: {str(exc)}"
         )
 
 
@@ -137,10 +151,23 @@ async def update_browser_profile(
     try:
         updated_profile = crud_profile.update_profile(db=db, profile=profile, profile_data=profile_data)
         return updated_profile
-    except Exception as e:
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc)
+        )
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Profile name already exists for this user."
+        )
+    except Exception as exc:
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update profile: {str(e)}"
+            detail=f"Failed to update profile: {str(exc)}"
         )
 
 

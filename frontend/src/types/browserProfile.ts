@@ -14,6 +14,8 @@ export interface BrowserProfile {
   created_at: string;
   updated_at: string;
   last_sync_at?: string;
+  has_http_credentials?: boolean;
+  http_username?: string | null;
 }
 
 export interface BrowserProfileCreate {
@@ -21,6 +23,8 @@ export interface BrowserProfileCreate {
   os_type: 'windows' | 'linux' | 'macos';
   browser_type: 'chromium' | 'firefox' | 'webkit';
   description?: string;
+  http_username?: string;
+  http_password?: string;
 }
 
 export interface BrowserProfileUpdate {
@@ -28,6 +32,9 @@ export interface BrowserProfileUpdate {
   os_type?: 'windows' | 'linux' | 'macos';
   browser_type?: 'chromium' | 'firefox' | 'webkit';
   description?: string;
+  http_username?: string;
+  http_password?: string;
+  clear_http_credentials?: boolean;
 }
 
 export interface BrowserProfileListResponse {
@@ -83,6 +90,8 @@ export interface BrowserProfileFormData {
   os_type: string;
   browser_type: string;
   description: string;
+  http_username?: string;
+  http_password?: string;
 }
 
 export const OS_TYPES = [
