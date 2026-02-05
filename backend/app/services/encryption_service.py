@@ -3,8 +3,10 @@ Encryption Service
 Created: February 5, 2026
 Purpose: Encrypt/decrypt sensitive data like HTTP Basic Auth passwords.
 """
+import json
 import logging
 import os
+from typing import Any, Dict
 
 from cryptography.fernet import Fernet
 
@@ -47,3 +49,14 @@ class EncryptionService:
         except Exception as exc:
             logger.error("Failed to decrypt password: %s", exc)
             raise ValueError(f"Failed to decrypt password: {exc}")
+
+    def encrypt_json(self, data: Dict[str, Any]) -> str:
+        if data is None:
+            raise ValueError("JSON data cannot be None")
+
+        json_str = json.dumps(data)
+        return self.encrypt_password(json_str)
+
+    def decrypt_json(self, encrypted: str) -> Dict[str, Any]:
+        json_str = self.decrypt_password(encrypted)
+        return json.loads(json_str)

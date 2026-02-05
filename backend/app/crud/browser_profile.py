@@ -33,6 +33,7 @@ def create_profile(
         description=profile_data.description,
         http_username=profile_data.http_username,
         http_password_encrypted=encrypted_password,
+        auto_sync=bool(profile_data.auto_sync),
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )
@@ -90,6 +91,59 @@ def update_profile(
     db.commit()
     db.refresh(profile)
     return profile
+
+
+def sync_profile_session(
+    db: Session,
+    profile_id: int,
+    user_id: int,
+    session_data: dict
+) -> BrowserProfile:
+    """Encrypt and store session data for a browser profile."""
+    profile = get_profile_by_user(db=db, profile_id=profile_id, user_id=user_id)
+    if not profile:
+        raise ValueError("Profile not found")
+
+    encryption_service = _get_encryption_service()
+    profile.cookies_encrypted = encryption_service.encrypt_json(session_data.get("cookies", []))
+    profile.local_storage_encrypted = encryption_service.encrypt_json(
+        session_data.get("localStorage", {})
+    )
+    profile.session_storage_encrypted = encryption_service.encrypt_json(
+        session_data.get("sessionStorage", {})
+    )
+    profile.last_sync_at = datetime.utcnow()
+    profile.updated_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(profile)
+    return profile
+
+
+def load_profile_session(
+    db: Session,
+    profile_id: int,
+    user_id: int
+) -> Optional[dict]:
+    """Decrypt and return session data for execution."""
+    profile = get_profile_by_user(db=db, profile_id=profile_id, user_id=user_id)
+    if not profile or not profile.has_session_data:
+        return None
+
+    encryption_service = _get_encryption_service()
+
+    session_storage = (
+        encryption_service.decrypt_json(profile.session_storage_encrypted)
+        if profile.session_storage_encrypted
+        else {}
+    )
+
+    return {
+        "cookies": encryption_service.decrypt_json(profile.cookies_encrypted) if profile.cookies_encrypted else [],
+        "localStorage": encryption_service.decrypt_json(profile.local_storage_encrypted) if profile.local_storage_encrypted else {},
+        "sessionStorage": session_storage,
+        "http_credentials": get_http_credentials(db=db, profile_id=profile_id, user_id=user_id)
+    }
 
 
 def get_http_credentials(

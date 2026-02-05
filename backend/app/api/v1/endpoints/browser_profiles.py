@@ -2,12 +2,7 @@
 Browser Profile API endpoints for Browser Profile Session Persistence.
 Created: February 3, 2026
 """
-import json
-import zipfile
-import io
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -18,8 +13,7 @@ from app.schemas.browser_profile import (
     BrowserProfileUpdate,
     BrowserProfileResponse,
     BrowserProfileListResponse,
-    BrowserProfileExportRequest,
-    BrowserProfileExportResponse
+    BrowserProfileSyncRequest
 )
 from app.crud import browser_profile as crud_profile
 from app.services.debug_session_service import get_debug_session_service
@@ -38,8 +32,7 @@ async def create_browser_profile(
     
     **Authentication required**
     
-    Creates metadata-only registry entry. No session data stored on server.
-    User must manually log in and export profile to capture session data.
+    Creates profile registry entry. Session data is synced separately after manual login.
     
     **Request Body:**
     - `profile_name`: Human-readable name (e.g., "Windows 11 - Logged In")
@@ -202,15 +195,15 @@ async def delete_browser_profile(
         )
 
 
-@router.post("/browser-profiles/{profile_id}/export")
-async def export_browser_profile(
+@router.post("/browser-profiles/{profile_id}/sync", response_model=BrowserProfileResponse)
+async def sync_browser_profile(
     profile_id: int,
-    request: BrowserProfileExportRequest,
+    request: BrowserProfileSyncRequest,
     current_user: User = Depends(deps.get_current_user),
     db: Session = Depends(deps.get_db)
 ):
     """
-    Export browser session data from a debug session (after manual login).
+    Sync browser session data from a debug session (after manual login).
     
     **Authentication required**
     
@@ -219,10 +212,10 @@ async def export_browser_profile(
     2. User manually logs in to website in debug browser
     3. User calls this endpoint with session_id
     4. System exports cookies, localStorage, sessionStorage
-    5. System packages data as ZIP file (profile.json inside)
-    6. Returns download link and updates profile's last_sync_at
+    5. System encrypts and stores data in database
+    6. Updates profile's last_sync_at
     
-    **Security:** All data handled in-memory only, no disk writes.
+    **Security:** Session data is encrypted at rest using CREDENTIAL_ENCRYPTION_KEY.
     
     **Request Body:**
     - `session_id`: Active debug session ID from /debug/start
@@ -256,43 +249,14 @@ async def export_browser_profile(
         
         # Export profile data from browser
         profile_data = await stagehand_service.export_browser_profile()
-        
-        # Create in-memory ZIP file
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-            # Add profile data as JSON
-            profile_json = json.dumps(profile_data, indent=2)
-            zip_file.writestr("profile.json", profile_json)
-            
-            # Add metadata
-            metadata = {
-                "profile_id": profile_id,
-                "profile_name": profile.profile_name,
-                "os_type": profile.os_type,
-                "browser_type": profile.browser_type,
-                "exported_at": profile_data["exported_at"]
-            }
-            zip_file.writestr("metadata.json", json.dumps(metadata, indent=2))
-        
-        # Get file size
-        file_size_bytes = zip_buffer.tell()
-        
-        # Update profile's last_sync_at timestamp
-        crud_profile.update_last_sync(db=db, profile=profile)
-        
-        # Return response with file download
-        zip_buffer.seek(0)
-        
-        # Create safe filename (replace spaces with underscores)
-        safe_filename = profile.profile_name.replace(" ", "_").replace("/", "_")
-        
-        return StreamingResponse(
-            zip_buffer,
-            media_type="application/zip",
-            headers={
-                "Content-Disposition": f'attachment; filename="{safe_filename}.zip"'
-            }
+        synced_profile = crud_profile.sync_profile_session(
+            db=db,
+            profile_id=profile_id,
+            user_id=current_user.id,
+            session_data=profile_data
         )
+
+        return synced_profile
         
     except HTTPException:
         raise
@@ -308,72 +272,29 @@ async def export_browser_profile(
         )
 
 
-@router.post("/browser-profiles/upload", response_model=dict)
-async def upload_browser_profile(
-    file: UploadFile = File(...),
-    current_user: User = Depends(deps.get_current_user)
+@router.get("/browser-profiles/{profile_id}/session", response_model=dict)
+async def get_browser_profile_session(
+    profile_id: int,
+    current_user: User = Depends(deps.get_current_user),
+    db: Session = Depends(deps.get_db)
 ):
     """
-    Upload and parse a browser profile ZIP file for use in test execution.
+    Load decrypted session data for a browser profile.
     
     **Authentication required**
     
-    **Security:** File processed entirely in RAM, no disk writes, auto-cleaned by garbage collection.
-    
-    **Workflow:**
-    1. User uploads profile ZIP file
-    2. System extracts profile.json in-memory
-    3. Returns profile_data dict for use in execution request
-    4. User includes profile_data in POST /executions request
-    
-    **Returns:**
-    - `profile_data`: Dict with cookies, localStorage, sessionStorage
-    - `metadata`: Profile metadata from ZIP
-    - `file_size_bytes`: Size of uploaded file
+    Returns cookies, localStorage, and sessionStorage for injection.
     """
-    try:
-        # Read ZIP file into memory
-        contents = await file.read()
-        file_size_bytes = len(contents)
-        
-        # Extract profile data from ZIP (in-memory only)
-        with zipfile.ZipFile(io.BytesIO(contents), 'r') as zip_file:
-            # Read profile.json
-            if "profile.json" not in zip_file.namelist():
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid profile file: missing profile.json"
-                )
-            
-            profile_json = zip_file.read("profile.json").decode('utf-8')
-            profile_data = json.loads(profile_json)
-            
-            # Read metadata.json (optional)
-            metadata = None
-            if "metadata.json" in zip_file.namelist():
-                metadata_json = zip_file.read("metadata.json").decode('utf-8')
-                metadata = json.loads(metadata_json)
-        
-        return {
-            "success": True,
-            "message": "Profile uploaded and parsed successfully",
-            "profile_data": profile_data,
-            "metadata": metadata,
-            "file_size_bytes": file_size_bytes
-        }
-        
-    except json.JSONDecodeError as e:
+    session_data = crud_profile.load_profile_session(
+        db=db,
+        profile_id=profile_id,
+        user_id=current_user.id
+    )
+
+    if not session_data:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid JSON in profile file: {str(e)}"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Profile has no synced session data"
         )
-    except zipfile.BadZipFile:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid ZIP file format"
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to process profile file: {str(e)}"
-        )
+
+    return session_data

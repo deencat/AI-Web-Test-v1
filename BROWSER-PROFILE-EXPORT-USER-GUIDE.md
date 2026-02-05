@@ -1,4 +1,4 @@
-# Browser Profile Export: User Guide
+# Browser Profile Sync: User Guide
 **Simplified Workflow with Swagger UI**
 
 **Date:** February 3, 2026  
@@ -8,7 +8,7 @@
 
 ## Overview
 
-This guide explains how to export browser session data (cookies, localStorage, sessionStorage) using the improved UI with step-by-step guidance.
+This guide explains how to sync browser session data (cookies, localStorage, sessionStorage) to server-side storage using the improved UI with step-by-step guidance.
 
 ### Why Use Swagger UI?
 
@@ -22,13 +22,13 @@ The debug session endpoint requires an existing `execution_id`, which makes it i
 
 ---
 
-## Export Workflow (Step-by-Step)
+## Sync Workflow (Step-by-Step)
 
-### **Step 1: Open the Export Dialog**
+### **Step 1: Open the Sync Dialog**
 
 1. Navigate to **Browser Profiles** page
-2. Click **Export** button on any profile
-3. The Export Modal opens with detailed instructions
+2. Click **Sync** button on any profile
+3. The Sync Modal opens with detailed instructions
 
 ### **Step 2: Open Swagger UI**
 
@@ -93,22 +93,19 @@ Back in Swagger UI, scroll down to the **Response body**:
 
 **Copy the `session_id`** value (e.g., `debug_abc123def456`)
 
-### **Step 7: Export & Download**
+### **Step 7: Sync Profile**
 
 Back in the Browser Profiles page:
 
 1. **Paste the session_id** into the input field
-2. Click **"Export & Download"**
-3. **ZIP file downloads automatically** to your device
-
-**File name format:** `{profile_name}_{date}.zip`  
-**Example:** `windows_11_admin_session_2026-02-03.zip`
+2. Click **"Sync Profile"**
+3. Session data is encrypted and stored on the server
 
 ---
 
-## What's in the ZIP File?
+## What's Stored on the Server?
 
-The exported ZIP contains a single file: `profile_data.json`
+The synced session data is stored encrypted and has the same structure as the browser data below:
 
 ```json
 {
@@ -142,7 +139,7 @@ The exported ZIP contains a single file: `profile_data.json`
 
 ### **Interactive Instructions**
 
-The Export Modal includes:
+The Sync Modal includes:
 
 - ✅ **Numbered step-by-step guide**
 - ✅ **Clickable links** (Swagger UI opens in new tab)
@@ -204,7 +201,7 @@ We considered creating a new `/debug/standalone-session` endpoint, but:
 ### **For Users**
 
 1. **Use meaningful profile names**: `Production_Admin_User` not `Profile1`
-2. **Keep sessions fresh**: Export profiles weekly if cookies expire
+2. **Keep sessions fresh**: Sync profiles weekly if cookies expire
 3. **Test before sharing**: Upload and test profile before sharing with team
 4. **Document context**: Use description field to note what's logged in
 
@@ -242,19 +239,19 @@ curl -s http://localhost:8000/api/v1/executions \
 - Verify backend is running and accessible
 - Check backend logs for errors
 
-### **Problem: Session ID not working for export**
+### **Problem: Session ID not working for sync**
 
 **Solution:**
 - Verify session is still active (hasn't timed out)
 - Confirm browser window is still open
 - Check session ID is copied correctly (no extra spaces)
 
-### **Problem: ZIP file is empty or corrupted**
+### **Problem: Session not saved after sync**
 
 **Solution:**
 - Make sure you logged in and generated session data
 - Verify cookies were set (check DevTools → Application → Cookies)
-- Try exporting again with a fresh session
+- Retry sync with a fresh session
 
 ---
 
@@ -262,19 +259,19 @@ curl -s http://localhost:8000/api/v1/executions \
 
 ### **Session Data is Sensitive**
 
-The exported ZIP file contains:
+The synced session data includes:
 - 🔒 Authentication tokens
 - 🔒 User session cookies
 - 🔒 Stored credentials (if saved in localStorage)
 - 🔒 Personal preferences and data
 
-**⚠️ Never share profile ZIPs publicly or commit to version control!**
+**⚠️ Never share session data or tokens publicly!**
 
 ### **Data Privacy**
 
-- ✅ **In-memory processing**: Session data never written to server disk
-- ✅ **User-controlled**: You own the ZIP file, delete anytime
-- ✅ **GDPR compliant**: No server-side storage of personal data
+- ✅ **Encrypted at rest**: Session data stored encrypted in the database
+- ✅ **User-controlled**: You can delete profiles anytime
+- ✅ **GDPR compliant**: Encrypted server-side storage with user ownership
 - ✅ **Temporary sessions**: Debug sessions auto-cleanup after timeout
 
 ---
@@ -285,7 +282,7 @@ For power users, you can automate the workflow with a script:
 
 ```bash
 #!/bin/bash
-# export_profile.sh
+# sync_profile.sh
 
 TOKEN="YOUR_TOKEN_HERE"
 PROFILE_ID=1
@@ -301,14 +298,13 @@ echo "Debug session started: $SESSION_ID"
 echo "⏸️  Please log in manually in the browser window..."
 read -p "Press Enter when logged in..."
 
-# 2. Export profile
-curl -X POST "http://localhost:8000/api/v1/browser-profiles/$PROFILE_ID/export" \
+# 2. Sync profile
+curl -X POST "http://localhost:8000/api/v1/browser-profiles/$PROFILE_ID/sync" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d "{\"session_id\": \"$SESSION_ID\"}" \
-  -o "profile_$PROFILE_ID.zip"
+  -d "{\"session_id\": \"$SESSION_ID\"}"
 
-echo "✅ Profile exported to profile_$PROFILE_ID.zip"
+echo "✅ Profile synced successfully"
 ```
 
 ---
@@ -318,9 +314,9 @@ echo "✅ Profile exported to profile_$PROFILE_ID.zip"
 Potential improvements for future sprints:
 
 1. **Standalone Session Endpoint**: Add `/debug/standalone-browser` endpoint
-2. **One-Click Export**: Frontend button that handles entire workflow
+2. **One-Click Sync**: Frontend button that handles entire workflow
 3. **Session Manager**: UI to view/manage active debug sessions
-4. **Auto-Sync**: Periodic background export of active sessions
+4. **Auto-Sync**: Periodic background sync of active sessions
 5. **Profile Scheduler**: Automated profile updates on schedule
 
 ---
@@ -358,9 +354,9 @@ curl -X POST http://localhost:8000/api/v1/debug/start \
 
 ## Summary
 
-The Browser Profile Export workflow now provides:
+The Browser Profile Sync workflow now provides:
 
-1. **Clear UI guidance** - Step-by-step instructions in the export modal
+1. **Clear UI guidance** - Step-by-step instructions in the sync modal
 2. **Swagger UI integration** - Leverage existing API documentation
 3. **Copy-paste helpers** - One-click copy of JSON snippets
 4. **Visual workflow** - See exactly what's happening at each step

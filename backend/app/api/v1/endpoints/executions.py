@@ -149,6 +149,23 @@ async def run_test_with_playwright(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="base_url is required for test execution"
         )
+
+    if request.browser_profile_id:
+        profile = crud_browser_profiles.get_profile_by_user(
+            db=db,
+            profile_id=request.browser_profile_id,
+            user_id=current_user.id
+        )
+        if not profile:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Browser profile {request.browser_profile_id} not found"
+            )
+        if not profile.has_session_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Browser profile has no synced session data"
+            )
     
     # Create initial execution record with QUEUED status (Sprint 3 Day 2)
     execution = crud_executions.create_execution(
@@ -166,11 +183,11 @@ async def run_test_with_playwright(
         execution.triggered_by = request.triggered_by
 
     trigger_details = {}
-    if request.browser_profile_data:
-        trigger_details["browser_profile_data"] = request.browser_profile_data
-
     if request.browser_profile_id:
         trigger_details["browser_profile_id"] = request.browser_profile_id
+
+    if request.browser_profile_data:
+        trigger_details["browser_profile_data"] = request.browser_profile_data
 
     if trigger_details:
         execution.trigger_details = json.dumps(trigger_details)

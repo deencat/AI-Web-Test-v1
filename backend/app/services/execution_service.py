@@ -245,6 +245,46 @@ class ExecutionService:
                 session_storage
             )
             logger.info(f"[INFO] ✅ Injected {len(session_storage)} sessionStorage items")
+
+    async def export_profile_session(self) -> Optional[Dict[str, Any]]:
+        """Export cookies, localStorage, and sessionStorage from the current page."""
+        if not self.page or not self.context:
+            return None
+
+        cookies = await self.context.cookies()
+
+        local_storage = await self.page.evaluate(
+            """
+            () => {
+                const storage = {};
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    storage[key] = localStorage.getItem(key);
+                }
+                return storage;
+            }
+            """
+        )
+
+        session_storage = await self.page.evaluate(
+            """
+            () => {
+                const storage = {};
+                for (let i = 0; i < sessionStorage.length; i++) {
+                    const key = sessionStorage.key(i);
+                    storage[key] = sessionStorage.getItem(key);
+                }
+                return storage;
+            }
+            """
+        )
+
+        return {
+            "cookies": cookies,
+            "localStorage": local_storage,
+            "sessionStorage": session_storage,
+            "exported_at": datetime.utcnow().isoformat()
+        }
     
     async def execute_test(
         self,

@@ -8,7 +8,7 @@ import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
-import { Plus, Edit2, Trash2, Download, Upload, RefreshCw, Play, ExternalLink, Copy, Lock } from 'lucide-react';
+import { Plus, Edit2, Trash2, RefreshCw, Play, ExternalLink, Copy, Lock } from 'lucide-react';
 import browserProfileService from '../services/browserProfileService';
 import debugService from '../services/debugService';
 import type { BrowserProfile, BrowserProfileFormData } from '../types/browserProfile';
@@ -24,7 +24,6 @@ export const BrowserProfilesPage: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
-  const [showUploadModal, setShowUploadModal] = useState(false);
   
   // Form state
   const [formData, setFormData] = useState<BrowserProfileFormData>({
@@ -33,24 +32,20 @@ export const BrowserProfilesPage: React.FC = () => {
     browser_type: 'chromium',
     description: '',
     http_username: '',
-    http_password: ''
+    http_password: '',
+    auto_sync: false
   });
   const [editingProfile, setEditingProfile] = useState<BrowserProfile | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [clearHttpCredentials, setClearHttpCredentials] = useState(false);
   
-  // Export state
+  // Sync state
   const [exportProfileId, setExportProfileId] = useState<number | null>(null);
   const [sessionId, setSessionId] = useState('');
   const [exporting, setExporting] = useState(false);
   const [showInstructions, setShowInstructions] = useState(true);
   const [startingBrowser, setStartingBrowser] = useState(false);
   
-  // Upload state
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
-
   // Load profiles on mount
   useEffect(() => {
     loadProfiles();
@@ -82,7 +77,8 @@ export const BrowserProfilesPage: React.FC = () => {
         browser_type: formData.browser_type as 'chromium' | 'firefox' | 'webkit',
         description: formData.description || undefined,
         http_username: formData.http_username || undefined,
-        http_password: formData.http_password || undefined
+        http_password: formData.http_password || undefined,
+        auto_sync: formData.auto_sync
       });
       
       setShowCreateModal(false);
@@ -92,7 +88,8 @@ export const BrowserProfilesPage: React.FC = () => {
         browser_type: 'chromium',
         description: '',
         http_username: '',
-        http_password: ''
+        http_password: '',
+        auto_sync: false
       });
       setClearHttpCredentials(false);
       await loadProfiles();
@@ -111,7 +108,8 @@ export const BrowserProfilesPage: React.FC = () => {
       browser_type: profile.browser_type,
       description: profile.description || '',
       http_username: profile.http_username || '',
-      http_password: ''
+      http_password: '',
+      auto_sync: profile.auto_sync ?? false
     });
     setClearHttpCredentials(false);
     setShowEditModal(true);
@@ -132,6 +130,7 @@ export const BrowserProfilesPage: React.FC = () => {
         description: formData.description || undefined,
         http_username: formData.http_username || undefined,
         http_password: formData.http_password || undefined,
+        auto_sync: formData.auto_sync,
         clear_http_credentials: clearHttpCredentials
       });
       
@@ -173,7 +172,7 @@ export const BrowserProfilesPage: React.FC = () => {
       
       setSessionId(response.session_id);
       
-      alert(`✅ Browser started successfully!\n\nSession ID: ${response.session_id}\n\nA browser window has opened. Please:\n1. Navigate to your website\n2. Log in with your credentials\n3. Browse around to generate session data\n4. Come back here and click "Export & Download"\n\n⚠️ Keep the browser window open!`);
+  alert(`✅ Browser started successfully!\n\nSession ID: ${response.session_id}\n\nA browser window has opened. Please:\n1. Navigate to your website\n2. Log in with your credentials\n3. Browse around to generate session data\n4. Come back here and click "Sync Profile"\n\n⚠️ Keep the browser window open!`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start browser');
     } finally {
@@ -188,61 +187,17 @@ export const BrowserProfilesPage: React.FC = () => {
     try {
       setExporting(true);
       setError(null);
-      
-      const blob = await browserProfileService.exportProfile(exportProfileId, sessionId);
-      const profile = profiles.find(p => p.id === exportProfileId);
-      const filename = profile ? browserProfileService.getProfileFilename(profile) : `profile_${exportProfileId}.zip`;
-      
-      browserProfileService.downloadProfileBlob(blob, filename);
-      
+
+      await browserProfileService.syncProfileSession(exportProfileId, sessionId);
+
       setShowExportModal(false);
       setExportProfileId(null);
       setSessionId('');
       await loadProfiles(); // Refresh to update last_sync_at
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to export profile');
+      setError(err instanceof Error ? err.message : 'Failed to sync profile');
     } finally {
       setExporting(false);
-    }
-  };
-
-  const handleUpload = async () => {
-    if (!uploadFile) return;
-    
-    try {
-      setUploading(true);
-      setError(null);
-      
-      const response = await browserProfileService.uploadProfile(uploadFile);
-      
-      alert(`Profile uploaded successfully! ${response.profile_data.cookies.length} cookies, ${Object.keys(response.profile_data.localStorage).length} localStorage items.`);
-      
-      setShowUploadModal(false);
-      setUploadFile(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to upload profile');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true);
-    } else if (e.type === 'dragleave') {
-      setDragActive(false);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setUploadFile(e.dataTransfer.files[0]);
     }
   };
 
@@ -284,13 +239,6 @@ export const BrowserProfilesPage: React.FC = () => {
           >
             <Plus className="w-4 h-4 mr-2" />
             Create Profile
-          </Button>
-          <Button
-            onClick={() => setShowUploadModal(true)}
-            className="bg-green-600 hover:bg-green-700 text-white"
-          >
-            <Upload className="w-4 h-4 mr-2" />
-            Upload Profile
           </Button>
           <Button
             onClick={loadProfiles}
@@ -344,6 +292,7 @@ export const BrowserProfilesPage: React.FC = () => {
                 <div className="text-xs text-gray-500 dark:text-gray-500 mb-3">
                   <div>Created: {browserProfileService.formatDate(profile.created_at)}</div>
                   <div>Last Sync: {browserProfileService.formatDate(profile.last_sync_at)}</div>
+                  <div>Auto-Sync: {profile.auto_sync ? 'Enabled' : 'Off'}</div>
                 </div>
 
                 <div className="flex gap-2">
@@ -358,8 +307,8 @@ export const BrowserProfilesPage: React.FC = () => {
                     onClick={() => handleExport(profile)}
                     className="flex-1 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-700 dark:text-blue-300"
                   >
-                    <Download className="w-4 h-4 mr-1" />
-                    Export
+                    <RefreshCw className="w-4 h-4 mr-1" />
+                    Sync
                   </Button>
                   <Button
                     onClick={() => handleDelete(profile.id)}
@@ -442,6 +391,26 @@ export const BrowserProfilesPage: React.FC = () => {
                       placeholder="Optional description"
                     />
                   </div>
+
+                  <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={formData.auto_sync ?? false}
+                      onChange={(e) => setFormData({ ...formData, auto_sync: e.target.checked })}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    Auto-sync session after test runs
+                  </label>
+
+                  <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={formData.auto_sync ?? false}
+                      onChange={(e) => setFormData({ ...formData, auto_sync: e.target.checked })}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    Auto-sync session after test runs
+                  </label>
 
                   <div className="border-t pt-4">
                     <div className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -633,11 +602,11 @@ export const BrowserProfilesPage: React.FC = () => {
           </div>
         )}
 
-        {/* Export Modal */}
+        {/* Sync Modal */}
         {showExportModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <Card className="w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
-              <h2 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Export Browser Profile</h2>
+              <h2 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Sync Browser Profile</h2>
               
               {/* Quick Action: Start Browser */}
               <div className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
@@ -774,7 +743,7 @@ export const BrowserProfilesPage: React.FC = () => {
                     <li className="flex gap-2">
                       <span className="font-bold min-w-[24px]">6.</span>
                       <div>
-                        <strong>Click "Export & Download" below</strong> to capture and download your session
+                        <strong>Click "Sync Profile" below</strong> to save the session to the server
                       </div>
                     </li>
                   </ol>
@@ -812,7 +781,7 @@ export const BrowserProfilesPage: React.FC = () => {
 
                 <div className="flex gap-3 mt-6">
                   <Button type="submit" disabled={exporting} className="flex-1 bg-green-600 hover:bg-green-700 text-white">
-                    {exporting ? 'Exporting...' : 'Export & Download'}
+                    {exporting ? 'Syncing...' : 'Sync Profile'}
                   </Button>
                   <Button
                     type="button"
@@ -828,68 +797,6 @@ export const BrowserProfilesPage: React.FC = () => {
                   </Button>
                 </div>
               </form>
-            </Card>
-          </div>
-        )}
-
-        {/* Upload Modal */}
-        {showUploadModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <Card className="w-full max-w-md p-6">
-              <h2 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Upload Profile</h2>
-              <div className="mb-4 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-                <p className="text-sm text-green-800 dark:text-green-200">
-                  Upload a previously exported profile ZIP file. The profile data will be parsed and ready to use in test execution.
-                </p>
-              </div>
-
-              <div
-                className={`border-2 border-dashed rounded-lg p-8 text-center ${
-                  dragActive
-                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                    : 'border-gray-300 dark:border-gray-600'
-                }`}
-                onDragEnter={handleDrag}
-                onDragLeave={handleDrag}
-                onDragOver={handleDrag}
-                onDrop={handleDrop}
-              >
-                <Upload className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-                <p className="text-gray-600 dark:text-gray-400 mb-2">
-                  {uploadFile ? uploadFile.name : 'Drag & drop profile ZIP file here'}
-                </p>
-                <p className="text-sm text-gray-500 dark:text-gray-500 mb-4">or</p>
-                <label className="cursor-pointer">
-                  <span className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
-                    Browse Files
-                  </span>
-                  <input
-                    type="file"
-                    accept=".zip"
-                    className="hidden"
-                    onChange={(e) => e.target.files && setUploadFile(e.target.files[0])}
-                  />
-                </label>
-              </div>
-
-              <div className="flex gap-3 mt-6">
-                <Button
-                  onClick={handleUpload}
-                  disabled={!uploadFile || uploading}
-                  className="flex-1 bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
-                >
-                  {uploading ? 'Uploading...' : 'Upload Profile'}
-                </Button>
-                <Button
-                  onClick={() => {
-                    setShowUploadModal(false);
-                    setUploadFile(null);
-                  }}
-                  className="flex-1 bg-gray-300 hover:bg-gray-400 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200"
-                >
-                  Cancel
-                </Button>
-              </div>
             </Card>
           </div>
         )}
