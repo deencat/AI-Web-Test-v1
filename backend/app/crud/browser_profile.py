@@ -8,6 +8,11 @@ from datetime import datetime
 
 from app.models.browser_profile import BrowserProfile
 from app.schemas.browser_profile import BrowserProfileCreate, BrowserProfileUpdate
+from app.services.encryption_service import EncryptionService
+
+
+def _get_encryption_service() -> EncryptionService:
+    return EncryptionService()
 
 
 def create_profile(
@@ -16,12 +21,18 @@ def create_profile(
     profile_data: BrowserProfileCreate
 ) -> BrowserProfile:
     """Create a new browser profile registry entry."""
+    encrypted_password = None
+    if profile_data.http_password:
+        encrypted_password = _get_encryption_service().encrypt_password(profile_data.http_password)
+
     profile = BrowserProfile(
         user_id=user_id,
         profile_name=profile_data.profile_name,
         os_type=profile_data.os_type,
         browser_type=profile_data.browser_type,
         description=profile_data.description,
+        http_username=profile_data.http_username,
+        http_password_encrypted=encrypted_password,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )
@@ -59,6 +70,17 @@ def update_profile(
 ) -> BrowserProfile:
     """Update an existing browser profile."""
     update_data = profile_data.dict(exclude_unset=True)
+
+    if update_data.pop("clear_http_credentials", False):
+        profile.http_username = None
+        profile.http_password_encrypted = None
+        update_data.pop("http_username", None)
+        update_data.pop("http_password", None)
+
+    if "http_password" in update_data:
+        http_password = update_data.pop("http_password")
+        if http_password:
+            profile.http_password_encrypted = _get_encryption_service().encrypt_password(http_password)
     
     for field, value in update_data.items():
         setattr(profile, field, value)
@@ -68,6 +90,23 @@ def update_profile(
     db.commit()
     db.refresh(profile)
     return profile
+
+
+def get_http_credentials(
+    db: Session,
+    profile_id: int,
+    user_id: int
+) -> Optional[dict]:
+    """Return decrypted HTTP credentials for a profile if available."""
+    profile = get_profile_by_user(db=db, profile_id=profile_id, user_id=user_id)
+    if not profile or not profile.has_http_credentials:
+        return None
+
+    password = _get_encryption_service().decrypt_password(profile.http_password_encrypted)
+    return {
+        "username": profile.http_username,
+        "password": password
+    }
 
 
 def delete_profile(db: Session, profile: BrowserProfile) -> bool:

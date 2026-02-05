@@ -32,6 +32,11 @@ class BrowserProfile(Base):
     os_type = Column(String(20), nullable=False)  # "windows", "linux", "macos"
     browser_type = Column(String(20), nullable=False, default="chromium")  # "chromium", "firefox", "webkit"
     description = Column(Text, nullable=True)
+
+    # Optional HTTP Basic Auth credentials (encrypted at rest)
+    http_username = Column(String(255), nullable=True)
+    http_password_encrypted = Column(Text, nullable=True)
+    encryption_key_id = Column(Integer, nullable=True)
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -40,6 +45,10 @@ class BrowserProfile(Base):
     
     # Relationships
     user = relationship("User", back_populates="browser_profiles")
+
+    @property
+    def has_http_credentials(self) -> bool:
+        return bool(self.http_username and self.http_password_encrypted)
 
     def __repr__(self):
         return f"<BrowserProfile(id={self.id}, name='{self.profile_name}', os='{self.os_type}', user_id={self.user_id})>"

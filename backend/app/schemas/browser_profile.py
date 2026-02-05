@@ -32,7 +32,8 @@ class BrowserProfileBase(BaseModel):
 
 class BrowserProfileCreate(BrowserProfileBase):
     """Schema for creating a new browser profile"""
-    pass
+    http_username: Optional[str] = Field(None, max_length=255, description="Optional HTTP Basic Auth username")
+    http_password: Optional[str] = Field(None, max_length=255, description="Optional HTTP Basic Auth password")
 
 
 class BrowserProfileUpdate(BaseModel):
@@ -41,6 +42,12 @@ class BrowserProfileUpdate(BaseModel):
     os_type: Optional[str] = None
     browser_type: Optional[str] = None
     description: Optional[str] = None
+    http_username: Optional[str] = Field(None, max_length=255, description="HTTP Basic Auth username")
+    http_password: Optional[str] = Field(None, max_length=255, description="HTTP Basic Auth password")
+    clear_http_credentials: Optional[bool] = Field(
+        default=False,
+        description="If true, clears stored HTTP credentials"
+    )
 
     @validator('os_type')
     def validate_os_type(cls, v):
@@ -68,6 +75,8 @@ class BrowserProfileResponse(BrowserProfileBase):
     created_at: datetime
     updated_at: datetime
     last_sync_at: Optional[datetime] = None
+    has_http_credentials: bool = Field(False, description="Indicates if HTTP credentials are configured")
+    http_username: Optional[str] = Field(None, description="Configured HTTP Basic Auth username")
 
     class Config:
         from_attributes = True
