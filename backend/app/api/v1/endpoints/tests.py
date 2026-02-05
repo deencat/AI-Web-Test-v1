@@ -18,6 +18,47 @@ from app.crud import test_case as crud
 router = APIRouter()
 
 
+def sanitize_test_case_for_response(test_case):
+    """
+    Sanitize test case data to handle empty strings in description and expected_result.
+    This ensures backward compatibility with existing test cases that may have empty strings.
+    Converts SQLAlchemy model to Pydantic model with sanitized fields.
+    """
+    # Create a dict from the SQLAlchemy object without modifying it
+    # Handle None and empty strings for description and expected_result
+    description = test_case.description
+    if not description or (isinstance(description, str) and description.strip() == ''):
+        description = 'No description provided'
+    
+    expected_result = test_case.expected_result
+    if not expected_result or (isinstance(expected_result, str) and expected_result.strip() == ''):
+        expected_result = 'No expected result specified'
+    
+    test_case_dict = {
+        'id': test_case.id,
+        'title': test_case.title,
+        'description': description,
+        'test_type': test_case.test_type,
+        'priority': test_case.priority,
+        'status': test_case.status,
+        'steps': test_case.steps,
+        'expected_result': expected_result,
+        'preconditions': test_case.preconditions,
+        'test_data': test_case.test_data,
+        'category_id': test_case.category_id,
+        'tags': test_case.tags,
+        'test_metadata': test_case.test_metadata,
+        'created_at': test_case.created_at,
+        'updated_at': test_case.updated_at,
+        'user_id': test_case.user_id,
+        'scenario_id': test_case.scenario_id,
+        'template_id': test_case.template_id,
+    }
+    
+    # Convert dict to Pydantic model
+    return TestCaseResponse.model_validate(test_case_dict)
+
+
 @router.get("/stats", response_model=TestStatistics)
 def get_test_statistics(
     user_id: Optional[int] = Query(None, description="Filter statistics by user ID"),
@@ -117,8 +158,11 @@ def list_test_cases(
         user_id=user_id
     )
     
+    # Sanitize test cases to handle empty strings in description and expected_result
+    sanitized_cases = [sanitize_test_case_for_response(test_case) for test_case in test_cases]
+    
     return TestCaseListResponse(
-        items=test_cases,
+        items=sanitized_cases,
         total=total,
         skip=skip,
         limit=limit
