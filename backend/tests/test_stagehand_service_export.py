@@ -38,7 +38,8 @@ async def test_export_profile_handles_local_storage_security_error():
 
 
 @pytest.mark.asyncio
-async def test_export_profile_skips_storage_on_restricted_url():
+@pytest.mark.parametrize("url", ["about:blank", "chrome-error://chromewebdata/"])
+async def test_export_profile_skips_storage_on_restricted_url(url):
     service = StagehandExecutionService()
 
     mock_context = SimpleNamespace()
@@ -46,7 +47,7 @@ async def test_export_profile_skips_storage_on_restricted_url():
 
     mock_page = SimpleNamespace()
     mock_page.context = mock_context
-    mock_page.url = "about:blank"
+    mock_page.url = url
     mock_page.evaluate = AsyncMock()
 
     service.page = SimpleNamespace(_page=mock_page)
