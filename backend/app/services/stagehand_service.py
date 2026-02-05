@@ -624,7 +624,16 @@ class StagehandExecutionService:
                     )
                     return {}
 
-            restricted_schemes = ("about:", "chrome:", "edge:", "data:")
+            restricted_schemes = (
+                "about:",
+                "chrome:",
+                "chrome-error:",
+                "chrome-extension:",
+                "edge:",
+                "data:",
+                "file:",
+                "view-source:",
+            )
             if page_url.startswith(restricted_schemes):
                 print(
                     f"[WARN] ⚠️ Skipping storage export for restricted page URL: {page_url or 'unknown'}"
