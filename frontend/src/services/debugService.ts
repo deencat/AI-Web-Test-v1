@@ -312,8 +312,8 @@ class DebugService {
   }
 
   /**
-   * Start a standalone browser session for manual browsing/login
-   * (for browser profile export)
+  * Start a standalone browser session for manual browsing/login
+  * (for browser profile sync)
    */
   async startStandaloneBrowser(browser: 'chromium' | 'firefox' | 'webkit' = 'chromium', headless: boolean = false): Promise<DebugSessionStartResponse> {
     if (apiHelpers.useMockData()) {

@@ -629,7 +629,7 @@ async def start_standalone_browser(
     1. Call this endpoint to start browser
     2. Browser window opens automatically
     3. Manually navigate and log in to your website
-    4. Use the returned `session_id` to export profile via `/browser-profiles/{id}/export`
+    4. Use the returned `session_id` to sync profile via `/browser-profiles/{id}/sync`
     """
     debug_service = get_debug_session_service()
     

@@ -188,7 +188,7 @@ class ExecutionStartRequest(BaseModel):
     triggered_by: str = Field(default="manual", max_length=50, description="Execution trigger")
     browser_profile_id: Optional[int] = Field(
         None,
-        description="Browser profile ID for stored HTTP credentials"
+        description="Browser profile ID for stored session data and HTTP credentials"
     )
     browser_profile_data: Optional[Dict[str, Any]] = Field(
         None,

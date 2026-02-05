@@ -34,6 +34,10 @@ class BrowserProfileCreate(BrowserProfileBase):
     """Schema for creating a new browser profile"""
     http_username: Optional[str] = Field(None, max_length=255, description="Optional HTTP Basic Auth username")
     http_password: Optional[str] = Field(None, max_length=255, description="Optional HTTP Basic Auth password")
+    auto_sync: Optional[bool] = Field(
+        default=False,
+        description="Auto-sync profile session data after test runs"
+    )
 
 
 class BrowserProfileUpdate(BaseModel):
@@ -42,6 +46,10 @@ class BrowserProfileUpdate(BaseModel):
     os_type: Optional[str] = None
     browser_type: Optional[str] = None
     description: Optional[str] = None
+    auto_sync: Optional[bool] = Field(
+        default=None,
+        description="Auto-sync profile session data after test runs"
+    )
     http_username: Optional[str] = Field(None, max_length=255, description="HTTP Basic Auth username")
     http_password: Optional[str] = Field(None, max_length=255, description="HTTP Basic Auth password")
     clear_http_credentials: Optional[bool] = Field(
@@ -75,6 +83,8 @@ class BrowserProfileResponse(BrowserProfileBase):
     created_at: datetime
     updated_at: datetime
     last_sync_at: Optional[datetime] = None
+    auto_sync: bool = Field(False, description="Auto-sync profile session data after test runs")
+    has_session_data: bool = Field(False, description="Indicates if session data is stored server-side")
     has_http_credentials: bool = Field(False, description="Indicates if HTTP credentials are configured")
     http_username: Optional[str] = Field(None, description="Configured HTTP Basic Auth username")
 
@@ -90,6 +100,11 @@ class BrowserProfileListResponse(BaseModel):
 
 class BrowserProfileExportRequest(BaseModel):
     """Schema for requesting profile export after manual login"""
+    session_id: str = Field(..., description="Debug session ID from manual login")
+
+
+class BrowserProfileSyncRequest(BaseModel):
+    """Schema for syncing profile session data from a debug session"""
     session_id: str = Field(..., description="Debug session ID from manual login")
 
 

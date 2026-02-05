@@ -16,6 +16,7 @@ from app.services.stagehand_adapter import StagehandAdapter
 from app.db.session import SessionLocal
 from app.crud import test_execution as crud_execution
 from app.crud import test_case as crud_test
+from app.crud import browser_profile as crud_profile
 from app.models.test_execution import ExecutionStatus
 
 logger = logging.getLogger(__name__)
@@ -185,12 +186,24 @@ class QueueManager:
 
                         # Extract browser profile data (if provided)
                         browser_profile_data = None
+                        browser_profile_id = None
                         if execution.trigger_details:
                             try:
                                 trigger_details = json.loads(execution.trigger_details)
                                 browser_profile_data = trigger_details.get("browser_profile_data")
+                                browser_profile_id = trigger_details.get("browser_profile_id")
                             except Exception as e:
                                 logger.warning(f"Failed to parse trigger_details JSON: {e}")
+
+                        if browser_profile_id and not browser_profile_data:
+                            try:
+                                browser_profile_data = crud_profile.load_profile_session(
+                                    db=bg_db,
+                                    profile_id=browser_profile_id,
+                                    user_id=queued_execution.user_id
+                                )
+                            except Exception as e:
+                                logger.warning(f"Failed to load profile session data: {e}")
 
                         http_credentials = queued_execution.http_credentials
                         
@@ -238,6 +251,27 @@ class QueueManager:
                                     http_credentials=http_credentials
                                 )
                             )
+
+                            if browser_profile_id:
+                                profile = crud_profile.get_profile_by_user(
+                                    db=bg_db,
+                                    profile_id=browser_profile_id,
+                                    user_id=queued_execution.user_id
+                                )
+                                if profile and profile.auto_sync:
+                                    try:
+                                        session_snapshot = loop.run_until_complete(
+                                            service.export_profile_session()
+                                        )
+                                        if session_snapshot:
+                                            crud_profile.sync_profile_session(
+                                                db=bg_db,
+                                                profile_id=browser_profile_id,
+                                                user_id=queued_execution.user_id,
+                                                session_data=session_snapshot
+                                            )
+                                    except Exception as e:
+                                        logger.warning(f"Failed to auto-sync profile: {e}")
                             
                             # Commit final state
                             bg_db.commit()

@@ -10,8 +10,7 @@ import {
   BrowserProfileCreate,
   BrowserProfileUpdate,
   BrowserProfileListResponse,
-  BrowserProfileExportRequest,
-  BrowserProfileUploadResponse
+  BrowserProfileData
 } from '../types/browserProfile';
 
 class BrowserProfileService {
@@ -77,17 +76,13 @@ class BrowserProfileService {
   }
 
   /**
-   * Export browser profile from debug session
-   * Downloads profile as ZIP file
+   * Sync browser profile session from a debug session
    */
-  async exportProfile(profileId: number, sessionId: string): Promise<Blob> {
+  async syncProfileSession(profileId: number, sessionId: string): Promise<BrowserProfile> {
     try {
-      const response = await api.post(
-        `${this.baseURL}/${profileId}/export`,
-        { session_id: sessionId } as BrowserProfileExportRequest,
-        {
-          responseType: 'blob', // Important for file download
-        }
+      const response = await api.post<BrowserProfile>(
+        `${this.baseURL}/${profileId}/sync`,
+        { session_id: sessionId }
       );
       return response.data;
     } catch (error) {
@@ -96,50 +91,15 @@ class BrowserProfileService {
   }
 
   /**
-   * Upload browser profile ZIP file
-   * Returns profile data for use in test execution
+   * Load browser profile session data (if needed)
    */
-  async uploadProfile(file: File): Promise<BrowserProfileUploadResponse> {
+  async loadProfileSession(profileId: number): Promise<BrowserProfileData> {
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await api.post<BrowserProfileUploadResponse>(
-        `${this.baseURL}/upload`,
-        formData,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        }
-      );
+      const response = await api.get<BrowserProfileData>(`${this.baseURL}/${profileId}/session`);
       return response.data;
     } catch (error) {
       throw new Error(apiHelpers.getErrorMessage(error));
     }
-  }
-
-  /**
-   * Download profile export as file
-   * Helper method to trigger browser download
-   */
-  downloadProfileBlob(blob: Blob, filename: string): void {
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
-  }
-
-  /**
-   * Format profile name for filename
-   */
-  getProfileFilename(profile: BrowserProfile): string {
-    const safeName = profile.profile_name.replace(/[^a-z0-9]/gi, '_');
-    return `profile_${profile.id}_${safeName}.zip`;
   }
 
   /**

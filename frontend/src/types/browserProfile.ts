@@ -14,6 +14,8 @@ export interface BrowserProfile {
   created_at: string;
   updated_at: string;
   last_sync_at?: string;
+  auto_sync?: boolean;
+  has_session_data?: boolean;
   has_http_credentials?: boolean;
   http_username?: string | null;
 }
@@ -25,6 +27,7 @@ export interface BrowserProfileCreate {
   description?: string;
   http_username?: string;
   http_password?: string;
+  auto_sync?: boolean;
 }
 
 export interface BrowserProfileUpdate {
@@ -34,24 +37,13 @@ export interface BrowserProfileUpdate {
   description?: string;
   http_username?: string;
   http_password?: string;
+  auto_sync?: boolean;
   clear_http_credentials?: boolean;
 }
 
 export interface BrowserProfileListResponse {
   profiles: BrowserProfile[];
   total: number;
-}
-
-export interface BrowserProfileExportRequest {
-  session_id: string;
-}
-
-export interface BrowserProfileExportResponse {
-  success: boolean;
-  message: string;
-  profile_id: number;
-  file_size_bytes: number;
-  last_sync_at: string;
 }
 
 export interface BrowserProfileData {
@@ -70,20 +62,6 @@ export interface BrowserProfileData {
   exported_at: string;
 }
 
-export interface BrowserProfileUploadResponse {
-  success: boolean;
-  message: string;
-  profile_data: BrowserProfileData;
-  metadata?: {
-    profile_id: number;
-    profile_name: string;
-    os_type: string;
-    browser_type: string;
-    exported_at: string;
-  };
-  file_size_bytes: number;
-}
-
 // UI-specific types
 export interface BrowserProfileFormData {
   profile_name: string;
@@ -92,6 +70,7 @@ export interface BrowserProfileFormData {
   description: string;
   http_username?: string;
   http_password?: string;
+  auto_sync?: boolean;
 }
 
 export const OS_TYPES = [
