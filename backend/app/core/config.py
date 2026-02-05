@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # API
     API_V1_STR: str = "/api/v1"
-    PROJECT_NAME: str = "AI Web Test"
+    PROJECT_NAME: str = "Agentic QA"
     
     # Database
     DATABASE_URL: str

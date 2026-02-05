@@ -42,7 +42,7 @@ export const LoginPage: React.FC = () => {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            🤖 AI Web Test
+            🤖 Agentic QA
           </h1>
           <p className="text-gray-600">Intelligent Test Automation Platform</p>
         </div>

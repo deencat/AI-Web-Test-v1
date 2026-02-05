@@ -15,7 +15,7 @@ def health_check():
     """Basic health check endpoint."""
     return {
         "status": "healthy",
-        "service": "AI Web Test API",
+        "service": "Agentic QA API",
         "version": "1.0.0",
         "timestamp": datetime.utcnow().isoformat() + "Z"
     }

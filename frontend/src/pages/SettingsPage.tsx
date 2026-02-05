@@ -8,7 +8,7 @@ import settingsService from '../services/settingsService';
 import type { AvailableProvider, UserSettings } from '../types/api';
 
 export const SettingsPage: React.FC = () => {
-  const [projectName, setProjectName] = useState('AI Web Test v1.0');
+  const [projectName, setProjectName] = useState('Agentic QA v1.0');
   const [defaultTimeout, setDefaultTimeout] = useState('30');
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [slackNotifications, setSlackNotifications] = useState(false);
@@ -191,7 +191,7 @@ export const SettingsPage: React.FC = () => {
       await loadSettings();
       
       // Reset local state
-      setProjectName('AI Web Test v1.0');
+      setProjectName('Agentic QA v1.0');
       setDefaultTimeout('30');
       setEmailNotifications(true);
       setSlackNotifications(false);
