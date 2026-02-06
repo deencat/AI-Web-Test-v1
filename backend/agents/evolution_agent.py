@@ -589,7 +589,9 @@ Generate ONLY the JSON object with the steps array."""
         risk_scores: List[Dict],
         prioritization: List[Dict],
         page_context: Dict,
-        test_data: List[Dict]
+        test_data: List[Dict],
+        user_instruction: str = "",
+        login_credentials: Dict = {}
     ) -> str:
         """Variant 2: Concise, focused prompt - generates test steps"""
         title = scenario.get("title", "")
