@@ -856,64 +856,16 @@ class ExecutionService:
                     # This handles cases where {generate:hkid:main} was replaced with actual value
                     desc_lower = step_description.lower()
                     # FIX: Also extract values for 'select' and 'choose' actions (for dropdowns)
-                    if "fill" in desc_lower or "type" in desc_lower or "enter" in desc_lower or "input" in desc_lower or "select" in desc_lower or "choose" in desc_lower:
+                    if "fill" in desc_lower or "type" in desc_lower or "enter" in desc_lower or "input" in desc_lower or "select" in desc_lower or "choose" in desc_lower or "set" in desc_lower:
                         print(f"[DEBUG] Action keyword found in description, attempting value extraction")
-                        # Look for common data patterns after keywords
-                        value_patterns = [
-                            # Credit card patterns - Extract credit card numbers from descriptions
-                            # Pattern 1: 16-digit credit card (e.g., "1234567812345678" or "1234 5678 1234 5678")
-                            r'(?:credit.*card|card.*number|card).*?(\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4})',  # Credit card with/without spaces/dashes
-                            # Pattern 2: Direct input of credit card number
-                            r'(?:input|enter|fill|type)\s+(?:credit.*card|card.*number|card)?\s*(\d{16})',  # 16-digit number
-                            # Pattern 3: CVV/CVC (3-4 digits)
-                            r'(?:cvv|cvc|security.*code).*?(\d{3,4})',  # CVV/CVC codes
-                            # Pattern 4: Expiry date (MM/YY or MM/YYYY)
-                            r'(?:expiry|expiration|exp.*date).*?(\d{2}/\d{2,4})',  # Expiry date
-                            
-                            # Dropdown/Select patterns - Extract month, year, day values
-                            r'(?:select|choose)\s+(?:expiry\s+)?month\s+(\d{1,2})',  # "select month 01" or "select expiry month 1"
-                            r'(?:select|choose)\s+(?:expiry\s+)?year\s+(\d{2,4})',  # "select year 39" or "select expiry year 2039"
-                            r'(?:select|choose)\s+day\s+(\d{1,2})',  # "select day 15"
-                            r'(?:select|choose)\s+(\d{1,2})\s+as\s+(?:month|day)',  # "select 01 as month"
-                            r'(?:select|choose)\s+(\d{2,4})\s+as\s+year',  # "select 39 as year"
-                            
-                            # HKID patterns - Extract specific values mentioned in the description
-                            # Pattern 1: "input hkid number Q496157 on id no. first field" -> Extract Q496157
-                            r'(?:input|enter|fill|type)\s+(?:hkid|id)\s+(?:number\s+)?([A-Z]\d{6})\s+',  # Alphanumeric HKID (e.g., Q496157)
-                            # Pattern 2: "input hkid number 5 on id no. second field" -> Extract 5
-                            r'(?:input|enter|fill|type)\s+(?:hkid|id)\s+(?:number\s+)?(\d{1,2})\s+(?:on|in)',  # 1-2 digit number (e.g., 5)
-                            # Pattern 3: Check digit patterns (e.g., "(3)")
-                            r'(?:input|enter|fill|type)\s+(?:hkid|id)\s+(?:number\s+)?\((\d{1})\)',  # Check digit in parentheses
-                            
-                            # Contact/phone number - more flexible pattern
-                            r'(?:contact|phone|mobile).*?(\d{8})\s*$',  # "contact number 90457537"
-                            
-                            # Name patterns
-                            r'(?:surname|first\s+name)\s+([a-zA-Z]+)\s*$',  # "surname test" or "first name abc"
-                            r'(?:chinese\s+name)\s+([\u4e00-\u9fff]+)\s*$',  # "chinese name 陳小文"
-                            
-                            # Date pattern
-                            r'(?:birth|date).*?([\d/]+)\s*$',  # "birth 2000/01/01"
-                            
-                            # Generic fallback patterns
-                            r'(?:input|enter|fill|type)\s+([A-Z]\d{6})\s+',  # Generic: "input A123456 on"
-                            r'(?:input|enter|fill|type)\s+(\d{8})\s+',  # Generic: "input 12345678 on"
-                        ]
-                        
-                        for i, pattern in enumerate(value_patterns):
-                            match = re.search(pattern, step_description, re.IGNORECASE)
-                            if match:
-                                potential_value = match.group(1)
-                                print(f"[DEBUG] Pattern {i} matched: {pattern[:50]}... => {potential_value}")
-                                # Skip if it looks like a field description
-                                if "field" not in potential_value.lower():
-                                    step_data["value"] = potential_value
-                                    print(f"[DEBUG] Extracted value from substituted description: {step_data['value']}")
-                                    break
-                                else:
-                                    print(f"[DEBUG] Skipped potential_value '{potential_value}' (contains 'field')")
-                        
-                        if not step_data["value"]:
+                        extracted_value = self._extract_value_from_description(step_description)
+                        if extracted_value:
+                            step_data["value"] = extracted_value
+                            print(f"[DEBUG] Extracted value from substituted description: {step_data['value']}")
+                            if self._is_dropdown_instruction(step_description):
+                                if not step_data["action"] or step_data["action"] == "click":
+                                    step_data["action"] = "select"
+                        else:
                             print(f"[DEBUG] No value extracted from patterns")
                 
                 # Detect action from description if not provided
@@ -927,10 +879,7 @@ class ExecutionService:
                     # Check for dropdown/select actions (select month/year/etc.)
                     # More precise: must have "select/choose" followed by specific dropdown keywords
                     # Exclude cases like "select the $288/month plan" where "month" is part of price
-                    elif (("select" in desc_lower or "choose" in desc_lower) and 
-                          any(f"{verb} {kw}" in desc_lower or f"{verb} expiry {kw}" in desc_lower or f"{kw} dropdown" in desc_lower or f"{kw} menu" in desc_lower or f"from {kw}" in desc_lower
-                              for verb in ["select", "choose", "pick"]
-                              for kw in ["month", "year", "day", "country", "date", "dropdown", "option"])):
+                    elif self._is_dropdown_instruction(step_description):
                         step_data["action"] = "select"
                     elif "click" in desc_lower or "select" in desc_lower or "choose" in desc_lower:
                         step_data["action"] = "click"
@@ -1441,6 +1390,91 @@ class ExecutionService:
         result = re.sub(pattern, replace_pattern, text)
         
         return result
+
+    def _extract_value_from_description(self, step_description: str) -> Optional[str]:
+        """Extract a value from the step description using common patterns."""
+        import re
+
+        if not step_description or not isinstance(step_description, str):
+            return None
+
+        quote_chars = r"\"'“”‘’"
+        value_patterns = [
+            # Credit card patterns - Extract credit card numbers from descriptions
+            # Pattern 1: 16-digit credit card (e.g., "1234567812345678" or "1234 5678 1234 5678")
+            r'(?:credit.*card|card.*number|card).*?(\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4})',
+            # Pattern 2: Direct input of credit card number
+            r'(?:input|enter|fill|type)\s+(?:credit.*card|card.*number|card)?\s*(\d{16})',
+            # Pattern 3: CVV/CVC (3-4 digits)
+            r'(?:cvv|cvc|security.*code).*?(\d{3,4})',
+            # Pattern 4: Expiry date (MM/YY or MM/YYYY)
+            r'(?:expiry|expiration|exp.*date).*?(\d{2}/\d{2,4})',
+            
+            # Dropdown/Select patterns - Extract month, year, day values
+            r'(?:select|choose|pick|set)\s+(?:expiry\s+)?month\s+(\d{1,2})',
+            r'(?:select|choose|pick|set)\s+(?:expiry\s+)?year\s+(\d{2,4})',
+            r'(?:select|choose|pick|set)\s+day\s+(\d{1,2})',
+            r'(?:select|choose|pick|set)\s+(\d{1,2})\s+as\s+(?:month|day)',
+            r'(?:select|choose|pick|set)\s+(\d{2,4})\s+as\s+year',
+            rf'(?:select|choose|pick|set)\s+[{quote_chars}]?(\d{{1,2}})[{quote_chars}]?\s+as\s+(?:the\s+)?(?:expiry\s+)?month',
+            rf'(?:select|choose|pick|set)\s+[{quote_chars}]?(\d{{2,4}})[{quote_chars}]?\s+as\s+(?:the\s+)?(?:expiry\s+)?year',
+            # Dropdown/Select patterns - explicit option value
+            rf'(?:select|choose|pick|set)\s+[{quote_chars}]([^"\'“”‘’]+)[{quote_chars}]\s+(?:from|in)\s+(?:the\s+)?(?:[\w\s-]+\s+)?(?:dropdown|select|menu|list|field)',
+            rf'(?:select|choose|pick|set)\s+([\w\s-]+?)\s+(?:from|in)\s+(?:the\s+)?(?:[\w\s-]+\s+)?(?:dropdown|select|menu|list|field)',
+            rf'(?:select|choose|pick|set)\s+option\s+[{quote_chars}]([^"\'“”‘’]+)[{quote_chars}]',
+            rf'(?:select|choose|pick|set)\s+option\s+([\w\s-]+?)\s+(?:from|in)\s+',
+            rf'(?:set|select|choose|pick)\s+(?:the\s+)?(?:[\w\s-]+\s+)?(?:dropdown|select|menu|list|field)\s+(?:value\s+)?(?:to|as)\s+[{quote_chars}]?([^"\'“”‘’]+)[{quote_chars}]?',
+            
+            # HKID patterns - Extract specific values mentioned in the description
+            r'(?:input|enter|fill|type)\s+(?:hkid|id)\s+(?:number\s+)?([A-Z]\d{6})\s+',
+            r'(?:input|enter|fill|type)\s+(?:hkid|id)\s+(?:number\s+)?(\d{1,2})\s+(?:on|in)',
+            r'(?:input|enter|fill|type)\s+(?:hkid|id)\s+(?:number\s+)?\((\d{1})\)',
+            
+            # Contact/phone number - more flexible pattern
+            r'(?:contact|phone|mobile).*?(\d{8})\s*$',
+            
+            # Name patterns
+            r'(?:surname|first\s+name)\s+([a-zA-Z]+)\s*$',
+            r'(?:chinese\s+name)\s+([\u4e00-\u9fff]+)\s*$',
+            
+            # Date pattern
+            r'(?:birth|date).*?([\d/]+)\s*$',
+            
+            # Generic fallback patterns
+            r'(?:input|enter|fill|type)\s+([A-Z]\d{6})\s+',
+            r'(?:input|enter|fill|type)\s+(\d{8})\s+',
+        ]
+
+        for i, pattern in enumerate(value_patterns):
+            match = re.search(pattern, step_description, re.IGNORECASE)
+            if match:
+                potential_value = match.group(1).strip()
+                print(f"[DEBUG] Pattern {i} matched: {pattern[:50]}... => {potential_value}")
+                if "field" not in potential_value.lower():
+                    return potential_value
+                print(f"[DEBUG] Skipped potential_value '{potential_value}' (contains 'field')")
+
+        return None
+
+    def _is_dropdown_instruction(self, step_description: str) -> bool:
+        """Determine if a step description refers to a dropdown/select action."""
+        import re
+
+        if not step_description or not isinstance(step_description, str):
+            return False
+
+        desc_lower = step_description.lower()
+        verbs = ["select", "choose", "pick", "set"]
+        dropdown_keywords = ["dropdown", "select box", "select field", "menu", "list", "option"]
+
+        if not any(verb in desc_lower for verb in verbs):
+            return False
+
+        if any(keyword in desc_lower for keyword in dropdown_keywords):
+            return True
+
+        pattern = r"(?:select|choose|pick|set).+(?:from|in).+(?:dropdown|select|menu|list|field|option)"
+        return bool(re.search(pattern, desc_lower))
     
     def _apply_test_data_generation(
         self, 
