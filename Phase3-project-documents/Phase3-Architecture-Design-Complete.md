@@ -111,6 +111,12 @@ Phase 3 implements a **multi-agent test generation system** using 6 specialized 
 - Simple operations (single Redis instance vs Kafka cluster + ZooKeeper)
 - Already using Redis for caching (infrastructure reuse)
 
+**Implementation Status:**
+- ✅ **Stub Implemented:** `MessageBusStub` for testing (Sprint 7)
+- ⏳ **Real Implementation:** Planned for Sprint 11 (Mar 20 - Apr 2, 2026)
+- **Current:** Agents communicate via direct data flow (synchronous function calls)
+- **Future:** Event-driven communication via Redis Streams (Sprint 11)
+
 ### 2.3 LLM Provider: Azure OpenAI (Primary) + Cerebras (Backup)
 
 **Primary: Azure OpenAI**
@@ -1260,6 +1266,11 @@ graph TB
 
 **Key Principle:** Agents work together for continuous improvement, not as standalone parties. Each agent's output improves the others' future performance through a feedback loop.
 
+**Current Implementation Status (Sprint 8 Complete):**
+- ✅ **Infrastructure Complete:** `RequirementsAgent` accepts `execution_feedback`, `EvolutionAgent.learn_from_feedback()` method exists
+- ⚠️ **Activation Pending:** Feedback loop not yet fully active in E2E test (can be activated in Sprint 9)
+- ⏳ **Full Implementation:** Planned for Sprint 11 (Mar 20 - Apr 2, 2026) with message bus integration
+
 **Complete Feedback Loop Architecture:**
 
 ```
@@ -1305,6 +1316,11 @@ RequirementsAgent → Uses feedback to improve next scenario generation
 **Result:** Continuous improvement where each iteration produces better scenarios, better test code, and better execution results.
 
 ### 8.1 Learning Architecture
+
+**Implementation Status:**
+- ⏳ **Planned for Sprint 11:** Mar 20 - Apr 2, 2026
+- **Current:** Individual agents have some learning capabilities (EvolutionAgent.learn_from_feedback)
+- **Future:** Meta-level Learning System coordinates all agents (Sprint 11)
 
 **Important:** The **Learning System** (this section) is the **core of continuous improvement**, not any individual agent. It operates at a meta-level above all agents, coordinating learning across the entire system. Individual agents (like EvolutionAgent and RequirementsAgent) participate in the feedback loop, while the Learning System coordinates optimization, A/B testing, and pattern extraction at a meta-level.
 
