@@ -451,16 +451,18 @@ For detailed analysis, strategies, and agent-specific documentation, see the [Su
 
 **Total: 46 points, 13 days - ZERO dependencies on Developer B or Phase 2**
 
-**Option 2: Simple Redis Pub/Sub Setup (Optional - If Developer A Has Time)**
+**Option 2: Simple Redis Pub/Sub Setup (DEFERRED TO SPRINT 11)**
 
-| Task | Description | Duration | Dependencies | Points |
-|------|-------------|----------|--------------|--------|
-| **7A.13** | Install Redis locally (or use Docker) | 0.5 day | None | 1 |
-| **7A.14** | Replace message bus stub with simple Redis pub/sub | 1 day | 7A.13 | 2 |
-| **7A.15** | Replace agent registry stub with Redis-backed version | 1 day | 7A.14 | 2 |
-| **7A.16** | Integration tests (agents + real Redis) | 0.5 day | 7A.15 | 1 |
+| Task | Description | Duration | Dependencies | Points | Status |
+|------|-------------|----------|--------------|--------|--------|
+| **7A.13** | Install Redis locally (or use Docker) | 0.5 day | None | 1 | **DEFERRED TO SPRINT 11** |
+| **7A.14** | Replace message bus stub with simple Redis pub/sub | 1 day | 7A.13 | 2 | **DEFERRED TO SPRINT 11** |
+| **7A.15** | Replace agent registry stub with Redis-backed version | 1 day | 7A.14 | 2 | **DEFERRED TO SPRINT 11** |
+| **7A.16** | Integration tests (agents + real Redis) | 0.5 day | 7A.15 | 1 | **DEFERRED TO SPRINT 11** |
 
-**Total: 6 points, 3 days - OPTIONAL, SIMPLE SETUP**
+**Total: 6 points, 3 days - DEFERRED TO SPRINT 11**
+
+**Note:** Message bus implementation (Redis Streams) is planned for Sprint 11 (Mar 20 - Apr 2, 2026) along with Learning System and event-driven communication. Current implementation uses direct data flow (synchronous function calls) which is fully operational.
 
 **Note:** Redis pub/sub is simple (just `publish`/`subscribe` commands). No need for Redis Streams or complex setup. Can use existing database (SQLite for local dev) - no PostgreSQL changes needed until later.
 
@@ -566,7 +568,7 @@ For detailed analysis, strategies, and agent-specific documentation, see the [Su
 - ✅ Goal-aware test generation - Complete flows to true completion - **COMPLETE** (bonus feature)
 - ✅ Login credentials support - Automatic login step generation - **COMPLETE** (bonus feature)
 - ✅ 4-agent workflow operational: Observe → Requirements → Analyze → Evolve - **COMPLETE** (E2E test working)
-- ✅ Feedback loop operational: Execution results → RequirementsAgent improvement - **COMPLETE** (8A.10) - **VERIFIED: Generating recommendations, improving scenarios**
+- ✅ Feedback loop infrastructure complete: Execution results → RequirementsAgent improvement - **INFRASTRUCTURE COMPLETE** (8A.10) - **Status:** Infrastructure exists, activation pending (can be done in Sprint 9 or Sprint 11)
 - ✅ LLM costs <$0.20 per test cycle (with caching) - **COMPLETE** (8A.8 caching layer) - **VERIFIED: 100% cache hit rate, 2,197 tokens saved**
 - 🔄 100+ feedback samples collected for learning system (if Developer B available) - **PENDING** (optional)
 
@@ -685,6 +687,12 @@ For detailed analysis, strategies, and agent-specific documentation, see the [Su
 - **EvolutionAgent:** Generates test code, participates in learning loop via Learning System
 - **All Agents:** Contribute execution results, metrics, patterns to Learning System
 - **Learning System:** Coordinates optimization, A/B testing, pattern extraction across all agents
+
+**Major Improvements Planned for Sprint 11:**
+- ✅ **Message Bus Implementation:** Replace stub with Redis Streams (event-driven communication)
+- ✅ **Event-Driven Communication:** Agents publish/subscribe to events (asynchronous coordination)
+- ✅ **Learning System:** Meta-level coordination, pattern sharing, automated prompt optimization
+- ✅ **Full Feedback Loop:** Integrated with message bus and learning system
 
 #### Developer A Tasks (22 points)
 
