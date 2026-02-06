@@ -4,6 +4,7 @@ Stagehand observe() + Playwright execution for self-healing tests
 Sprint 5.5: 3-Tier Execution Engine
 """
 import asyncio
+import os
 import time
 from typing import Dict, Any, Optional
 from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
@@ -45,6 +46,9 @@ class Tier2HybridExecutor:
         self.xpath_extractor = xpath_extractor
         self.timeout_ms = timeout_ms
         self.cache_service = XPathCacheService(db)
+        self.payment_direct_enabled = os.getenv("ENABLE_PAYMENT_DIRECT_HANDLING", "false").lower() == "true"
+        self.payment_gateway_ready = False
+        self.payment_gateway_url = None
     
     async def execute_step(
         self,
@@ -111,6 +115,20 @@ class Tier2HybridExecutor:
             # For upload_file actions, use file_path instead of value
             if action == "upload_file":
                 value = file_path or value
+
+            # Payment gateway readiness and direct field handling
+            if self._is_payment_instruction(instruction, action):
+                await self._maybe_wait_for_payment_gateway(page)
+                if self.payment_direct_enabled:
+                    direct_result = await self._try_payment_field_action(
+                        page,
+                        action,
+                        instruction,
+                        value,
+                        start_time
+                    )
+                    if direct_result:
+                        return direct_result
             
             # Step 1: Try to get XPath from cache
             cached_xpath = self.cache_service.get_cached_xpath(page_url, instruction)
@@ -392,7 +410,10 @@ class Tier2HybridExecutor:
             await asyncio.sleep(0.3)
             
         elif action == "select":
-            await element.select_option(value, timeout=self.timeout_ms)
+            try:
+                await element.select_option(value, timeout=self.timeout_ms)
+            except Exception:
+                await element.select_option(label=value, timeout=self.timeout_ms)
             # Wait for any onChange handlers
             await asyncio.sleep(0.3)
             
@@ -442,7 +463,7 @@ class Tier2HybridExecutor:
             # Upload file using Playwright's set_input_files method
             logger.info(f"[Tier 2] 📤 Uploading file via XPath: {file_path}")
             await element.set_input_files(file_path, timeout=self.timeout_ms)
-            
+
             # Small delay to allow file upload event handlers to complete
             await asyncio.sleep(0.5)
             logger.info(f"[Tier 2] ✅ File uploaded successfully")
@@ -453,6 +474,295 @@ class Tier2HybridExecutor:
             logger.info(f"[Tier 2] ✅ Signature drawing completed")
         else:
             raise ValueError(f"Unsupported action type: {action}")
+
+    def _is_payment_instruction(self, instruction: str, action: str) -> bool:
+        """Check if the instruction relates to payment fields."""
+        if not instruction:
+            return False
+
+        if action not in ["fill", "type", "input", "select"]:
+            return False
+
+        instruction_lower = instruction.lower()
+        keywords = [
+            "card number",
+            "credit card",
+            "cardholder",
+            "card holder",
+            "expiry",
+            "expiration",
+            "cvv",
+            "cvc",
+            "security code",
+            "payment",
+        ]
+        return any(keyword in instruction_lower for keyword in keywords)
+
+    async def _maybe_wait_for_payment_gateway(self, page: Page) -> None:
+        """Wait once per page for payment gateway fields to appear."""
+        if self.payment_gateway_ready and self.payment_gateway_url == page.url:
+            return
+
+        payment_input_selectors = [
+            "input[name*='card']",
+            "input[placeholder*='card']",
+            "input[id*='card']",
+            "input[autocomplete='cc-number']",
+            "input[type='tel'][maxlength='19']",
+            "select[name*='month']",
+            "select[id*='month']",
+            "select[autocomplete='cc-exp-month']",
+            "select[name*='year']",
+            "select[id*='year']",
+            "select[autocomplete='cc-exp-year']",
+            "iframe[name*='card']",
+            "iframe[title*='payment']",
+            "iframe[src*='payment']",
+        ]
+
+        for selector in payment_input_selectors:
+            try:
+                locator = page.locator(selector).first
+                await locator.wait_for(state="visible", timeout=8000)
+                logger.info(f"[Tier 2] ✅ Payment gateway ready (selector: {selector})")
+                self.payment_gateway_ready = True
+                self.payment_gateway_url = page.url
+                return
+            except Exception:
+                continue
+
+        logger.warning("[Tier 2] ⚠️ Payment gateway readiness not confirmed")
+
+    async def _try_payment_field_action(
+        self,
+        page: Page,
+        action: str,
+        instruction: str,
+        value: str,
+        start_time: float
+    ) -> Optional[Dict[str, Any]]:
+        """Try to interact with payment fields directly when possible."""
+        instruction_lower = instruction.lower()
+        wait_timeout = 3000 if (self.payment_gateway_ready and self.payment_gateway_url == page.url) else 10000
+
+        if action in ["fill", "type", "input"] and not value:
+            return None
+
+        input_selectors = []
+        select_selectors = []
+
+        if "card number" in instruction_lower or "credit card" in instruction_lower:
+            input_selectors = [
+                "input[name*='card']",
+                "input[id*='card']",
+                "input[placeholder*='card']",
+                "input[autocomplete='cc-number']",
+                "input[type='tel'][maxlength='19']",
+            ]
+        elif "cvv" in instruction_lower or "cvc" in instruction_lower or "security code" in instruction_lower:
+            input_selectors = [
+                "input[name*='cvv']",
+                "input[name*='cvc']",
+                "input[id*='cvv']",
+                "input[id*='cvc']",
+                "input[autocomplete='cc-csc']",
+                "input[type='tel'][maxlength='3']",
+            ]
+        elif "cardholder" in instruction_lower or "card holder" in instruction_lower:
+            input_selectors = [
+                "input[name*='name']",
+                "input[id*='name']",
+                "input[autocomplete='cc-name']",
+            ]
+
+        if action == "select" and ("month" in instruction_lower or "year" in instruction_lower or "expiry" in instruction_lower):
+            if "month" in instruction_lower:
+                select_selectors = [
+                    "select[name*='month']",
+                    "select[id*='month']",
+                    "select[autocomplete='cc-exp-month']",
+                ]
+            elif "year" in instruction_lower:
+                select_selectors = [
+                    "select[name*='year']",
+                    "select[id*='year']",
+                    "select[autocomplete='cc-exp-year']",
+                ]
+
+        if not input_selectors and not select_selectors:
+            return None
+
+        frame_selectors = [
+            "iframe[name*='card']",
+            "iframe[title*='payment']",
+            "iframe[src*='payment']",
+        ]
+
+        async def _try_fill(locator):
+            await locator.wait_for(state="visible", timeout=wait_timeout)
+            await locator.fill(value, timeout=self.timeout_ms)
+
+        async def _try_select(locator):
+            await locator.wait_for(state="visible", timeout=wait_timeout)
+            try:
+                await locator.select_option(value, timeout=self.timeout_ms)
+            except Exception:
+                await locator.select_option(label=value, timeout=self.timeout_ms)
+
+        async def _try_label(locator):
+            await locator.wait_for(state="visible", timeout=wait_timeout)
+            if action == "select":
+                try:
+                    await locator.select_option(value, timeout=self.timeout_ms)
+                except Exception:
+                    await locator.select_option(label=value, timeout=self.timeout_ms)
+            else:
+                await locator.fill(value, timeout=self.timeout_ms)
+
+        try:
+            if input_selectors:
+                for selector in input_selectors:
+                    locator = page.locator(selector).first
+                    try:
+                        await _try_fill(locator)
+                        execution_time_ms = (time.time() - start_time) * 1000
+                        logger.info(f"[Tier 2] ✅ Payment input filled using selector: {selector}")
+                        self.payment_gateway_ready = True
+                        self.payment_gateway_url = page.url
+                        return {
+                            "success": True,
+                            "tier": 2,
+                            "execution_time_ms": execution_time_ms,
+                            "extraction_time_ms": 0,
+                            "cache_hit": False,
+                            "xpath": None,
+                            "error": None
+                        }
+                    except Exception:
+                        continue
+
+            if select_selectors:
+                for selector in select_selectors:
+                    locator = page.locator(selector).first
+                    try:
+                        await _try_select(locator)
+                        execution_time_ms = (time.time() - start_time) * 1000
+                        logger.info(f"[Tier 2] ✅ Payment select set using selector: {selector}")
+                        self.payment_gateway_ready = True
+                        self.payment_gateway_url = page.url
+                        return {
+                            "success": True,
+                            "tier": 2,
+                            "execution_time_ms": execution_time_ms,
+                            "extraction_time_ms": 0,
+                            "cache_hit": False,
+                            "xpath": None,
+                            "error": None
+                        }
+                    except Exception:
+                        continue
+
+            for iframe_selector in frame_selectors:
+                frame_locator = page.frame_locator(iframe_selector)
+                if input_selectors:
+                    for selector in input_selectors:
+                        locator = frame_locator.locator(selector).first
+                        try:
+                            await _try_fill(locator)
+                            execution_time_ms = (time.time() - start_time) * 1000
+                            logger.info(f"[Tier 2] ✅ Payment input filled in iframe: {iframe_selector} -> {selector}")
+                            self.payment_gateway_ready = True
+                            self.payment_gateway_url = page.url
+                            return {
+                                "success": True,
+                                "tier": 2,
+                                "execution_time_ms": execution_time_ms,
+                                "extraction_time_ms": 0,
+                                "cache_hit": False,
+                                "xpath": None,
+                                "error": None
+                            }
+                        except Exception:
+                            continue
+
+                if select_selectors:
+                    for selector in select_selectors:
+                        locator = frame_locator.locator(selector).first
+                        try:
+                            await _try_select(locator)
+                            execution_time_ms = (time.time() - start_time) * 1000
+                            logger.info(f"[Tier 2] ✅ Payment select set in iframe: {iframe_selector} -> {selector}")
+                            self.payment_gateway_ready = True
+                            self.payment_gateway_url = page.url
+                            return {
+                                "success": True,
+                                "tier": 2,
+                                "execution_time_ms": execution_time_ms,
+                                "extraction_time_ms": 0,
+                                "cache_hit": False,
+                                "xpath": None,
+                                "error": None
+                            }
+                        except Exception:
+                            continue
+            label_candidates = []
+            if "card number" in instruction_lower or "credit card" in instruction_lower:
+                label_candidates = ["Card number", "Card Number", "Card no", "Card No"]
+            elif "cvv" in instruction_lower or "cvc" in instruction_lower or "security code" in instruction_lower:
+                label_candidates = ["CVV", "CVC", "Security code", "Security Code"]
+            elif "cardholder" in instruction_lower or "card holder" in instruction_lower:
+                label_candidates = ["Cardholder name", "Cardholder", "Name on card"]
+            elif "month" in instruction_lower:
+                label_candidates = ["Expiry month", "Expiration month", "Exp month", "Month"]
+            elif "year" in instruction_lower:
+                label_candidates = ["Expiry year", "Expiration year", "Exp year", "Year"]
+
+            for label in label_candidates:
+                try:
+                    locator = page.get_by_label(label, exact=False)
+                    await _try_label(locator)
+                    execution_time_ms = (time.time() - start_time) * 1000
+                    logger.info(f"[Tier 2] ✅ Payment field set using label: {label}")
+                    self.payment_gateway_ready = True
+                    self.payment_gateway_url = page.url
+                    return {
+                        "success": True,
+                        "tier": 2,
+                        "execution_time_ms": execution_time_ms,
+                        "extraction_time_ms": 0,
+                        "cache_hit": False,
+                        "xpath": None,
+                        "error": None
+                    }
+                except Exception:
+                    continue
+
+            for iframe_selector in frame_selectors:
+                frame_locator = page.frame_locator(iframe_selector)
+                for label in label_candidates:
+                    try:
+                        locator = frame_locator.get_by_label(label, exact=False)
+                        await _try_label(locator)
+                        execution_time_ms = (time.time() - start_time) * 1000
+                        logger.info(f"[Tier 2] ✅ Payment field set in iframe using label: {label}")
+                        self.payment_gateway_ready = True
+                        self.payment_gateway_url = page.url
+                        return {
+                            "success": True,
+                            "tier": 2,
+                            "execution_time_ms": execution_time_ms,
+                            "extraction_time_ms": 0,
+                            "cache_hit": False,
+                            "xpath": None,
+                            "error": None
+                        }
+                    except Exception:
+                        continue
+
+        except Exception as e:
+            logger.debug(f"[Tier 2] Payment field direct handling failed: {e}")
+
+        return None
     
     async def _execute_draw_signature(self, page: Page, xpath: str, signature_text: str = None):
         """
