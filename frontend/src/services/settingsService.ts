@@ -8,7 +8,7 @@ import { Settings, UpdateSettingsRequest } from '../types/api';
 
 // Mock default settings
 const mockSettings: Settings = {
-  project_name: 'AI Web Test v1.0',
+  project_name: 'Agentic QA v1.0',
   default_timeout: 30,
   email_notifications: true,
   slack_notifications: false,
@@ -73,7 +73,7 @@ class SettingsService {
     if (apiHelpers.useMockData()) {
       // Reset to default values
       Object.assign(mockSettings, {
-        project_name: 'AI Web Test v1.0',
+        project_name: 'Agentic QA v1.0',
         default_timeout: 30,
         email_notifications: true,
         slack_notifications: false,

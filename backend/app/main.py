@@ -126,7 +126,7 @@ async def startup_event():
 def root():
     """Root endpoint with API information."""
     return {
-        "message": "AI Web Test API",
+        "message": "Agentic QA API",
         "version": "1.0.0",
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat() + "Z",
