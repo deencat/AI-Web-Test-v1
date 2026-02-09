@@ -222,7 +222,8 @@ def analysis_agent_real(mock_message_queue, db_session):
         "enable_realtime_execution": True,  # ENABLE real-time execution
         "execution_rpn_threshold": 0,  # Lower threshold for testing (execute top scenarios)
         "headless_browser": False,  # Show browser during execution (set to True to hide)
-        "cache_enabled": False  # DISABLE caching for real E2E test
+        "cache_enabled": False,  # DISABLE caching for real E2E test
+        "parallel_execution_batch_size": 3  # Enable parallel execution (3 scenarios per batch)
     }
     return AnalysisAgent(
         agent_id="e2e_test_analysis_agent",
