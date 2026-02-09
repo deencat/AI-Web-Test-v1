@@ -41,7 +41,9 @@ class DebugSession(Base):
     execution = relationship("TestExecution")
     
     # Target step
-    target_step_number = Column(Integer, nullable=False)  # The step user wants to debug
+    target_step_number = Column(Integer, nullable=False)  # The step user wants to debug (start of range)
+    end_step_number = Column(Integer, nullable=True)  # End of step range (optional, for range debugging)
+    skip_prerequisites = Column(Boolean, default=False)  # Whether to skip prerequisite steps (manual navigation)
     prerequisite_steps_count = Column(Integer, nullable=False, default=0)  # Steps 1 to target-1
     
     # Browser session tracking

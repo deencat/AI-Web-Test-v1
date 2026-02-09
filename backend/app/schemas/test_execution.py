@@ -1,5 +1,5 @@
 """Pydantic schemas for test execution."""
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 from app.models.test_execution import ExecutionStatus, ExecutionResult
@@ -67,6 +67,10 @@ class TestExecutionCreate(TestExecutionBase):
     """Schema for creating a test execution."""
     triggered_by: Optional[str] = Field(None, max_length=50, description="Trigger: manual, scheduled, ci_cd, webhook")
     trigger_details: Optional[str] = Field(None, description="Additional trigger details (JSON)")
+    browser_profile_data: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Browser profile data (cookies, localStorage, sessionStorage) for session persistence"
+    )
 
 
 class TestExecutionUpdate(BaseModel):
@@ -171,12 +175,29 @@ class ExecutionStatistics(BaseModel):
 # Execution Request Schemas
 # ============================================================================
 
+class HttpCredentials(BaseModel):
+    """HTTP Basic Auth credentials."""
+    username: str = Field(..., min_length=1, max_length=255, description="Basic auth username")
+    password: str = Field(..., min_length=1, max_length=255, description="Basic auth password")
+
 class ExecutionStartRequest(BaseModel):
     """Schema for starting a test execution."""
     browser: str = Field(default="chromium", pattern="^(chromium|firefox|webkit)$", description="Browser to use")
     environment: str = Field(default="dev", max_length=50, description="Target environment")
     base_url: Optional[str] = Field(None, max_length=500, description="Base URL (overrides test case URL)")
     triggered_by: str = Field(default="manual", max_length=50, description="Execution trigger")
+    browser_profile_id: Optional[int] = Field(
+        None,
+        description="Browser profile ID for stored session data and HTTP credentials"
+    )
+    browser_profile_data: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Browser profile data (cookies, localStorage, sessionStorage) for session persistence"
+    )
+    http_credentials: Optional[HttpCredentials] = Field(
+        None,
+        description="HTTP Basic Auth credentials for the execution run (not stored)"
+    )
 
 
 class ExecutionStartResponse(BaseModel):

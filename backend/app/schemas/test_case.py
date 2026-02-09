@@ -12,10 +12,41 @@ class TestCaseBase(BaseModel):
     description: str = Field(..., min_length=1, description="Test case description")
     test_type: TestType = Field(..., description="Type of test (e2e, unit, integration, api)")
     priority: Priority = Field(default=Priority.MEDIUM, description="Test priority level")
-    steps: List[str | Dict[str, Any]] = Field(..., min_items=1, description="List of test steps (strings or step objects)")
+    steps: List[str | Dict[str, Any]] = Field(
+        ..., 
+        min_items=1, 
+        description="""List of test steps (strings or step objects). 
+        Step objects can include:
+        - action: 'click', 'fill', 'navigate', 'verify', 'upload_file', etc.
+        - selector: CSS/XPath selector for element
+        - value: Text value for fill actions
+        - file_path: Absolute file path for upload_file actions (e.g., '/app/test_files/hkid_sample.pdf')
+        - instruction: Natural language instruction for AI execution
+        - expected: Expected value for verify actions
+        """
+    )
     expected_result: str = Field(..., min_length=1, description="Expected test result")
     preconditions: Optional[str] = Field(None, description="Test preconditions")
-    test_data: Optional[Dict[str, Any]] = Field(None, description="Optional test data as JSON")
+    test_data: Optional[Dict[str, Any]] = Field(
+        None, 
+        description="""Optional test data as JSON. Can include:
+        - detailed_steps: Array of step objects with action, selector, value fields
+        - loop_blocks: Array of loop definitions for repeating step sequences
+          Example loop block:
+          {
+            "id": "file_upload_loop",
+            "start_step": 2,
+            "end_step": 4,
+            "iterations": 5,
+            "description": "Upload 5 HKID documents",
+            "variables": {
+              "file_path": "/app/test_files/document_{iteration}.pdf"
+            }
+          }
+        Loop blocks allow repeating steps without duplication. Variable substitution 
+        supports {iteration} placeholder for current iteration number (1-based).
+        """
+    )
     
     # Day 7 Integration fields
     category_id: Optional[int] = Field(None, description="Knowledge base category ID")

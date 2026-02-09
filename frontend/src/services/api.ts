@@ -77,7 +77,12 @@ export const apiHelpers = {
    */
   getErrorMessage(error: unknown): string {
     if (axios.isAxiosError(error)) {
-      return error.response?.data?.message || error.message || 'An error occurred';
+      return (
+        error.response?.data?.message ||
+        error.response?.data?.detail ||
+        error.message ||
+        'An error occurred'
+      );
     }
     return 'An unexpected error occurred';
   },
@@ -88,8 +93,15 @@ export const apiHelpers = {
   formatError(error: unknown): { message: string; details?: string } {
     if (axios.isAxiosError(error)) {
       return {
-        message: error.response?.data?.message || error.message || 'An error occurred',
-        details: error.response?.data?.details || error.response?.statusText,
+        message:
+          error.response?.data?.message ||
+          error.response?.data?.detail ||
+          error.message ||
+          'An error occurred',
+        details:
+          error.response?.data?.details ||
+          error.response?.data?.statusText ||
+          error.response?.statusText,
       };
     }
     return { message: 'An unexpected error occurred' };

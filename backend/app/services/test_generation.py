@@ -64,6 +64,212 @@ GUIDELINES:
 - For complex workflows, break down into 15-20 granular steps if needed
 - NEVER truncate or summarize steps - always provide complete sequences
 
+**FILE UPLOAD SUPPORT:**
+For test cases involving file uploads, you MUST generate detailed step objects with:
+- action: "upload_file"
+- selector: "input[type='file']" (or specific file input selector)
+- file_path: One of the predefined test files
+- instruction: Clear description of what to upload
+
+**Available test files:**
+- /app/test_files/hkid_sample.pdf (HKID document)
+- /app/test_files/passport_sample.jpg (Passport photo)
+- /app/test_files/address_proof.pdf (Address proof document)
+
+**IMPORTANT:** File upload steps MUST include the detailed_steps with structured data.
+
+Example:
+```json
+{
+  "steps": ["Upload HKID document"],
+  "test_data": {
+    "detailed_steps": [{
+      "action": "upload_file",
+      "selector": "input[type='file']",
+      "file_path": "/app/test_files/hkid_sample.pdf",
+      "instruction": "Upload HKID document"
+    }]
+  }
+}
+```
+
+**TEST DATA GENERATION SUPPORT:**
+For test cases requiring valid test data (HKID numbers, phone numbers, emails), use dynamic generation placeholders that will be automatically replaced during execution with properly formatted, valid data.
+
+**Available data generators:**
+
+1. **HKID (Hong Kong Identity Card) - Composite Data with Part Extraction**
+   - Pattern: {generate:hkid} → Full HKID with check digit (e.g., A123456(3))
+   - Pattern: {generate:hkid:main} → Main part only: letter + 6 digits (e.g., A123456)
+   - Pattern: {generate:hkid:check} → Check digit only (e.g., 3)
+   - Pattern: {generate:hkid:letter} → Letter part only (e.g., A)
+   - Pattern: {generate:hkid:digits} → 6 digits only (e.g., 123456)
+   - Pattern: {generate:hkid:full} → Same as {generate:hkid}
+   
+   **IMPORTANT - Split Field Scenario:** Many forms have separate fields for HKID main part and check digit.
+   - Use {generate:hkid:main} for the main HKID field
+   - Use {generate:hkid:check} for the check digit field
+   - System guarantees consistency: check digit ALWAYS matches the main part (same generated HKID)
+   - All parts extracted from the same cached HKID within a test
+
+2. **Hong Kong Phone Number**
+   - Pattern: {generate:phone}
+   - Generates: 8-digit HK phone number starting with 5-9 (e.g., 91234567)
+
+3. **Email Address**
+   - Pattern: {generate:email}
+   - Generates: Unique email with timestamp (e.g., testuser1234567890@example.com)
+   - Prevents account creation conflicts
+
+**Usage in test_data:**
+Use these patterns in the "value" field of detailed_steps or directly in test_data fields.
+
+**Example 1: Single HKID field (full format)**
+```json
+{
+  "steps": ["Enter HKID number"],
+  "test_data": {
+    "detailed_steps": [{
+      "action": "input",
+      "selector": "input[name='hkid']",
+      "value": "{generate:hkid}",
+      "instruction": "Enter HKID number A123456(3)"
+    }]
+  }
+}
+```
+
+**Example 2: Split HKID fields (main + check digit) ⭐ RECOMMENDED FOR SPLIT FORMS**
+```json
+{
+  "steps": [
+    "Enter HKID main part (letter + 6 digits)",
+    "Enter HKID check digit"
+  ],
+  "test_data": {
+    "detailed_steps": [
+      {
+        "action": "input",
+        "selector": "input[name='hkid_main']",
+        "value": "{generate:hkid:main}",
+        "instruction": "Enter main HKID part A123456"
+      },
+      {
+        "action": "input",
+        "selector": "input[name='hkid_check']",
+        "value": "{generate:hkid:check}",
+        "instruction": "Enter HKID check digit 3"
+      }
+    ]
+  }
+}
+```
+**Note:** Check digit will ALWAYS match the main part (both extracted from same generated HKID).
+
+**Example 3: Complete registration form with multiple generated fields**
+```json
+{
+  "steps": [
+    "Enter HKID main part",
+    "Enter HKID check digit",
+    "Enter phone number",
+    "Enter email address"
+  ],
+  "test_data": {
+    "detailed_steps": [
+      {
+        "action": "input",
+        "selector": "input[name='hkid_main']",
+        "value": "{generate:hkid:main}",
+        "instruction": "Enter HKID main part"
+      },
+      {
+        "action": "input",
+        "selector": "input[name='hkid_check']",
+        "value": "{generate:hkid:check}",
+        "instruction": "Enter HKID check digit"
+      },
+      {
+        "action": "input",
+        "selector": "input[name='phone']",
+        "value": "{generate:phone}",
+        "instruction": "Enter phone number"
+      },
+      {
+        "action": "input",
+        "selector": "input[name='email']",
+        "value": "{generate:email}",
+        "instruction": "Enter email address"
+      }
+    ]
+  }
+}
+```
+
+**When to use test data generators:**
+- HKID/passport number fields (especially split fields)
+- Phone number inputs requiring HK format
+- Email addresses for account registration
+- Any field requiring unique, valid data
+- Forms with validation that checks data format
+
+**Benefits:**
+- ✅ Always valid data (HKID check digits calculated correctly)
+- ✅ Split field consistency (check digit matches main part)
+- ✅ No hardcoded values (prevents conflicts)
+- ✅ Unique data per execution (email uniqueness)
+- ✅ No manual data preparation required
+
+**LOOP SUPPORT FOR REPEATED STEP SEQUENCES:**
+When a test requires repeating the same sequence of steps multiple times (e.g., upload 5 documents, fill 3 forms, add N items), use loop_blocks instead of duplicating steps.
+
+**Loop block structure:**
+```json
+{
+  "steps": [
+    "Navigate to upload page",
+    "Click upload button",
+    "Select file from dialog",
+    "Click confirm button",
+    "Verify success message"
+  ],
+  "test_data": {
+    "detailed_steps": [/* step details */],
+    "loop_blocks": [
+      {
+        "id": "file_upload_loop",
+        "start_step": 2,
+        "end_step": 4,
+        "iterations": 5,
+        "description": "Upload 5 HKID documents",
+        "variables": {
+          "file_path": "/app/test_files/document_{iteration}.pdf"
+        }
+      }
+    ]
+  }
+}
+```
+
+**Loop block fields:**
+- id: Unique identifier for the loop
+- start_step: First step in loop (1-based index)
+- end_step: Last step in loop (inclusive)
+- iterations: Number of times to repeat
+- description: Human-readable description
+- variables: Optional variable substitution using {iteration} placeholder
+
+**When to use loops:**
+- Uploading multiple files (5+ files)
+- Filling multiple identical forms
+- Adding multiple items to cart/list
+- Repeating any sequence 3+ times
+
+**Benefits:**
+- Cleaner test cases (3 steps instead of 15)
+- Easier to maintain (update once, applies to all iterations)
+- Variable substitution for dynamic values
+
 IMPORTANT: Return ONLY valid JSON, no additional text or explanation. Do NOT abbreviate or skip steps to save tokens - completeness is critical."""
 
     def _build_user_prompt(

@@ -6,10 +6,12 @@ import { TestDetailPage } from './pages/TestDetailPage';
 import { SavedTestsPage } from './pages/SavedTestsPage';
 import TestSuitesPage from './pages/TestSuitesPage';
 import { KnowledgeBasePage } from './pages/KnowledgeBasePage';
+import { BrowserProfilesPage } from './pages/BrowserProfilesPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ExecutionProgressPage } from './pages/ExecutionProgressPage';
 import { ExecutionHistoryPage } from './pages/ExecutionHistoryPage';
 import { FeedbackListPage } from './pages/FeedbackListPage';
+import { DebugSessionPage } from './pages/DebugSessionPage';
 import './index.css';
 
 // Protected Route wrapper
@@ -77,6 +79,14 @@ function App() {
           }
         />
         <Route
+          path="/browser-profiles"
+          element={
+            <ProtectedRoute>
+              <BrowserProfilesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/settings"
           element={
             <ProtectedRoute>
@@ -97,6 +107,22 @@ function App() {
           element={
             <ProtectedRoute>
               <ExecutionProgressPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/debug/:executionId/:targetStep/:mode"
+          element={
+            <ProtectedRoute>
+              <DebugSessionPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/debug/:executionId/:targetStep/:endStep/:mode"
+          element={
+            <ProtectedRoute>
+              <DebugSessionPage />
             </ProtectedRoute>
           }
         />

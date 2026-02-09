@@ -317,7 +317,7 @@ class TypeScriptStagehandAdapter(StagehandAdapter):
         user_id: int,
         db: Session,
         user_config: Optional[Dict[str, Any]] = None
-    ) -> None:
+    ) -> Dict[str, Any]:
         """
         Initialize a persistent debug session using TypeScript Stagehand.
         
@@ -330,6 +330,9 @@ class TypeScriptStagehandAdapter(StagehandAdapter):
             user_id: User ID
             db: Database session
             user_config: Optional configuration overrides
+            
+        Returns:
+            Dict with browser_pid, browser_port, and other metadata
         """
         # Create a fresh session for this request
         async with aiohttp.ClientSession() as session:
@@ -357,10 +360,42 @@ class TypeScriptStagehandAdapter(StagehandAdapter):
                     data = await response.json()
                     
                     print(f"[TypeScript Adapter] Initialized persistent session: {session_id}")
+                    
+                    # Return browser metadata
+                    return {
+                        "browser_pid": data.get("browser_pid"),
+                        "browser_port": data.get("browser_port"),
+                        "devtools_url": data.get("devtools_url"),
+                        "session_id": session_id
+                    }
             
             except aiohttp.ClientError as e:
                 raise ConnectionError(
                     f"Cannot initialize persistent session: {e}"
+                )
+    
+    async def export_browser_profile(self) -> Dict[str, Any]:
+        """
+        Export browser session data via TypeScript service.
+        
+        Returns:
+            Dict with cookies, localStorage, sessionStorage, and timestamp
+        """
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.post(
+                    f"{self.typescript_service_url}/export-profile"
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        raise RuntimeError(
+                            f"TypeScript service failed to export profile: {error_text}"
+                        )
+                    return await response.json()
+            
+            except aiohttp.ClientError as e:
+                raise ConnectionError(
+                    f"Cannot export browser profile: {e}"
                 )
     
     @property

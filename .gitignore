@@ -90,7 +90,9 @@ backend/*.sqlite3
 backend/artifacts/
 backend/artifacts/screenshots/
 backend/artifacts/videos/
+backend/artifacts/debug_sessions/
 backend/screenshots/
+backend/user_data/
 test-results/
 playwright-report/
 
@@ -105,3 +107,4 @@ backend/update_test_steps.py
 **/venv/
 **/env/
 
+videos/

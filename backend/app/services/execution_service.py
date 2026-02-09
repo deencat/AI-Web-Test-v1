@@ -1,10 +1,12 @@
 """
 Test Execution Service with Stagehand and Playwright
 Handles browser automation and test execution.
+Integrated with 3-Tier Execution Engine (Sprint 5.5)
 """
 import asyncio
 import json
 import os
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Callable
@@ -18,9 +20,15 @@ from app.models.test_execution import (
     ExecutionStatus,
     ExecutionResult
 )
+from app.models.execution_settings import ExecutionSettings
+from app.models.user_settings import UserSetting
 from app.crud import test_execution as crud_execution
 from app.crud import execution_feedback as crud_feedback
 from app.schemas.execution_feedback import ExecutionFeedbackCreate
+from app.services.three_tier_execution_service import ThreeTierExecutionService
+from app.utils.test_data_generator import TestDataGenerator
+
+logger = logging.getLogger(__name__)
 
 
 class ExecutionConfig:
@@ -53,6 +61,7 @@ class ExecutionService:
     """
     Service for executing test cases using Playwright.
     Provides browser automation, step execution, and result tracking.
+    Integrated with 3-Tier Execution Engine (Sprint 5.5).
     """
     
     def __init__(self, config: ExecutionConfig = None):
@@ -62,6 +71,39 @@ class ExecutionService:
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
         self.page: Optional[Page] = None
+        self.three_tier_service: Optional[ThreeTierExecutionService] = None
+        self.test_data_generator = TestDataGenerator()
+        self._generated_data_cache: Dict[str, Dict[str, str]] = {}  # Cache per test_id
+    
+    def _get_user_execution_settings(self, db: Session, user_id: int) -> ExecutionSettings:
+        """
+        Get user's execution settings from database with defaults if not configured.
+        
+        Args:
+            db: Database session
+            user_id: User ID
+            
+        Returns:
+            ExecutionSettings object (existing or default)
+        """
+        # Try to get existing settings
+        settings = db.query(ExecutionSettings).filter(
+            ExecutionSettings.user_id == user_id
+        ).first()
+        
+        if settings:
+            return settings
+        
+        # Return default settings if not configured
+        default_settings = ExecutionSettings()
+        default_settings.user_id = user_id
+        default_settings.fallback_strategy = "option_c"  # Recommended default
+        default_settings.max_retry_per_tier = 1
+        default_settings.timeout_per_tier_seconds = 30
+        default_settings.track_fallback_reasons = True
+        default_settings.track_strategy_effectiveness = True
+        
+        return default_settings
         
     async def initialize(self):
         """Initialize Playwright and browser."""
@@ -81,13 +123,40 @@ class ExecutionService:
                     slow_mo=self.config.slow_mo
                 )
             else:  # chromium (default)
+                # Launch with remote debugging port for CDP access
                 self.browser = await self.playwright.chromium.launch(
                     headless=self.config.headless,
-                    slow_mo=self.config.slow_mo
+                    slow_mo=self.config.slow_mo,
+                    args=[
+                        '--remote-debugging-port=9222',  # Fixed port for CDP
+                        '--disable-blink-features=AutomationControlled'
+                    ]
                 )
     
     async def cleanup(self):
         """Clean up browser and Playwright resources."""
+        # Clean up 3-Tier service (includes Stagehand cleanup)
+        if self.three_tier_service:
+            try:
+                # Clean up Tier 2 XPath extractor's Stagehand
+                if hasattr(self.three_tier_service, 'xpath_extractor') and self.three_tier_service.xpath_extractor:
+                    if hasattr(self.three_tier_service.xpath_extractor, 'stagehand') and self.three_tier_service.xpath_extractor.stagehand:
+                        try:
+                            await self.three_tier_service.xpath_extractor.stagehand.close()
+                        except Exception as e:
+                            print(f"[DEBUG] Error closing Stagehand: {e}")
+                
+                # Clean up Tier 3 Stagehand
+                if hasattr(self.three_tier_service, 'tier3_executor') and self.three_tier_service.tier3_executor:
+                    if hasattr(self.three_tier_service.tier3_executor, 'stagehand') and self.three_tier_service.tier3_executor.stagehand:
+                        try:
+                            await self.three_tier_service.tier3_executor.stagehand.close()
+                        except Exception as e:
+                            print(f"[DEBUG] Error closing Tier 3 Stagehand: {e}")
+            except Exception as e:
+                print(f"[DEBUG] Error cleaning up 3-Tier service: {e}")
+        
+        # Clean up ExecutionService's Playwright browser
         if self.page:
             await self.page.close()
             self.page = None
@@ -104,7 +173,11 @@ class ExecutionService:
             await self.playwright.stop()
             self.playwright = None
     
-    async def create_context(self, record_video: bool = False) -> BrowserContext:
+    async def create_context(
+        self,
+        record_video: bool = False,
+        http_credentials: Optional[Dict[str, Any]] = None
+    ) -> BrowserContext:
         """Create a new browser context with optional video recording."""
         if not self.browser:
             await self.initialize()
@@ -116,6 +189,9 @@ class ExecutionService:
         if record_video:
             context_options["record_video_dir"] = str(self.config.video_dir)
             context_options["record_video_size"] = self.config.viewport
+
+        if http_credentials:
+            context_options["http_credentials"] = http_credentials
         
         self.context = await self.browser.new_context(**context_options)
         self.context.set_default_timeout(self.config.timeout)
@@ -129,6 +205,86 @@ class ExecutionService:
         
         self.page = await self.context.new_page()
         return self.page
+
+    async def _apply_profile_cookies(self, page: Page, profile_data: Dict[str, Any]) -> None:
+        """Apply cookie data to the browser context before navigation."""
+        cookies = profile_data.get("cookies") if profile_data else None
+        if cookies:
+            await page.context.add_cookies(cookies)
+            logger.info(f"[INFO] ✅ Injected {len(cookies)} cookies")
+
+    async def _apply_profile_storage(self, page: Page, profile_data: Dict[str, Any]) -> None:
+        """Apply localStorage and sessionStorage after navigation."""
+        if not profile_data:
+            return
+
+        local_storage = profile_data.get("localStorage")
+        if local_storage:
+            await page.evaluate(
+                """
+                (storage) => {
+                    for (const [key, value] of Object.entries(storage)) {
+                        localStorage.setItem(key, value);
+                    }
+                }
+                """,
+                local_storage
+            )
+            logger.info(f"[INFO] ✅ Injected {len(local_storage)} localStorage items")
+
+        session_storage = profile_data.get("sessionStorage")
+        if session_storage:
+            await page.evaluate(
+                """
+                (storage) => {
+                    for (const [key, value] of Object.entries(storage)) {
+                        sessionStorage.setItem(key, value);
+                    }
+                }
+                """,
+                session_storage
+            )
+            logger.info(f"[INFO] ✅ Injected {len(session_storage)} sessionStorage items")
+
+    async def export_profile_session(self) -> Optional[Dict[str, Any]]:
+        """Export cookies, localStorage, and sessionStorage from the current page."""
+        if not self.page or not self.context:
+            return None
+
+        cookies = await self.context.cookies()
+
+        local_storage = await self.page.evaluate(
+            """
+            () => {
+                const storage = {};
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    storage[key] = localStorage.getItem(key);
+                }
+                return storage;
+            }
+            """
+        )
+
+        session_storage = await self.page.evaluate(
+            """
+            () => {
+                const storage = {};
+                for (let i = 0; i < sessionStorage.length; i++) {
+                    const key = sessionStorage.key(i);
+                    storage[key] = sessionStorage.getItem(key);
+                }
+                return storage;
+            }
+            """
+        )
+
+        return {
+            "cookies": cookies,
+            "localStorage": local_storage,
+            "sessionStorage": session_storage,
+            "exported_at": datetime.utcnow().isoformat()
+        }
     
     async def execute_test(
         self,
@@ -137,7 +293,10 @@ class ExecutionService:
         user_id: int,
         base_url: str,
         environment: str = "dev",
-        progress_callback: Optional[Callable] = None
+        execution_id: Optional[int] = None,
+        progress_callback: Optional[Callable] = None,
+        browser_profile_data: Optional[Dict[str, Any]] = None,
+        http_credentials: Optional[Dict[str, Any]] = None
     ) -> TestExecution:
         """
         Execute a test case and track results.
@@ -148,20 +307,28 @@ class ExecutionService:
             user_id: ID of user triggering execution
             base_url: Base URL for the application under test
             environment: Environment name (dev, staging, production)
+            execution_id: Optional existing execution ID (for queue manager)
             progress_callback: Optional callback for progress updates
             
         Returns:
             TestExecution object with results
         """
-        # Create execution record
-        execution = crud_execution.create_execution(
-            db=db,
-            test_case_id=test_case.id,
-            user_id=user_id,
-            browser=self.config.browser,
-            environment=environment,
-            base_url=base_url
-        )
+        # Get or create execution record
+        if execution_id:
+            # Use existing execution (from queue manager)
+            execution = crud_execution.get_execution(db, execution_id)
+            if not execution:
+                raise ValueError(f"Execution {execution_id} not found")
+        else:
+            # Create new execution record
+            execution = crud_execution.create_execution(
+                db=db,
+                test_case_id=test_case.id,
+                user_id=user_id,
+                browser=self.config.browser,
+                environment=environment,
+                base_url=base_url
+            )
         
         try:
             # Update status to running
@@ -176,32 +343,289 @@ class ExecutionService:
             
             # Initialize browser
             await self.initialize()
-            await self.create_context(record_video=True)
+            await self.create_context(record_video=True, http_credentials=http_credentials)
             page = await self.create_page()
+
+            # Apply browser profile cookies before navigation
+            if browser_profile_data:
+                await self._apply_profile_cookies(page, browser_profile_data)
+            
+            # Get CDP endpoint for shared browser context
+            # Use fixed remote debugging port (set in initialize())
+            cdp_endpoint = "http://localhost:9222"
+            
+            logger.info(f"[DEBUG] CDP endpoint: {cdp_endpoint}")
+            
+            # Get user's execution settings and initialize 3-Tier service
+            user_settings = self._get_user_execution_settings(db, user_id)
+            
+            # Get user's AI provider config from UserSetting table
+            user_ai_config = None
+            user_setting = db.query(UserSetting).filter(UserSetting.user_id == user_id).first()
+            if user_setting:
+                user_ai_config = {
+                    "provider": user_setting.execution_provider,
+                    "model": user_setting.execution_model,
+                    "temperature": user_setting.execution_temperature,
+                    "max_tokens": user_setting.execution_max_tokens
+                }
+                logger.info(f"[DEBUG] 🎯 User AI config from DB: {user_ai_config}")
+            else:
+                logger.info("[DEBUG] ⚠️ No user settings found, will use .env defaults")
+            
+            self.three_tier_service = ThreeTierExecutionService(
+                db=db,
+                page=page,
+                user_settings=user_settings,
+                cdp_endpoint=cdp_endpoint,  # Pass CDP endpoint for shared browser context
+                user_ai_config=user_ai_config  # Pass user's AI provider settings
+            )
             
             # Navigate to base URL
             await page.goto(base_url)
+
+            # Apply localStorage/sessionStorage after navigation
+            if browser_profile_data:
+                await self._apply_profile_storage(page, browser_profile_data)
             
             # Execute steps - Get detailed steps from test_data if available
             steps = test_case.steps if isinstance(test_case.steps, list) else json.loads(test_case.steps)
             
             # Try to get detailed steps with selectors from test_data
             detailed_steps = None
+            loop_blocks = []
             if test_case.test_data:
                 test_data = test_case.test_data if isinstance(test_case.test_data, dict) else json.loads(test_case.test_data)
                 detailed_steps = test_data.get('detailed_steps', [])
+                loop_blocks = test_data.get('loop_blocks', [])
+            
+            # Validate and log loop blocks
+            if loop_blocks:
+                logger.info(f"[LOOP] Found {len(loop_blocks)} loop block(s): {loop_blocks}")
             
             total_steps = len(steps)
             passed_steps = 0
             failed_steps = 0
             
-            for idx, step_desc in enumerate(steps, start=1):
+            # Helper function to find matching detailed_step by instruction
+            def find_detailed_step_for_step(step_desc: str, detailed_steps: list) -> dict:
+                """Find detailed_step that matches the step description by instruction field"""
+                if not detailed_steps:
+                    return None
+                
+                import re
+                
+                # Normalize step description: remove {generate:*} patterns and trim punctuation
+                normalized_step = re.sub(r'\{generate:\w+(?::\w+)?\}', '', step_desc).strip().rstrip('.')
+                
+                # Try exact match first
+                for ds in detailed_steps:
+                    instruction = ds.get('instruction', '')
+                    if instruction == step_desc:
+                        return ds
+                
+                # Try normalized match (without patterns and trailing punctuation)
+                for ds in detailed_steps:
+                    instruction = ds.get('instruction', '').strip().rstrip('.')
+                    if instruction == normalized_step:
+                        return ds
+                
+                # Fallback: partial match (old behavior)
+                for ds in detailed_steps:
+                    instruction = ds.get('instruction', '')
+                    if instruction and instruction.strip() in step_desc.strip():
+                        return ds
+                
+                return None
+            
+            # Step execution with loop support
+            idx = 1  # Current step index (1-based)
+            
+            while idx <= total_steps:
+                step_desc = steps[idx - 1]  # 0-based list access
                 step_start = datetime.utcnow()
                 
-                # Get detailed step data if available (includes selector, action, etc.)
-                detailed_step = None
-                if detailed_steps and idx <= len(detailed_steps):
-                    detailed_step = detailed_steps[idx - 1]
+                # Check if this step starts a loop block
+                active_loop = self._find_loop_starting_at(idx, loop_blocks)
+                
+                if active_loop:
+                    logger.info(f"[LOOP] Starting loop block '{active_loop['id']}' at step {idx} for {active_loop['iterations']} iterations")
+                    
+                    # Execute loop body N times
+                    loop_passed = 0
+                    loop_failed = 0
+                    
+                    for iteration in range(1, active_loop["iterations"] + 1):
+                        logger.info(f"[LOOP] Iteration {iteration}/{active_loop['iterations']} of loop '{active_loop['id']}'")
+                        
+                        # Execute each step in the loop range
+                        for loop_step_idx in range(active_loop["start_step"], active_loop["end_step"] + 1):
+                            loop_step_desc = steps[loop_step_idx - 1]
+                            loop_step_start = datetime.utcnow()
+                            
+                            # Get detailed step data by matching instruction field
+                            detailed_step = find_detailed_step_for_step(loop_step_desc, detailed_steps)
+                            
+                            if detailed_step:
+                                # Apply variable substitution for this iteration
+                                detailed_step = self._apply_loop_variables(
+                                    detailed_step, 
+                                    iteration, 
+                                    active_loop.get("variables", {})
+                                )
+                                
+                                # Apply test data generation (after loop variables)
+                                detailed_step = self._apply_test_data_generation(
+                                    detailed_step,
+                                    execution.id
+                                )
+                            
+                            # Apply variable substitution to step description
+                            loop_step_desc_substituted = self._substitute_loop_variables(
+                                loop_step_desc, 
+                                iteration, 
+                                active_loop.get("variables", {})
+                            )
+                            
+                            # Apply test data generation to step description
+                            loop_step_desc_substituted = self._substitute_test_data_patterns(
+                                loop_step_desc_substituted,
+                                execution.id
+                            )
+                            
+                            try:
+                                if progress_callback:
+                                    await progress_callback({
+                                        "execution_id": execution.id,
+                                        "step": loop_step_idx,
+                                        "total_steps": total_steps,
+                                        "loop_iteration": iteration,
+                                        "loop_total": active_loop["iterations"],
+                                        "message": f"Executing step {loop_step_idx} (iteration {iteration}/{active_loop['iterations']}): {loop_step_desc_substituted}"
+                                    })
+                                
+                                # Execute the step with detailed data
+                                result = await self._execute_step(page, loop_step_desc_substituted, loop_step_idx, base_url, detailed_step, execution.id)
+                                
+                                loop_step_end = datetime.utcnow()
+                                duration = (loop_step_end - loop_step_start).total_seconds()
+                                
+                                # Determine result for screenshot naming
+                                step_result = ExecutionResult.PASS if result["success"] else ExecutionResult.FAIL
+                                
+                                # Save screenshot with iteration number
+                                screenshot_path = await self._capture_screenshot_with_iteration(
+                                    page, 
+                                    execution.id, 
+                                    loop_step_idx,
+                                    iteration,
+                                    step_result
+                                )
+                                
+                                # Create step record with iteration info
+                                crud_execution.create_execution_step(
+                                    db=db,
+                                    execution_id=execution.id,
+                                    step_number=loop_step_idx,
+                                    step_description=f"{loop_step_desc_substituted} (iter {iteration}/{active_loop['iterations']})",
+                                    expected_result=result.get("expected", "Step completes successfully"),
+                                    result=step_result,
+                                    actual_result=result.get("actual", ""),
+                                    error_message=result.get("error"),
+                                    screenshot_path=screenshot_path,
+                                    duration_seconds=duration
+                                )
+                                
+                                if result["success"]:
+                                    loop_passed += 1
+                                else:
+                                    loop_failed += 1
+                                    
+                                    # Capture execution feedback for failed step
+                                    await self._capture_execution_feedback(
+                                        db=db,
+                                        execution_id=execution.id,
+                                        step_index=loop_step_idx - 1,
+                                        step_description=f"{loop_step_desc_substituted} (iter {iteration})",
+                                        error_message=result.get("error", "Step failed"),
+                                        page=page,
+                                        screenshot_path=screenshot_path,
+                                        duration_ms=int(duration * 1000),
+                                        tier_info=result.get("execution_history"),
+                                        strategy_used=result.get("strategy_used")
+                                    )
+                                    
+                                    # If step is critical and failed, stop loop execution
+                                    if result.get("critical", False):
+                                        logger.warning(f"[LOOP] Critical step {loop_step_idx} failed in iteration {iteration}, stopping loop")
+                                        break
+                            
+                            except Exception as e:
+                                loop_failed += 1
+                                loop_step_end = datetime.utcnow()
+                                duration = (loop_step_end - loop_step_start).total_seconds()
+                                
+                                # Capture failure screenshot
+                                screenshot_path = await self._capture_screenshot_with_iteration(
+                                    page, 
+                                    execution.id, 
+                                    loop_step_idx,
+                                    iteration,
+                                    ExecutionResult.ERROR
+                                )
+                                
+                                crud_execution.create_execution_step(
+                                    db=db,
+                                    execution_id=execution.id,
+                                    step_number=loop_step_idx,
+                                    step_description=f"{loop_step_desc} (iter {iteration}/{active_loop['iterations']})",
+                                    result=ExecutionResult.ERROR,
+                                    error_message=str(e),
+                                    screenshot_path=screenshot_path,
+                                    duration_seconds=duration
+                                )
+                                
+                                # Capture execution feedback
+                                await self._capture_execution_feedback(
+                                    db=db,
+                                    execution_id=execution.id,
+                                    step_index=loop_step_idx - 1,
+                                    step_description=f"{loop_step_desc} (iter {iteration})",
+                                    error_message=str(e),
+                                    page=page,
+                                    screenshot_path=screenshot_path,
+                                    duration_ms=int(duration * 1000)
+                                )
+                                
+                                logger.error(f"[LOOP] Exception in step {loop_step_idx} iteration {iteration}: {e}")
+                                break
+                    
+                    # Update counters with loop results
+                    passed_steps += loop_passed
+                    failed_steps += loop_failed
+                    
+                    logger.info(f"[LOOP] Completed loop '{active_loop['id']}': {loop_passed} passed, {loop_failed} failed")
+                    
+                    # Skip to after loop end
+                    idx = active_loop["end_step"] + 1
+                    continue
+                
+                # Execute single step normally (not in a loop)
+                # Get detailed step data by matching instruction field
+                detailed_step = find_detailed_step_for_step(step_desc, detailed_steps)
+                
+                if detailed_step:
+                    # Apply test data generation to detailed step
+                    detailed_step = self._apply_test_data_generation(
+                        detailed_step,
+                        execution.id
+                    )
+                
+                # Apply test data generation to step description
+                step_desc_substituted = self._substitute_test_data_patterns(
+                    step_desc,
+                    execution.id
+                )
                 
                 try:
                     if progress_callback:
@@ -209,31 +633,32 @@ class ExecutionService:
                             "execution_id": execution.id,
                             "step": idx,
                             "total_steps": total_steps,
-                            "message": f"Executing step {idx}: {step_desc}"
+                            "message": f"Executing step {idx}: {step_desc_substituted}"
                         })
                     
                     # Execute the step with detailed data
-                    result = await self._execute_step(page, step_desc, idx, base_url, detailed_step)
+                    result = await self._execute_step(page, step_desc_substituted, idx, base_url, detailed_step, execution.id)
                     
                     step_end = datetime.utcnow()
                     duration = (step_end - step_start).total_seconds()
+                    
+                    # Determine result for screenshot naming
+                    step_result = ExecutionResult.PASS if result["success"] else ExecutionResult.FAIL
                     
                     # Save screenshot for this step
                     screenshot_path = await self._capture_screenshot(
                         page, 
                         execution.id, 
                         idx,
-                        result["result"]
+                        step_result
                     )
                     
                     # Create step record
-                    step_result = ExecutionResult.PASS if result["success"] else ExecutionResult.FAIL
-                    
                     crud_execution.create_execution_step(
                         db=db,
                         execution_id=execution.id,
                         step_number=idx,
-                        step_description=step_desc,
+                        step_description=step_desc_substituted,
                         expected_result=result.get("expected", "Step completes successfully"),
                         result=step_result,
                         actual_result=result.get("actual", ""),
@@ -247,16 +672,18 @@ class ExecutionService:
                     else:
                         failed_steps += 1
                         
-                        # Capture execution feedback for failed step
+                        # Capture execution feedback for failed step with 3-tier info
                         await self._capture_execution_feedback(
                             db=db,
                             execution_id=execution.id,
                             step_index=idx - 1,  # 0-based index
-                            step_description=step_desc,
+                            step_description=step_desc_substituted,
                             error_message=result.get("error", "Step failed"),
                             page=page,
                             screenshot_path=screenshot_path,
-                            duration_ms=int(duration * 1000)
+                            duration_ms=int(duration * 1000),
+                            tier_info=result.get("execution_history"),  # 3-tier execution history
+                            strategy_used=result.get("strategy_used")  # Which strategy was used
                         )
                         
                         # If step is critical and failed, stop execution
@@ -280,7 +707,7 @@ class ExecutionService:
                         db=db,
                         execution_id=execution.id,
                         step_number=idx,
-                        step_description=step_desc,
+                        step_description=step_desc_substituted,
                         result=ExecutionResult.ERROR,
                         error_message=str(e),
                         screenshot_path=screenshot_path,
@@ -292,7 +719,7 @@ class ExecutionService:
                         db=db,
                         execution_id=execution.id,
                         step_index=idx - 1,  # 0-based index
-                        step_description=step_desc,
+                        step_description=step_desc_substituted,
                         error_message=str(e),
                         page=page,
                         screenshot_path=screenshot_path,
@@ -301,6 +728,9 @@ class ExecutionService:
                     
                     # Critical error, stop execution
                     break
+                
+                # Move to next step
+                idx += 1
             
             # Get video path if recorded
             video_path = None
@@ -360,13 +790,15 @@ class ExecutionService:
         step_description: str, 
         step_number: int,
         base_url: str,
-        detailed_step: Dict[str, Any] = None
+        detailed_step: Dict[str, Any] = None,
+        execution_id: int = None
     ) -> Dict[str, Any]:
         """
-        Execute a single test step with actual selector validation.
+        Execute a single test step using 3-Tier Execution Engine.
         
-        This implementation ACTUALLY tries to find and interact with elements,
-        and will FAIL if selectors don't exist - enabling feedback collection.
+        This implementation uses ThreeTierExecutionService which attempts:
+        - Tier 1: Direct Playwright execution (fastest)
+        - Tier 2/3: Fallback based on user's selected strategy
         
         Args:
             page: Playwright page object
@@ -374,6 +806,7 @@ class ExecutionService:
             step_number: Step number
             base_url: Base URL of the application
             detailed_step: Optional detailed step data with selector, action, value
+            execution_id: Test execution ID for test data generation caching
             
         Returns:
             Dictionary with execution result
@@ -384,6 +817,256 @@ class ExecutionService:
             # DEBUG: Log what we received
             print(f"\n[DEBUG _execute_step] Step {step_number}: {step_description}")
             print(f"[DEBUG] detailed_step = {detailed_step}")
+            
+            # Apply test data generation if execution_id is provided
+            if execution_id:
+                # Apply test data generation to detailed step
+                if detailed_step:
+                    detailed_step = self._apply_test_data_generation(
+                        detailed_step,
+                        execution_id
+                    )
+                    print(f"[DEBUG] After test data generation: detailed_step = {detailed_step}")
+                
+                # Apply test data generation to step description
+                step_description = self._substitute_test_data_patterns(
+                    step_description,
+                    execution_id
+                )
+                print(f"[DEBUG] After test data generation: step_description = {step_description}")
+            
+            # If 3-tier service is available, use it
+            if self.three_tier_service:
+                # Prepare step data for 3-tier execution
+                step_data = {
+                    "action": detailed_step.get('action', '') if detailed_step else None,
+                    "selector": detailed_step.get('selector', '') if detailed_step else None,
+                    "value": detailed_step.get('value', '') if detailed_step else None,
+                    "file_path": detailed_step.get('file_path', '') if detailed_step else None,
+                    "instruction": step_description
+                }
+                
+                print(f"[DEBUG] Initial step_data[value]: {step_data['value']}")
+                print(f"[DEBUG] detailed_step: {detailed_step}")
+                
+                # If no value provided and this is a fill action, extract from substituted step description
+                if not step_data["value"] and (not detailed_step or not detailed_step.get('value')):
+                    print(f"[DEBUG] Entering value extraction logic")
+                    # Try to extract the generated/substituted value from the step description
+                    # This handles cases where {generate:hkid:main} was replaced with actual value
+                    desc_lower = step_description.lower()
+                    # FIX: Also extract values for 'select' and 'choose' actions (for dropdowns)
+                    if "fill" in desc_lower or "type" in desc_lower or "enter" in desc_lower or "input" in desc_lower or "select" in desc_lower or "choose" in desc_lower or "set" in desc_lower:
+                        print(f"[DEBUG] Action keyword found in description, attempting value extraction")
+                        extracted_value = self._extract_value_from_description(step_description)
+                        if extracted_value:
+                            step_data["value"] = extracted_value
+                            print(f"[DEBUG] Extracted value from substituted description: {step_data['value']}")
+                            if self._is_dropdown_instruction(step_description):
+                                if not step_data["action"] or step_data["action"] == "click":
+                                    step_data["action"] = "select"
+                        else:
+                            print(f"[DEBUG] No value extracted from patterns")
+                
+                # Detect action from description if not provided
+                desc_lower = step_description.lower()
+                if not step_data["action"]:
+                    if "navigate" in desc_lower or "go to" in desc_lower or "open" in desc_lower:
+                        step_data["action"] = "navigate"
+                    # Check for signature/sign actions first
+                    elif "sign" in desc_lower or "signature" in desc_lower or "draw" in desc_lower:
+                        step_data["action"] = "draw_signature"
+                    # Check for dropdown/select actions (select month/year/etc.)
+                    # More precise: must have "select/choose" followed by specific dropdown keywords
+                    # Exclude cases like "select the $288/month plan" where "month" is part of price
+                    elif self._is_dropdown_instruction(step_description):
+                        step_data["action"] = "select"
+                    elif "click" in desc_lower or "select" in desc_lower or "choose" in desc_lower:
+                        step_data["action"] = "click"
+                    elif "fill" in desc_lower or "type" in desc_lower or "enter" in desc_lower or "input" in desc_lower:
+                        step_data["action"] = "fill"
+                    # Check for checkbox/toggle actions before generic verify
+                    elif ("check" in desc_lower or "tick" in desc_lower) and ("checkbox" in desc_lower or "box" in desc_lower):
+                        step_data["action"] = "check"
+                    elif ("uncheck" in desc_lower or "untick" in desc_lower) and ("checkbox" in desc_lower or "box" in desc_lower):
+                        step_data["action"] = "uncheck"
+                    elif "verify" in desc_lower or "check" in desc_lower or "assert" in desc_lower:
+                        step_data["action"] = "verify"
+                    # Detect file upload actions
+                    elif "upload" in desc_lower:
+                        step_data["action"] = "upload_file"
+                        # Auto-detect file path from description ONLY if not already provided
+                        if not step_data.get("file_path"):
+                            # First, try to extract explicit file path from description
+                            # Pattern: /path/to/file.ext or path/to/file.ext
+                            file_path_pattern = r'(/[\w\-/.]+\.(pdf|jpg|jpeg|png|gif|doc|docx|xls|xlsx|txt|csv))\b'
+                            file_path_match = re.search(file_path_pattern, step_description, re.IGNORECASE)
+                            
+                            if file_path_match:
+                                # User specified explicit file path in description
+                                step_data["file_path"] = file_path_match.group(1)
+                                logger.info(f"[Extracted from description] File path: {step_data['file_path']}")
+                            else:
+                                # Fallback to keyword-based auto-detection
+                                # Determine base path: /app/test_files/ (Docker) or backend/test_files/ (host)
+                                if os.path.exists("/app/test_files"):
+                                    base_path = "/app/test_files"
+                                else:
+                                    # Running on host - use absolute path from backend directory
+                                    backend_dir = Path(__file__).parent.parent.parent
+                                    base_path = str(backend_dir / "test_files")
+                                
+                                # Default to passport_sample.jpg for uploads (jpg/png accepted by most webapps)
+                                if "passport" in desc_lower:
+                                    step_data["file_path"] = f"{base_path}/passport_sample.jpg"
+                                elif "hkid" in desc_lower:
+                                    step_data["file_path"] = f"{base_path}/hkid_sample.pdf"
+                                elif "address" in desc_lower or "proof" in desc_lower:
+                                    step_data["file_path"] = f"{base_path}/address_proof.pdf"
+                                else:
+                                    # Default to jpg file for generic uploads (most widely accepted)
+                                    step_data["file_path"] = f"{base_path}/passport_sample.jpg"
+                                
+                                logger.info(f"[Auto-detected from keywords] File upload with file_path: {step_data.get('file_path')}")
+                        else:
+                            logger.info(f"[User-specified in detailed_step] File upload with file_path: {step_data.get('file_path')}")
+                        
+                        # Default file input selector for upload actions
+                        if not step_data["selector"]:
+                            step_data["selector"] = "input[type='file']"
+                
+                # Extract XPath/CSS selector from instruction text if not already provided
+                # Skip selector extraction for navigate actions (to avoid matching URLs)
+                if not step_data["selector"] and step_data["action"] != "navigate":
+                    # Try to extract XPath first (pattern: xpath "//..." or with xpath "//...")
+                    xpath_patterns = [
+                        r'xpath\s*"([^"]+)"',  # xpath "//button[@class='btn']" - double quotes
+                        r"xpath\s*'([^']+)'",  # xpath '//button[@class="btn"]' - single quotes
+                        r'with\s+xpath\s*"([^"]+)"',  # with xpath "//button"
+                        r"with\s+xpath\s*'([^']+)'",  # with xpath '//button'
+                        r'(//[\w\-/@\[\]()=\'"\s,\.]+)',  # raw XPath like //button[@id='login']
+                    ]
+                    for pattern in xpath_patterns:
+                        xpath_match = re.search(pattern, step_description)
+                        if xpath_match:
+                            step_data["selector"] = xpath_match.group(1)
+                            print(f"[DEBUG] Extracted XPath from instruction: {step_data['selector']}")
+                            break
+                    
+                    # If no XPath found, try CSS selector (pattern: selector "..." or css "...")
+                    if not step_data["selector"]:
+                        css_patterns = [
+                            r'selector\s*["\']([^"\']+)["\']',
+                            r'css\s*["\']([^"\']+)["\']',
+                        ]
+                        for pattern in css_patterns:
+                            css_match = re.search(pattern, step_description)
+                            if css_match:
+                                step_data["selector"] = css_match.group(1)
+                                print(f"[DEBUG] Extracted CSS selector from instruction: {step_data['selector']}")
+                                break
+                
+                # For navigate actions, extract URL
+                if step_data["action"] == "navigate":
+                    if not step_data["value"]:
+                        step_data["value"] = base_url
+                        if "http" in step_description:
+                            # Try to extract URL from quotes first (most reliable)
+                            # Pattern: "https://example.com" or 'https://example.com' (handles spaces after URL)
+                            quoted_url_match = re.search(r'["\']+(https?://[^\s"\']+)\s*["\']', step_description)
+                            if quoted_url_match:
+                                step_data["value"] = quoted_url_match.group(1)
+                                print(f"[DEBUG] Extracted URL from quotes: {step_data['value']}")
+                            else:
+                                # Fallback: extract URL and aggressively clean it
+                                urls = re.findall(r'https?://[^\s]+', step_description)
+                                if urls:
+                                    # Remove ALL trailing non-URL characters (quotes, punctuation, etc.)
+                                    url = urls[0]
+                                    # Strip trailing characters that shouldn't be in URLs
+                                    while url and url[-1] in '"\',.;:!?) \t\n':
+                                        url = url[:-1]
+                                    step_data["value"] = url
+                                    print(f"[DEBUG] Extracted URL (fallback, cleaned): {step_data['value']}")
+                
+                # For fill actions, extract value from instruction if not provided
+                if step_data["action"] == "fill" and not step_data["value"]:
+                    # Try to extract email, password, username, or other input values
+                    
+                    # Pattern 1: "Enter email: value" or "Enter password: value" (any value after colon)
+                    field_value_match = re.search(
+                        r'(?:enter|fill|type|input)\s+(?:email|password|username|name|text):\s*([^\s,;"\']+)',
+                        step_description,
+                        re.IGNORECASE
+                    )
+                    if field_value_match:
+                        step_data["value"] = field_value_match.group(1)
+                        print(f"[DEBUG] Extracted field value from instruction: {step_data['value']}")
+                    
+                    # Pattern 2: Generic field pattern "field: value" (for any field type)
+                    if not step_data["value"]:
+                        generic_field_match = re.search(
+                            r':\s*([^\s,;"\']+)(?:\s+with\s+xpath|\s+with\s+selector|$)',
+                            step_description
+                        )
+                        if generic_field_match:
+                            potential_value = generic_field_match.group(1)
+                            # Make sure it's not a URL or selector
+                            if not potential_value.startswith('//') and not potential_value.startswith('http'):
+                                step_data["value"] = potential_value
+                                print(f"[DEBUG] Extracted value from generic pattern: {step_data['value']}")
+                    
+                    # Pattern 3: Look for any text in quotes (could be password, username, etc.)
+                    if not step_data["value"]:
+                        quoted_values = re.findall(r'["\']([^"\']+)["\']', step_description)
+                        # Filter out XPath/CSS selectors from quoted values
+                        for quoted_value in quoted_values:
+                            if not quoted_value.startswith('//') and not quoted_value.startswith('.') and not quoted_value.startswith('#'):
+                                # Check if it looks like text input (not a selector)
+                                if not quoted_value.startswith('http') and len(quoted_value) < 100:
+                                    step_data["value"] = quoted_value
+                                    print(f"[DEBUG] Extracted value from quotes: {step_data['value']}")
+                                    break
+                    
+                    # Last resort: use default test input
+                    if not step_data["value"]:
+                        step_data["value"] = "test input"
+                        print(f"[DEBUG] Using default value: test input")
+                
+                print(f"[DEBUG] Calling 3-Tier with: {step_data}")
+                
+                # Execute with 3-tier service
+                result = await self.three_tier_service.execute_step(
+                    step=step_data,
+                    execution_id=None,  # Will add execution_id later if needed
+                    step_index=step_number - 1
+                )
+                
+                print(f"[DEBUG] 3-Tier result: {result}")
+                
+                # Convert 3-tier result format to legacy format
+                if result["success"]:
+                    return {
+                        "success": True,
+                        "actual": f"Tier {result['tier']} execution successful: {step_description}",
+                        "expected": step_description,
+                        "tier": result["tier"],
+                        "execution_time_ms": result.get("execution_time_ms", 0),
+                        "strategy_used": result.get("strategy_used")
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "error": result.get("error", "Execution failed"),
+                        "actual": f"All tiers failed: {result.get('error')}",
+                        "expected": step_description,
+                        "execution_history": result.get("execution_history", []),
+                        "strategy_used": result.get("strategy_used")
+                    }
+            
+            # Fallback: Use old direct Playwright execution if 3-tier not available
+            # This ensures backward compatibility
+            print("[DEBUG] 3-Tier service not available, using fallback direct execution")
             
             # Get action and selector from detailed_step if available
             action = detailed_step.get('action', '').lower() if detailed_step else None
@@ -524,6 +1207,325 @@ class ExecutionService:
                 "expected": step_description
             }
     
+    def _find_loop_starting_at(self, step_idx: int, loop_blocks: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """
+        Find loop block that starts at the given step index.
+        
+        Args:
+            step_idx: Current step index (1-based)
+            loop_blocks: List of loop block definitions
+            
+        Returns:
+            Loop block definition or None
+        """
+        for loop in loop_blocks:
+            if loop.get("start_step") == step_idx:
+                # Validate loop block structure
+                if "end_step" in loop and "iterations" in loop:
+                    return loop
+                else:
+                    logger.warning(f"[LOOP] Invalid loop block structure: {loop}")
+        return None
+    
+    def _apply_loop_variables(
+        self, 
+        detailed_step: Dict[str, Any], 
+        iteration: int, 
+        loop_variables: Dict[str, str]
+    ) -> Dict[str, Any]:
+        """
+        Apply variable substitution to detailed step data.
+        
+        Args:
+            detailed_step: Step data with action, selector, value, file_path
+            iteration: Current iteration number (1-based)
+            loop_variables: Variable substitution templates
+            
+        Returns:
+            Modified detailed step with substituted values
+        """
+        if not detailed_step:
+            return detailed_step
+        
+        # Create a copy to avoid modifying original
+        modified_step = detailed_step.copy()
+        
+        # Apply iteration substitution to all string fields
+        for key, value in modified_step.items():
+            if isinstance(value, str):
+                # Replace {iteration} placeholder
+                modified_step[key] = value.replace("{iteration}", str(iteration))
+        
+        # Apply custom loop variables if provided
+        if loop_variables:
+            for key, template in loop_variables.items():
+                if key in modified_step and isinstance(template, str):
+                    # Replace {iteration} in template
+                    modified_step[key] = template.replace("{iteration}", str(iteration))
+        
+        return modified_step
+    
+    def _substitute_loop_variables(
+        self, 
+        text: str, 
+        iteration: int, 
+        loop_variables: Dict[str, str]
+    ) -> str:
+        """
+        Substitute loop variables in text string.
+        
+        Args:
+            text: Text containing placeholders
+            iteration: Current iteration number (1-based)
+            loop_variables: Variable substitution templates
+            
+        Returns:
+            Text with substituted values
+        """
+        # Replace {iteration} placeholder
+        result = text.replace("{iteration}", str(iteration))
+        
+        # Apply custom variables if provided
+        if loop_variables:
+            for key, template in loop_variables.items():
+                placeholder = f"{{{key}}}"
+                if placeholder in result:
+                    value = template.replace("{iteration}", str(iteration))
+                    result = result.replace(placeholder, value)
+        
+        return result
+    
+    def _substitute_test_data_patterns(
+        self, 
+        text: str, 
+        test_id: int
+    ) -> str:
+        """
+        Substitute test data generation patterns in text string.
+        
+        Supports patterns like:
+        - {generate:hkid} → Full HKID with check digit (A123456(3))
+        - {generate:hkid:main} → Main part only (A123456)
+        - {generate:hkid:check} → Check digit only (3)
+        - {generate:hkid:letter} → Letter only (A)
+        - {generate:hkid:digits} → Digits only (123456)
+        - {generate:phone} → HK phone number (91234567)
+        - {generate:email} → Unique email (testuser1234@example.com)
+        
+        Maintains consistency within a test - same generated value used across multiple steps.
+        
+        Args:
+            text: Text containing generation patterns
+            test_id: Test execution ID for caching consistency
+            
+        Returns:
+            Text with substituted generated values
+            
+        Example:
+            >>> # Step 1: {generate:hkid:main} → A123456
+            >>> # Step 2: {generate:hkid:check} → 3 (matches Step 1)
+        """
+        import re
+        
+        if not text or not isinstance(text, str):
+            return text
+        
+        # Initialize cache for this test if not exists
+        cache_key = str(test_id)
+        if cache_key not in self._generated_data_cache:
+            self._generated_data_cache[cache_key] = {}
+        
+        test_cache = self._generated_data_cache[cache_key]
+        
+        # Pattern: {generate:type} or {generate:type:part}
+        pattern = r'\{generate:(\w+)(?::(\w+))?\}'
+        
+        def replace_pattern(match):
+            data_type = match.group(1)  # hkid, phone, email
+            part = match.group(2)  # main, check, letter, digits (for HKID)
+            
+            try:
+                if data_type == "hkid":
+                    # Generate full HKID once and cache it
+                    if "hkid" not in test_cache:
+                        test_cache["hkid"] = self.test_data_generator.generate_hkid()
+                        logger.info(f"[TestData] Generated HKID for test {test_id}: {test_cache['hkid']}")
+                    
+                    full_hkid = test_cache["hkid"]
+                    
+                    # Extract requested part
+                    if part:
+                        result = TestDataGenerator.extract_hkid_part(full_hkid, part)
+                        logger.info(f"[TestData] Extracted HKID part '{part}': {result}")
+                        return result
+                    else:
+                        # Return full HKID
+                        return full_hkid
+                
+                elif data_type == "phone":
+                    # Generate phone once and cache
+                    if "phone" not in test_cache:
+                        test_cache["phone"] = self.test_data_generator.generate_phone()
+                        logger.info(f"[TestData] Generated phone for test {test_id}: {test_cache['phone']}")
+                    
+                    return test_cache["phone"]
+                
+                elif data_type == "email":
+                    # Generate email once and cache
+                    if "email" not in test_cache:
+                        test_cache["email"] = self.test_data_generator.generate_email()
+                        logger.info(f"[TestData] Generated email for test {test_id}: {test_cache['email']}")
+                    
+                    return test_cache["email"]
+                
+                else:
+                    logger.warning(f"[TestData] Unknown data type: {data_type}")
+                    return match.group(0)  # Return original pattern
+            
+            except Exception as e:
+                logger.error(f"[TestData] Error generating {data_type}: {e}")
+                return match.group(0)  # Return original pattern on error
+        
+        # Replace all patterns
+        result = re.sub(pattern, replace_pattern, text)
+        
+        return result
+
+    def _extract_value_from_description(self, step_description: str) -> Optional[str]:
+        """Extract a value from the step description using common patterns."""
+        import re
+
+        if not step_description or not isinstance(step_description, str):
+            return None
+
+        quote_chars = r"\"'“”‘’"
+        value_patterns = [
+            # Credit card patterns - Extract credit card numbers from descriptions
+            # Pattern 1: 16-digit credit card (e.g., "1234567812345678" or "1234 5678 1234 5678")
+            r'(?:credit.*card|card.*number|card).*?(\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4})',
+            # Pattern 2: Direct input of credit card number
+            r'(?:input|enter|fill|type)\s+(?:credit.*card|card.*number|card)?\s*(\d{16})',
+            # Pattern 3: CVV/CVC (3-4 digits)
+            r'(?:cvv|cvc|security.*code).*?(\d{3,4})',
+            # Pattern 4: Expiry date (MM/YY or MM/YYYY)
+            r'(?:expiry|expiration|exp.*date).*?(\d{2}/\d{2,4})',
+            
+            # Dropdown/Select patterns - Extract month, year, day values
+            r'(?:select|choose|pick|set)\s+(?:expiry\s+)?month\s+(\d{1,2})',
+            r'(?:select|choose|pick|set)\s+(?:expiry\s+)?year\s+(\d{2,4})',
+            r'(?:select|choose|pick|set)\s+day\s+(\d{1,2})',
+            r'(?:select|choose|pick|set)\s+(\d{1,2})\s+as\s+(?:month|day)',
+            r'(?:select|choose|pick|set)\s+(\d{2,4})\s+as\s+year',
+            rf'(?:select|choose|pick|set)\s+[{quote_chars}]?(\d{{1,2}})[{quote_chars}]?\s+as\s+(?:the\s+)?(?:expiry\s+)?month',
+            rf'(?:select|choose|pick|set)\s+[{quote_chars}]?(\d{{2,4}})[{quote_chars}]?\s+as\s+(?:the\s+)?(?:expiry\s+)?year',
+            # Dropdown/Select patterns - explicit option value
+            rf'(?:select|choose|pick|set)\s+[{quote_chars}]([^"\'“”‘’]+)[{quote_chars}]\s+(?:from|in)\s+(?:the\s+)?(?:[\w\s-]+\s+)?(?:dropdown|select|menu|list|field)',
+            rf'(?:select|choose|pick|set)\s+([\w\s-]+?)\s+(?:from|in)\s+(?:the\s+)?(?:[\w\s-]+\s+)?(?:dropdown|select|menu|list|field)',
+            rf'(?:select|choose|pick|set)\s+option\s+[{quote_chars}]([^"\'“”‘’]+)[{quote_chars}]',
+            rf'(?:select|choose|pick|set)\s+option\s+([\w\s-]+?)\s+(?:from|in)\s+',
+            rf'(?:set|select|choose|pick)\s+(?:the\s+)?(?:[\w\s-]+\s+)?(?:dropdown|select|menu|list|field)\s+(?:value\s+)?(?:to|as)\s+[{quote_chars}]?([^"\'“”‘’]+)[{quote_chars}]?',
+            
+            # HKID patterns - Extract specific values mentioned in the description
+            r'(?:input|enter|fill|type)\s+(?:hkid|id)\s+(?:number\s+)?([A-Z]\d{6})\s+',
+            r'(?:input|enter|fill|type)\s+(?:hkid|id)\s+(?:number\s+)?(\d{1,2})\s+(?:on|in)',
+            r'(?:input|enter|fill|type)\s+(?:hkid|id)\s+(?:number\s+)?\((\d{1})\)',
+            
+            # Contact/phone number - more flexible pattern
+            r'(?:contact|phone|mobile).*?(\d{8})\s*$',
+            
+            # Name patterns
+            r'(?:surname|first\s+name)\s+([a-zA-Z]+)\s*$',
+            r'(?:chinese\s+name)\s+([\u4e00-\u9fff]+)\s*$',
+            
+            # Date pattern
+            r'(?:birth|date).*?([\d/]+)\s*$',
+            
+            # Generic fallback patterns
+            r'(?:input|enter|fill|type)\s+([A-Z]\d{6})\s+',
+            r'(?:input|enter|fill|type)\s+(\d{8})\s+',
+        ]
+
+        for i, pattern in enumerate(value_patterns):
+            match = re.search(pattern, step_description, re.IGNORECASE)
+            if match:
+                potential_value = match.group(1).strip()
+                print(f"[DEBUG] Pattern {i} matched: {pattern[:50]}... => {potential_value}")
+                if "field" not in potential_value.lower():
+                    return potential_value
+                print(f"[DEBUG] Skipped potential_value '{potential_value}' (contains 'field')")
+
+        return None
+
+    def _is_dropdown_instruction(self, step_description: str) -> bool:
+        """Determine if a step description refers to a dropdown/select action."""
+        import re
+
+        if not step_description or not isinstance(step_description, str):
+            return False
+
+        desc_lower = step_description.lower()
+        verbs = ["select", "choose", "pick", "set"]
+        dropdown_keywords = ["dropdown", "select box", "select field", "menu", "list", "option"]
+
+        if not any(verb in desc_lower for verb in verbs):
+            return False
+
+        if any(keyword in desc_lower for keyword in dropdown_keywords):
+            return True
+
+        pattern = r"(?:select|choose|pick|set).+(?:from|in).+(?:dropdown|select|menu|list|field|option)"
+        return bool(re.search(pattern, desc_lower))
+    
+    def _apply_test_data_generation(
+        self, 
+        detailed_step: Dict[str, Any], 
+        test_id: int
+    ) -> Dict[str, Any]:
+        """
+        Apply test data generation to detailed step data.
+        
+        Substitutes {generate:...} patterns in all string fields (selector, value, file_path).
+        
+        Args:
+            detailed_step: Step data with action, selector, value, file_path
+            test_id: Test execution ID for caching consistency
+            
+        Returns:
+            Modified detailed step with substituted generated values
+        """
+        if not detailed_step:
+            return detailed_step
+        
+        # Create a copy to avoid modifying original
+        modified_step = detailed_step.copy()
+        
+        # Apply test data generation to all string fields
+        for key, value in modified_step.items():
+            if isinstance(value, str):
+                modified_step[key] = self._substitute_test_data_patterns(value, test_id)
+        
+        return modified_step
+    
+    async def _capture_screenshot_with_iteration(
+        self, 
+        page: Page, 
+        execution_id: int, 
+        step_number: int,
+        iteration: int,
+        result: ExecutionResult
+    ) -> Optional[str]:
+        """Capture screenshot for a step within a loop iteration."""
+        try:
+            filename = f"exec_{execution_id}_step_{step_number}_iter_{iteration}_{result.value}.png"
+            filepath = self.config.screenshot_dir / filename
+            
+            await page.screenshot(path=str(filepath), full_page=True)
+            
+            return str(filepath)
+        except Exception as e:
+            logger.error(f"Failed to capture screenshot: {e}")
+            return None
+    
     async def _capture_screenshot(
         self, 
         page: Page, 
@@ -562,11 +1564,26 @@ class ExecutionService:
         error_message: str,
         page: Page,
         screenshot_path: Optional[str],
-        duration_ms: int
+        duration_ms: int,
+        tier_info: Optional[List[Dict[str, Any]]] = None,
+        strategy_used: Optional[str] = None
     ):
         """
         Capture execution feedback for failed steps.
         This is the foundation of the learning system - collects context for pattern analysis.
+        Includes 3-tier execution information for better diagnostics.
+        
+        Args:
+            db: Database session
+            execution_id: Execution ID
+            step_index: Step index (0-based)
+            step_description: Step description
+            error_message: Error message
+            page: Playwright page
+            screenshot_path: Path to screenshot
+            duration_ms: Step duration in milliseconds
+            tier_info: Optional 3-tier execution history (which tiers attempted/failed)
+            strategy_used: Optional strategy used (option_a, option_b, option_c)
         """
         try:
             # Get current page context
@@ -594,6 +1611,25 @@ class ExecutionService:
             viewport_width = viewport.get("width") if viewport else None
             viewport_height = viewport.get("height") if viewport else None
             
+            # Add 3-tier information to metadata
+            metadata = {}
+            if tier_info:
+                metadata["tier_execution_history"] = tier_info
+                # Extract which tiers were attempted
+                tiers_attempted = [t.get("tier") for t in tier_info if "tier" in t]
+                metadata["tiers_attempted"] = tiers_attempted
+                # Find which tier finally failed
+                failed_tier = None
+                for t in reversed(tier_info):
+                    if not t.get("success", True):
+                        failed_tier = t.get("tier")
+                        break
+                if failed_tier:
+                    metadata["final_failed_tier"] = failed_tier
+            
+            if strategy_used:
+                metadata["strategy_used"] = strategy_used
+            
             # Create feedback entry
             feedback = ExecutionFeedbackCreate(
                 execution_id=execution_id,
@@ -608,7 +1644,8 @@ class ExecutionService:
                 viewport_height=viewport_height,
                 failed_selector=failed_selector,
                 selector_type=selector_type,
-                step_duration_ms=duration_ms
+                step_duration_ms=duration_ms,
+                metadata=metadata if metadata else None  # Include 3-tier execution info
             )
             
             # Save feedback (with minimal overhead)

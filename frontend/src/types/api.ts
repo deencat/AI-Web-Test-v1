@@ -46,6 +46,16 @@ export interface User {
   created_at: string;
 }
 
+// Loop Block type
+export interface LoopBlock {
+  id: string;
+  start_step: number;
+  end_step: number;
+  iterations: number;
+  description: string;
+  variables?: Record<string, string>;
+}
+
 // Test types
 export interface Test {
   id: string;
@@ -59,6 +69,10 @@ export interface Test {
   last_run?: string;
   execution_time?: number;
   steps?: TestStep[];
+  test_data?: {
+    loop_blocks?: LoopBlock[];
+    [key: string]: any;
+  };
 }
 
 export interface TestStep {
@@ -335,5 +349,75 @@ export interface StagehandProviderHealth {
   status: 'healthy' | 'unhealthy' | 'unknown';
   latency_ms?: number;
   error?: string;
+}
+
+// Sprint 5.5: 3-Tier Execution Engine types
+export type FallbackStrategy = 'option_a' | 'option_b' | 'option_c';
+
+export interface ExecutionSettings {
+  id: number;
+  user_id: number;
+  fallback_strategy: FallbackStrategy;
+  timeout_per_tier_seconds: number;
+  max_retry_per_tier: number;
+  track_token_usage: boolean;
+  track_execution_time: boolean;
+  track_success_rate: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExecutionSettingsUpdate {
+  fallback_strategy?: FallbackStrategy;
+  timeout_per_tier_seconds?: number;
+  max_retry_per_tier?: number;
+  track_token_usage?: boolean;
+  track_execution_time?: boolean;
+  track_success_rate?: boolean;
+}
+
+export interface StrategyInfo {
+  name: FallbackStrategy;
+  display_name: string;
+  description: string;
+  cost_level: 'low' | 'medium' | 'high';
+  performance_level: 'high' | 'medium' | 'low';
+  fallback_chain: string[];
+  recommended_for: string;
+  pros: string[];
+  cons: string[];
+}
+
+export interface TierDistributionStats {
+  user_id: number;
+  total_executions: number;
+  tier1_executions: number;
+  tier2_executions: number;
+  tier3_executions: number;
+  tier1_percentage: number;
+  tier2_percentage: number;
+  tier3_percentage: number;
+  tier1_success_rate: number;
+  tier2_success_rate: number;
+  tier3_success_rate: number;
+  tier1_avg_time_ms: number;
+  tier2_avg_time_ms: number;
+  tier3_avg_time_ms: number;
+}
+
+export interface StrategyEffectivenessStats {
+  strategy: FallbackStrategy;
+  total_executions: number;
+  successful_executions: number;
+  failed_executions: number;
+  success_rate: number;
+  avg_execution_time_ms: number;
+  tier1_final_count: number;
+  tier2_final_count: number;
+  tier3_final_count: number;
+  tier1_percentage: number;
+  tier2_percentage: number;
+  tier3_percentage: number;
+  estimated_cost: 'low' | 'medium' | 'high';
 }
 

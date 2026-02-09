@@ -135,6 +135,25 @@ export interface ExecutionStartRequest {
   environment?: EnvironmentType;
   base_url?: string;
   triggered_by?: TriggerType;
+  browser_profile_id?: number;
+  browser_profile_data?: {
+    cookies: Array<{
+      name: string;
+      value: string;
+      domain: string;
+      path: string;
+      expires?: number;
+      httpOnly?: boolean;
+      secure?: boolean;
+      sameSite?: 'Strict' | 'Lax' | 'None';
+    }>;
+    localStorage: Record<string, string>;
+    sessionStorage: Record<string, string>;
+  };
+  http_credentials?: {
+    username: string;
+    password: string;
+  };
 }
 
 export interface ExecutionStartResponse {

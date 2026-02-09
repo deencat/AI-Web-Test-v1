@@ -5,6 +5,7 @@ import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { RunTestButton } from '../components/RunTestButton';
 import { TestStepEditor } from '../components/TestStepEditor';
+import { LoopBlock } from '../components/LoopBlockEditor';
 import { VersionHistoryPanel } from '../components/VersionHistoryPanel';
 import { VersionCompareDialog } from '../components/VersionCompareDialog';
 import { RollbackConfirmDialog } from '../components/RollbackConfirmDialog';
@@ -25,6 +26,10 @@ interface TestDetail {
   updated_at: string;
   created_by?: string;
   current_version?: number;
+  test_data?: {
+    loop_blocks?: LoopBlock[];
+    [key: string]: any;
+  };
 }
 
 export const TestDetailPage: React.FC = () => {
@@ -221,6 +226,7 @@ export const TestDetailPage: React.FC = () => {
               testCaseId={typeof test.id === 'string' ? parseInt(test.id) : test.id}
               testCaseName={test.title || test.name}
               onExecutionStart={handleExecutionStart}
+              enableProfileUpload
             />
           </div>
         </div>
@@ -292,10 +298,22 @@ export const TestDetailPage: React.FC = () => {
               testId={typeof test.id === 'string' ? parseInt(test.id) : test.id}
               initialSteps={Array.isArray(test.steps) ? test.steps.join('\n') : (test.steps || '')}
               initialVersion={test.current_version || 1}
+              loopBlocks={test.test_data?.loop_blocks || []}
               onSave={(versionNumber) => {
                 console.log('New version saved:', versionNumber);
                 // Update test data to reflect new version
                 setTest({ ...test, current_version: versionNumber });
+              }}
+              onLoopBlocksChange={(newLoopBlocks) => {
+                console.log('Loop blocks updated:', newLoopBlocks);
+                // Update test data with new loop blocks
+                setTest({
+                  ...test,
+                  test_data: {
+                    ...test.test_data,
+                    loop_blocks: newLoopBlocks
+                  }
+                });
               }}
             />
           )}

@@ -1,11 +1,14 @@
 """Debug session API endpoints for Local Persistent Browser Debug Mode."""
 from typing import Optional
+import logging
+import traceback
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.models.user import User
-from app.models.debug_session import DebugSessionStatus
+from app.models.debug_session import DebugSessionStatus, DebugMode
 from app.schemas.debug_session import (
     DebugSessionStartRequest,
     DebugSessionStartResponse,
@@ -17,13 +20,15 @@ from app.schemas.debug_session import (
     DebugSessionInstructionsResponse,
     DebugSessionConfirmSetupRequest,
     DebugSessionConfirmSetupResponse,
-    DebugSessionListResponse
+    DebugSessionListResponse,
+    DebugNextStepResponse
 )
 from app.services.debug_session_service import get_debug_session_service
 from app.services.user_settings_service import UserSettingsService
 from app.crud import debug_session as crud_debug
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post("/debug/start", response_model=DebugSessionStartResponse, status_code=status.HTTP_201_CREATED)
@@ -60,21 +65,27 @@ async def start_debug_session(
     debug_service = get_debug_session_service()
     
     try:
+        logger.info(f"Starting debug session for user {current_user.id}, execution {request.execution_id}, step {request.target_step_number}, mode {request.mode}")
+        
         # Get user's execution settings (for correct model configuration)
         settings_service = UserSettingsService()
+        logger.debug(f"Fetching user config for user {current_user.id}")
         user_config = settings_service.get_provider_config(
             db=db,
             user_id=current_user.id,
             config_type="execution"
         )
+        logger.debug(f"User config retrieved: {user_config}")
         
         # Start debug session
+        logger.info(f"Calling debug_service.start_session...")
         session = await debug_service.start_session(
             db=db,
             user_id=current_user.id,
             request=request,
             user_config=user_config
         )
+        logger.info(f"Debug session created successfully: {session.session_id}")
         
         # Build DevTools URL if available
         devtools_url = None
@@ -85,34 +96,60 @@ async def start_debug_session(
         
         # Build response message
         if request.mode == "auto":
-            message = (
-                f"Debug session started with AUTO mode. "
-                f"AI is executing {session.prerequisite_steps_count} prerequisite steps. "
-                f"This will take approximately {session.prerequisite_steps_count * 6} seconds."
-            )
+            if request.skip_prerequisites:
+                message = (
+                    f"Debug session started with AUTO mode (prerequisites skipped). "
+                    f"Browser ready for debugging step {session.target_step_number}"
+                    + (f" to {session.end_step_number}." if session.end_step_number else ".")
+                )
+            else:
+                message = (
+                    f"Debug session started with AUTO mode. "
+                    f"AI is executing {session.prerequisite_steps_count} prerequisite steps. "
+                    f"This will take approximately {session.prerequisite_steps_count * 6} seconds."
+                )
         else:
-            message = (
-                f"Debug session started with MANUAL mode. "
-                f"Please complete {session.prerequisite_steps_count} setup steps manually. "
-                f"Use GET /debug/{session.session_id}/instructions to view steps."
-            )
+            if request.skip_prerequisites:
+                message = (
+                    f"Debug session started with MANUAL mode (prerequisites skipped). "
+                    f"Using current browser state. Ready to debug step {session.target_step_number}"
+                    + (f" to {session.end_step_number}." if session.end_step_number else ".")
+                )
+            else:
+                message = (
+                    f"Debug session started with MANUAL mode. "
+                    f"Please complete {session.prerequisite_steps_count} setup steps manually. "
+                    f"Use GET /debug/{session.session_id}/instructions to view steps."
+                )
+        
+        # Add range info to message if applicable
+        if session.end_step_number:
+            message += f" Debugging step range: {session.target_step_number} to {session.end_step_number}."
         
         return DebugSessionStartResponse(
             session_id=session.session_id,
             mode=session.mode,
             status=session.status,
             target_step_number=session.target_step_number,
+            end_step_number=session.end_step_number,
             prerequisite_steps_count=session.prerequisite_steps_count,
+            skip_prerequisites=session.skip_prerequisites,
             message=message,
             devtools_url=devtools_url
         )
         
     except ValueError as e:
+        logger.error(f"ValueError starting debug session: {str(e)}")
+        logger.error(f"Traceback:\n{traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
     except Exception as e:
+        logger.error(f"CRITICAL ERROR starting debug session: {str(e)}")
+        logger.error(f"Full traceback:\n{traceback.format_exc()}")
+        logger.error(f"Request details - execution_id: {request.execution_id}, target_step: {request.target_step_number}, mode: {request.mode}")
+        logger.error(f"User ID: {current_user.id}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to start debug session: {str(e)}"
@@ -180,6 +217,81 @@ async def execute_debug_step(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to execute debug step: {str(e)}"
+        )
+
+
+@router.post("/debug/{session_id}/execute-next", response_model=DebugNextStepResponse)
+async def execute_next_debug_step(
+    session_id: str,
+    current_user: User = Depends(deps.get_current_user),
+    db: Session = Depends(deps.get_db)
+):
+    """
+    Execute the next step in the debug session sequence.
+    
+    **Authentication required**
+    
+    Continues debugging on the same browser session, maintaining state
+    (cookies, localStorage, page context) between steps. This enables
+    multi-step debugging without restarting the browser.
+    
+    **Use Case:**
+    - Debug steps 7, 8, 9 in sequence without losing form state
+    - Test split field scenarios (HKID main + check digit)
+    - Validate multi-step workflows with state dependencies
+    
+    **Path Parameters:**
+    - `session_id`: Debug session ID
+    
+    **Response:**
+    - `success`: Whether step executed successfully
+    - `step_number`: Current step number that was executed
+    - `step_description`: Description of the executed step
+    - `has_more_steps`: Whether there are more steps to execute
+    - `next_step_preview`: Description of next step (if available)
+    - `total_steps`: Total number of steps in test case
+    
+    **Example:**
+    ```bash
+    # After starting debug session and executing target step 7
+    POST /api/v1/debug/{session_id}/execute-next
+    
+    # Response shows step 8 executed, can continue to step 9
+    {
+      "success": true,
+      "step_number": 8,
+      "step_description": "Enter HKID check digit",
+      "has_more_steps": true,
+      "next_step_preview": "Click Submit button",
+      "total_steps": 10
+    }
+    ```
+    """
+    debug_service = get_debug_session_service()
+    
+    try:
+        result = await debug_service.execute_next_step(
+            db=db,
+            session_id=session_id,
+            user_id=current_user.id
+        )
+        
+        return DebugNextStepResponse(**result)
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to execute next debug step: {str(e)}"
         )
 
 
@@ -478,3 +590,109 @@ async def list_debug_sessions(
         total=total,
         sessions=sessions
     )
+
+
+@router.post("/debug/standalone-browser", response_model=DebugSessionStartResponse, status_code=status.HTTP_201_CREATED)
+async def start_standalone_browser(
+    browser: str = Query("chromium", description="Browser type: chromium, firefox, or webkit"),
+    headless: bool = Query(False, description="Run browser in headless mode"),
+    current_user: User = Depends(deps.get_current_user),
+    db: Session = Depends(deps.get_db)
+):
+    """
+    Start a standalone browser session for manual browsing/login (for browser profile export).
+    
+    **Authentication required**
+    
+    This endpoint creates a persistent browser session WITHOUT requiring an execution_id.
+    Use this for:
+    - Exporting browser profiles after manual login
+    - Testing website navigation
+    - Capturing session data (cookies, localStorage, sessionStorage)
+    
+    **Query Parameters:**
+    - `browser`: Browser type (chromium, firefox, webkit) - default: chromium
+    - `headless`: Run in headless mode - default: false
+    
+    **Returns:**
+    - `session_id`: Unique session identifier (use this for profile export)
+    - `browser_url`: DevTools URL (if available)
+    - `message`: Instructions for next steps
+    
+    **Example:**
+    ```bash
+    curl -X POST "http://localhost:8000/api/v1/debug/standalone-browser?browser=chromium&headless=false" \
+      -H "Authorization: Bearer YOUR_TOKEN"
+    ```
+    
+    **Workflow:**
+    1. Call this endpoint to start browser
+    2. Browser window opens automatically
+    3. Manually navigate and log in to your website
+    4. Use the returned `session_id` to sync profile via `/browser-profiles/{id}/sync`
+    """
+    debug_service = get_debug_session_service()
+    
+    try:
+        logger.info(f"Starting standalone browser session for user {current_user.id}, browser {browser}, headless {headless}")
+        
+        # Generate unique session ID
+        session_id = f"standalone_{uuid.uuid4().hex[:12]}"
+        
+        # Create browser instance
+        from app.services.stagehand_factory import get_stagehand_adapter
+        
+        stagehand = get_stagehand_adapter(
+            db=db,
+            user_id=current_user.id,
+            browser=browser,
+            headless=headless
+        )
+        
+        # Initialize browser with persistent context
+        user_data_dir = debug_service.user_data_base / session_id
+        user_data_dir.mkdir(parents=True, exist_ok=True)
+        
+        logger.info(f"Initializing browser with userDataDir: {user_data_dir}")
+        
+        # Initialize persistent browser session (no test_id needed for standalone)
+        browser_metadata = await stagehand.initialize_persistent(
+            session_id=session_id,
+            test_id=None,  # No test associated with standalone session
+            user_id=current_user.id,
+            db=db,
+            user_config=None  # Use default config
+        )
+        
+        # Store in active sessions
+        debug_service.active_sessions[session_id] = stagehand
+        logger.info(f"Standalone browser session {session_id} stored in active sessions")
+        
+        # Note: We don't create a DB record for standalone sessions because:
+        # 1. They're temporary (only used for profile export)
+        # 2. DebugSession model requires execution_id and target_step_number (not applicable here)
+        # 3. The session is tracked in memory via debug_service.active_sessions
+        
+        logger.info(f"✅ Standalone browser session {session_id} created successfully")
+        
+        return DebugSessionStartResponse(
+            session_id=session_id,
+            mode=DebugMode.MANUAL,
+            status=DebugSessionStatus.READY,
+            target_step_number=None,  # No target step for standalone sessions
+            prerequisite_steps_count=None,  # No prerequisites for standalone sessions
+            message=(
+                "Standalone browser session started! "
+                "Navigate to your website and log in manually. "
+                "Keep the browser window open, then use this session_id to export your browser profile."
+            ),
+            devtools_url=None  # Not exposing DevTools URL for standalone sessions
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to start standalone browser: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to start standalone browser: {str(e)}"
+        )

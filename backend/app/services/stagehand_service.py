@@ -240,6 +240,87 @@ class StagehandExecutionService:
             
             print(f"[DEBUG] Stagehand initialized successfully, page={self.page}")
     
+    async def initialize_with_cdp(self, cdp_endpoint: str, user_config: Optional[Dict[str, Any]] = None):
+        """
+        Initialize Stagehand by connecting to an existing browser via CDP.
+        
+        Args:
+            cdp_endpoint: CDP endpoint URL (e.g., "http://127.0.0.1:9222")
+            user_config: Optional user configuration dict with provider, model, temperature, max_tokens
+        """
+        if not self.stagehand:
+            print(f"[DEBUG] Connecting Stagehand to existing browser via CDP: {cdp_endpoint}")
+            
+            # Configure model based on provider (same logic as initialize())
+            if user_config:
+                model_provider = user_config.get("provider", "openrouter").lower()
+            else:
+                model_provider = os.getenv("MODEL_PROVIDER", "openrouter").lower()
+            
+            # Build browser launch options with CDP URL
+            # NOTE: Python Stagehand uses "cdp_url" (underscore), not "cdpUrl" (camelCase)
+            launch_options = {
+                "cdp_url": cdp_endpoint  # Connect to existing browser via CDP
+            }
+            
+            # Build config based on provider
+            if model_provider == "cerebras":
+                cerebras_api_key = os.getenv("CEREBRAS_API_KEY")
+                cerebras_model = user_config.get("model") if user_config else os.getenv("CEREBRAS_MODEL", "llama3.1-8b")
+                if cerebras_model and cerebras_model.lower().startswith("cerebras/"):
+                    cerebras_model = cerebras_model.split("/", 1)[1]
+                
+                config = StagehandConfig(
+                    env="LOCAL",  # Use LOCAL env with cdpUrl to connect to existing browser
+                    headless=False,  # Browser already running
+                    verbose=1,
+                    model_name=f"cerebras/{cerebras_model}",
+                    model_api_key=cerebras_api_key,
+                    local_browser_launch_options=launch_options
+                )
+                print(f"[DEBUG] ✅ CDP connection with Cerebras: {cerebras_model}")
+                
+            elif model_provider == "google":
+                google_api_key = os.getenv("GOOGLE_API_KEY")
+                google_model = user_config.get("model") if user_config else os.getenv("GOOGLE_MODEL", "gemini-1.5-flash")
+                if google_model and google_model.lower().startswith("google/"):
+                    google_model = google_model.split("/", 1)[1]
+                
+                config = StagehandConfig(
+                    env="LOCAL",  # Use LOCAL env with cdpUrl to connect to existing browser
+                    headless=False,  # Browser already running
+                    verbose=1,
+                    model_name=f"google/{google_model}",
+                    model_api_key=google_api_key,
+                    local_browser_launch_options=launch_options
+                )
+                print(f"[DEBUG] ✅ CDP connection with Google: {google_model}")
+                
+            else:  # openrouter
+                openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+                openrouter_model = user_config.get("model") if user_config else os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct")
+                if openrouter_model and openrouter_model.startswith("openrouter/"):
+                    openrouter_model = openrouter_model.split("/", 1)[1]
+                
+                config = StagehandConfig(
+                    env="LOCAL",  # Use LOCAL env with cdpUrl to connect to existing browser
+                    headless=False,  # Browser already running
+                    verbose=1,
+                    model_name=f"openrouter/{openrouter_model}",
+                    model_api_key=openrouter_key,
+                    local_browser_launch_options=launch_options
+                )
+                print(f"[DEBUG] ✅ CDP connection with OpenRouter: {openrouter_model}")
+            
+            self.stagehand = Stagehand(config)
+            await self.stagehand.init()
+            self.page = self.stagehand.page
+            
+            if not self.page:
+                raise RuntimeError("Stagehand CDP connection failed: page is None")
+            
+            print(f"[DEBUG] Stagehand connected to existing browser via CDP, page={self.page}")
+    
     async def cleanup(self):
         """Clean up browser resources."""
         if self.stagehand:
@@ -430,6 +511,157 @@ class StagehandExecutionService:
             print(f"[DEBUG] Browser metadata: {browser_metadata}")
             
             return browser_metadata
+    
+    async def inject_browser_profile(self, profile_data: Dict[str, Any]):
+        """
+        Inject browser profile data (cookies, localStorage) into current browser context.
+        Profile data is processed entirely in RAM - no disk writes.
+        
+        Args:
+            profile_data: Dictionary containing:
+                - cookies: List of cookie dicts [{name, value, domain, path, ...}]
+                - localStorage: Dict of key-value pairs {"key": "value"}
+                - sessionStorage: Dict of key-value pairs (optional)
+        
+        Security: All data handled in-memory only, auto-cleaned by garbage collection.
+        """
+        if not self.page:
+            raise RuntimeError("Cannot inject profile: browser not initialized")
+        
+        print(f"[INFO] 🔒 Injecting browser profile (in-memory only)...")
+        
+        try:
+            # Get Playwright page and context
+            playwright_page = self.page._page if hasattr(self.page, '_page') else self.page
+            context = playwright_page.context
+            
+            # 1. Inject cookies (if provided)
+            if profile_data.get("cookies"):
+                cookies = profile_data["cookies"]
+                await context.add_cookies(cookies)
+                print(f"[INFO] ✅ Injected {len(cookies)} cookies")
+            
+            # 2. Inject localStorage (if provided)
+            if profile_data.get("localStorage"):
+                local_storage = profile_data["localStorage"]
+                # Execute JS to set localStorage items
+                await playwright_page.evaluate("""
+                    (storage) => {
+                        for (const [key, value] of Object.entries(storage)) {
+                            localStorage.setItem(key, value);
+                        }
+                    }
+                """, local_storage)
+                print(f"[INFO] ✅ Injected {len(local_storage)} localStorage items")
+            
+            # 3. Inject sessionStorage (if provided)
+            if profile_data.get("sessionStorage"):
+                session_storage = profile_data["sessionStorage"]
+                await playwright_page.evaluate("""
+                    (storage) => {
+                        for (const [key, value] of Object.entries(storage)) {
+                            sessionStorage.setItem(key, value);
+                        }
+                    }
+                """, session_storage)
+                print(f"[INFO] ✅ Injected {len(session_storage)} sessionStorage items")
+            
+            print(f"[INFO] ✅ Profile injection complete (all data in RAM)")
+            
+        except Exception as e:
+            print(f"[ERROR] ❌ Profile injection failed: {str(e)}")
+            raise RuntimeError(f"Failed to inject browser profile: {str(e)}")
+    
+    async def export_browser_profile(self) -> Dict[str, Any]:
+        """
+        Export current browser session data (cookies, localStorage, sessionStorage).
+        Returns data as in-memory dict for packaging into ZIP.
+        
+        Returns:
+            Dictionary containing:
+                - cookies: List of cookie dicts
+                - localStorage: Dict of key-value pairs
+                - sessionStorage: Dict of key-value pairs
+        
+        Security: Data never written to disk, only held in RAM for immediate packaging.
+        """
+        if not self.page:
+            raise RuntimeError("Cannot export profile: browser not initialized")
+        
+        print(f"[INFO] 📤 Exporting browser profile (in-memory only)...")
+        
+        try:
+            # Get Playwright page and context
+            playwright_page = self.page._page if hasattr(self.page, '_page') else self.page
+            context = playwright_page.context
+            page_url = (getattr(playwright_page, "url", "") or "").lower()
+            
+            # 1. Export cookies
+            cookies = await context.cookies()
+            print(f"[INFO] ✅ Exported {len(cookies)} cookies")
+            
+            async def _export_storage(storage_name: str) -> Dict[str, Any]:
+                try:
+                    storage = await playwright_page.evaluate("""
+                        (name) => {
+                            const storage = {};
+                            const target = window[name];
+                            if (!target) {
+                                return storage;
+                            }
+                            for (let i = 0; i < target.length; i++) {
+                                const key = target.key(i);
+                                storage[key] = target.getItem(key);
+                            }
+                            return storage;
+                        }
+                    """, storage_name)
+                    return storage
+                except Exception as e:
+                    print(
+                        f"[WARN] ⚠️ Failed to export {storage_name}: {str(e)}. "
+                        "Continuing with empty storage."
+                    )
+                    return {}
+
+            restricted_schemes = (
+                "about:",
+                "chrome:",
+                "chrome-error:",
+                "chrome-extension:",
+                "edge:",
+                "data:",
+                "file:",
+                "view-source:",
+            )
+            if page_url.startswith(restricted_schemes):
+                print(
+                    f"[WARN] ⚠️ Skipping storage export for restricted page URL: {page_url or 'unknown'}"
+                )
+                local_storage = {}
+                session_storage = {}
+            else:
+                # 2. Export localStorage
+                local_storage = await _export_storage("localStorage")
+                print(f"[INFO] ✅ Exported {len(local_storage)} localStorage items")
+                
+                # 3. Export sessionStorage
+                session_storage = await _export_storage("sessionStorage")
+                print(f"[INFO] ✅ Exported {len(session_storage)} sessionStorage items")
+            
+            profile_data = {
+                "cookies": cookies,
+                "localStorage": local_storage,
+                "sessionStorage": session_storage,
+                "exported_at": datetime.utcnow().isoformat()
+            }
+            
+            print(f"[INFO] ✅ Profile export complete (all data in RAM)")
+            return profile_data
+            
+        except Exception as e:
+            print(f"[ERROR] ❌ Profile export failed: {str(e)}")
+            raise RuntimeError(f"Failed to export browser profile: {str(e)}")
     
     async def execute_test(
         self,
@@ -738,7 +970,7 @@ class StagehandExecutionService:
             print(f"[DEBUG]   - Title: {title_after}")
             print(f"[DEBUG] Changes: URL changed={url_before != url_after}, Title changed={title_before != title_after}")
             
-            # FAILURE DETECTION: If it's a fill/type action and nothing changed, it probably failed
+            # FAILURE DETECTION: Check for actual failures vs expected non-changes
             desc_lower = step_description.lower()
             is_input_action = any(word in desc_lower for word in ['fill', 'type', 'enter', 'input'])
             is_navigation_action = any(word in desc_lower for word in ['navigate', 'goto', 'open'])
@@ -748,17 +980,18 @@ class StagehandExecutionService:
             title_changed = title_before != title_after
             something_changed = url_changed or title_changed
             
-            # If it's an input action and nothing changed, treat as failure
-            if is_input_action and not something_changed:
-                print(f"[DEBUG] ⚠️  INPUT ACTION but nothing changed - treating as FAILURE")
+            # For INPUT actions: Success if no error occurred
+            # (Filling form fields doesn't change URL/title - that's NORMAL)
+            if is_input_action:
+                if not something_changed:
+                    print(f"[DEBUG] ✓ Input action completed (no URL/title change is NORMAL for form inputs)")
                 print(f"[DEBUG] ========================================")
                 return {
-                    "success": False,
-                    "error": "Input action completed but no page changes detected. Element may not be fillable or action had no effect.",
-                    "actual": f"AI tried but no changes: XPath: {xpath_used}. Page: {title_after} | URL: {url_after}",
+                    "success": True,  # Trust Stagehand's completion
+                    "actual": f"Input completed via AI: XPath: {xpath_used}. Page: {title_after} | URL: {url_after}",
                     "expected": step_description,
                     "selector_used": xpath_used,
-                    "action_method": "stagehand_ai_failed"
+                    "action_method": "stagehand_ai"
                 }
             
             # If it's a navigation action and URL didn't change, treat as failure
@@ -1561,6 +1794,33 @@ class StagehandExecutionService:
                 "expected": step_description
             }
     
+    async def _ensure_page_connected(self):
+        """
+        Ensure the page context is still connected. If not, reconnect to the active page.
+        This is important for debug mode where the browser stays open between executions.
+        """
+        try:
+            # Try to get the current title - if page is closed, this will fail
+            await self.page.title()
+        except Exception as e:
+            print(f"[DEBUG] Page context lost: {e}")
+            print(f"[DEBUG] Attempting to reconnect to active page...")
+            
+            try:
+                # Get all pages from the context
+                pages = self.context.pages
+                if pages:
+                    # Use the first active page
+                    self.page = pages[0]
+                    print(f"[DEBUG] Reconnected to page: {await self.page.title()}")
+                else:
+                    # Create a new page if none exist
+                    self.page = await self.context.new_page()
+                    print(f"[DEBUG] Created new page")
+            except Exception as reconnect_error:
+                print(f"[ERROR] Failed to reconnect page: {reconnect_error}")
+                raise ValueError(f"Page context lost and could not reconnect: {reconnect_error}")
+
     async def execute_single_step(
         self,
         step_description: str,
@@ -1589,6 +1849,9 @@ class StagehandExecutionService:
         
         try:
             print(f"[DEBUG] Executing single step #{step_number}: {step_description}")
+            
+            # Ensure page is still connected (important for debug mode)
+            await self._ensure_page_connected()
             
             # Use hybrid execution strategy
             USE_AI_ONLY = os.getenv("USE_AI_EXECUTION", "false").lower() == "true"

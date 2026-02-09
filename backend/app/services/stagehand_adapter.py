@@ -97,20 +97,37 @@ class StagehandAdapter(ABC):
     async def initialize_persistent(
         self,
         session_id: str,
-        test_id: int,
+        test_id: Optional[int],
         user_id: int,
         db: Session,
         user_config: Optional[Dict[str, Any]] = None
-    ) -> None:
+    ) -> Dict[str, Any]:
         """
         Initialize a persistent debug session.
         
         Args:
             session_id: Unique session identifier
-            test_id: Test case ID being debugged
+            test_id: Test case ID being debugged (None for standalone sessions)
             user_id: User ID
             db: Database session
             user_config: Optional configuration overrides
+            
+        Returns:
+            Dict with browser_pid, browser_port, and other metadata
+        """
+        pass
+    
+    @abstractmethod
+    async def export_browser_profile(self) -> Dict[str, Any]:
+        """
+        Export browser session data (cookies, localStorage, sessionStorage).
+        
+        Returns:
+            Dict with:
+                - cookies: List of cookie objects
+                - localStorage: Dict of localStorage key-value pairs
+                - sessionStorage: Dict of sessionStorage key-value pairs
+                - exported_at: ISO timestamp
         """
         pass
     

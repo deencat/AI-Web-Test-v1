@@ -6,6 +6,7 @@ Handles concurrent execution, resource management, and automatic queue processin
 import threading
 import time
 import logging
+import json
 from typing import Optional
 from datetime import datetime
 
@@ -15,6 +16,7 @@ from app.services.stagehand_adapter import StagehandAdapter
 from app.db.session import SessionLocal
 from app.crud import test_execution as crud_execution
 from app.crud import test_case as crud_test
+from app.crud import browser_profile as crud_profile
 from app.models.test_execution import ExecutionStatus
 
 logger = logging.getLogger(__name__)
@@ -120,7 +122,8 @@ class QueueManager:
                 queued_execution.execution_id,
                 queued_execution.test_case_id,
                 queued_execution.user_id,
-                queued_execution.priority
+                queued_execution.priority,
+                http_credentials=queued_execution.http_credentials
             )
             return
         
@@ -180,6 +183,29 @@ class QueueManager:
                         
                         # Get base URL from test case or execution
                         base_url = execution.base_url or test_case.test_data.get("base_url", "https://example.com")
+
+                        # Extract browser profile data (if provided)
+                        browser_profile_data = None
+                        browser_profile_id = None
+                        if execution.trigger_details:
+                            try:
+                                trigger_details = json.loads(execution.trigger_details)
+                                browser_profile_data = trigger_details.get("browser_profile_data")
+                                browser_profile_id = trigger_details.get("browser_profile_id")
+                            except Exception as e:
+                                logger.warning(f"Failed to parse trigger_details JSON: {e}")
+
+                        if browser_profile_id and not browser_profile_data:
+                            try:
+                                browser_profile_data = crud_profile.load_profile_session(
+                                    db=bg_db,
+                                    profile_id=browser_profile_id,
+                                    user_id=queued_execution.user_id
+                                )
+                            except Exception as e:
+                                logger.warning(f"Failed to load profile session data: {e}")
+
+                        http_credentials = queued_execution.http_credentials
                         
                         # Load user's execution provider settings (Sprint 3 - Settings Page Dynamic Configuration)
                         from app.services.user_settings_service import user_settings_service
@@ -190,24 +216,27 @@ class QueueManager:
                         )
                         print(f"[DEBUG] 🎯 Loaded user execution config: provider={user_config['provider']}, model={user_config['model']}")
                         
-                        # Create NEW Stagehand adapter for THIS thread (not singleton!)
-                        # Each thread needs its own instance because Playwright can't be shared across event loops
-                        import os
+                        # ========================================
+                        # Sprint 5.5: Use NEW ExecutionService with 3-Tier System
+                        # ========================================
+                        from app.services.execution_service import ExecutionService, ExecutionConfig
                         
                         # TEMPORARY: Force headless=False to see browser during testing
                         headless = False  # TODO: Change back to env var after testing
                         
-                        print(f"[DEBUG] Creating Stagehand adapter with headless={headless}")
+                        print(f"[DEBUG] Creating ExecutionService with 3-Tier system, headless={headless}")
                         
-                        # Use factory to get adapter (automatically selects provider from user settings)
-                        service = get_stagehand_adapter(
-                            db=bg_db,
-                            user_id=queued_execution.user_id,
-                            headless=headless
+                        # Create ExecutionConfig
+                        exec_config = ExecutionConfig(
+                            browser=execution.browser or "chromium",
+                            headless=headless,
+                            timeout=30000  # 30 seconds
                         )
                         
-                        # Initialize with user's config (pass to initialize method)
-                        loop.run_until_complete(service.initialize(user_config=user_config))
+                        # Create ExecutionService with config
+                        service = ExecutionService(config=exec_config)
+                        
+                        # No separate initialize() call needed - ExecutionService handles it internally
                         
                         try:
                             loop.run_until_complete(
@@ -217,9 +246,32 @@ class QueueManager:
                                     execution_id=queued_execution.execution_id,
                                     user_id=queued_execution.user_id,
                                     base_url=base_url,
-                                    environment=execution.environment or "dev"
+                                    environment=execution.environment or "dev",
+                                    browser_profile_data=browser_profile_data,
+                                    http_credentials=http_credentials
                                 )
                             )
+
+                            if browser_profile_id:
+                                profile = crud_profile.get_profile_by_user(
+                                    db=bg_db,
+                                    profile_id=browser_profile_id,
+                                    user_id=queued_execution.user_id
+                                )
+                                if profile and profile.auto_sync:
+                                    try:
+                                        session_snapshot = loop.run_until_complete(
+                                            service.export_profile_session()
+                                        )
+                                        if session_snapshot:
+                                            crud_profile.sync_profile_session(
+                                                db=bg_db,
+                                                profile_id=browser_profile_id,
+                                                user_id=queued_execution.user_id,
+                                                session_data=session_snapshot
+                                            )
+                                    except Exception as e:
+                                        logger.warning(f"Failed to auto-sync profile: {e}")
                             
                             # Commit final state
                             bg_db.commit()

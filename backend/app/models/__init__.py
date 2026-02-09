@@ -11,6 +11,8 @@ from app.models.test_suite import TestSuite, TestSuiteItem, SuiteExecution
 from app.models.user_settings import UserSetting
 from app.models.debug_session import DebugSession, DebugStepExecution, DebugMode, DebugSessionStatus
 from app.models.execution_feedback import ExecutionFeedback
+from app.models.execution_settings import ExecutionSettings, XPathCache, TierExecutionLog
+from app.models.browser_profile import BrowserProfile
 
 __all__ = [
     "User",
@@ -24,6 +26,8 @@ __all__ = [
     "TestSuite", "TestSuiteItem", "SuiteExecution",
     "UserSetting",
     "DebugSession", "DebugStepExecution", "DebugMode", "DebugSessionStatus",
-    "ExecutionFeedback"
+    "ExecutionFeedback",
+    "ExecutionSettings", "XPathCache", "TierExecutionLog",
+    "BrowserProfile"
 ]
 

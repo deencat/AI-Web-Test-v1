@@ -284,6 +284,66 @@ class SettingsService {
       };
     }
   }
+
+  /**
+   * Sprint 5.5: Get execution settings
+   */
+  async getExecutionSettings(): Promise<any> {
+    try {
+      const response = await api.get('/settings/execution');
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  /**
+   * Sprint 5.5: Update execution settings
+   */
+  async updateExecutionSettings(data: any): Promise<any> {
+    try {
+      const response = await api.put('/settings/execution', data);
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  /**
+   * Sprint 5.5: Get available strategies
+   */
+  async getExecutionStrategies(): Promise<any> {
+    try {
+      const response = await api.get('/settings/execution/strategies');
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  /**
+   * Sprint 5.5: Get tier distribution analytics
+   */
+  async getTierDistribution(): Promise<any> {
+    try {
+      const response = await api.get('/settings/analytics/tier-distribution');
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  /**
+   * Sprint 5.5: Get strategy effectiveness analytics
+   */
+  async getStrategyEffectiveness(): Promise<any> {
+    try {
+      const response = await api.get('/settings/analytics/strategy-effectiveness');
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
 }
 
 export default new SettingsService();

@@ -75,6 +75,8 @@ class TestExecution(Base):
     user = relationship("User", back_populates="test_executions")
     
     steps = relationship("TestExecutionStep", back_populates="execution", cascade="all, delete-orphan")
+    tier_logs = relationship("TierExecutionLog", back_populates="execution", cascade="all, delete-orphan")
+
     
     # Timestamps
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)

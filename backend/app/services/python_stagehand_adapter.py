@@ -123,28 +123,46 @@ class PythonStagehandAdapter(StagehandAdapter):
     async def initialize_persistent(
         self,
         session_id: str,
-        test_id: int,
+        test_id: Optional[int],
         user_id: int,
         db: Session,
         user_config: Optional[Dict[str, Any]] = None
-    ) -> None:
+    ) -> Dict[str, Any]:
         """
         Initialize a persistent debug session using Python Stagehand.
         
         Args:
             session_id: Unique session identifier
-            test_id: Test case ID being debugged
+            test_id: Test case ID being debugged (None for standalone sessions)
             user_id: User ID
             db: Database session
             user_config: Optional configuration overrides
+            
+        Returns:
+            Dict with browser_pid, browser_port, and other metadata
         """
-        await self._service.initialize_persistent(
-            session_id=session_id,
-            test_id=test_id,
-            user_id=user_id,
-            db=db,
-            user_config=user_config
+        from pathlib import Path
+        
+        # Build user data directory path (consistent with debug_session_service)
+        user_data_base = Path("artifacts/debug_sessions")
+        user_data_dir = user_data_base / session_id
+        user_data_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Call the underlying service with correct parameters
+        return await self._service.initialize_persistent(
+            user_data_dir=str(user_data_dir),
+            user_config=user_config,
+            devtools=True
         )
+    
+    async def export_browser_profile(self) -> Dict[str, Any]:
+        """
+        Export browser session data from the current page.
+        
+        Returns:
+            Dict with cookies, localStorage, sessionStorage, and timestamp
+        """
+        return await self._service.export_browser_profile()
     
     @property
     def provider_name(self) -> str:
@@ -155,3 +173,13 @@ class PythonStagehandAdapter(StagehandAdapter):
             'python'
         """
         return "python"
+    
+    @property
+    def page(self):
+        """
+        Get the current browser page from the underlying service.
+        
+        Returns:
+            The Stagehand page object, or None if not initialized
+        """
+        return self._service.page
