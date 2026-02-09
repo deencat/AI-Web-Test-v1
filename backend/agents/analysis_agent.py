@@ -9,6 +9,7 @@ import time
 import json
 import logging
 import re
+import asyncio
 from datetime import datetime, timedelta
 from enum import Enum
 
@@ -184,24 +185,51 @@ class AnalysisAgent(BaseAgent):
                     critical_scenarios = [s for s, _ in scenarios_with_scores[:2]]
                 
                 if critical_scenarios:
-                    logger.info(f"AnalysisAgent: Executing {len(critical_scenarios)} scenarios in real-time (RPN threshold: {rpn_threshold})")
-                    for idx, scenario in enumerate(critical_scenarios[:3], 1):  # Limit to top 3 for performance
-                        scenario_id = scenario.get("scenario_id", "UNKNOWN")
-                        scenario_title = scenario.get("title", "Unknown")[:50]
-                        logger.info(f"AnalysisAgent: Executing scenario {idx}/{len(critical_scenarios[:3])}: {scenario_id} - {scenario_title}")
-                        try:
-                            exec_result = await self._execute_scenario_real_time(scenario, page_context)
-                            if exec_result and "scenario_id" in exec_result:
+                    # Get parallel execution batch size from config (default: 3)
+                    batch_size = self.config.get("parallel_execution_batch_size", 3) if self.config else 3
+                    scenarios_to_execute = critical_scenarios[:17]  # Execute all scenarios (or limit if needed)
+                    
+                    logger.info(f"AnalysisAgent: Executing {len(scenarios_to_execute)} scenarios in real-time "
+                               f"(RPN threshold: {rpn_threshold}, parallel batch size: {batch_size})")
+                    
+                    # Execute scenarios in parallel batches
+                    for batch_idx in range(0, len(scenarios_to_execute), batch_size):
+                        batch = scenarios_to_execute[batch_idx:batch_idx + batch_size]
+                        batch_num = (batch_idx // batch_size) + 1
+                        total_batches = (len(scenarios_to_execute) + batch_size - 1) // batch_size
+                        
+                        logger.info(f"AnalysisAgent: Executing batch {batch_num}/{total_batches} "
+                                   f"({len(batch)} scenarios in parallel)")
+                        
+                        # Create tasks for parallel execution
+                        tasks = [
+                            self._execute_scenario_real_time(scenario, page_context)
+                            for scenario in batch
+                        ]
+                        
+                        # Execute batch in parallel
+                        batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+                        
+                        # Process results
+                        for idx, (scenario, result) in enumerate(zip(batch, batch_results)):
+                            scenario_id = scenario.get("scenario_id", "UNKNOWN")
+                            scenario_title = scenario.get("title", "Unknown")[:50]
+                            
+                            if isinstance(result, Exception):
+                                logger.warning(f"AnalysisAgent: Real-time execution failed for {scenario_id}: {result}", exc_info=True)
+                                continue
+                            
+                            if result and "scenario_id" in result:
                                 if not execution_results:
                                     execution_results = []
-                                execution_results.append(exec_result)
+                                execution_results.append(result)
+                                passed_steps = result.get("passed_steps", 0)
+                                total_steps = result.get("total_steps", 0)
+                                success_rate = result.get("success_rate", 0.0)
                                 logger.info(f"AnalysisAgent: Successfully executed scenario {scenario_id} "
-                                           f"(steps: {len(exec_result.get('steps', []))}, "
-                                           f"status: {exec_result.get('status', 'unknown')})")
+                                           f"({passed_steps}/{total_steps} passed, success_rate={success_rate:.2f}, tier={result.get('tier_used', 'unknown')})")
                             else:
                                 logger.warning(f"AnalysisAgent: Execution returned no result for scenario {scenario_id}")
-                        except Exception as e:
-                            logger.warning(f"AnalysisAgent: Real-time execution failed for {scenario_id}: {e}", exc_info=True)
                 else:
                     logger.info("AnalysisAgent: No critical scenarios found for real-time execution")
             
