@@ -133,8 +133,11 @@ class RequirementsAgent(BaseAgent):
             
             # Stage 3: Generate functional test scenarios
             logger.debug("RequirementsAgent: Stage 3 - Generating functional test scenarios...")
+            execution_feedback = task.payload.get("execution_feedback", {})
+            if execution_feedback:
+                logger.info(f"RequirementsAgent: Using execution feedback to improve scenario generation")
             functional_scenarios = await self._generate_functional_scenarios(
-                user_journeys, element_groups, page_context, page_structure, user_instruction
+                user_journeys, element_groups, page_context, page_structure, user_instruction, execution_feedback
             )
             logger.info(f"RequirementsAgent: Generated {len(functional_scenarios)} functional scenarios")
             
@@ -286,7 +289,8 @@ class RequirementsAgent(BaseAgent):
                                              element_groups: Dict,
                                              page_context: Dict,
                                              page_structure: Dict,
-                                             user_instruction: str = "") -> List[Scenario]:
+                                             user_instruction: str = "",
+                                             execution_feedback: Dict = {}) -> List[Scenario]:
         """Generate functional test scenarios using LLM or patterns"""
         scenarios = []
         
@@ -299,7 +303,7 @@ class RequirementsAgent(BaseAgent):
                 ui_elements.extend(group_elements)
             
             llm_scenarios = await self._generate_scenarios_with_llm(
-                ui_elements, page_structure, page_context, user_instruction
+                ui_elements, page_structure, page_context, user_instruction, execution_feedback
             )
             
             if llm_scenarios:
@@ -660,7 +664,8 @@ class RequirementsAgent(BaseAgent):
     async def _generate_scenarios_with_llm(self, ui_elements: List[Dict], 
                                            page_structure: Dict,
                                            page_context: Dict,
-                                           user_instruction: str = "") -> List[Scenario]:
+                                           user_instruction: str = "",
+                                           execution_feedback: Dict = {}) -> List[Scenario]:
         """Generate high-quality test scenarios using LLM"""
         if not self.llm_client or not self.llm_client.enabled:
             logger.warning("LLM not available, falling back to pattern-based generation")
@@ -669,7 +674,7 @@ class RequirementsAgent(BaseAgent):
         try:
             # Build prompt for LLM
             prompt = self._build_scenario_generation_prompt(
-                ui_elements, page_structure, page_context, user_instruction
+                ui_elements, page_structure, page_context, user_instruction, execution_feedback
             )
             
             # Call Azure OpenAI
@@ -779,7 +784,8 @@ Always respond with valid JSON containing high-quality test scenarios."""
     def _build_scenario_generation_prompt(self, ui_elements: List[Dict], 
                                           page_structure: Dict,
                                           page_context: Dict,
-                                          user_instruction: str = "") -> str:
+                                          user_instruction: str = "",
+                                          execution_feedback: Dict = {}) -> str:
         """Build prompt for LLM scenario generation"""
         # Summarize UI elements
         element_summary = self._summarize_elements(ui_elements)
@@ -806,6 +812,29 @@ The user wants to test: "{user_instruction}"
 5. **Mark matching scenarios** with tags like ["user-requirement", "priority-test"]
 """
         
+        # Build execution feedback section if provided
+        feedback_section = ""
+        if execution_feedback and execution_feedback.get("status") == "success":
+            insights = execution_feedback.get("insights", [])
+            recommendations = execution_feedback.get("recommendations", [])
+            metrics = execution_feedback.get("metrics", {})
+            
+            if insights or recommendations:
+                feedback_section = f"""
+**EXECUTION FEEDBACK (Learn from Previous Test Runs):**
+Previous test executions showed:
+- Pass Rate: {metrics.get('pass_rate', 0):.1f}% ({metrics.get('passed', 0)}/{metrics.get('total_executions', 0)})
+- Fail Rate: {metrics.get('fail_rate', 0):.1f}%
+
+**Key Insights:**
+{chr(10).join(f"- {insight}" for insight in insights) if insights else "- No specific insights available"}
+
+**Recommendations for Better Scenarios:**
+{chr(10).join(f"- {rec}" for rec in recommendations) if recommendations else "- Continue generating scenarios as before"}
+
+**IMPORTANT:** Use these insights to generate more stable and reliable scenarios. Focus on patterns that led to successful tests and avoid patterns that caused failures.
+"""
+        
         prompt = f"""Generate comprehensive BDD test scenarios for this web page.
 
 **Page Information:**
@@ -817,6 +846,7 @@ The user wants to test: "{user_instruction}"
 **UI Elements Summary:**
 {element_summary}
 {user_instruction_section}
+{feedback_section}
 **Requirements:**
 1. Generate 10-15 high-quality test scenarios
 2. **IF user requirement is provided above:** Generate at least one scenario that specifically matches it with "critical" priority

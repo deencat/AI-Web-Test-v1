@@ -719,6 +719,103 @@ class TestFourAgentE2EReal:
         if test_case_ids:
             print_flush(f"        Database IDs: {test_case_ids[:5]}{'...' if len(test_case_ids) > 5 else ''}")
         
+        # Step 4.6: Feedback Loop - Learn from execution results (if available)
+        print_flush("\nStep 4.6: Feedback Loop - Learning from execution results...")
+        execution_feedback = None
+        if stored_in_db and test_case_ids and evolution_agent_real.db:
+            try:
+                # Collect execution results from database
+                from app.models.test_execution import TestExecution, ExecutionResult
+                from app.models.test_case import TestCase
+                
+                # Query for completed executions
+                executions = evolution_agent_real.db.query(TestExecution).filter(
+                    TestExecution.test_case_id.in_(test_case_ids),
+                    TestExecution.status == "completed"
+                ).all()
+                
+                if executions:
+                    # Prepare execution results for feedback
+                    execution_summary = {
+                        "total": len(executions),
+                        "passed": sum(1 for e in executions if e.result == ExecutionResult.PASS),
+                        "failed": sum(1 for e in executions if e.result == ExecutionResult.FAIL),
+                        "errors": sum(1 for e in executions if e.result == ExecutionResult.ERROR)
+                    }
+                    
+                    # Get scenario IDs from test cases
+                    test_cases = evolution_agent_real.db.query(TestCase).filter(
+                        TestCase.id.in_(test_case_ids)
+                    ).all()
+                    
+                    failed_scenarios = []
+                    successful_scenarios = []
+                    for tc in test_cases:
+                        scenario_id = None
+                        if isinstance(tc.test_metadata, dict):
+                            scenario_id = tc.test_metadata.get("scenario_id")
+                        elif tc.test_metadata:
+                            import json
+                            try:
+                                metadata = json.loads(tc.test_metadata)
+                                scenario_id = metadata.get("scenario_id")
+                            except:
+                                pass
+                        
+                        # Check if this test case failed
+                        exec_result = next((e for e in executions if e.test_case_id == tc.id), None)
+                        if exec_result:
+                            if exec_result.result == ExecutionResult.FAIL or exec_result.result == ExecutionResult.ERROR:
+                                if scenario_id:
+                                    failed_scenarios.append(scenario_id)
+                            elif exec_result.result == ExecutionResult.PASS:
+                                if scenario_id:
+                                    successful_scenarios.append(scenario_id)
+                    
+                    execution_results = {
+                        "test_case_ids": test_case_ids,
+                        "execution_summary": execution_summary,
+                        "failed_scenarios": failed_scenarios,
+                        "successful_scenarios": successful_scenarios
+                    }
+                    
+                    # Call learn_from_feedback
+                    feedback_result = await evolution_agent_real.learn_from_feedback(
+                        generation_id=generation_id,
+                        execution_results=execution_results
+                    )
+                    
+                    if feedback_result.get("status") == "success":
+                        execution_feedback = feedback_result
+                        insights = feedback_result.get("insights", [])
+                        recommendations = feedback_result.get("recommendations", [])
+                        metrics = feedback_result.get("metrics", {})
+                        
+                        print_flush(f"[OK] Feedback analysis complete:")
+                        print_flush(f"        Pass Rate: {metrics.get('pass_rate', 0):.1f}%")
+                        print_flush(f"        Insights: {len(insights)}")
+                        print_flush(f"        Recommendations: {len(recommendations)}")
+                        if insights:
+                            print_flush(f"        Top Insight: {insights[0]}")
+                        if recommendations:
+                            print_flush(f"        Top Recommendation: {recommendations[0]}")
+                    else:
+                        print_flush(f"[INFO] Feedback analysis: {feedback_result.get('status', 'unknown')}")
+                        if feedback_result.get("status") == "no_data":
+                            print_flush(f"        No execution data available yet (tests may not have been executed)")
+                else:
+                    print_flush(f"[INFO] No completed executions found yet (feedback will be available after test execution)")
+            except Exception as e:
+                logger.warning(f"Feedback loop error: {e}", exc_info=True)
+                print_flush(f"[WARN] Feedback loop error: {e}")
+        else:
+            print_flush(f"[INFO] Feedback loop skipped (database not available or test cases not stored)")
+        
+        # Store execution_feedback for potential use in next iteration
+        # (In a real continuous improvement scenario, this would be passed to RequirementsAgent)
+        if execution_feedback:
+            logger.info(f"Feedback loop complete: {len(execution_feedback.get('insights', []))} insights generated")
+        
         # Verify each scenario has corresponding test steps
         test_cases = evolution_result.result["test_cases"]
         assert len(test_cases) == len(scenarios)

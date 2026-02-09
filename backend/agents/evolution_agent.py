@@ -840,20 +840,172 @@ Return JSON: {{"steps": ["step1", "step2", ...]}}"""
         execution_results: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Learn from execution feedback (for future enhancement - Sprint 9).
+        Learn from execution feedback - Analyze execution results and generate recommendations.
         
-        This method will be implemented in Sprint 9 to:
-        1. Analyze execution results (pass/fail rates)
-        2. Identify patterns in successful vs failed tests
-        3. Update prompt templates based on feedback
-        4. Store patterns for reuse
+        This method:
+        1. Analyzes execution results (pass/fail rates, error patterns)
+        2. Identifies patterns in successful vs failed tests
+        3. Generates recommendations for RequirementsAgent to improve scenario generation
+        4. Returns structured feedback for continuous improvement
+        
+        Args:
+            generation_id: The generation ID from EvolutionAgent
+            execution_results: Dict with execution data:
+                - test_case_ids: List of test case IDs that were executed
+                - execution_summary: Dict with pass/fail counts, error messages, etc.
+                - failed_scenarios: List of scenario IDs that failed
+                - successful_scenarios: List of scenario IDs that passed
+        
+        Returns:
+            Dict with:
+                - status: "success" or "error"
+                - insights: List of insights about execution patterns
+                - recommendations: List of recommendations for RequirementsAgent
+                - metrics: Dict with pass_rate, fail_rate, common_errors, etc.
         """
-        logger.info(f"Feedback learning not yet implemented (Sprint 9) - generation_id: {generation_id}")
-        return {
-            "status": "not_implemented",
-            "generation_id": generation_id,
-            "message": "Feedback learning will be implemented in Sprint 9"
-        }
+        logger.info(f"EvolutionAgent: Learning from feedback for generation_id: {generation_id}")
+        
+        try:
+            # Extract execution data
+            test_case_ids = execution_results.get("test_case_ids", [])
+            execution_summary = execution_results.get("execution_summary", {})
+            failed_scenarios = execution_results.get("failed_scenarios", [])
+            successful_scenarios = execution_results.get("successful_scenarios", [])
+            
+            # Query database for execution results if test_case_ids provided
+            execution_data = []
+            if test_case_ids and self.db:
+                try:
+                    from app.models.test_execution import TestExecution, ExecutionResult
+                    from app.models.test_case import TestCase
+                    
+                    # Query TestExecution records for these test cases
+                    executions = self.db.query(TestExecution).filter(
+                        TestExecution.test_case_id.in_(test_case_ids),
+                        TestExecution.status == "completed"
+                    ).all()
+                    
+                    for exec in executions:
+                        test_case = self.db.query(TestCase).filter(
+                            TestCase.id == exec.test_case_id
+                        ).first()
+                        
+                        if test_case:
+                            execution_data.append({
+                                "test_case_id": exec.test_case_id,
+                                "scenario_id": test_case.test_metadata.get("scenario_id") if isinstance(test_case.test_metadata, dict) else None,
+                                "result": exec.result.value if exec.result else None,
+                                "status": exec.status.value if exec.status else None,
+                                "passed_steps": exec.passed_steps or 0,
+                                "failed_steps": exec.failed_steps or 0,
+                                "total_steps": exec.total_steps or 0,
+                                "error_message": exec.error_message,
+                                "duration_seconds": exec.duration_seconds
+                            })
+                    
+                    logger.info(f"Retrieved {len(execution_data)} execution records from database")
+                except Exception as e:
+                    logger.warning(f"Failed to query execution data from database: {e}")
+            
+            # Analyze execution results
+            total_executions = len(execution_data) or len(test_case_ids)
+            if total_executions == 0:
+                logger.warning("No execution data available for feedback analysis")
+                return {
+                    "status": "no_data",
+                    "generation_id": generation_id,
+                    "message": "No execution results available for analysis",
+                    "insights": [],
+                    "recommendations": [],
+                    "metrics": {}
+                }
+            
+            # Calculate metrics
+            passed = sum(1 for e in execution_data if e.get("result") == "pass") or len(successful_scenarios)
+            failed = sum(1 for e in execution_data if e.get("result") == "fail") or len(failed_scenarios)
+            total = total_executions
+            
+            pass_rate = (passed / total * 100) if total > 0 else 0
+            fail_rate = (failed / total * 100) if total > 0 else 0
+            
+            # Collect error patterns
+            error_messages = []
+            for e in execution_data:
+                if e.get("error_message"):
+                    error_messages.append(e["error_message"])
+            
+            # Identify common error patterns
+            common_errors = {}
+            for error in error_messages:
+                # Extract key error patterns (simplified)
+                if "selector" in error.lower() or "element not found" in error.lower():
+                    common_errors["selector_issues"] = common_errors.get("selector_issues", 0) + 1
+                elif "timeout" in error.lower() or "wait" in error.lower():
+                    common_errors["timeout_issues"] = common_errors.get("timeout_issues", 0) + 1
+                elif "assertion" in error.lower() or "expected" in error.lower():
+                    common_errors["assertion_failures"] = common_errors.get("assertion_failures", 0) + 1
+            
+            # Generate insights
+            insights = []
+            if pass_rate >= 80:
+                insights.append(f"High success rate ({pass_rate:.1f}%) - Test scenarios are well-designed")
+            elif pass_rate < 50:
+                insights.append(f"Low success rate ({pass_rate:.1f}%) - Scenarios may need refinement")
+            
+            if common_errors.get("selector_issues", 0) > 0:
+                insights.append(f"Selector issues detected ({common_errors['selector_issues']} cases) - Consider more robust selectors")
+            
+            if common_errors.get("timeout_issues", 0) > 0:
+                insights.append(f"Timeout issues detected ({common_errors['timeout_issues']} cases) - Scenarios may need wait conditions")
+            
+            # Generate recommendations for RequirementsAgent
+            recommendations = []
+            if fail_rate > 30:
+                recommendations.append("Focus on generating more stable scenarios with robust selectors")
+                recommendations.append("Prioritize scenarios that test core functionality over edge cases")
+            
+            if common_errors.get("selector_issues", 0) > total * 0.2:
+                recommendations.append("Generate scenarios with multiple selector strategies (ID, class, text, XPath)")
+                recommendations.append("Include wait conditions for dynamic elements")
+            
+            if pass_rate < 50:
+                recommendations.append("Review failed scenarios and adjust scenario generation to avoid similar patterns")
+                recommendations.append("Focus on high-priority scenarios that are more likely to succeed")
+            
+            # Calculate average execution time
+            avg_duration = sum(e.get("duration_seconds", 0) for e in execution_data) / len(execution_data) if execution_data else 0
+            
+            metrics = {
+                "total_executions": total,
+                "passed": passed,
+                "failed": failed,
+                "pass_rate": pass_rate,
+                "fail_rate": fail_rate,
+                "common_errors": common_errors,
+                "avg_duration_seconds": avg_duration
+            }
+            
+            logger.info(f"Feedback analysis complete: {pass_rate:.1f}% pass rate, {len(insights)} insights, {len(recommendations)} recommendations")
+            
+            return {
+                "status": "success",
+                "generation_id": generation_id,
+                "insights": insights,
+                "recommendations": recommendations,
+                "metrics": metrics,
+                "execution_data_count": len(execution_data)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in learn_from_feedback: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "generation_id": generation_id,
+                "error": str(e),
+                "insights": [],
+                "recommendations": [],
+                "metrics": {}
+            }
     
     async def calculate_performance_score(
         self,
