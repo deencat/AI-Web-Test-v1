@@ -41,7 +41,7 @@
 
 | Task ID | Description | Status | Dependencies | Points | Duration |
 |---------|-------------|--------|--------------|--------|----------|
-| **9A.2** | LLM integration with Cerebras | ⚠️ **NEEDS CLARIFICATION** | 9A.1 | 8 | 3 days |
+| **9A.2** | LLM integration with Cerebras | ⏸️ **SKIPPED** (Blocked - Azure OpenAI sufficient) | 9A.1 | 8 | 3 days |
 | **9A.7** | Replace AnalysisAgent stubs with real infrastructure | 📋 **PENDING** | 9B.1 (optional) | 3 | 1 day |
 
 ### Developer B Tasks (Optional - When Phase 2 Complete)
