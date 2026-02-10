@@ -106,29 +106,28 @@ class UniversalLLMService:
                 f"{base_url}/models/{model}:generateContent?key={self.google_api_key}",
                 json=payload
             )
-                response.raise_for_status()
-                data = response.json()
-                
-                # Convert Gemini response to OpenAI format for consistency
-                if "candidates" in data and len(data["candidates"]) > 0:
-                    content = data["candidates"][0]["content"]["parts"][0]["text"]
-                    return {
-                        "choices": [
-                            {
-                                "message": {
-                                    "role": "assistant",
-                                    "content": content
-                                },
-                                "finish_reason": "stop"
-                            }
-                        ],
-                        "model": model,
-                        "usage": {
-                            "total_tokens": data.get("usageMetadata", {}).get("totalTokenCount", 0)
+            response.raise_for_status()
+            data = response.json()
+            
+            # Convert Gemini response to OpenAI format for consistency
+            if "candidates" in data and len(data["candidates"]) > 0:
+                content = data["candidates"][0]["content"]["parts"][0]["text"]
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": content
+                            },
+                            "finish_reason": "stop"
                         }
+                    ],
+                    "model": model,
+                    "usage": {
+                        "total_tokens": data.get("usageMetadata", {}).get("totalTokenCount", 0)
                     }
-            else:
-                raise Exception("No candidates in Gemini response")
+                }
+            raise Exception("No candidates in Gemini response")
             
         except httpx.TimeoutException:
             raise Exception("Google Gemini API request timed out (90s)")
