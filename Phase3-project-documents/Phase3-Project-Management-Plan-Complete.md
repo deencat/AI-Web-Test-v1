@@ -1,11 +1,11 @@
 # Phase 3: Project Management Plan
 
 **Document Type:** Project Management Guide  
-**Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, and risk management  
-**Scope:** Sprint 7-12 execution framework (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ In Execution - Sprint 9 COMPLETE (100%), All Performance Optimizations Complete  
-**Last Updated:** February 9, 2026  
-**Version:** 2.8
+**Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
+**Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Ready for Sprint 10  
+**Last Updated:** February 10, 2026  
+**Version:** 2.9
 
 > **📖 When to Use This Document:**
 > - **Sprint Planning:** Task assignments, story point estimates, dependencies
@@ -729,89 +729,305 @@ For detailed analysis, strategies, and agent-specific documentation, see the [Su
 
 ---
 
-### Sprint 10: Phase 2 Integration & API (Mar 6 - Mar 19, 2026)
+## Post-Sprint 9: Gap Analysis & Strategic Planning (Feb 10, 2026)
 
-**Note:** Sprint 10 start delayed until Developer B merges Phase 2 code to main branch.
+**Status:** ✅ **COMPLETE**  
+**Document:** [Sprint 10 Gap Analysis and Implementation Plan](SPRINT_10_GAP_ANALYSIS_AND_PLAN.md)
 
-#### Developer A Tasks (24 points)
+### Critical Gaps Identified
 
-| Task | Description | Duration | Dependencies |
-|------|-------------|----------|--------------|
-| **10A.1** | Create `/api/v2/generate-tests` endpoint | 2 days | Sprint 9 |
-| **10A.2** | Wrap Phase 2 execution engine (zero-downtime migration) | 3 days | 10A.1 |
-| **10A.3** | Feature flag (AGENTS_ENABLED env var) | 1 day | 10A.2 |
-| **10A.4** | API versioning (/api/v1 vs /api/v2) | 1 day | 10A.1 |
-| **10A.5** | Rollout strategy (5% → 25% → 50% → 100%) | 2 days | 10A.3 |
+After successful Phase 2 + Phase 3 merge and integration testing, comprehensive gap analysis revealed:
 
-**Total: 24 points, 9 days**
+#### Gap #1: Frontend-Agent Integration (CRITICAL - Sprint 10)
+**Problem:**
+- Backend agents work perfectly but workflow is invisible to users
+- No UI to trigger agent workflow
+- No real-time progress visibility
+- Tests appear in frontend but generation process is hidden
 
-#### Developer B Tasks (18 points)
+**Solution (Sprint 10):**
+- Real-time agent progress UI (GitHub Actions style pipeline)
+- "AI Generate Tests" trigger button with configuration form
+- Server-Sent Events for live progress streaming
+- Workflow results review interface (approve/edit/reject)
 
-| Task | Description | Duration | Dependencies |
-|------|-------------|----------|--------------|
-| **10B.1** | GitHub Actions workflow (test on every PR) | 2 days | Sprint 9 |
-| **10B.2** | Automated deployment to staging | 2 days | 10B.1 |
-| **10B.3** | Load testing with Locust (100 concurrent users) | 2 days | Sprint 9 |
-| **10B.4** | System tests (15+ scenarios: happy path + edge cases) | 2 days | 10A.5, 10B.3 |
+**Industrial Best Practices Applied:**
+- **GitHub Actions:** Step-by-step execution with logs
+- **ChatGPT:** Streaming responses with intermediate steps
+- **Airflow:** Agent dependency visualization
+- **Vercel:** Real-time deployment progress
 
-**Total: 18 points, 8 days**
+#### Gap #2: Autonomous Self-Improvement (CRITICAL - Sprint 11)
+**Problem:**
+- Basic feedback loop exists but manual
+- No automated prompt optimization
+- No pattern learning and reuse (missing 90% cost reduction)
+- No self-healing for broken tests
+- No continuous performance monitoring
 
-**Sprint 10 Success Criteria:**
-- ✅ `/api/v2/generate-tests` operational (multi-agent)
-- ✅ Feature flag allows gradual rollout (5%→100%)
-- ✅ CI/CD pipeline runs tests on every PR
-- ✅ Load test passes: 100 users, <5s latency
-- ✅ Phase 2 + Phase 3 integration complete
+**Solution (Sprint 11):**
+- **Automated A/B Testing:** Generate variants, auto-promote winners
+- **Pattern Library:** Extract and reuse successful patterns (90% cost savings)
+- **Self-Healing Engine:** Auto-repair tests when UI changes
+- **Performance Monitor:** Detect degradation, trigger auto-recovery
+
+**Self-Improvement Mechanisms:**
+```
+1. Prompt Optimization → 15% quality improvement in 3 months
+2. Pattern Reuse → 90% cost reduction (from $0.16 to $0.016 per test)
+3. Self-Healing → 80%+ auto-repair rate for "element not found"
+4. Auto-Recovery → <1 minute rollback on critical degradation
+```
+
+#### Gap #3: Real-Time Communication (HIGH - Sprint 10 & 11)
+**Problem:**
+- Agent communication is synchronous (direct method calls)
+- Frontend polling every 5 seconds (inefficient)
+- Message bus is stub (not operational)
+
+**Solution:**
+- **Sprint 10:** Server-Sent Events (SSE) for real-time progress
+- **Sprint 11:** Redis Streams message bus (event-driven architecture)
+
+### Impact on Sprint Planning
+
+**Sprint 10 Revised:**
+- **Before:** Basic API integration (24 points)
+- **After:** Full frontend-agent integration with real-time UI (54 points)
+- **New Focus:** User experience, industrial UI patterns, SSE implementation
+
+**Sprint 11 Revised:**
+- **Before:** Manual learning system setup (22 points)
+- **After:** Fully autonomous learning with 4 mechanisms (56 points)
+- **New Focus:** True autonomy, self-healing, auto-optimization
+
+**Success Metrics Updated:**
+| Metric | Original Target | Revised Target | Autonomous Mechanism |
+|--------|----------------|----------------|---------------------|
+| User Visibility | N/A | 100% real-time | SSE streaming |
+| Self-Improvement | Manual | Fully automated | A/B testing + patterns |
+| Cost per Test | $0.16 | $0.016 (90% reduction) | Pattern reuse |
+| Test Pass Rate | 70% | 85%+ | Self-healing + optimization |
+| Recovery Time | Manual | <1 minute | Auto-rollback |
 
 ---
 
-### Sprint 11: Learning System Activation (Mar 20 - Apr 2, 2026)
+### Sprint 10: Frontend Integration & Real-time Agent Progress (Mar 6 - Mar 19, 2026)
+
+**Status:** ✅ **Phase 2 + Phase 3 merged successfully** (Feb 10, 2026)  
+**Focus:** Frontend-Agent integration with real-time progress UI  
+**Reference:** [Sprint 10 Gap Analysis](SPRINT_10_GAP_ANALYSIS_AND_PLAN.md)
+
+**Critical Gaps Addressed:**
+- 🔴 Frontend Integration Architecture (missing agent workflow visibility)
+- 🔴 Real-time Agent Progress UI (GitHub Actions style pipeline)
+- 🔴 Industrial UI/UX Patterns (reference architectures researched)
+- 🟡 Server-Sent Events implementation (real-time updates)
+
+#### Developer A Tasks - Backend API (26 points, 4 days)
+
+| Task | Description | Duration | Dependencies | Details |
+|------|-------------|----------|--------------|---------|
+| **10A.1** | Create `/api/v2/generate-tests` endpoint | 2 days | Sprint 9 | POST endpoint to trigger 4-agent workflow, returns workflow_id |
+| **10A.2** | Implement Server-Sent Events (SSE) for real-time progress | 2 days | 10A.1 | Stream agent progress events (agent_started, agent_progress, agent_completed, workflow_completed) |
+| **10A.3** | Implement OrchestrationService | 2 days | 10A.1 | Coordinate 4-agent workflow with progress tracking via Redis pub/sub |
+| **10A.4** | Create workflow status endpoints | 1 day | 10A.1 | GET /workflows/{id}, GET /workflows/{id}/results, DELETE /workflows/{id} (cancel) |
+
+**Total: 26 points, 7 days**
+
+**New Backend Components:**
+```python
+# backend/app/services/orchestration_service.py
+class OrchestrationService:
+    """Coordinates 4-agent workflow with progress tracking"""
+    async def run_workflow(workflow_id, request): ...
+    
+# backend/app/services/progress_tracker.py
+class ProgressTracker:
+    """Emits real-time progress events via Redis"""
+    async def emit(event_type, data): ...
+```
+
+#### Developer A Tasks - Frontend UI (28 points, 4 days)
+
+| Task | Description | Duration | Dependencies | Details |
+|------|-------------|----------|--------------|---------|
+| **10A.5** | Agent Workflow Trigger component | 1 day | 10A.1 | "AI Generate Tests" button, URL input, user instructions form |
+| **10A.6** | Real-time Progress Pipeline UI | 2 days | 10A.2 | GitHub Actions style: 4-stage pipeline with live status |
+| **10A.7** | Server-Sent Events React hook | 1 day | 10A.2 | useWorkflowProgress(workflowId) for real-time updates |
+| **10A.8** | Workflow Results Review UI | 2 days | 10A.4 | Review generated tests, approve/edit/reject interface |
+
+**Total: 28 points, 6 days**
+
+**New Frontend Components:**
+```typescript
+// frontend/src/features/agent-workflow/
+- AgentWorkflowTrigger.tsx      // Start workflow button
+- AgentProgressPipeline.tsx     // 4-stage pipeline UI
+- AgentStageCard.tsx            // Individual agent card
+- AgentLogViewer.tsx            // Expandable logs
+- WorkflowResults.tsx           // Generated tests review
+- useAgentWorkflow.ts           // Workflow management hook
+- useWorkflowProgress.ts        // Real-time progress hook (SSE)
+- agentWorkflowService.ts       // API client
+```
+
+#### Developer B Tasks - Integration & Testing (18 points, 2 days)
+
+| Task | Description | Duration | Dependencies | Details |
+|------|-------------|----------|--------------|---------|
+| **10B.1** | E2E test: Frontend-to-Agent workflow | 1 day | 10A.8 | Test complete user journey: trigger → progress → results |
+| **10B.2** | Load testing with Locust | 1 day | 10A.4 | 100 concurrent users, <5s latency target |
+| **10B.3** | GitHub Actions CI/CD | 1 day | 10B.1 | Run tests on every PR |
+| **10B.4** | System integration tests | 1 day | 10B.1 | 15+ scenarios (happy path + edge cases) |
+
+**Total: 18 points, 4 days**
+
+**Sprint 10 Success Criteria:**
+- ✅ `/api/v2/generate-tests` operational (multi-agent workflow)
+- ✅ **Real-time progress visible in UI** (SSE streaming)
+- ✅ **Agent pipeline visualization** (GitHub Actions style)
+- ✅ **User can trigger workflow from frontend** ("AI Generate Tests" button)
+- ✅ **Workflow results review interface** (approve/edit/reject tests)
+- ✅ Load test passes: 100 users, <5s latency
+- ✅ E2E test passes: Complete frontend-to-agent workflow
+- ✅ CI/CD pipeline runs tests on every PR
+
+**Industrial UI/UX Patterns Applied:**
+- **GitHub Actions:** Step-by-step progress with expandable logs
+- **ChatGPT:** Streaming responses with "thinking" indicators
+- **Airflow:** Agent dependency visualization
+- **Vercel:** Real-time deployment progress
+
+---
+
+### Sprint 11: Autonomous Learning System Activation (Mar 20 - Apr 2, 2026)
+
+**Focus:** Achieve true autonomous self-improvement through automated learning mechanisms  
+**Reference:** [Sprint 10 Gap Analysis - Autonomous Self-Improvement](SPRINT_10_GAP_ANALYSIS_AND_PLAN.md#-gap-3-autonomous-self-improvement-critical)
 
 **Important:** The **Learning System** (this sprint) is the **core of continuous improvement**, not any individual agent. It operates at a meta-level above all agents, coordinating:
-- Prompt optimization for all agents (including EvolutionAgent)
-- Pattern learning and reuse across agents
-- A/B testing and automatic winner promotion
-- Performance monitoring and auto-recovery
+- Automated prompt optimization for all agents (A/B testing with auto-promotion)
+- Pattern learning and reuse across agents (90% cost reduction)
+- Self-healing test repair (auto-fix when UI changes)
+- Continuous performance monitoring with auto-recovery
 
 **Agent Roles:**
 - **EvolutionAgent:** Generates test code, participates in learning loop via Learning System
 - **All Agents:** Contribute execution results, metrics, patterns to Learning System
 - **Learning System:** Coordinates optimization, A/B testing, pattern extraction across all agents
 
-**Major Improvements Planned for Sprint 11:**
-- ✅ **Message Bus Implementation:** Replace stub with Redis Streams (event-driven communication)
-- ✅ **Event-Driven Communication:** Agents publish/subscribe to events (asynchronous coordination)
-- ✅ **Learning System:** Meta-level coordination, pattern sharing, automated prompt optimization
-- ✅ **Full Feedback Loop:** Integrated with message bus and learning system
+**Four Autonomous Mechanisms Implemented:**
 
-#### Developer A Tasks (22 points)
+#### Mechanism 1: Automated Prompt Optimization
+```
+Process:
+1. Analyze high-quality examples (user rating >= 4 stars)
+2. Generate 3 prompt variants using LLM
+3. Run A/B test with 10% traffic (Thompson Sampling algorithm)
+4. Measure quality metrics (pass rate, user rating, execution time)
+5. Auto-promote winner if >5% improvement
+6. Repeat weekly
 
-| Task | Description | Duration | Dependencies |
-|------|-------------|----------|--------------|
-| **11A.1** | Implement PromptOptimizer (manual variant testing) | 3 days | Sprint 10 |
-| **11A.2** | Create 3 prompt variants for Evolution Agent | 2 days | 11A.1 |
-| **11A.3** | Manual A/B testing (100 samples per variant) | 3 days | 11A.2 |
-| **11A.4** | Pattern library (store + retrieve learned patterns) | 2 days | Sprint 10 |
+Result: Continuous improvement without human intervention
+```
 
-**Total: 22 points, 10 days**
+#### Mechanism 2: Pattern Learning & Reuse
+```
+Process:
+1. Extract patterns from successful tests (pass rate > 80%)
+2. Store in vector database (Qdrant) with embeddings
+3. On new generation, search for similar patterns
+4. If match >85% confidence, reuse (no LLM call)
 
-#### Developer B Tasks (18 points)
+Result: 90% cost reduction, instant generation, higher quality
+```
 
-| Task | Description | Duration | Dependencies |
-|------|-------------|----------|--------------|
-| **11B.1** | Implement ExperimentManager (10% exploration traffic) | 3 days | Sprint 10 |
-| **11B.2** | Activate automated feedback collection | 1 day | Sprint 10 |
-| **11B.3** | Weekly performance review dashboard (simple metrics) | 2 days | 11B.1 |
-| **11B.4** | Rollback mechanism (revert prompt <1 min) | 2 days | 11A.3 |
+#### Mechanism 3: Self-Healing Tests
+```
+Process:
+1. Test fails ("element not found")
+2. Re-observe page with ObservationAgent
+3. Find similar element (vector similarity > 0.75)
+4. Update test with new selector
+5. Re-run test, if passes → update permanently
 
-**Total: 18 points, 8 days**
+Result: Tests adapt to UI changes automatically
+```
+
+#### Mechanism 4: Continuous Monitoring & Auto-Recovery
+```
+Metrics Tracked per Agent:
+- ObservationAgent: Element accuracy (target: >90%)
+- RequirementsAgent: Scenario quality (target: >0.85)
+- AnalysisAgent: Risk prediction F1 (target: >0.80)
+- EvolutionAgent: Test pass rate (target: >80%)
+
+Auto-Recovery:
+- Warning: >10% degradation → Increase experiment traffic
+- Critical: >20% degradation → Rollback to previous prompt
+```
+
+#### Developer A Tasks - Learning System Core (32 points)
+
+| Task | Description | Duration | Dependencies | Details |
+|------|-------------|----------|--------------|---------|
+| **11A.1** | Implement PromptOptimizer with Thompson Sampling | 3 days | Sprint 10 | Auto-generate 3 variants, run A/B test, measure quality metrics |
+| **11A.2** | Implement PatternLibrary with vector DB | 3 days | Sprint 10 | Extract patterns, store in Qdrant, similarity search |
+| **11A.3** | Implement SelfHealingEngine | 2 days | 11A.2 | Element similarity matching, auto-repair, confidence scoring |
+| **11A.4** | Implement PerformanceMonitor | 2 days | 11A.1 | Track agent metrics, detect degradation, trigger auto-recovery |
+| **11A.5** | Redis Message Bus implementation | 2 days | Sprint 10 | Replace stub with Redis Streams, event-driven communication |
+
+**Total: 32 points, 12 days**
+
+**New Learning System Components:**
+```python
+# backend/app/services/learning/
+- prompt_optimizer.py          # Automated prompt A/B testing
+- pattern_library.py           # Pattern extraction and reuse
+- self_healing_engine.py       # Auto-repair broken tests
+- performance_monitor.py       # Continuous monitoring
+- experiment_manager.py        # Multi-armed bandit (Thompson Sampling)
+```
+
+#### Developer B Tasks - Dashboard & Integration (24 points)
+
+| Task | Description | Duration | Dependencies | Details |
+|------|-------------|----------|--------------|---------|
+| **11B.1** | Implement ExperimentManager | 3 days | Sprint 10 | Multi-armed bandit algorithm, 10% exploration traffic allocation |
+| **11B.2** | Learning metrics dashboard | 3 days | 11A.4 | Visualize agent performance trends, A/B test results, pattern usage |
+| **11B.3** | Automated feedback collection pipeline | 2 days | Sprint 10 | Collect execution results, user ratings, CI/CD outcomes |
+| **11B.4** | Rollback mechanism with 1-min recovery | 2 days | 11A.1 | Instant revert to previous prompt, automatic re-deployment |
+| **11B.5** | Pattern usage analytics | 2 days | 11A.2 | Track pattern hits, cost savings, success rates |
+
+**Total: 24 points, 12 days**
+
+**New Dashboard Components:**
+```typescript
+// frontend/src/features/learning/
+- LearningMetricsDashboard.tsx    // Agent performance trends
+- ABTestResultsView.tsx           // Experiment results
+- PatternLibraryView.tsx          // Learned patterns
+- PerformanceAlertsPanel.tsx      // Degradation alerts
+```
 
 **Sprint 11 Success Criteria:**
-- ✅ PromptOptimizer generates 3+ variants
-- ✅ A/B testing identifies best variant (manual analysis)
-- ✅ ExperimentManager allocates 10% traffic to experiments
-- ✅ Pattern library stores 10+ learned patterns
-- ✅ Rollback tested: reverts bad prompt in <1 minute
+- ✅ **Automated A/B testing operational** (generates variants, promotes winners)
+- ✅ **Pattern library stores 10+ patterns** (with 85%+ reuse rate)
+- ✅ **Self-healing repairs 80%+ of "element not found" failures**
+- ✅ **Performance monitoring detects degradation** (>10% warning, >20% critical)
+- ✅ **Auto-recovery tested:** Rollback in <1 minute on critical degradation
+- ✅ **Cost reduction:** 90% savings on pattern-matched pages
+- ✅ **Quality improvement:** Agent performance improves 5%+ per week
+- ✅ **Redis Message Bus:** Event-driven agent communication operational
+
+**Learning System Metrics:**
+| Metric | Baseline | Target | Method |
+|--------|----------|--------|--------|
+| Agent Performance | Varies | +15% in 3 months | Automated A/B testing |
+| Test Pass Rate | 70% | 85%+ | Self-healing + prompt optimization |
+| LLM Cost per Test | $0.16 | $0.016 | Pattern reuse (90% reduction) |
+| Time to Recovery | Manual | <1 minute | Auto-rollback |
 
 ---
 

@@ -1,10 +1,11 @@
 # Phase 3: Architecture & Design
 
 **Purpose:** High-level architecture and design decisions for multi-agent test generation system  
-**Scope:** Framework selection, communication patterns, orchestration strategy, data flow  
+**Scope:** Framework selection, communication patterns, orchestration strategy, data flow, autonomous learning  
 **Audience:** Technical architects, lead developers, stakeholders  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Feedback Loop Tested & Verified  
-**Last Updated:** February 9, 2026
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete  
+**Version:** 1.5  
+**Last Updated:** February 10, 2026
 
 > **📖 When to Use This Document:**
 > - **System Design:** Understanding overall architecture, agent patterns, data flow
@@ -1101,56 +1102,207 @@ graph TB
     style System fill:#4A90E2,color:#fff
 ```
 
-### 6.2 Level 2: Container Diagram
+### 6.2 Frontend-Agent Integration Architecture (Sprint 10)
+
+**Reference:** [Sprint 10 Gap Analysis - Frontend Integration](SPRINT_10_GAP_ANALYSIS_AND_PLAN.md#-gap-1-frontend-integration-architecture-critical)
+
+#### 6.2.1 Real-Time Agent Workflow UI
+
+**Design Pattern:** GitHub Actions Style Pipeline
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 🤖 Agent Workflow Progress                    [Workflow: #abc123]│
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ✅ ObservationAgent      (Completed in 28s)               │
+│     └─ 38 UI elements found                                │
+│     └─ Confidence: 0.90                                    │
+│     └─ [📋 View Logs]                                      │
+│                                                             │
+│  🔄 RequirementsAgent     (Running... 15s elapsed)         │
+│     └─ Generating scenarios...                             │
+│     └─ 12 scenarios generated so far                       │
+│     └─ [👁️ Watch Live]                                     │
+│                                                             │
+│  ⏳ AnalysisAgent         (Pending)                        │
+│     └─ Waiting for RequirementsAgent                       │
+│     └─ Estimated start: 10s                                │
+│                                                             │
+│  ⏳ EvolutionAgent        (Pending)                        │
+│     └─ Waiting for AnalysisAgent                           │
+│     └─ Estimated start: 70s                                │
+│                                                             │
+│  [📊 View Detailed Logs] [❌ Cancel Workflow]              │
+│  Total Progress: 25% (1/4 agents complete)                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### 6.2.2 Server-Sent Events Architecture
+
+**Communication Flow:**
+```
+Frontend                     Backend                      Agents
+   |                            |                           |
+   |─── POST /api/v2/generate ─>|                           |
+   |<── workflow_id ───────────|                           |
+   |                            |                           |
+   |─── EventSource(stream) ───>|                           |
+   |                            |─── Start Workflow ──────>|
+   |                            |<── agent_started ────────|
+   |<── SSE: agent_started ────|                           |
+   |                            |                           |
+   |                            |<── agent_progress ───────|
+   |<── SSE: agent_progress ───|                           |
+   |                            |                           |
+   |                            |<── agent_completed ──────|
+   |<── SSE: agent_completed ──|                           |
+   |                            |                           |
+   |<── SSE: workflow_completed|                           |
+   |                            |                           |
+```
+
+**SSE Event Types:**
+```typescript
+// Server-Sent Events emitted during workflow
+type WorkflowEvent = 
+  | { event: 'agent_started', data: { agent: string, timestamp: string } }
+  | { event: 'agent_progress', data: { agent: string, progress: number, message: string } }
+  | { event: 'agent_completed', data: { agent: string, result: object, duration: number } }
+  | { event: 'workflow_completed', data: { workflow_id: string, results: object } }
+  | { event: 'workflow_failed', data: { workflow_id: string, error: string } }
+```
+
+#### 6.2.3 Frontend Component Architecture
+
+```typescript
+// New components for Sprint 10
+src/features/agent-workflow/
+├── components/
+│   ├── AgentWorkflowTrigger.tsx       // "AI Generate Tests" button + form
+│   ├── AgentProgressPipeline.tsx      // 4-stage pipeline visualization
+│   ├── AgentStageCard.tsx             // Individual agent status card
+│   ├── AgentLogViewer.tsx             // Expandable log viewer
+│   └── WorkflowResults.tsx            // Generated tests review UI
+├── hooks/
+│   ├── useAgentWorkflow.ts            // Trigger and manage workflows
+│   ├── useWorkflowProgress.ts         // Real-time SSE progress
+│   └── useWorkflowResults.ts          // Fetch workflow results
+├── services/
+│   ├── agentWorkflowService.ts        // API client for /api/v2
+│   └── sseService.ts                  // SSE connection manager
+└── types/
+    └── agentWorkflow.types.ts         // TypeScript interfaces
+```
+
+#### 6.2.4 Backend API Endpoints (Sprint 10)
+
+```python
+# New endpoints for agent workflow
+POST   /api/v2/generate-tests          # Trigger 4-agent workflow
+GET    /api/v2/workflows/{id}          # Get workflow status
+GET    /api/v2/workflows/{id}/stream   # SSE progress stream
+GET    /api/v2/workflows/{id}/results  # Get generated tests
+DELETE /api/v2/workflows/{id}          # Cancel workflow
+GET    /api/v2/workflows                # List user workflows
+```
+
+#### 6.2.5 Industrial Best Practices Applied
+
+| Pattern | Source | Application |
+|---------|--------|-------------|
+| **Step-by-step execution** | GitHub Actions | 4-stage agent pipeline with expandable logs |
+| **Streaming responses** | ChatGPT | Real-time progress with SSE, show intermediate results |
+| **DAG visualization** | Airflow | Agent dependency graph, execution order |
+| **Live deployment logs** | Vercel | Real-time log streaming during workflow |
+| **Progress indicators** | Jenkins | Success/failure/running status with duration |
+
+### 6.3 Level 2: Container Diagram
 
 ```mermaid
 graph TB
-    subgraph "Frontend"
+    subgraph "Frontend (Sprint 10 Enhanced)"
         UI[React + TypeScript UI]
+        AWF[Agent Workflow UI]
+        SSE[SSE Client]
     end
     
     subgraph "Backend"
         API[FastAPI Backend]
+        APIV2[API v2: Agent Workflows]
+        SSEEndpoint[SSE Stream Endpoint]
+        
+        subgraph "Orchestration Layer (New)"
+            Orch[OrchestrationService]
+            PT[ProgressTracker]
+        end
         
         subgraph "Agents"
-            Orch[Orchestration Agent]
             Obs[Observation Agent]
             Req[Requirements Agent]
             Ana[Analysis Agent]
             Evo[Evolution Agent]
-            Rep[Reporting Agent]
+        end
+        
+        subgraph "Learning System (Sprint 11)"
+            PO[PromptOptimizer]
+            PL[PatternLibrary]
+            SH[SelfHealingEngine]
+            PM[PerformanceMonitor]
         end
     end
     
     subgraph "Data Layer"
-        Bus[Redis Streams<br/>Message Bus]
+        Bus[Redis Streams<br/>Message Bus + Pub/Sub]
         DB[(PostgreSQL)]
         VDB[(Qdrant Vector DB)]
         Cache[Redis Cache]
     end
     
     subgraph "External"
-        LLM[OpenAI GPT-4]
-        GH[GitHub API]
+        LLM[Azure OpenAI]
     end
     
+    %% Frontend connections
     UI -->|HTTPS| API
-    API -->|Commands| Orch
+    AWF -->|POST /generate-tests| APIV2
+    SSE -->|EventSource stream| SSEEndpoint
     
-    Orch -.->|Messages| Bus
-    Obs -.->|Messages| Bus
-    Req -.->|Messages| Bus
-    Ana -.->|Messages| Bus
-    Evo -.->|Messages| Bus
-    Rep -.->|Messages| Bus
+    %% Backend orchestration
+    APIV2 -->|Trigger| Orch
+    Orch -->|Coordinate| Obs
+    Orch -->|Coordinate| Req
+    Orch -->|Coordinate| Ana
+    Orch -->|Coordinate| Evo
     
-    API -->|SQL| DB
-    Obs -->|Embeddings| VDB
-    Evo -->|Prompts| LLM
-    Obs -->|Code| GH
+    %% Progress tracking
+    Orch -->|Emit Events| PT
+    PT -->|Publish| Bus
+    SSEEndpoint -->|Subscribe| Bus
     
-    style Bus fill:#F39C12,color:#fff
+    %% Learning system (Sprint 11)
+    PO -.->|Optimize| Obs
+    PO -.->|Optimize| Req
+    PO -.->|Optimize| Ana
+    PO -.->|Optimize| Evo
+    PL -.->|Patterns| VDB
+    SH -.->|Repair| Evo
+    PM -.->|Monitor| Orch
+    
+    %% Data connections
+    Orch -->|Store| DB
+    Obs -->|Cache| Cache
+    PL -->|Embeddings| VDB
+    Evo -->|LLM Calls| LLM
+    
+    style AWF fill:#27AE60,color:#fff
+    style SSE fill:#27AE60,color:#fff
+    style APIV2 fill:#3498DB,color:#fff
     style Orch fill:#E74C3C,color:#fff
+    style Bus fill:#F39C12,color:#fff
+    style PO fill:#9B59B6,color:#fff
+    style PL fill:#9B59B6,color:#fff
+    style SH fill:#9B59B6,color:#fff
 ```
 
 ### 6.3 Level 3: Orchestration Agent Components
@@ -1260,18 +1412,32 @@ graph TB
 
 ---
 
-## 8. Continuous Learning (Sprint 10-12)
+## 8. Autonomous Learning System (Sprint 11-12)
 
-### 8.0 Agent Collaboration & Feedback Loop
+**Reference:** [Sprint 10 Gap Analysis - Autonomous Self-Improvement](SPRINT_10_GAP_ANALYSIS_AND_PLAN.md#-gap-3-autonomous-self-improvement-critical)
+
+### 8.0 From Basic Feedback Loop to Full Autonomy
+
+**Evolution of Learning System:**
+
+| Phase | Capability | Status | Timeline |
+|-------|-----------|--------|----------|
+| **Phase 1:** Basic Feedback | Manual analysis of execution results | ✅ Complete | Sprint 8-9 |
+| **Phase 2:** Automated A/B Testing | Auto-generate & test prompt variants | 🔄 Sprint 11 | Mar 20 - Apr 2 |
+| **Phase 3:** Pattern Learning | Extract & reuse successful patterns | 🔄 Sprint 11 | Mar 20 - Apr 2 |
+| **Phase 4:** Self-Healing | Auto-repair broken tests | 🔄 Sprint 11 | Mar 20 - Apr 2 |
+| **Phase 5:** Continuous Monitoring | Detect degradation, auto-recovery | 🔄 Sprint 11 | Mar 20 - Apr 2 |
+
+### 8.1 Agent Collaboration & Basic Feedback Loop (Sprint 8-9)
 
 **Key Principle:** Agents work together for continuous improvement, not as standalone parties. Each agent's output improves the others' future performance through a feedback loop.
 
-**Current Implementation Status (Sprint 8 Complete):**
+**Current Implementation Status (Sprint 9 Complete):**
 - ✅ **Infrastructure Complete:** `RequirementsAgent` accepts `execution_feedback`, `EvolutionAgent.learn_from_feedback()` method exists
 - ✅ **ACTIVATED & TESTED:** Feedback loop fully operational (activated Feb 6, 2026, tested & verified Feb 9, 2026)
   - **Test Results:** 70% pass rate, 2 insights generated, 10 execution records analyzed
-  - **Status:** Functional and ready for continuous improvement cycle
-- ⏳ **Full Implementation:** Planned for Sprint 11 (Mar 20 - Apr 2, 2026) with message bus integration
+  - **Status:** Functional and ready for Sprint 11 autonomous enhancements
+- ⏳ **Autonomous Enhancement:** Sprint 11 (Mar 20 - Apr 2, 2026) with 4 self-improvement mechanisms
 
 **Complete Feedback Loop Architecture:**
 
@@ -1317,14 +1483,303 @@ RequirementsAgent → Uses feedback to improve next scenario generation
 
 **Result:** Continuous improvement where each iteration produces better scenarios, better test code, and better execution results.
 
-### 8.1 Learning Architecture
+---
 
-**Implementation Status:**
-- ⏳ **Planned for Sprint 11:** Mar 20 - Apr 2, 2026
-- **Current:** Individual agents have some learning capabilities (EvolutionAgent.learn_from_feedback)
-- **Future:** Meta-level Learning System coordinates all agents (Sprint 11)
+### 8.2 Four Autonomous Self-Improvement Mechanisms (Sprint 11)
 
-**Important:** The **Learning System** (this section) is the **core of continuous improvement**, not any individual agent. It operates at a meta-level above all agents, coordinating learning across the entire system. Individual agents (like EvolutionAgent and RequirementsAgent) participate in the feedback loop, while the Learning System coordinates optimization, A/B testing, and pattern extraction at a meta-level.
+**Design Philosophy:** True autonomy means the system improves itself without human intervention, inspired by industrial leaders:
+- **Google DeepMind:** AutoML-style automated prompt optimization
+- **Netflix:** Automated A/B testing with Thompson Sampling
+- **Stripe:** Self-healing API tests that adapt to schema changes
+- **OpenAI:** Continuous evaluation and reinforcement learning from human feedback (RLHF)
+
+#### Mechanism #1: Automated Prompt Optimization
+
+**Process:**
+```
+Step 1: Collect High-Quality Examples
+  └─ Query execution_feedback table WHERE user_rating >= 4 stars
+  └─ Extract prompts that generated these high-quality tests
+  
+Step 2: Generate Prompt Variants
+  └─ Use LLM to analyze successful prompts
+  └─ Generate 3 variants: Conservative, Balanced, Experimental
+  └─ Store variants in prompt_variants table
+  
+Step 3: Run A/B Test (Thompson Sampling)
+  └─ Allocate 10% traffic to experiments
+  └─ Measure quality metrics:
+      ├─ Test pass rate (target: >80%)
+      ├─ User rating (target: >4 stars)
+      └─ Execution time (target: <120s)
+  
+Step 4: Auto-Promote Winner
+  └─ If variant improves quality by >5% (95% confidence)
+  └─ Promote to production automatically
+  └─ Notify team via Slack
+  
+Step 5: Repeat Weekly
+  └─ Continuous improvement cycle
+  └─ Track performance trends in dashboard
+```
+
+**Implementation:**
+```python
+# backend/app/services/learning/prompt_optimizer.py
+class PromptOptimizer:
+    """Automated prompt A/B testing with Thompson Sampling"""
+    
+    async def generate_variants(self, agent_name: str, num_variants: int = 3):
+        """Generate prompt variants from high-quality examples"""
+        high_quality = await self._get_high_quality_examples(agent_name)
+        variants = await self.llm.generate_variants(high_quality)
+        return variants
+    
+    async def run_experiment(self, agent_name: str):
+        """Run A/B test with 10% traffic"""
+        experiment = await self.experiment_manager.create(
+            agent=agent_name,
+            variants=variants,
+            traffic_split=0.1,  # 10% exploration
+            duration_days=7
+        )
+        return experiment
+    
+    async def evaluate_and_promote(self, experiment_id: str):
+        """Auto-promote if >5% improvement"""
+        results = await self.experiment_manager.get_results(experiment_id)
+        winner = self._calculate_winner(results)  # Thompson Sampling
+        
+        if winner.improvement > 0.05:  # 5% better
+            await self._promote_to_production(winner)
+            await self._notify_team(winner)
+```
+
+**Success Metrics:**
+- **Target:** 15% quality improvement over 3 months
+- **Current Baseline:** 70% pass rate, 3.8/5 user rating
+- **Expected:** 85%+ pass rate, 4.2/5 user rating after 3 iterations
+
+#### Mechanism #2: Pattern Learning & Reuse
+
+**Process:**
+```
+Step 1: Extract Patterns from Successful Tests
+  └─ Analyze tests with pass_rate >= 80%
+  └─ Extract reusable patterns:
+      ├─ UI element patterns (e.g., "login form" structure)
+      ├─ Test scenario templates (e.g., "checkout flow")
+      └─ Common selector strategies
+  
+Step 2: Store in Vector Database (Qdrant)
+  └─ Generate embeddings for each pattern
+  └─ Store with metadata: URL pattern, page type, success rate
+  
+Step 3: Similarity Search on New Generation
+  └─ User requests tests for new URL
+  └─ Search Qdrant for similar pages (embedding cosine similarity > 0.85)
+  └─ If match found:
+      └─ Reuse pattern (no LLM call needed)
+      └─ Cost: $0.00 vs $0.16 (90% savings)
+  
+Step 4: Continuous Pattern Updates
+  └─ Track pattern usage and success rates
+  └─ Update patterns when better versions emerge
+  └─ Deprecate patterns with declining success
+```
+
+**Implementation:**
+```python
+# backend/app/services/learning/pattern_library.py
+class PatternLibrary:
+    """Pattern extraction and reuse with Qdrant"""
+    
+    async def extract_pattern(self, test_case_id: str):
+        """Extract reusable pattern from successful test"""
+        test = await self.db.get_test(test_case_id)
+        if test.pass_rate < 0.8:
+            return None  # Only learn from successful tests
+        
+        pattern = {
+            "url_pattern": self._extract_url_pattern(test.url),
+            "page_type": test.page_type,
+            "ui_elements": test.ui_elements,
+            "test_steps": test.steps,
+            "success_rate": test.pass_rate
+        }
+        
+        # Store in vector DB
+        embedding = await self.embedding_model.encode(pattern)
+        await self.qdrant.upsert(pattern, embedding)
+        
+    async def find_similar_pattern(self, url: str, confidence_threshold: float = 0.85):
+        """Search for similar patterns"""
+        query_embedding = await self.embedding_model.encode(url)
+        results = await self.qdrant.search(query_embedding, top_k=1)
+        
+        if results[0].score > confidence_threshold:
+            return results[0].pattern  # Reuse existing pattern
+        return None  # Generate from scratch
+```
+
+**Success Metrics:**
+- **Cost Reduction:** $0.16 → $0.016 per test (90% savings)
+- **Pattern Hit Rate:** Target 60% of pages match existing patterns
+- **Generation Speed:** Instant (<1s) for pattern matches vs 30-60s LLM generation
+
+#### Mechanism #3: Self-Healing Tests
+
+**Process:**
+```
+Step 1: Detect Broken Test
+  └─ Test fails with "element not found"
+  └─ Trigger self-healing workflow
+  
+Step 2: Re-Observe Page
+  └─ Launch ObservationAgent to analyze current page
+  └─ Extract current UI elements
+  
+Step 3: Find Similar Element
+  └─ Use vector similarity to find closest match
+  └─ Calculate confidence score (target: >0.75)
+  └─ If confidence high → Update selector
+  
+Step 4: Re-Run Test
+  └─ Execute test with new selector
+  └─ If passes → Store updated version permanently
+  └─ If fails → Mark for manual review
+  
+Step 5: Track Self-Healing Metrics
+  └─ % of tests auto-repaired
+  └─ Time to repair
+  └─ Repair success rate
+```
+
+**Implementation:**
+```python
+# backend/app/services/learning/self_healing_engine.py
+class SelfHealingEngine:
+    """Auto-repair broken tests when UI changes"""
+    
+    async def heal_test(self, test_case_id: str, failure_reason: str):
+        """Attempt to repair broken test"""
+        if "element not found" not in failure_reason.lower():
+            return None  # Only heal element-not-found failures
+        
+        # Re-observe page
+        test_case = await self.db.get_test(test_case_id)
+        observation = await self.observation_agent.observe(test_case.url)
+        
+        # Find similar element
+        failed_selector = self._extract_failed_selector(failure_reason)
+        similar_element = await self._find_similar_element(
+            failed_selector,
+            observation.ui_elements,
+            confidence_threshold=0.75
+        )
+        
+        if similar_element:
+            # Update test with new selector
+            updated_test = await self._update_selector(
+                test_case,
+                old_selector=failed_selector,
+                new_selector=similar_element.selector
+            )
+            
+            # Re-run test
+            result = await self.execution_service.run_test(updated_test)
+            
+            if result.passed:
+                # Success! Store permanently
+                await self.db.update_test(updated_test)
+                await self._log_healing_success(test_case_id)
+                return updated_test
+        
+        # Failed to heal
+        await self._mark_for_manual_review(test_case_id)
+        return None
+```
+
+**Success Metrics:**
+- **Auto-Repair Rate:** Target 80%+ of "element not found" failures
+- **Repair Time:** <2 minutes (re-observe + update + re-run)
+- **False Positive Rate:** <5% (repairs that pass but wrong behavior)
+
+#### Mechanism #4: Continuous Monitoring & Auto-Recovery
+
+**Process:**
+```
+Monitored Metrics per Agent:
+├─ ObservationAgent: Element accuracy (target: >90%)
+├─ RequirementsAgent: Scenario quality (target: >0.85)
+├─ AnalysisAgent: Risk prediction F1 (target: >0.80)
+└─ EvolutionAgent: Test pass rate (target: >80%)
+
+Degradation Detection:
+├─ Warning Threshold: >10% degradation
+│   └─ Action: Increase experiment traffic to 20%
+│   └─ Alert: Slack notification
+├─ Critical Threshold: >20% degradation
+│   └─ Action: Rollback to previous best prompt
+│   └─ Alert: PagerDuty alert
+│   └─ Recovery Time: <1 minute
+
+Auto-Recovery:
+└─ Store last 5 versions of each prompt
+└─ Track performance for each version
+└─ On critical degradation:
+    ├─ Identify last known good version
+    ├─ Rollback in <60 seconds
+    ├─ Re-deploy to all instances
+    └─ Post-incident analysis
+```
+
+**Implementation:**
+```python
+# backend/app/services/learning/performance_monitor.py
+class PerformanceMonitor:
+    """Continuous monitoring with auto-recovery"""
+    
+    async def check_agent_health(self, agent_name: str):
+        """Monitor agent performance"""
+        current_metrics = await self._get_current_metrics(agent_name)
+        baseline_metrics = await self._get_baseline_metrics(agent_name)
+        
+        degradation = self._calculate_degradation(current_metrics, baseline_metrics)
+        
+        if degradation > 0.20:  # Critical: 20% worse
+            await self._trigger_rollback(agent_name)
+            await self._alert_team(level="critical", agent=agent_name)
+        
+        elif degradation > 0.10:  # Warning: 10% worse
+            await self._increase_experiment_traffic(agent_name, traffic=0.20)
+            await self._alert_team(level="warning", agent=agent_name)
+    
+    async def _trigger_rollback(self, agent_name: str):
+        """Rollback to last known good version"""
+        last_good = await self.db.get_last_good_prompt(agent_name)
+        
+        # Rollback prompt
+        await self.prompt_manager.set_prompt(agent_name, last_good)
+        
+        # Track rollback
+        await self.db.log_rollback(
+            agent=agent_name,
+            from_version=current_version,
+            to_version=last_good,
+            reason="performance_degradation",
+            timestamp=datetime.now()
+        )
+```
+
+**Success Metrics:**
+- **Detection Time:** <5 minutes (real-time monitoring)
+- **Recovery Time:** <1 minute (automated rollback)
+- **Uptime:** 99.9% (max 43 minutes downtime/month)
+
+---
+
+### 8.3 Learning System Architecture (Sprint 11)
 
 **Five Learning Layers:**
 ```
