@@ -11,6 +11,7 @@ from app.core.rate_limit import limiter, rate_limit_exceeded_handler
 from app.middleware.timing import add_timing_middleware
 from app.middleware.security import add_security_middleware
 from app.api.v1.api import api_router
+from app.api.v2.api import api_router as api_v2_router
 from app.db.base import Base
 from app.db.session import engine, SessionLocal
 from app.db.init_db import init_db
@@ -109,8 +110,9 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Include API router
+# Include API routers
 app.include_router(api_router, prefix=settings.API_V1_STR)
+app.include_router(api_v2_router, prefix=settings.API_V2_STR)  # Sprint 10: Agent Workflow API
 
 
 @app.on_event("startup")

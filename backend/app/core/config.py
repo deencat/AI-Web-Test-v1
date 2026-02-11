@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # API
     API_V1_STR: str = "/api/v1"
+    API_V2_STR: str = "/api/v2"  # Sprint 10: Agent Workflow API
     PROJECT_NAME: str = "Agentic QA"
     
     # Database
