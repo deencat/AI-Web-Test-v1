@@ -826,15 +826,25 @@ After successful Phase 2 + Phase 3 merge and integration testing, comprehensive 
 
 #### Developer A Tasks - Backend API (29 points, 8 days)
 
+**Strategy:** Layer-based separation - Backend only, zero merge conflicts with Developer B  
+**Reference:** [Sprint 10 & 11 Task Split Strategy](SPRINT_10_11_TASK_SPLIT_STRATEGY.md)
+
 | Task | Description | Duration | Dependencies | Details |
 |------|-------------|----------|--------------|---------|
-| **10A.1** | Create `/api/v2/generate-tests` endpoint | 2 days | Sprint 9 | POST endpoint to trigger 4-agent workflow, returns workflow_id |
-| **10A.2** | Implement Server-Sent Events (SSE) for real-time progress | 2 days | 10A.1 | Stream agent progress events (agent_started, agent_progress, agent_completed, workflow_completed) |
-| **10A.3** | Implement OrchestrationService | 2 days | 10A.1 | Coordinate 4-agent workflow with progress tracking via Redis pub/sub |
-| **10A.4** | Create workflow status endpoints | 1 day | 10A.1 | GET /workflows/{id}, GET /workflows/{id}/results, DELETE /workflows/{id} (cancel) |
-| **10A.5** | Unit tests for orchestration + SSE | 1 day | 10A.4 | Test workflow coordination, SSE streaming, cancellation |
+| **10A.1** | **API Contract Definition** (Day 1 with Dev B) | 0.5 day | Sprint 9 | Define Pydantic schemas, lock API contract, create stub endpoints |
+| **10A.2** | Create `/api/v2/generate-tests` endpoint | 2 days | 10A.1 | POST endpoint to trigger 4-agent workflow, returns workflow_id |
+| **10A.3** | Implement Server-Sent Events (SSE) for real-time progress | 2 days | 10A.2 | Stream agent progress events (agent_started, agent_progress, agent_completed, workflow_completed) |
+| **10A.4** | Implement OrchestrationService | 2 days | 10A.2 | Coordinate 4-agent workflow with progress tracking via Redis pub/sub |
+| **10A.5** | Create workflow status endpoints | 1 day | 10A.2 | GET /workflows/{id}, GET /workflows/{id}/results, DELETE /workflows/{id} (cancel) |
+| **10A.6** | Unit tests for orchestration + SSE | 1 day | 10A.5 | Test workflow coordination, SSE streaming, cancellation |
 
-**Total: 29 points, 8 days**
+**Total: 29 points, 8.5 days** (includes 0.5 day API contract definition)
+
+**File Ownership (Zero Conflicts):**
+- `backend/app/api/v2/` - Developer A owns entire directory
+- `backend/app/services/orchestration_service.py` - Developer A
+- `backend/app/services/progress_tracker.py` - Developer A
+- `backend/app/schemas/workflow.py` - Developer A (defined Day 1)
 
 **New Backend Components:**
 ```python
@@ -849,17 +859,31 @@ class ProgressTracker:
     async def emit(event_type, data): ...
 ```
 
-#### Developer A Tasks - Frontend UI (29 points, 7 days)
+#### Developer B Tasks - Frontend UI & Integration Testing (29 points, 7 days)
+
+**Strategy:** Layer-based separation - Frontend + Testing, zero merge conflicts with Developer A  
+**Reference:** [Sprint 10 & 11 Task Split Strategy](SPRINT_10_11_TASK_SPLIT_STRATEGY.md)
 
 | Task | Description | Duration | Dependencies | Details |
 |------|-------------|----------|--------------|---------|
-| **10A.6** | Agent Workflow Trigger component | 1 day | 10A.1 | "AI Generate Tests" button, URL input, user instructions form |
-| **10A.7** | Real-time Progress Pipeline UI | 2 days | 10A.2 | GitHub Actions style: 4-stage pipeline with live status |
-| **10A.8** | Server-Sent Events React hook | 1 day | 10A.2 | useWorkflowProgress(workflowId) for real-time updates |
-| **10A.9** | Workflow Results Review UI | 2 days | 10A.4 | Review generated tests, approve/edit/reject interface |
-| **10A.10** | Unit tests for frontend components | 1 day | 10A.9 | Test rendering, SSE connection, user interactions |
+| **10B.1** | **API Contract Definition** (Day 1 with Dev A) | 0.5 day | Sprint 9 | Define TypeScript types, create mock API client, lock contract |
+| **10B.2** | Agent Workflow Trigger component | 1 day | 10B.1 | "AI Generate Tests" button, URL input, user instructions form |
+| **10B.3** | Real-time Progress Pipeline UI | 2 days | 10B.1 | GitHub Actions style: 4-stage pipeline with live status (uses mock data initially) |
+| **10B.4** | Server-Sent Events React hook | 1 day | 10B.1 | useWorkflowProgress(workflowId) for real-time updates |
+| **10B.5** | Workflow Results Review UI | 2 days | 10B.1 | Review generated tests, approve/edit/reject interface |
+| **10B.6** | Unit tests for frontend components | 1 day | 10B.5 | Test rendering, SSE connection, user interactions |
+| **10B.7** | E2E test: Frontend-to-Agent workflow | 1 day | 10A.5, 10B.5 | Test complete user journey: trigger → progress → results |
+| **10B.8** | Load testing with Locust | 1 day | 10A.5 | 100 concurrent users, <5s latency target |
+| **10B.9** | GitHub Actions CI/CD | 1 day | 10B.7 | Run tests on every PR |
+| **10B.10** | System integration tests | 1 day | 10B.7 | 15+ scenarios (happy path + edge cases) |
 
-**Total: 29 points, 7 days**
+**Total: 29 points, 11.5 days** (includes 0.5 day API contract definition + 4 days testing)
+
+**File Ownership (Zero Conflicts):**
+- `frontend/src/features/agent-workflow/` - Developer B owns entire directory
+- `frontend/src/types/agentWorkflow.types.ts` - Developer B (defined Day 1)
+- `backend/tests/integration/test_agent_workflow_e2e.py` - Developer B
+- `backend/tests/load/test_agent_workflow_load.py` - Developer B
 
 **New Frontend Components:**
 ```typescript
@@ -881,16 +905,7 @@ class ProgressTracker:
     └── agentWorkflow.types.ts         // TypeScript interfaces
 ```
 
-#### Developer B Tasks - Integration & Testing (18 points, 4 days)
-
-| Task | Description | Duration | Dependencies | Details |
-|------|-------------|----------|--------------|---------|
-| **10B.1** | E2E test: Frontend-to-Agent workflow | 1 day | 10A.9 | Test complete user journey: trigger → progress → results |
-| **10B.2** | Load testing with Locust | 1 day | 10A.4 | 100 concurrent users, <5s latency target |
-| **10B.3** | GitHub Actions CI/CD | 1 day | 10B.1 | Run tests on every PR |
-| **10B.4** | System integration tests | 1 day | 10B.1 | 15+ scenarios (happy path + edge cases) |
-
-**Total: 18 points, 4 days**
+**Note:** Integration & Testing tasks moved to Developer B's Frontend UI section above (10B.7-10B.10) for better task organization and conflict minimization.
 
 **Sprint 10 Success Criteria:**
 - ✅ `/api/v2/generate-tests` operational (multi-agent workflow)
@@ -901,6 +916,7 @@ class ProgressTracker:
 - ✅ Load test passes: 100 users, <5s latency
 - ✅ E2E test passes: Complete frontend-to-agent workflow
 - ✅ CI/CD pipeline runs tests on every PR
+- ✅ **Zero merge conflicts** (layer-based separation achieved)
 
 **Industrial UI/UX Patterns Applied:**
 - **GitHub Actions:** Step-by-step progress with expandable logs
@@ -977,17 +993,28 @@ Auto-Recovery:
 - Critical: >20% degradation → Rollback to previous prompt
 ```
 
-#### Developer A Tasks - Learning System Core (32 points)
+#### Developer A Tasks - Learning System Core (32 points, 12 days)
+
+**Strategy:** Interface-based dependencies - Uses IExperimentManager interface, zero merge conflicts  
+**Reference:** [Sprint 10 & 11 Task Split Strategy](SPRINT_10_11_TASK_SPLIT_STRATEGY.md)
 
 | Task | Description | Duration | Dependencies | Details |
 |------|-------------|----------|--------------|---------|
-| **11A.1** | Implement PromptOptimizer with Thompson Sampling | 3 days | Sprint 10 | Auto-generate 3 variants, run A/B test, measure quality metrics |
-| **11A.2** | Implement PatternLibrary with vector DB | 3 days | Sprint 10 | Extract patterns, store in Qdrant, similarity search |
-| **11A.3** | Implement SelfHealingEngine | 2 days | 11A.2 | Element similarity matching, auto-repair, confidence scoring |
-| **11A.4** | Implement PerformanceMonitor | 2 days | 11A.1 | Track agent metrics, detect degradation, trigger auto-recovery |
-| **11A.5** | Redis Message Bus implementation | 2 days | Sprint 10 | Replace stub with Redis Streams, event-driven communication |
+| **11A.1** | **Interface Definition** (Day 1 with Dev B) | 0.5 day | Sprint 10 | Define learning service interfaces, lock contracts |
+| **11A.2** | Implement PromptOptimizer with Thompson Sampling | 3 days | 11A.1 | Auto-generate 3 variants, uses IExperimentManager interface |
+| **11A.3** | Implement PatternLibrary with vector DB | 3 days | Sprint 10 | Extract patterns, store in Qdrant, similarity search |
+| **11A.4** | Implement SelfHealingEngine | 2 days | 11A.3 | Element similarity matching, auto-repair, confidence scoring |
+| **11A.5** | Implement PerformanceMonitor | 2 days | 11A.2 | Track agent metrics, detect degradation, trigger auto-recovery |
+| **11A.6** | Redis Message Bus implementation | 2 days | Sprint 10 | Replace stub with Redis Streams, event-driven communication |
 
-**Total: 32 points, 12 days**
+**Total: 32 points, 12.5 days** (includes 0.5 day interface definition)
+
+**File Ownership (Zero Conflicts):**
+- `backend/app/services/learning/prompt_optimizer.py` - Developer A (uses IExperimentManager interface)
+- `backend/app/services/learning/pattern_library.py` - Developer A
+- `backend/app/services/learning/self_healing_engine.py` - Developer A
+- `backend/app/services/learning/performance_monitor.py` - Developer A
+- `backend/app/services/learning/__init__.py` - Developer A (defines interfaces Day 1)
 
 **New Learning System Components:**
 ```python
@@ -999,17 +1026,30 @@ Auto-Recovery:
 - experiment_manager.py        # Multi-armed bandit (Thompson Sampling)
 ```
 
-#### Developer B Tasks - Dashboard & Integration (24 points)
+#### Developer B Tasks - ExperimentManager, Dashboard & Integration (24 points, 12 days)
+
+**Strategy:** Interface-based implementation - Implements IExperimentManager, zero merge conflicts  
+**Reference:** [Sprint 10 & 11 Task Split Strategy](SPRINT_10_11_TASK_SPLIT_STRATEGY.md)
 
 | Task | Description | Duration | Dependencies | Details |
 |------|-------------|----------|--------------|---------|
-| **11B.1** | Implement ExperimentManager | 3 days | Sprint 10 | Multi-armed bandit algorithm, 10% exploration traffic allocation |
-| **11B.2** | Learning metrics dashboard | 3 days | 11A.4 | Visualize agent performance trends, A/B test results, pattern usage |
-| **11B.3** | Automated feedback collection pipeline | 2 days | Sprint 10 | Collect execution results, user ratings, CI/CD outcomes |
-| **11B.4** | Rollback mechanism with 1-min recovery | 2 days | 11A.1 | Instant revert to previous prompt, automatic re-deployment |
-| **11B.5** | Pattern usage analytics | 2 days | 11A.2 | Track pattern hits, cost savings, success rates |
+| **11B.1** | **Interface Definition** (Day 1 with Dev A) | 0.5 day | Sprint 10 | Define IExperimentManager interface, lock contract |
+| **11B.2** | Implement ExperimentManager | 3 days | 11B.1 | Implements IExperimentManager interface, multi-armed bandit algorithm |
+| **11B.3** | Learning metrics dashboard (frontend) | 3 days | 11A.5 | Visualize agent performance trends, A/B test results, pattern usage |
+| **11B.4** | Automated feedback collection pipeline | 2 days | Sprint 10 | Collect execution results, user ratings, CI/CD outcomes |
+| **11B.5** | Rollback mechanism with 1-min recovery | 2 days | 11A.2 | Instant revert to previous prompt, automatic re-deployment |
+| **11B.6** | Pattern usage analytics API | 2 days | 11A.3 | Track pattern hits, cost savings, success rates |
+| **11B.7** | Integration tests for learning system | 1 day | 11B.2, 11A.2 | E2E tests: ExperimentManager + PromptOptimizer integration |
 
-**Total: 24 points, 12 days**
+**Total: 24 points, 13.5 days** (includes 0.5 day interface definition + 1 day integration testing)
+
+**File Ownership (Zero Conflicts):**
+- `backend/app/services/learning/experiment_manager.py` - Developer B (implements IExperimentManager)
+- `backend/app/services/learning/feedback_collector.py` - Developer B
+- `backend/app/services/learning/rollback_service.py` - Developer B
+- `backend/app/api/v2/endpoints/learning_analytics.py` - Developer B
+- `frontend/src/features/learning/` - Developer B owns entire directory
+- `backend/tests/integration/test_learning_system_e2e.py` - Developer B
 
 **New Dashboard Components:**
 ```typescript
@@ -1029,6 +1069,7 @@ Auto-Recovery:
 - ✅ **Cost reduction:** 90% savings on pattern-matched pages
 - ✅ **Quality improvement:** Agent performance improves 5%+ per week
 - ✅ **Redis Message Bus:** Event-driven agent communication operational
+- ✅ **Zero merge conflicts** (interface-based separation achieved)
 
 **Learning System Metrics:**
 | Metric | Baseline | Target | Method |
