@@ -656,6 +656,11 @@ All agents with LLM support include fallback logic to continue operation without
 | 10A.3 | Implement OrchestrationService | 10A.1 | 8 | 2 days | Coordinate 4-agent workflow with progress tracking via Redis pub/sub |
 | 10A.4 | Create workflow status endpoints | 10A.1 | 3 | 1 day | GET /workflows/{id}, GET /workflows/{id}/results, DELETE /workflows/{id} (cancel) |
 | 10A.5 | Unit tests for orchestration + SSE | 10A.4 | 5 | 1 day | Test workflow coordination, SSE streaming, cancellation |
+| 10A.7 | **Multi-Page Flow Crawling (ObservationAgent)** | Sprint 9 | 8 | 4 days | Integrate browser-use for LLM-guided navigation, crawl entire purchase flow (4-5 pages), extract elements from all pages |
+| 10A.8 | **Iterative Improvement Loop (OrchestrationService)** | 10A.3, 10A.7 | 5 | 3 days | Implement EvolutionAgent → AnalysisAgent loop (up to 5 iterations, configurable), convergence criteria (pass rate >= 90%) |
+| 10A.9 | **Dynamic URL Crawling (EvolutionAgent)** | 10A.7, 10A.8 | 3 | 2 days | EvolutionAgent can call ObservationAgent for specific URLs, on-demand page observation |
+| 10A.10 | **Goal-Oriented Navigation (ObservationAgent)** | 10A.7 | 2 | 1 day | Navigate until goal reached (e.g., purchase confirmation), goal detection logic |
+| 10A.11 | Integration tests for iterative workflow | 10A.10 | 2 | 1 day | Test multi-page crawling, iteration loop, convergence, dynamic URL crawling |
 
 **Total: 45 points, 16.5 days** (Updated with iterative workflow enhancements: 10A.7-10A.11)
 
