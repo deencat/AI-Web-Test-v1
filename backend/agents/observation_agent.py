@@ -567,10 +567,17 @@ class ObservationAgent(BaseAgent):
     
     def _create_browser_use_llm_adapter(self):
         """Create LLM adapter for browser-use from Azure OpenAI client"""
-        # TODO: Implement adapter to convert Azure OpenAI client to browser-use LLM interface
-        # For now, return None and browser-use will use its default
-        logger.warning("browser-use LLM adapter not yet implemented, using default")
-        return None
+        try:
+            from llm.browser_use_adapter import AzureOpenAIAdapter
+            adapter = AzureOpenAIAdapter(azure_client=self.llm_client)
+            logger.info("Browser-use LLM adapter created successfully")
+            return adapter
+        except ImportError as e:
+            logger.warning(f"Browser-use adapter not available: {e}. Using default LLM.")
+            return None
+        except Exception as e:
+            logger.error(f"Error creating browser-use LLM adapter: {e}", exc_info=True)
+            return None
     
     def _check_goal_reached(self, history, user_instruction: str) -> bool:
         """Check if the goal from user_instruction was reached"""
