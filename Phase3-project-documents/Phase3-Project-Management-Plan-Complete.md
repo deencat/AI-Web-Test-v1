@@ -837,8 +837,13 @@ After successful Phase 2 + Phase 3 merge and integration testing, comprehensive 
 | **10A.4** | Implement OrchestrationService | 2 days | 10A.2 | Coordinate 4-agent workflow with progress tracking via Redis pub/sub |
 | **10A.5** | Create workflow status endpoints | 1 day | 10A.2 | GET /workflows/{id}, GET /workflows/{id}/results, DELETE /workflows/{id} (cancel) |
 | **10A.6** | Unit tests for orchestration + SSE | 1 day | 10A.5 | Test workflow coordination, SSE streaming, cancellation |
+| **10A.7** | **Multi-Page Flow Crawling (ObservationAgent)** | 4 days | Sprint 9 | Integrate browser-use for LLM-guided navigation, crawl entire purchase flow (4-5 pages), extract elements from all pages |
+| **10A.8** | **Iterative Improvement Loop (OrchestrationService)** | 3 days | 10A.4, 10A.7 | Implement EvolutionAgent → AnalysisAgent loop (up to 5 iterations, configurable), convergence criteria (pass rate >= 90%) |
+| **10A.9** | **Dynamic URL Crawling (EvolutionAgent)** | 2 days | 10A.7, 10A.8 | EvolutionAgent can call ObservationAgent for specific URLs, on-demand page observation |
+| **10A.10** | **Goal-Oriented Navigation (ObservationAgent)** | 1 day | 10A.7 | Navigate until goal reached (e.g., purchase confirmation), goal detection logic |
+| **10A.11** | Integration tests for iterative workflow | 1 day | 10A.10 | Test multi-page crawling, iteration loop, convergence, dynamic URL crawling |
 
-**Total: 29 points, 8.5 days** (includes 0.5 day API contract definition)
+**Total: 45 points, 16.5 days** (includes 0.5 day API contract definition + iterative workflow enhancements)
 
 **File Ownership (Zero Conflicts):**
 - `backend/app/api/v2/` - Developer A owns entire directory
@@ -907,7 +912,18 @@ class ProgressTracker:
 
 **Note:** Integration & Testing tasks moved to Developer B's Frontend UI section above (10B.7-10B.10) for better task organization and conflict minimization.
 
-**Sprint 10 Success Criteria:**
+**Sprint 10 Success Criteria (Updated with Iterative Workflow):**
+- ✅ Multi-page flow crawling: ObservationAgent crawls entire purchase flow (4-5 pages)
+- ✅ Iterative improvement loop: EvolutionAgent → AnalysisAgent loop (up to 5 iterations)
+- ✅ Convergence criteria: Stop when pass rate >= 90% or max iterations reached
+- ✅ Dynamic URL crawling: EvolutionAgent can request ObservationAgent for specific URLs
+- ✅ Goal-oriented navigation: Navigate until goal reached (e.g., purchase confirmation)
+- ✅ Page coverage improvement: 1 → 4-5 pages (+400%)
+- ✅ Element coverage improvement: 38 → 150+ elements (+295%)
+- ✅ Test quality improvement: Single-pass → Iterative improvement
+- ✅ Pass rate improvement: ~70% → ~90% (after iterations)
+
+**Original Sprint 10 Success Criteria:**
 - ✅ `/api/v2/generate-tests` operational (multi-agent workflow)
 - ✅ **Real-time progress visible in UI** (SSE streaming)
 - ✅ **Agent pipeline visualization** (GitHub Actions style)

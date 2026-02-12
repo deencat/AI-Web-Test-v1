@@ -381,22 +381,28 @@ user_feedback (generation_id, rating, comments, created_at)
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ Stage 1: ObservationAgent                                               │
-│ Input:   URL (string)                                                   │
-│ Process: - Load page with Playwright                                    │
-│          - Extract 262+ UI elements                                     │
-│          - Detect page type (login, dashboard, form, pricing)           │
+│ Stage 1: ObservationAgent (Enhanced - Multi-Page Flow Crawling)          │
+│ Input:   URL (string), user_instruction (optional), login_credentials  │
+│ Process: - LLM-guided flow navigation (browser-use integration)        │
+│          - Navigate through entire user flow (product → plan → login →  │
+│            checkout → confirmation)                                      │
+│          - Extract UI elements from ALL pages in flow                   │
+│          - Goal-oriented navigation (stops when goal reached)           │
+│          - Detect page type per page (login, dashboard, form, pricing)  │
 │          - Identify framework (React, Vue, jQuery)                      │
-│          - Azure GPT-4o vision analysis (~1,800 tokens)                 │
+│          - Azure GPT-4o vision analysis per page (~1,800 tokens/page)   │
 │ Output:  {                                                              │
-│            "ui_elements": [                                             │
-│              {type, selector, text, actions, aria_label},               │
-│              ...                                                        │
+│            "pages": [                                                   │
+│              {url, title, ui_elements, page_type, page_context},        │
+│              ... (4-5 pages for purchase flow)                          │
 │            ],                                                           │
-│            "page_structure": {url, title, forms, navigation},           │
-│            "page_context": {framework, page_type, complexity}           │
+│            "ui_elements": [merged from all pages],                      │
+│            "navigation_flow": {                                         │
+│              start_url, goal_reached, pages_visited, flow_path           │
+│            }                                                            │
 │          }                                                              │
-│ Quality: confidence=0.92, coverage=100%, cost=$0.015/page              │
+│ Quality: confidence=0.92, coverage=100% (all pages), cost=$0.06/flow   │
+│ Enhancement: Multi-page flow crawling (NEW - Sprint 10)                 │
 └────────────────────────────┬────────────────────────────────────────────┘
                              │
                              ▼
@@ -565,18 +571,29 @@ user_feedback (generation_id, rating, comments, created_at)
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ FEEDBACK LOOP: Continuous Improvement                                   │
+│ ITERATIVE IMPROVEMENT LOOP (Enhanced - Sprint 10)                       │
 │                                                                         │
+│ [INITIAL PHASE]                                                         │
 │ 1. EvolutionAgent generates test steps → Stored in database            │
-│ 2. Tests executed via Phase 2 engine → Results collected               │
-│ 3. Execution results analyzed → Success/failure patterns identified     │
-│ 4. Feedback provided to RequirementsAgent:                            │
-│    - Which scenario structures executed successfully                    │
-│    - Which scenario structures failed and why                          │
-│    - Recommendations for improving scenario quality                     │
-│ 5. RequirementsAgent uses feedback → Improves next scenario generation  │
+│ 2. AnalysisAgent executes tests → Measures success rates               │
 │                                                                         │
-│ Result: Agents collaborate for continuous improvement, not standalone  │
+│ [ITERATIVE PHASE - Up to 5 iterations, configurable]                    │
+│ for iteration in range(max_iterations):  # Default: 5                 │
+│   3. EvolutionAgent analyzes execution results                          │
+│      - Identifies failures and patterns                                │
+│      - Can call ObservationAgent for specific URLs if needed           │
+│      - Generates improved test cases                                   │
+│   4. AnalysisAgent executes improved tests → New scores                │
+│   5. Check convergence:                                                 │
+│      - If pass_rate >= target_pass_rate (default: 90%): break         │
+│      - If iteration >= max_iterations: break                           │
+│                                                                         │
+│ [FINAL PHASE]                                                           │
+│ 6. Store best test cases (highest scores)                              │
+│ 7. Feedback provided to RequirementsAgent for next generation          │
+│                                                                         │
+│ Result: Iterative improvement until goal reached or max iterations      │
+│ Enhancement: Multi-iteration loop with convergence criteria (NEW)       │
 └─────────────────────────────────────────────────────────────────────────┘
                              │
                              ▼
@@ -1412,11 +1429,103 @@ graph TB
 
 ---
 
-## 8. Autonomous Learning System (Sprint 11-12)
+## 8. Iterative Workflow Enhancement (Sprint 10)
+
+**Reference:** [Iterative Workflow Enhancement Analysis](supporting-documents/ITERATIVE_WORKFLOW_ENHANCEMENT_ANALYSIS.md)
+
+### 8.0 Enhanced Workflow Architecture
+
+**Key Enhancements:**
+1. **Multi-Page Flow Crawling:** ObservationAgent crawls entire user flows (product → plan → login → checkout → confirmation)
+2. **Iterative Improvement Loop:** EvolutionAgent → AnalysisAgent loop (up to 5 iterations, configurable)
+3. **Dynamic URL Crawling:** EvolutionAgent can call ObservationAgent for specific URLs on-demand
+4. **Goal-Oriented Navigation:** Navigate until goal reached (e.g., purchase confirmation page)
+
+**Workflow Architecture:**
+```
+[INITIAL PHASE]
+ObservationAgent (Multi-Page Flow)
+  → Crawls entire purchase flow (4-5 pages)
+  → Extracts UI elements from all pages
+  → Uses user_instruction to guide navigation
+  → Goal-oriented: Stops when confirmation page reached
+  ↓
+RequirementsAgent
+  → Generates scenarios from all pages
+  → Prioritizes scenarios matching user_instruction
+  ↓
+AnalysisAgent (Initial)
+  → Executes scenarios, calculates initial scores
+  → Measures actual success rates
+  ↓
+
+[ITERATIVE IMPROVEMENT PHASE]
+for iteration in range(max_iterations):  # Default: 5, configurable
+  EvolutionAgent
+    → Analyzes execution results from previous iteration
+    → Identifies failures and improvement opportunities
+    → Can call ObservationAgent for specific URLs if needed
+    → Generates improved test cases
+    ↓
+  AnalysisAgent
+    → Executes improved tests
+    → Calculates new scores (pass rates, reliability)
+    ↓
+  Check Convergence
+    → If pass_rate >= target_pass_rate (default: 90%): break
+    → If iteration >= max_iterations: break
+    → Track best results (highest scores)
+    ↓
+
+[FINAL PHASE]
+Store Best Test Cases
+  → Select highest-scoring test cases from all iterations
+  → Store in database
+  → Return to user with iteration summary
+```
+
+**Implementation Details:**
+
+**Multi-Page Flow Crawling:**
+- Uses browser-use library for LLM-guided navigation
+- Integrates with ObservationAgent for element extraction
+- Extracts elements from all pages in flow (4-5 pages typical)
+- Cost: ~$0.06 per flow (vs $0.015 per single page)
+
+**Iterative Improvement Loop:**
+- Configurable max_iterations (default: 5)
+- Configurable target_pass_rate (default: 90%)
+- Tracks best results across all iterations
+- Convergence criteria: Stop when goal reached or max iterations
+
+**Dynamic URL Crawling:**
+- EvolutionAgent can request ObservationAgent to crawl specific URLs
+- On-demand page observation when test steps reference unobserved pages
+- Agent-to-agent communication via direct function calls (Sprint 10) or message bus (Sprint 11)
+
+**Goal-Oriented Navigation:**
+- Uses user_instruction to understand goal (e.g., "Complete purchase flow")
+- Navigates until goal indicators detected (e.g., "confirmation", "order ID")
+- Validates goal achievement before proceeding
+
+**Expected Improvements:**
+- **Page Coverage:** 1 → 4-5 pages (+400%)
+- **Element Coverage:** 38 → 150+ elements (+295%)
+- **Test Quality:** Single-pass → Iterative improvement
+- **Pass Rate:** ~70% → ~90% (after iterations)
+
+**Implementation Status:**
+- ⏳ **Planned for Sprint 10:** Multi-page flow crawling, iterative loop, dynamic URL crawling
+- **Effort:** 10 days (core enhancements)
+- **Priority:** HIGH - Solves current limitations
+
+---
+
+## 9. Autonomous Learning System (Sprint 11-12)
 
 **Reference:** [Sprint 10 Gap Analysis - Autonomous Self-Improvement](SPRINT_10_GAP_ANALYSIS_AND_PLAN.md#-gap-3-autonomous-self-improvement-critical)
 
-### 8.0 From Basic Feedback Loop to Full Autonomy
+### 9.0 From Basic Feedback Loop to Full Autonomy
 
 **Evolution of Learning System:**
 
@@ -1885,7 +1994,7 @@ RequirementsAgent ← Receives feedback, improves next generation
 
 ---
 
-## 9. Agent Performance Scoring Framework
+## 10. Agent Performance Scoring Framework
 
 ### 9.1 Overview
 
@@ -1937,7 +2046,7 @@ RequirementsAgent ← Receives feedback, improves next generation
 
 ---
 
-## 10. Technology Stack Summary
+## 11. Technology Stack Summary
 
 ### 9.1 Core Technologies
 
@@ -1975,7 +2084,7 @@ RequirementsAgent ← Receives feedback, improves next generation
 
 ---
 
-## 📚 References
+## 12. References
 
 **Key Sources:**
 1. LangGraph Documentation (LangChain AI, 2023-2024)
@@ -1992,7 +2101,7 @@ RequirementsAgent ← Receives feedback, improves next generation
 
 ---
 
-## 12. Supporting Documents
+## 13. Supporting Documents
 
 This document provides the high-level architecture and design. For detailed analysis, strategies, and implementation guidance, see the following supporting documents:
 

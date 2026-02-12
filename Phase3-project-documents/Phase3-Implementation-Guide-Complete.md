@@ -657,21 +657,147 @@ All agents with LLM support include fallback logic to continue operation without
 | 10A.4 | Create workflow status endpoints | 10A.1 | 3 | 1 day | GET /workflows/{id}, GET /workflows/{id}/results, DELETE /workflows/{id} (cancel) |
 | 10A.5 | Unit tests for orchestration + SSE | 10A.4 | 5 | 1 day | Test workflow coordination, SSE streaming, cancellation |
 
-**Total: 29 points, 8 days**
+**Total: 45 points, 16.5 days** (Updated with iterative workflow enhancements: 10A.7-10A.11)
 
 **New Backend Components:**
 ```python
 # backend/app/services/orchestration_service.py
 class OrchestrationService:
-    """Coordinates 4-agent workflow with progress tracking"""
-    async def run_workflow(self, workflow_id: str, request: GenerateTestsRequest):
-        # 1. Emit agent_started (ObservationAgent)
-        # 2. Run ObservationAgent.observe()
-        # 3. Emit agent_completed (ObservationAgent)
-        # 4. Emit agent_started (RequirementsAgent)
-        # 5. Run RequirementsAgent.extract_requirements()
-        # ... continue for AnalysisAgent, EvolutionAgent
-        pass
+    """Coordinates 4-agent workflow with iterative improvement loop"""
+    
+    def __init__(
+        self,
+        max_iterations: int = 5,
+        target_pass_rate: float = 0.90,
+        progress_tracker: Optional[ProgressTracker] = None
+    ):
+        self.max_iterations = max_iterations
+        self.target_pass_rate = target_pass_rate
+        self.progress_tracker = progress_tracker
+        self.observation_agent = ObservationAgent(...)
+        self.requirements_agent = RequirementsAgent(...)
+        self.analysis_agent = AnalysisAgent(...)
+        self.evolution_agent = EvolutionAgent(...)
+    
+    async def run_iterative_workflow(
+        self,
+        workflow_id: str,
+        url: str,
+        user_instruction: str,
+        login_credentials: Optional[Dict] = None
+    ) -> Dict:
+        """Run enhanced workflow with multi-page crawling and iterative improvement"""
+        
+        # [INITIAL PHASE]
+        # 1. Multi-Page Flow Crawling
+        await self.progress_tracker.emit(workflow_id, "agent_started", {
+            "agent": "observation",
+            "message": "Crawling entire purchase flow..."
+        })
+        
+        observation_result = await self._crawl_multi_page_flow(
+            url, user_instruction, login_credentials
+        )
+        
+        await self.progress_tracker.emit(workflow_id, "agent_completed", {
+            "agent": "observation",
+            "pages_crawled": len(observation_result["pages"]),
+            "total_elements": len(observation_result["ui_elements"])
+        })
+        
+        # 2. Requirements Generation
+        requirements_result = await self._generate_requirements(
+            observation_result, user_instruction
+        )
+        
+        # 3. Initial Analysis
+        analysis_result = await self._initial_analysis(requirements_result)
+        
+        # [ITERATIVE IMPROVEMENT PHASE]
+        best_test_cases = []
+        best_score = 0.0
+        all_iterations = []
+        
+        for iteration in range(self.max_iterations):
+            await self.progress_tracker.emit(workflow_id, "iteration_started", {
+                "iteration": iteration + 1,
+                "max_iterations": self.max_iterations
+            })
+            
+            # EvolutionAgent generates improved tests
+            evolution_result = await self._improve_tests(
+                analysis_result, iteration, observation_result
+            )
+            
+            # AnalysisAgent executes and scores
+            analysis_result = await self._execute_and_score(evolution_result)
+            
+            # Track best results
+            current_score = analysis_result.get("average_pass_rate", 0.0)
+            if current_score > best_score:
+                best_score = current_score
+                best_test_cases = evolution_result.get("test_cases", [])
+            
+            all_iterations.append({
+                "iteration": iteration + 1,
+                "score": current_score,
+                "test_cases": evolution_result.get("test_cases", [])
+            })
+            
+            # Check convergence
+            if current_score >= self.target_pass_rate:
+                await self.progress_tracker.emit(workflow_id, "convergence_reached", {
+                    "iteration": iteration + 1,
+                    "pass_rate": current_score
+                })
+                break
+        
+        # [FINAL PHASE]
+        return {
+            "best_test_cases": best_test_cases,
+            "final_score": best_score,
+            "iterations_completed": len(all_iterations),
+            "all_iterations": all_iterations
+        }
+    
+    async def _crawl_multi_page_flow(
+        self,
+        url: str,
+        user_instruction: str,
+        login_credentials: Optional[Dict]
+    ) -> Dict:
+        """Crawl entire purchase flow using browser-use"""
+        from browser_use import Agent, Browser
+        
+        browser = Browser()
+        llm = self._create_llm_adapter()  # Adapt Azure OpenAI
+        
+        task_description = f"""
+        Navigate to {url} and complete: {user_instruction}
+        
+        Extract UI elements from each page you visit.
+        Stop when you reach the confirmation page.
+        """
+        
+        agent = Agent(task=task_description, llm=llm, browser=browser)
+        history = await agent.run()
+        
+        # Extract elements from all pages
+        pages_data = []
+        for page in history.pages:
+            elements = await self.observation_agent._extract_elements_from_page(page)
+            pages_data.append({
+                "url": page.url,
+                "title": page.title,
+                "ui_elements": elements,
+                "page_type": self._classify_page_type(page)
+            })
+        
+        return {
+            "pages": pages_data,
+            "ui_elements": self._merge_elements(pages_data),
+            "navigation_flow": self._extract_flow(history)
+        }
 
 # backend/app/services/progress_tracker.py  
 class ProgressTracker:
@@ -752,8 +878,20 @@ class ProgressTracker:
 
 **Total: 18 points, 4 days**
 
-#### Sprint 10 Success Criteria
+#### Sprint 10 Success Criteria (Updated with Iterative Workflow)
 
+**Iterative Workflow Enhancements:**
+- ✅ Multi-page flow crawling: ObservationAgent crawls entire purchase flow (4-5 pages)
+- ✅ Iterative improvement loop: EvolutionAgent → AnalysisAgent loop (up to 5 iterations)
+- ✅ Convergence criteria: Stop when pass rate >= 90% or max iterations reached
+- ✅ Dynamic URL crawling: EvolutionAgent can request ObservationAgent for specific URLs
+- ✅ Goal-oriented navigation: Navigate until goal reached (e.g., purchase confirmation)
+- ✅ Page coverage improvement: 1 → 4-5 pages (+400%)
+- ✅ Element coverage improvement: 38 → 150+ elements (+295%)
+- ✅ Test quality improvement: Single-pass → Iterative improvement
+- ✅ Pass rate improvement: ~70% → ~90% (after iterations)
+
+**Original Sprint 10 Success Criteria:**
 - ✅ **Real-time progress visible in UI** (SSE streaming from backend)
 - ✅ **Agent pipeline visualization** (GitHub Actions style, 4-stage pipeline)
 - ✅ **User can trigger workflow from frontend** ("AI Generate Tests" button)
