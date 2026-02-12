@@ -231,6 +231,10 @@ class ObservationAgent(BaseAgent):
         """
         Execute web crawling/observation task.
         
+        Enhanced with multi-page flow crawling (Sprint 10):
+        - If user_instruction provided: Use browser-use for LLM-guided flow navigation
+        - Otherwise: Use traditional Playwright crawling (backward compatible)
+        
         Args:
             task: Task to execute
         
@@ -244,38 +248,346 @@ class ObservationAgent(BaseAgent):
             url = task.payload.get("url")
             max_depth = task.payload.get("max_depth", self.max_depth)
             auth = task.payload.get("auth")  # Optional authentication
+            user_instruction = task.payload.get("user_instruction", "")  # NEW: User instruction for flow navigation
+            login_credentials = task.payload.get("login_credentials", {})  # NEW: Login credentials
             
             logger.info(f"ObservationAgent: Crawling web application: {url} (task {task.task_id})")
             
-            # Start Playwright browser
-            # Read headless mode from env (default: True for CI/CD compatibility)
-            # Support both HEADLESS_BROWSER (existing) and BROWSER_HEADLESS (for consistency)
-            import os
-            headless_str = os.getenv("HEADLESS_BROWSER") or os.getenv("BROWSER_HEADLESS", "true")
-            headless_str = headless_str.lower()
-            headless_mode = headless_str in ("true", "1", "yes")
-            logger.info(f"ObservationAgent: Launching browser (headless={headless_mode})...")
+            # Check if we should use multi-page flow crawling
+            use_flow_crawling = bool(user_instruction) and self.config.get("enable_flow_crawling", True)
             
-            async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=headless_mode)
-                context = await browser.new_context(
-                    viewport={"width": 1920, "height": 1080},
-                    user_agent="AI-Web-Test ObservationAgent/1.0"
+            if use_flow_crawling:
+                logger.info(f"ObservationAgent: Using LLM-guided flow navigation (user_instruction: '{user_instruction[:50]}...')")
+                return await self._execute_multi_page_flow_crawling(
+                    task, url, user_instruction, login_credentials, auth
                 )
+            else:
+                # Traditional crawling (backward compatible)
+                logger.info(f"ObservationAgent: Using traditional crawling (max_depth={max_depth})...")
+                return await self._execute_traditional_crawling(task, url, max_depth, auth)
+    
+    async def _execute_traditional_crawling(
+        self,
+        task: TaskContext,
+        url: str,
+        max_depth: int,
+        auth: Optional[Dict]
+    ) -> TaskResult:
+        """Traditional Playwright crawling (backward compatible)"""
+        # Start Playwright browser
+        # Read headless mode from env (default: True for CI/CD compatibility)
+        # Support both HEADLESS_BROWSER (existing) and BROWSER_HEADLESS (for consistency)
+        import os
+        headless_str = os.getenv("HEADLESS_BROWSER") or os.getenv("BROWSER_HEADLESS", "true")
+        headless_str = headless_str.lower()
+        headless_mode = headless_str in ("true", "1", "yes")
+        logger.info(f"ObservationAgent: Launching browser (headless={headless_mode})...")
+        
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=headless_mode)
+            context = await browser.new_context(
+                viewport={"width": 1920, "height": 1080},
+                user_agent="AI-Web-Test ObservationAgent/1.0"
+            )
+            
+            # Add authentication if provided
+            if auth:
+                logger.debug("ObservationAgent: Adding authentication to browser context...")
+                await context.add_init_script(f"""
+                    localStorage.setItem('auth_token', '{auth.get('token', '')}');
+                """)
+            
+            page = await context.new_page()
+            
+            # Crawl pages
+            logger.info(f"ObservationAgent: Crawling pages (max_depth={max_depth})...")
+            pages = await self._crawl_pages(page, url, max_depth)
+            logger.info(f"ObservationAgent: Found {len(pages)} page(s) to analyze")
+            
+            # Extract UI elements from all pages (Playwright baseline)
+            logger.info("ObservationAgent: Extracting UI elements from pages...")
+            all_elements = []
+            all_forms = []
+            for idx, page_info in enumerate(pages, 1):
+                logger.debug(f"ObservationAgent: Extracting elements from page {idx}/{len(pages)}: {page_info.url}")
+                elements = await self._extract_ui_elements(page, page_info.url)
+                forms = await self._extract_forms(page, page_info.url)
+                all_elements.extend(elements)
+                all_forms.extend(forms)
+                logger.debug(f"ObservationAgent: Page {idx} - {len(elements)} elements, {len(forms)} forms")
+            
+            logger.info(f"ObservationAgent: Playwright baseline complete - {len(all_elements)} elements, {len(all_forms)} forms")
+            
+            # ENHANCEMENT: Use LLM to find elements Playwright might miss
+            llm_enhanced_elements = []
+            llm_analysis = {}
+            if self.llm_client and self.llm_client.enabled:
+                try:
+                    # Get page HTML for LLM analysis
+                    html_content = await page.content()
+                    page_title = await page.title()
+                    
+                    logger.info("Analyzing page with LLM for enhanced element detection...")
+                    llm_analysis = await self.llm_client.analyze_page_elements(
+                        html=html_content,
+                        basic_elements=all_elements[:20],  # Send sample to LLM
+                        url=url,
+                        page_title=page_title,
+                        learned_patterns=None  # TODO: Integrate learning system in Sprint 10
+                    )
+                    
+                    llm_enhanced_elements = llm_analysis.get("enhanced_elements", [])
+                    logger.info(f"LLM found {len(llm_enhanced_elements)} additional elements")
+                    
+                    # Merge LLM findings with Playwright results
+                    all_elements.extend(llm_enhanced_elements)
+                    
+                except Exception as e:
+                    logger.warning(f"LLM analysis failed, continuing with Playwright-only results: {e}")
+            
+            # Identify navigation flows
+            flows = self._identify_flows(pages)
+            
+            await browser.close()
+        
+        # Calculate confidence based on completeness
+        confidence = self._calculate_confidence(
+            pages, 
+            all_elements, 
+            all_forms,
+            has_llm_enhancement=bool(llm_enhanced_elements)
+        )
+        
+        result = {
+            "start_url": url,
+            "pages_crawled": len(pages),
+            "total_elements": len(all_elements),
+            "total_forms": len(all_forms),
+            "pages": [self._page_to_dict(p) for p in pages],
+            "ui_elements": all_elements,
+            "forms": all_forms,
+            "navigation_flows": flows,
+            "page_context": {
+                "url": url,  # Primary URL for navigation
+                "title": pages[0].title if pages else "",
+                "page_structure": {
+                    "total_pages": len(pages),
+                    "total_elements": len(all_elements),
+                    "total_forms": len(all_forms)
+                }
+            },
+            "llm_analysis": {
+                "used": bool(llm_enhanced_elements),
+                "elements_found": len(llm_enhanced_elements),
+                "suggested_selectors": llm_analysis.get("suggested_selectors", {}),
+                "page_patterns": llm_analysis.get("page_patterns", {}),
+                "missed_by_playwright": llm_analysis.get("missed_by_playwright", [])
+            },
+            "summary": {
+                "buttons": len([e for e in all_elements if e.get("type") == "button"]),
+                "inputs": len([e for e in all_elements if e.get("type") == "input"]),
+                "links": len([e for e in all_elements if e.get("type") == "link"]),
+                "forms": len(all_forms),
+                "playwright_elements": len(all_elements) - len(llm_enhanced_elements),
+                "llm_enhanced_elements": len(llm_enhanced_elements)
+            }
+        }
+        
+        logger.info(
+            f"Crawling complete: {len(pages)} pages, "
+            f"{len(all_elements)} elements, {len(all_forms)} forms"
+        )
+        
+        return TaskResult(
+            task_id=task.task_id,
+            success=True,
+            result=result,
+            confidence=confidence
+        )
+    
+    async def _execute_multi_page_flow_crawling(
+        self,
+        task: TaskContext,
+        url: str,
+        user_instruction: str,
+        login_credentials: Dict,
+        auth: Optional[Dict]
+    ) -> TaskResult:
+        """
+        Multi-page flow crawling using browser-use for LLM-guided navigation.
+        
+        This method:
+        1. Uses browser-use to navigate through entire user flow
+        2. Extracts UI elements from all pages visited
+        3. Stops when goal is reached (e.g., purchase confirmation)
+        4. Returns elements from all pages in the flow
+        """
+        try:
+            # Try to import browser-use
+            try:
+                from browser_use import Agent as BrowserUseAgent, Browser
+                BROWSER_USE_AVAILABLE = True
+            except ImportError:
+                BROWSER_USE_AVAILABLE = False
+                logger.warning("browser-use not installed. Install with: pip install browser-use")
+                logger.info("Falling back to traditional crawling...")
+                return await self._execute_traditional_crawling(task, url, self.max_depth, auth)
+            
+            if not BROWSER_USE_AVAILABLE:
+                return await self._execute_traditional_crawling(task, url, self.max_depth, auth)
+            
+            logger.info(f"ObservationAgent: Starting multi-page flow crawling with browser-use")
+            logger.info(f"  URL: {url}")
+            logger.info(f"  User Instruction: {user_instruction}")
+            
+            # Build task description for browser-use
+            task_description = f"""
+            Navigate to {url} and complete the following task:
+            {user_instruction}
+            
+            Extract UI elements from each page you visit during this flow.
+            Stop when you reach the confirmation/success page.
+            """
+            
+            # Add login credentials if provided
+            if login_credentials:
+                email = login_credentials.get("email", "")
+                password = login_credentials.get("password", "")
+                task_description += f"\n\nLogin credentials:\n- Email: {email}\n- Password: [provided]"
+            
+            # Create LLM adapter for browser-use (use Azure OpenAI)
+            # Note: browser-use expects a specific LLM interface, we'll need to adapt
+            llm_adapter = self._create_browser_use_llm_adapter()
+            
+            # Initialize browser-use
+            browser = Browser()
+            agent = BrowserUseAgent(task=task_description, llm=llm_adapter, browser=browser)
+            
+            # Run the agent to navigate through the flow
+            logger.info("ObservationAgent: Running browser-use agent to navigate flow...")
+            history = await agent.run()
+            
+            # Extract pages and elements from browser-use history
+            pages_data = []
+            all_elements = []
+            all_forms = []
+            
+            for page_state in history.pages:
+                page_url = page_state.url
+                page_title = page_state.title if hasattr(page_state, 'title') else ""
                 
-                # Add authentication if provided
-                if auth:
-                    logger.debug("ObservationAgent: Adding authentication to browser context...")
-                    await context.add_init_script(f"""
-                        localStorage.setItem('auth_token', '{auth.get('token', '')}');
-                    """)
+                # Extract elements from this page using Playwright
+                # (browser-use uses Playwright internally, we can access the page)
+                page = page_state.page if hasattr(page_state, 'page') else None
                 
-                page = await context.new_page()
-                
-                # Crawl pages
-                logger.info(f"ObservationAgent: Crawling pages (max_depth={max_depth})...")
-                pages = await self._crawl_pages(page, url, max_depth)
-                logger.info(f"ObservationAgent: Found {len(pages)} page(s) to analyze")
+                if page:
+                    elements = await self._extract_ui_elements(page, page_url)
+                    forms = await self._extract_forms(page, page_url)
+                    all_elements.extend(elements)
+                    all_forms.extend(forms)
+                    
+                    pages_data.append({
+                        "url": page_url,
+                        "title": page_title,
+                        "elements": elements,
+                        "forms": forms,
+                        "load_time_ms": 0,  # browser-use doesn't track this
+                        "status_code": 200
+                    })
+            
+            # Check if goal was reached
+            goal_reached = self._check_goal_reached(history, user_instruction)
+            
+            # Build navigation flow
+            navigation_flow = {
+                "start_url": url,
+                "goal_reached": goal_reached,
+                "pages_visited": [p["url"] for p in pages_data],
+                "flow_path": [p["title"] for p in pages_data]
+            }
+            
+            # Calculate confidence
+            confidence = self._calculate_confidence(
+                [PageInfo(url=p["url"], title=p["title"], elements=p["elements"], 
+                         forms=p["forms"], links=[], screenshot_path=None,
+                         load_time_ms=p["load_time_ms"], status_code=p["status_code"])
+                 for p in pages_data],
+                all_elements,
+                all_forms,
+                has_llm_enhancement=True  # browser-use uses LLM
+            )
+            
+            result = {
+                "start_url": url,
+                "pages_crawled": len(pages_data),
+                "total_elements": len(all_elements),
+                "total_forms": len(all_forms),
+                "pages": pages_data,
+                "ui_elements": all_elements,
+                "forms": all_forms,
+                "navigation_flow": navigation_flow,
+                "page_context": {
+                    "url": url,
+                    "title": pages_data[0]["title"] if pages_data else "",
+                    "page_structure": {
+                        "total_pages": len(pages_data),
+                        "total_elements": len(all_elements),
+                        "total_forms": len(all_forms)
+                    }
+                },
+                "llm_analysis": {
+                    "used": True,
+                    "method": "browser-use",
+                    "goal_reached": goal_reached
+                },
+                "summary": {
+                    "buttons": len([e for e in all_elements if e.get("type") == "button"]),
+                    "inputs": len([e for e in all_elements if e.get("type") == "input"]),
+                    "links": len([e for e in all_elements if e.get("type") == "link"]),
+                    "forms": len(all_forms)
+                }
+            }
+            
+            logger.info(
+                f"Multi-page flow crawling complete: {len(pages_data)} pages, "
+                f"{len(all_elements)} elements, goal_reached={goal_reached}"
+            )
+            
+            return TaskResult(
+                task_id=task.task_id,
+                success=True,
+                result=result,
+                confidence=confidence
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in multi-page flow crawling: {e}", exc_info=True)
+            logger.info("Falling back to traditional crawling...")
+            return await self._execute_traditional_crawling(task, url, self.max_depth, auth)
+    
+    def _create_browser_use_llm_adapter(self):
+        """Create LLM adapter for browser-use from Azure OpenAI client"""
+        # TODO: Implement adapter to convert Azure OpenAI client to browser-use LLM interface
+        # For now, return None and browser-use will use its default
+        logger.warning("browser-use LLM adapter not yet implemented, using default")
+        return None
+    
+    def _check_goal_reached(self, history, user_instruction: str) -> bool:
+        """Check if the goal from user_instruction was reached"""
+        # Simple heuristic: check if confirmation/success keywords appear
+        goal_keywords = ["confirmation", "success", "complete", "order", "thank you", "確認", "成功"]
+        instruction_lower = user_instruction.lower()
+        
+        # Check if instruction mentions a specific goal
+        if any(keyword in instruction_lower for keyword in ["purchase", "buy", "訂購", "購買"]):
+            # Look for confirmation page
+            for page in history.pages:
+                url_lower = page.url.lower() if hasattr(page, 'url') else ""
+                title_lower = page.title.lower() if hasattr(page, 'title') else ""
+                if any(keyword in url_lower or keyword in title_lower for keyword in goal_keywords):
+                    return True
+        
+        return False
                 
                 # Extract UI elements from all pages (Playwright baseline)
                 logger.info("ObservationAgent: Extracting UI elements from pages...")

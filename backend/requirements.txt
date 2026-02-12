@@ -34,6 +34,8 @@ faker>=18.0.0
 playwright==1.56.0
 stagehand==0.5.7
 websockets==15.0.1
+# Browser-Use for LLM-guided flow navigation (Sprint 10)
+browser-use>=0.1.0
 
 # LLM Integration (Phase 3 - Multi-Agent System)
 cerebras-cloud-sdk>=1.0.0
