@@ -337,21 +337,45 @@ class TestFourAgentE2EReal:
         print_flush("\n" + "="*80)
         print_flush("Step 1: Observing page with ObservationAgent...")
         print_flush("="*80)
+        
+        # Build observation payload - include user_instruction and login_credentials if provided
+        # This will trigger multi-page flow crawling using browser-use
+        observation_payload = {"url": target_url, "max_depth": 1}
+        if user_instruction:
+            observation_payload["user_instruction"] = user_instruction
+            logger.info(f"ObservationAgent: User instruction provided - will use multi-page flow crawling")
+            print_flush(f"[INFO] User instruction provided - ObservationAgent will use browser-use for multi-page flow navigation")
+        if login_credentials:
+            observation_payload["login_credentials"] = login_credentials
+            logger.info(f"ObservationAgent: Login credentials provided - will be used during flow navigation")
+            print_flush(f"[INFO] Login credentials provided - will be used during flow navigation")
+        
         observation_task = TaskContext(
             conversation_id=conversation_id,
             task_id="obs-task-real-001",
             task_type="ui_element_extraction",
-            payload={"url": target_url, "max_depth": 1}
+            payload=observation_payload
         )
         
         logger.info(f"ObservationAgent: Starting page observation for {target_url}")
         logger.debug(f"ObservationAgent task payload keys: {list(observation_task.payload.keys())}")
         print_flush(f"[INFO] ObservationAgent: Crawling {target_url}...")
-        print_flush(f"        Observation stages:")
-        print_flush(f"        1. Launching browser (Playwright)")
-        print_flush(f"        2. Loading page and extracting UI elements")
-        print_flush(f"        3. LLM enhancement (if enabled) for semantic understanding")
-        print_flush(f"        4. Merging Playwright + LLM results\n")
+        if user_instruction:
+            print_flush(f"        Using MULTI-PAGE FLOW CRAWLING (browser-use) with user instruction:")
+            print_flush(f"        '{user_instruction[:80]}{'...' if len(user_instruction) > 80 else ''}'")
+            print_flush(f"        Observation stages:")
+            print_flush(f"        1. Launching browser (browser-use with LLM-guided navigation)")
+            print_flush(f"        2. Navigating through entire user flow (multi-page)")
+            print_flush(f"        3. Extracting UI elements from each page visited")
+            print_flush(f"        4. Stopping when goal is reached (e.g., purchase confirmation)")
+        else:
+            print_flush(f"        Using TRADITIONAL CRAWLING (Playwright)")
+            print_flush(f"        Observation stages:")
+            print_flush(f"        1. Launching browser (Playwright)")
+            print_flush(f"        2. Loading page and extracting UI elements")
+            print_flush(f"        3. LLM enhancement (if enabled) for semantic understanding")
+            print_flush(f"        4. Merging Playwright + LLM results")
+        print_flush()
         
         observation_result = await observation_agent_real.execute_task(observation_task)
         
