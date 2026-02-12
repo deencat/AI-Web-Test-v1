@@ -265,6 +265,15 @@ class ObservationAgent(BaseAgent):
                 # Traditional crawling (backward compatible)
                 logger.info(f"ObservationAgent: Using traditional crawling (max_depth={max_depth})...")
                 return await self._execute_traditional_crawling(task, url, max_depth, auth)
+        
+        except Exception as e:
+            logger.error(f"ObservationAgent: Error during task execution: {e}", exc_info=True)
+            return TaskResult(
+                task_id=task.task_id,
+                success=False,
+                error=str(e),
+                confidence=0.0
+            )
     
     async def _execute_traditional_crawling(
         self,
