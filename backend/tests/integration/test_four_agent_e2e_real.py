@@ -28,12 +28,14 @@ from dotenv import load_dotenv
 # Set PYTHONUNBUFFERED environment variable
 os.environ['PYTHONUNBUFFERED'] = '1'
 
-# Try to reconfigure stdout/stderr for line buffering
+# Try to reconfigure stdout/stderr for UTF-8 encoding and line buffering
+# This is critical on Windows where the default codec (cp950) cannot encode
+# many Unicode characters (Chinese, emojis, etc.)
 try:
-    sys.stdout.reconfigure(line_buffering=True)
-    sys.stderr.reconfigure(line_buffering=True)
-except AttributeError:
-    # Python < 3.7 or reconfigure not available
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace', line_buffering=True)
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace', line_buffering=True)
+except (AttributeError, Exception):
+    # Python < 3.7, reconfigure not available, or already binary mode
     pass
 
 # Custom print function that flushes immediately and writes to log file
@@ -41,8 +43,14 @@ _log_file_handle = None  # Will be set after log_file is created
 
 def print_flush(*args, **kwargs):
     """Print with immediate flush and also write to log file"""
-    # Print to stdout (will be captured by pytest if -s is not used)
-    print(*args, **kwargs)
+    # Print to stdout - handle encoding errors gracefully on Windows
+    try:
+        print(*args, **kwargs)
+    except UnicodeEncodeError:
+        # Fallback: encode with replacement characters for non-encodable chars
+        message = ' '.join(str(arg) for arg in args)
+        safe_message = message.encode(sys.stdout.encoding or 'utf-8', errors='replace').decode(sys.stdout.encoding or 'utf-8', errors='replace')
+        print(safe_message, **{k: v for k, v in kwargs.items() if k != 'end'}, end=kwargs.get('end', '\n'))
     sys.stdout.flush()
     sys.stderr.flush()
     
@@ -173,7 +181,9 @@ def observation_agent_real(mock_message_queue):
     config = {
         "use_llm": True,  # ENABLE LLM for real observation
         "max_depth": 1,
-        "max_pages": 1
+        "max_pages": 1,
+        "max_browser_steps": 50,  # Allow more steps for full flow including Gmail OTP extraction
+        "max_flow_timeout_seconds": 600  # 10 minute timeout for full flow including Gmail navigation and OTP verification
     }
     return ObservationAgent(
         message_queue=mock_message_queue,
@@ -223,7 +233,7 @@ def analysis_agent_real(mock_message_queue, db_session):
         "execution_rpn_threshold": 0,  # Lower threshold for testing (execute top scenarios)
         "headless_browser": False,  # Show browser during execution (set to True to hide)
         "cache_enabled": False,  # DISABLE caching for real E2E test
-        "parallel_execution_batch_size": 3  # Enable parallel execution (3 scenarios per batch)
+        "parallel_execution_batch_size": 2  # Reduced to 2 for faster testing (fewer concurrent browsers)
     }
     return AnalysisAgent(
         agent_id="e2e_test_analysis_agent",
@@ -301,6 +311,22 @@ class TestFourAgentE2EReal:
             print_flush(f"\n[INFO] Login credentials provided: email='{login_email[:10]}...'")
             print_flush(f"        Test steps will include login before purchase flow")
         
+        # Get Gmail credentials from environment variables (optional, separate from test website login)
+        gmail_email = os.getenv("GMAIL_EMAIL", "")
+        gmail_password = os.getenv("GMAIL_PASSWORD", "")
+        gmail_credentials = {}
+        if gmail_email and gmail_password:
+            gmail_credentials = {
+                "email": gmail_email,
+                "password": gmail_password
+            }
+            print_flush(f"\n[INFO] Gmail credentials provided: email='{gmail_email[:10]}...'")
+            print_flush(f"        Will be used for Gmail login to retrieve OTP codes")
+        elif login_credentials:
+            # If Gmail credentials not provided but login credentials are, auto-strip "+" from email
+            # This maintains backward compatibility
+            print_flush(f"\n[INFO] Gmail credentials not provided - will auto-strip '+' from email if present")
+        
         # Force immediate output - flush everything
         sys.stdout.flush()
         sys.stderr.flush()
@@ -338,7 +364,7 @@ class TestFourAgentE2EReal:
         print_flush("Step 1: Observing page with ObservationAgent...")
         print_flush("="*80)
         
-        # Build observation payload - include user_instruction and login_credentials if provided
+        # Build observation payload - include user_instruction, login_credentials, and gmail_credentials if provided
         # This will trigger multi-page flow crawling using browser-use
         observation_payload = {"url": target_url, "max_depth": 1}
         if user_instruction:
@@ -349,6 +375,10 @@ class TestFourAgentE2EReal:
             observation_payload["login_credentials"] = login_credentials
             logger.info(f"ObservationAgent: Login credentials provided - will be used during flow navigation")
             print_flush(f"[INFO] Login credentials provided - will be used during flow navigation")
+        if gmail_credentials:
+            observation_payload["gmail_credentials"] = gmail_credentials
+            logger.info(f"ObservationAgent: Gmail credentials provided - will be used for Gmail login to retrieve OTP")
+            print_flush(f"[INFO] Gmail credentials provided - will be used for Gmail login to retrieve OTP codes")
         
         observation_task = TaskContext(
             conversation_id=conversation_id,

@@ -156,6 +156,7 @@ class ObservationAgent(BaseAgent):
         self.timeout_ms = self.config.get("timeout_ms", 30000)
         self.take_screenshots = self.config.get("take_screenshots", True)
         self.use_llm = self.config.get("use_llm", True)  # Enable LLM by default
+        self.max_browser_steps = self.config.get("max_browser_steps", 50)  # Allow more steps for full flow including Gmail OTP extraction
         
         # OPT-3: Element Finding Cache - Cache selectors for repeated scenarios (30-40% faster)
         # Key: (element_type, element_id, element_class) -> selector
@@ -249,7 +250,8 @@ class ObservationAgent(BaseAgent):
             max_depth = task.payload.get("max_depth", self.max_depth)
             auth = task.payload.get("auth")  # Optional authentication
             user_instruction = task.payload.get("user_instruction", "")  # NEW: User instruction for flow navigation
-            login_credentials = task.payload.get("login_credentials", {})  # NEW: Login credentials
+            login_credentials = task.payload.get("login_credentials", {})  # NEW: Login credentials for target website
+            gmail_credentials = task.payload.get("gmail_credentials", {})  # NEW: Separate Gmail login credentials (optional)
             
             logger.info(f"ObservationAgent: Crawling web application: {url} (task {task.task_id})")
             
@@ -259,7 +261,7 @@ class ObservationAgent(BaseAgent):
             if use_flow_crawling:
                 logger.info(f"ObservationAgent: Using LLM-guided flow navigation (user_instruction: '{user_instruction[:50]}...')")
                 return await self._execute_multi_page_flow_crawling(
-                    task, url, user_instruction, login_credentials, auth
+                    task, url, user_instruction, login_credentials, gmail_credentials, auth
                 )
             else:
                 # Traditional crawling (backward compatible)
@@ -420,6 +422,7 @@ class ObservationAgent(BaseAgent):
         url: str,
         user_instruction: str,
         login_credentials: Dict,
+        gmail_credentials: Dict,
         auth: Optional[Dict]
     ) -> TaskResult:
         """
@@ -456,13 +459,58 @@ class ObservationAgent(BaseAgent):
             
             Extract UI elements from each page you visit during this flow.
             Stop when you reach the confirmation/success page.
+            
+            OTP VERIFICATION HANDLING:
+            If you encounter OTP (One-Time Password) verification or email verification:
+            1. Note the email address where the OTP will be sent (usually displayed on the OTP page)
+            2. Open a new tab (Ctrl+T or Cmd+T) and navigate to https://mail.google.com
+            3. Log into Gmail using the provided login credentials (see below)
+               - If Gmail asks for 2FA, use the same password or skip if possible
+               - If you see a "Choose an account" page, select the email address provided
+            4. Once logged into Gmail, look for the most recent email containing the OTP code
+               - Check the inbox first
+               - Look for emails from the website/service (e.g., "Three HK", "Three.com.hk")
+               - The OTP code is usually 4-6 digits and may be in the subject line or email body
+               - Look for patterns like "Your verification code is: 123456" or "OTP: 123456"
+            5. Extract the OTP code (digits only, usually 4-6 digits)
+            6. Switch back to the original tab with the OTP verification page (click the tab or use Alt+Tab)
+            7. Enter the OTP code in the verification input field
+            8. Click the submit/confirm/verify button to continue with the flow
+            
+            IMPORTANT: 
+            - Complete the entire flow including OTP verification. Do not stop until you reach the final confirmation/success page.
+            - If you cannot find the OTP email, wait a few seconds and refresh Gmail, then try again.
+            - The OTP code is usually valid for a limited time, so extract and enter it promptly.
             """
             
             # Add login credentials if provided
             if login_credentials:
                 email = login_credentials.get("email", "")
                 password = login_credentials.get("password", "")
-                task_description += f"\n\nLogin credentials:\n- Email: {email}\n- Password: [provided]"
+                
+                # Determine Gmail credentials
+                # If gmail_credentials are explicitly provided, use those
+                # Otherwise, auto-strip "+" from email if present
+                if gmail_credentials and gmail_credentials.get("email") and gmail_credentials.get("password"):
+                    gmail_email = gmail_credentials.get("email", "")
+                    gmail_password = gmail_credentials.get("password", "")
+                    logger.info(f"ObservationAgent: Using explicit Gmail credentials: {gmail_email}")
+                else:
+                    # Fallback: Gmail ignores everything after "+" in email addresses
+                    # So if email is "user+tag@gmail.com", Gmail login uses "user@gmail.com"
+                    # But the target website uses the full email "user+tag@gmail.com"
+                    gmail_email = email
+                    if "+" in email:
+                        gmail_email = email.split("+")[0] + "@" + email.split("@")[1]
+                        logger.info(f"ObservationAgent: Email contains '+', using '{gmail_email}' for Gmail login (full '{email}' for target website)")
+                    gmail_password = password  # Use same password if not explicitly provided
+                
+                task_description += f"\n\nLogin credentials:\n- Target website email: {email}\n- Target website password: [provided]"
+                task_description += f"\n- Gmail login email: {gmail_email}\n- Gmail login password: [provided]"
+                task_description += f"\n\nIMPORTANT EMAIL ADDRESS USAGE:\n"
+                task_description += f"1. For the target website login: Use email '{email}' with the provided password\n"
+                task_description += f"2. For Gmail login (to retrieve OTP): Use email '{gmail_email}' with the provided Gmail password\n"
+                task_description += f"3. These are SEPARATE credentials - use the correct email and password for each service"
             
             # Create LLM adapter for browser-use (use Azure OpenAI)
             # Note: browser-use expects a specific LLM interface, we'll need to adapt
@@ -472,37 +520,163 @@ class ObservationAgent(BaseAgent):
             browser = Browser()
             agent = BrowserUseAgent(task=task_description, llm=llm_adapter, browser=browser)
             
-            # Run the agent to navigate through the flow
-            logger.info("ObservationAgent: Running browser-use agent to navigate flow...")
-            history = await agent.run()
+            # Run the agent to navigate through the flow with timeout
+            # Increased timeout to allow for Gmail navigation and OTP extraction
+            # Default: 10 minutes (600 seconds) for full flow including OTP verification
+            max_flow_timeout = self.config.get("max_flow_timeout_seconds", 600)
+            logger.info(f"ObservationAgent: Running browser-use agent to navigate flow (max {max_flow_timeout}s, {self.max_browser_steps} steps)...")
+            logger.info(f"ObservationAgent: Agent will navigate to Gmail if OTP verification is required")
+            
+            try:
+                # Wrap agent.run() with timeout (increased for OTP flow)
+                history = await asyncio.wait_for(agent.run(), timeout=max_flow_timeout)
+                logger.info(f"ObservationAgent: Browser-use agent completed successfully")
+            except asyncio.TimeoutError:
+                logger.warning(f"ObservationAgent: Browser-use agent timed out after {max_flow_timeout}s. "
+                             f"Extracting elements from pages visited so far...")
+                # Try to get partial history if available
+                if hasattr(agent, 'history') and agent.history:
+                    history = agent.history
+                    logger.info(f"ObservationAgent: Retrieved partial history from agent ({len(agent.history)} steps)")
+                else:
+                    # Create empty history if agent doesn't expose it
+                    try:
+                        from browser_use.agent.service import AgentHistoryList
+                        history = AgentHistoryList(history=[])
+                    except ImportError:
+                        # Fallback: create a minimal history structure
+                        history = type('AgentHistoryList', (), {'history': []})()
+                    logger.warning("ObservationAgent: No partial history available from timed-out agent - will return empty results")
             
             # Extract pages and elements from browser-use history
+            # AgentHistoryList structure:
+            #   history.history: list[AgentHistory]
+            #     AgentHistory.state: BrowserStateHistory
+            #       .url: str
+            #       .title: str
+            #       .interacted_element: list[DOMInteractedElement | None]
+            #     AgentHistory.result: list[ActionResult]
+            #       .extracted_content: str | None
+            #     AgentHistory.model_output: AgentOutput | None
             pages_data = []
             all_elements = []
             all_forms = []
+            visited_urls = set()  # Track unique URLs to avoid duplicates
             
-            for page_state in history.pages:
-                page_url = page_state.url
-                page_title = page_state.title if hasattr(page_state, 'title') else ""
-                
-                # Extract elements from this page using Playwright
-                # (browser-use uses Playwright internally, we can access the page)
-                page = page_state.page if hasattr(page_state, 'page') else None
-                
-                if page:
-                    elements = await self._extract_ui_elements(page, page_url)
-                    forms = await self._extract_forms(page, page_url)
-                    all_elements.extend(elements)
-                    all_forms.extend(forms)
+            logger.debug(f"Processing browser-use history (type: {type(history)})...")
+            history_items = history.history if hasattr(history, 'history') else list(history)
+            logger.debug(f"History contains {len(history_items)} steps")
+            
+            for idx, history_item in enumerate(history_items):
+                try:
+                    # Extract URL and title from history_item.state (BrowserStateHistory)
+                    state = getattr(history_item, 'state', None)
+                    if state is None:
+                        logger.debug(f"History step {idx}: no state, skipping")
+                        continue
                     
-                    pages_data.append({
-                        "url": page_url,
-                        "title": page_title,
-                        "elements": elements,
-                        "forms": forms,
-                        "load_time_ms": 0,  # browser-use doesn't track this
-                        "status_code": 200
-                    })
+                    page_url = getattr(state, 'url', None)
+                    page_title = getattr(state, 'title', '')
+                    
+                    if not page_url:
+                        logger.debug(f"History step {idx}: no URL in state, skipping")
+                        continue
+                    
+                    # Track unique pages
+                    is_new_page = page_url not in visited_urls
+                    if is_new_page:
+                        visited_urls.add(page_url)
+                    
+                    # Convert DOMInteractedElement objects to UI element dicts
+                    interacted = getattr(state, 'interacted_element', []) or []
+                    for elem in interacted:
+                        if elem is None:
+                            continue
+                        
+                        # Map DOMInteractedElement attributes to our UI element format
+                        attrs = getattr(elem, 'attributes', {}) or {}
+                        node_name = getattr(elem, 'node_name', '').lower()
+                        ax_name = getattr(elem, 'ax_name', '') or ''
+                        node_value = getattr(elem, 'node_value', '') or ''
+                        x_path = getattr(elem, 'x_path', '') or ''
+                        
+                        # Determine element type from tag name and attributes
+                        elem_type = 'custom'
+                        if node_name in ('button', 'input', 'select', 'textarea', 'a', 'form'):
+                            elem_type = node_name
+                        elif node_name == 'span' and attrs.get('role') == 'button':
+                            elem_type = 'button'
+                        elif attrs.get('role') in ('button', 'link', 'checkbox', 'tab', 'textbox'):
+                            elem_type = attrs['role']
+                        
+                        # Determine text from ax_name or node_value
+                        text = ax_name or node_value or attrs.get('aria-label', '') or attrs.get('title', '')
+                        
+                        ui_element = {
+                            "type": elem_type,
+                            "text": text[:200] if text else '',
+                            "selector": x_path or f'//{node_name}',
+                            "page_url": page_url,
+                            "attributes": attrs,
+                            "semantic_purpose": attrs.get('role', '') or elem_type,
+                            "confidence": 0.9,  # High confidence - directly from browser DOM
+                            "source": "browser-use-interaction"
+                        }
+                        
+                        # Add input-specific attributes
+                        if node_name == 'input':
+                            ui_element["input_type"] = attrs.get('type', 'text')
+                        
+                        all_elements.append(ui_element)
+                    
+                    # Also extract info from action results (extracted_content)
+                    results = getattr(history_item, 'result', []) or []
+                    for result in results:
+                        extracted = getattr(result, 'extracted_content', None)
+                        if extracted:
+                            # Store extracted content as a metadata element
+                            all_elements.append({
+                                "type": "extracted_content",
+                                "text": str(extracted)[:500],
+                                "selector": "",
+                                "page_url": page_url,
+                                "attributes": {},
+                                "semantic_purpose": "content",
+                                "confidence": 0.8,
+                                "source": "browser-use-extraction"
+                            })
+                    
+                    # Only add page data once per unique URL
+                    if is_new_page:
+                        page_elements = [e for e in all_elements if e.get('page_url') == page_url]
+                        pages_data.append({
+                            "url": page_url,
+                            "title": page_title or f"Page {len(pages_data)+1}",
+                            "elements": page_elements,
+                            "forms": [],  # Forms are tracked via interacted elements
+                            "load_time_ms": 0,
+                            "status_code": 200
+                        })
+                        logger.debug(
+                            f"Page {len(pages_data)}: {page_url[:80]} - "
+                            f"{len(page_elements)} elements, title='{page_title[:50]}'"
+                        )
+                    
+                except Exception as e:
+                    logger.warning(f"Error processing history step {idx}: {e}", exc_info=True)
+                    continue
+            
+            # Deduplicate elements by (type, text, page_url) while preserving order
+            seen_elements = set()
+            unique_elements = []
+            for elem in all_elements:
+                key = (elem.get('type', ''), elem.get('text', '')[:100], elem.get('page_url', ''))
+                if key not in seen_elements:
+                    seen_elements.add(key)
+                    unique_elements.append(elem)
+            all_elements = unique_elements
+            
+            logger.info(f"Extracted {len(pages_data)} unique pages, {len(all_elements)} elements from browser-use history")
             
             # Check if goal was reached
             goal_reached = self._check_goal_reached(history, user_instruction)
@@ -575,11 +749,67 @@ class ObservationAgent(BaseAgent):
             return await self._execute_traditional_crawling(task, url, self.max_depth, auth)
     
     def _create_browser_use_llm_adapter(self):
-        """Create LLM adapter for browser-use from Azure OpenAI client"""
+        """Create LLM adapter for browser-use from Azure OpenAI client.
+        
+        Preferred: Use browser-use's built-in ChatAzureOpenAI which provides:
+          - Proper JSON schema enforcement (ResponseFormatJSONSchema)
+          - Full compatibility with browser-use's AgentOutput parsing
+          - Async OpenAI client as expected by browser-use
+        
+        Fallback: Custom AzureOpenAIAdapter (may have schema mismatch issues).
+        """
+        # --- Attempt 1: Use browser-use's built-in ChatAzureOpenAI ---
+        try:
+            from browser_use.llm.azure.chat import ChatAzureOpenAI
+            import os
+            
+            # Get Azure credentials from our existing client or env vars
+            api_key = ""
+            endpoint = ""
+            deployment = ""
+            
+            if self.llm_client and hasattr(self.llm_client, 'api_key'):
+                api_key = self.llm_client.api_key
+                endpoint = getattr(self.llm_client, 'endpoint', '')
+                deployment = getattr(self.llm_client, 'deployment', '')
+            
+            # Fallback to env vars
+            if not api_key:
+                api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
+            if not endpoint:
+                endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
+            if not deployment:
+                deployment = os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT")
+            
+            if not api_key or not endpoint:
+                raise ValueError("Azure OpenAI credentials not available")
+            
+            # Clean endpoint: remove /openai/v1 suffix, SDK adds it
+            clean_endpoint = endpoint.replace("/openai/v1", "").replace("/openai", "").rstrip("/")
+            
+            adapter = ChatAzureOpenAI(
+                model=deployment,
+                api_key=api_key,
+                azure_endpoint=clean_endpoint,
+                azure_deployment=deployment,
+                api_version="2024-08-01-preview",  # Supports json_schema structured output
+                temperature=0.2,
+                max_completion_tokens=4096,
+            )
+            logger.info(f"Browser-use ChatAzureOpenAI adapter created: model={adapter.model}, "
+                        f"endpoint={clean_endpoint}")
+            return adapter
+            
+        except ImportError as e:
+            logger.warning(f"ChatAzureOpenAI not available: {e}. Trying custom adapter...")
+        except Exception as e:
+            logger.warning(f"ChatAzureOpenAI creation failed: {e}. Trying custom adapter...")
+        
+        # --- Attempt 2: Fallback to custom AzureOpenAIAdapter ---
         try:
             from llm.browser_use_adapter import AzureOpenAIAdapter
             adapter = AzureOpenAIAdapter(azure_client=self.llm_client)
-            logger.info("Browser-use LLM adapter created successfully")
+            logger.info("Browser-use custom LLM adapter created (fallback)")
             return adapter
         except ImportError as e:
             logger.warning(f"Browser-use adapter not available: {e}. Using default LLM.")
@@ -596,12 +826,30 @@ class ObservationAgent(BaseAgent):
         
         # Check if instruction mentions a specific goal
         if any(keyword in instruction_lower for keyword in ["purchase", "buy", "訂購", "購買"]):
-            # Look for confirmation page
-            for page in history.pages:
-                url_lower = page.url.lower() if hasattr(page, 'url') else ""
-                title_lower = page.title.lower() if hasattr(page, 'title') else ""
-                if any(keyword in url_lower or keyword in title_lower for keyword in goal_keywords):
-                    return True
+            # Look for confirmation page - iterate directly over history (AgentHistoryList is iterable)
+            for history_item in history:
+                try:
+                    # Try different ways to access URL/title
+                    url_lower = ""
+                    title_lower = ""
+                    
+                    if hasattr(history_item, 'url'):
+                        url_lower = history_item.url.lower()
+                    elif hasattr(history_item, 'page_url'):
+                        url_lower = history_item.page_url.lower()
+                    elif isinstance(history_item, dict):
+                        url_lower = (history_item.get('url') or history_item.get('page_url') or '').lower()
+                    
+                    if hasattr(history_item, 'title'):
+                        title_lower = history_item.title.lower()
+                    elif isinstance(history_item, dict):
+                        title_lower = (history_item.get('title') or '').lower()
+                    
+                    if any(keyword in url_lower or keyword in title_lower for keyword in goal_keywords):
+                        return True
+                except Exception as e:
+                    logger.debug(f"Error checking goal in history item: {e}")
+                    continue
         
         return False
     

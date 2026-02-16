@@ -265,12 +265,26 @@ class AnalysisAgent(BaseAgent):
             )
             
             # Prepare output
-            # Convert risk_scores dict to list with scenario_id
+            # Convert risk_scores dict to list - one entry per scenario
+            # (Some scenarios may share the same scenario_id due to RequirementsAgent
+            #  generating template scenarios with overlapping IDs)
             risk_scores_list = []
+            seen_in_list = set()
+            for scenario in scenarios:
+                scenario_id = scenario.get("scenario_id")
+                if scenario_id and scenario_id in risk_scores:
+                    rs = risk_scores[scenario_id]
+                    risk_dict = self._risk_score_to_dict(rs)
+                    risk_dict["scenario_id"] = scenario_id
+                    risk_scores_list.append(risk_dict)
+                    seen_in_list.add(scenario_id)
+            # Also add any risk_scores for IDs not in scenarios list (shouldn't happen, but be safe)
             for scenario_id, rs in risk_scores.items():
-                risk_dict = self._risk_score_to_dict(rs)
-                risk_dict["scenario_id"] = scenario_id
-                risk_scores_list.append(risk_dict)
+                if scenario_id not in seen_in_list:
+                    risk_dict = self._risk_score_to_dict(rs)
+                    risk_dict["scenario_id"] = scenario_id
+                    risk_scores_list.append(risk_dict)
+            logger.info(f"AnalysisAgent: risk_scores_list has {len(risk_scores_list)} entries for {len(scenarios)} scenarios (from {len(risk_scores)} unique IDs)")
             
             result = {
                 "risk_scores": risk_scores_list,
@@ -459,8 +473,38 @@ class AnalysisAgent(BaseAgent):
                 logger.warning(f"LLM risk analysis failed: {e}, using heuristics")
                 # Fall through to heuristic-based scoring
         
-        # Fallback to heuristic-based scoring (if LLM failed or not enabled)
+        # Fallback to heuristic-based scoring for scenarios without risk scores
+        # This ensures ALL scenarios get risk scores, even if LLM didn't return them all
+        all_scenario_ids = [s.get("scenario_id") for s in scenarios]
+        unique_scenario_ids = set(all_scenario_ids)
+        logger.info(f"AnalysisAgent: Risk scores before fallback: {len(risk_scores)} unique IDs scored, "
+                     f"{len(scenarios)} scenarios ({len(unique_scenario_ids)} unique IDs)")
+        if len(unique_scenario_ids) < len(scenarios):
+            duplicate_ids = [sid for sid in unique_scenario_ids if all_scenario_ids.count(sid) > 1]
+            logger.warning(f"AnalysisAgent: {len(scenarios) - len(unique_scenario_ids)} duplicate scenario_ids detected: {duplicate_ids[:5]}")
+        missing_scenarios = [s for s in scenarios if s.get("scenario_id") not in risk_scores]
+        logger.info(f"AnalysisAgent: Missing scenarios (no risk score): {len(missing_scenarios)}")
+        if missing_scenarios:
+            logger.info(f"AnalysisAgent: Using heuristic scoring for {len(missing_scenarios)} scenarios not returned by LLM")
+            for scenario in missing_scenarios:
+                scenario_id = scenario.get("scenario_id")
+                if scenario_id:
+                    priority = scenario.get("priority", "medium")
+                    
+                    # Heuristic mapping
+                    if priority == "critical":
+                        risk_scores[scenario_id] = RiskScore(5, 4, 5)  # RPN = 100
+                    elif priority == "high":
+                        risk_scores[scenario_id] = RiskScore(4, 3, 4)  # RPN = 48
+                    elif priority == "medium":
+                        risk_scores[scenario_id] = RiskScore(3, 2, 3)  # RPN = 18
+                    else:
+                        risk_scores[scenario_id] = RiskScore(2, 1, 2)  # RPN = 4
+            logger.info(f"AnalysisAgent: Added heuristic risk scores for {len(missing_scenarios)} scenarios. Total risk scores: {len(risk_scores)}/{len(scenarios)}")
+        
+        # If no risk scores at all (LLM failed completely and no scenarios), use heuristics for all
         if not risk_scores:
+            logger.debug("AnalysisAgent: No risk scores from LLM, using heuristics for all scenarios")
             for scenario in scenarios:
                 scenario_id = scenario.get("scenario_id")
                 if scenario_id and scenario_id not in risk_scores:

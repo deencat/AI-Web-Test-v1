@@ -164,6 +164,29 @@ class RequirementsAgent(BaseAgent):
                 edge_case_scenarios
             )
             
+            # Deduplicate scenario_ids: LLM may assign IDs like REQ-A-xxx, REQ-S-xxx
+            # that conflict with template-generated accessibility/security/edge scenarios.
+            # Re-number any duplicates to ensure uniqueness.
+            seen_ids = set()
+            for scenario in all_scenarios:
+                if scenario.scenario_id in seen_ids:
+                    # Generate a new unique ID based on type
+                    type_prefix = {
+                        ScenarioType.FUNCTIONAL: "F",
+                        ScenarioType.ACCESSIBILITY: "A",
+                        ScenarioType.SECURITY: "S",
+                        ScenarioType.EDGE_CASE: "E",
+                        ScenarioType.USABILITY: "U",
+                        ScenarioType.PERFORMANCE: "P",
+                    }.get(scenario.scenario_type, "X")
+                    counter = 1
+                    while f"REQ-{type_prefix}-{counter:03d}" in seen_ids:
+                        counter += 1
+                    old_id = scenario.scenario_id
+                    scenario.scenario_id = f"REQ-{type_prefix}-{counter:03d}"
+                    logger.debug(f"RequirementsAgent: Renumbered duplicate scenario_id {old_id} -> {scenario.scenario_id}")
+                seen_ids.add(scenario.scenario_id)
+            
             # Stage 7: Extract test data
             test_data = self._extract_test_data(ui_elements)
             logger.debug(f"Extracted {len(test_data)} test data fields")
