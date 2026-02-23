@@ -68,6 +68,7 @@ export function useWorkflowProgress(workflowId: string | null | undefined): Work
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sseSubIdRef = useRef<string | null>(null);
   const sseErroredRef = useRef(false);
+  const sseReceivedEventRef = useRef(false);
 
   workflowIdRef.current = workflowId;
 
@@ -159,7 +160,10 @@ export function useWorkflowProgress(workflowId: string | null | undefined): Work
     (id: string) => {
       sseErroredRef.current = false;
 
+      sseReceivedEventRef.current = false;
+
       const subId = sseService.connect(id, (event: AgentProgressEvent) => {
+        sseReceivedEventRef.current = true;
         applyEvent(event);
 
         // Stop polling if SSE is now delivering updates
@@ -184,7 +188,9 @@ export function useWorkflowProgress(workflowId: string | null | undefined): Work
 
       // Ensure polling starts as fallback if SSE delivers nothing within 5 s
       const fallbackTimer = setTimeout(() => {
-        if (!sseErroredRef.current) return; // SSE is working, no fallback needed
+        // Start polling if SSE errored OR if SSE never delivered any event
+        // (covers mock mode where SSE silently does nothing)
+        if (!sseErroredRef.current && sseReceivedEventRef.current) return;
         startPolling();
       }, 5_000);
 

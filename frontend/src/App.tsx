@@ -12,6 +12,7 @@ import { ExecutionProgressPage } from './pages/ExecutionProgressPage';
 import { ExecutionHistoryPage } from './pages/ExecutionHistoryPage';
 import { FeedbackListPage } from './pages/FeedbackListPage';
 import { DebugSessionPage } from './pages/DebugSessionPage';
+import { AgentWorkflowPage } from './pages/AgentWorkflowPage';
 import './index.css';
 
 // Protected Route wrapper
@@ -123,6 +124,14 @@ function App() {
           element={
             <ProtectedRoute>
               <DebugSessionPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/agent-workflow"
+          element={
+            <ProtectedRoute>
+              <AgentWorkflowPage />
             </ProtectedRoute>
           }
         />

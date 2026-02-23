@@ -14,6 +14,7 @@
  */
 import api, { apiHelpers } from './api';
 import type {
+  AgentStage,
   GenerateTestsRequest,
   WorkflowCreateResponse,
   WorkflowStatusResponse,
@@ -33,6 +34,54 @@ function mockIso(offsetMs = 0): string {
 }
 
 // ---------------------------------------------------------------------------
+// Mock progress simulation (keyed by workflow_id → start timestamp)
+// ---------------------------------------------------------------------------
+
+const mockStartTimes = new Map<string, number>();
+
+/**
+ * Returns a mock WorkflowStatusResponse that progresses over ~10 seconds:
+ *   0-1s  → pending
+ *   1-3s  → initialising  (20%)
+ *   3-5s  → analysing     (40%)
+ *   5-7s  → generating    (60%)
+ *   7-9s  → validating    (80%)
+ *   9s+   → completed     (100%)
+ */
+function mockProgressStatus(workflowId: string): WorkflowStatusResponse {
+  const start = mockStartTimes.get(workflowId) ?? Date.now();
+  const elapsed = (Date.now() - start) / 1000; // seconds
+
+  const stages: Array<{ minT: number; stage: AgentStage; percentage: number; message: string; current_step: number }> = [
+    { minT: 0, stage: 'initializing', percentage: 10, message: 'Setting up agents…',               current_step: 1 },
+    { minT: 1, stage: 'initializing', percentage: 20, message: 'Agents ready, launching browser…', current_step: 1 },
+    { minT: 3, stage: 'analyzing',    percentage: 40, message: 'Observing page & UI elements…',    current_step: 2 },
+    { minT: 5, stage: 'generating',   percentage: 60, message: 'Generating test scenarios…',       current_step: 3 },
+    { minT: 7, stage: 'validating',   percentage: 80, message: 'Reviewing & scoring tests…',       current_step: 4 },
+  ];
+
+  if (elapsed >= 9) {
+    return {
+      workflow_id: workflowId,
+      status: 'completed',
+      progress: { stage: 'complete', percentage: 100, message: 'Tests ready!', current_step: 5, total_steps: 5 },
+      created_at: mockIso(-10_000),
+      updated_at: mockIso(),
+    };
+  }
+
+  const current = [...stages].reverse().find(s => elapsed >= s.minT) ?? stages[0];
+  const { minT: _omit, ...progressFields } = current;
+  return {
+    workflow_id: workflowId,
+    status: 'running',
+    progress: { ...progressFields, total_steps: 5 },
+    created_at: mockIso(-elapsed * 1_000),
+    updated_at: mockIso(),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // AgentWorkflowService
 // ---------------------------------------------------------------------------
 
@@ -47,11 +96,13 @@ class AgentWorkflowService {
    */
   async generateTests(request: GenerateTestsRequest): Promise<WorkflowCreateResponse> {
     if (apiHelpers.useMockData()) {
+      const id = mockWorkflowId();
+      mockStartTimes.set(id, Date.now());
       return {
-        workflow_id: mockWorkflowId(),
+        workflow_id: id,
         status: 'pending',
         message: 'Workflow queued — AI analysis will begin shortly.',
-        estimated_duration_seconds: 45,
+        estimated_duration_seconds: 10,
       };
     }
 
@@ -72,19 +123,7 @@ class AgentWorkflowService {
    */
   async getWorkflowStatus(workflowId: string): Promise<WorkflowStatusResponse> {
     if (apiHelpers.useMockData()) {
-      return {
-        workflow_id: workflowId,
-        status: 'running',
-        progress: {
-          stage: 'generating',
-          percentage: 55,
-          message: 'Generating test steps for discovered interactions...',
-          current_step: 3,
-          total_steps: 5,
-        },
-        created_at: mockIso(-60_000),
-        updated_at: mockIso(),
-      };
+      return mockProgressStatus(workflowId);
     }
 
     try {
