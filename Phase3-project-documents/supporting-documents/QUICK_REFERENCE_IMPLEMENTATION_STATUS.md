@@ -1,8 +1,8 @@
 # Quick Reference: Implementation Status & Timeline
 
 **Purpose:** Quick reference guide for what's working now vs. what's planned  
-**Last Updated:** February 23, 2026  
-**Status:** Sprint 8–9 Complete; Sprint 10 API v2 in progress (Observation + SSE done)
+**Last Updated:** February 2026  
+**Status:** Sprint 8–9 Complete; Sprint 10 API v2 complete and merged to `main` (published)
 
 ---
 
@@ -33,7 +33,8 @@
 - ✅ **generate-tests + workflow status/results:** Implemented
 - ✅ **Observation / multi-page flow:** Working (Windows ProactorEventLoop fix)
 - ✅ **SSE stream:** `GET /api/v2/workflows/{id}/stream` — in-memory ProgressTracker
-- 🔨 **Next:** DELETE cancel workflow (10A.5), then unit tests (10A.6)
+- ✅ **DELETE cancel (10A.5)** and **unit tests (10A.6)** implemented
+- ✅ **Merged to `main` and published;** Developer B uses `main`
 
 ---
 

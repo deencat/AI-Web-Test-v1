@@ -5,6 +5,8 @@
 **Branch:** `feature/sprint10-backend-api`  
 **Status:** ✅ **ALL CHECKS PASSING - READY FOR SPRINT 10**
 
+**Update (Feb 2026):** Sprint 10 backend API is complete and merged to `main`; pushed to `origin/main`. Developer B can pull `main` for the API and spec.
+
 ---
 
 ## ✅ Verification Results

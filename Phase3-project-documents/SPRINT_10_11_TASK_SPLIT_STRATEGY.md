@@ -3,6 +3,8 @@
 **Status:** 📋 **RECOMMENDATION**  
 **Based On:** Industrial Best Practices (GitHub Flow, Feature Branches, API-First Design)
 
+**Update (Feb 2026):** Sprint 10 backend API (`feature/sprint10-backend-api`) was merged to `main` and pushed to `origin/main`. Developer B should use the `main` branch for the API and spec; frontend work can proceed from `main`.
+
 ---
 
 ## 🎯 Executive Summary

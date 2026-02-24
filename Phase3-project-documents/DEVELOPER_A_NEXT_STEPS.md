@@ -1,9 +1,9 @@
 # Developer A: Next Steps & Action Plan
 **Date:** February 23, 2026  
-**Status:** 📋 **SPRINT 10 IN PROGRESS**  
+**Status:** ✅ **SPRINT 10 API COMPLETE — MERGED TO MAIN & PUBLISHED**  
 **Sprint 9 Status:** ✅ **100% COMPLETE** (30/30 points)  
 **Sprint 10 Start:** March 6, 2026  
-**Last doc update:** Feb 23, 2026 — Observation, SSE, workflow cancel, and unit tests (10A.6) done; next: API spec handoff to Developer B.
+**Last doc update:** Feb 2026 — API v2 complete; feature branch merged to `main` and pushed to `origin/main`. Developer B can pull `main` for API spec and running backend.
 
 ---
 
@@ -71,12 +71,14 @@ The following are **already implemented** in the codebase (no need to redo):
 
 - **Implemented:** 20 unit tests in `tests/unit/`: workflow_store (get/set/update/delete, request_cancel, is_cancel_requested), API v2 endpoints (POST generate-tests 202, GET status/results 200/404, DELETE cancel 204/404), orchestration cancel (run_workflow exits when cancel requested).
 
-### 4. **API spec handoff to Developer B**
+### 4. **API spec handoff to Developer B** — ✅ **READY** (main published)
 
 - **Goal:** Developer B can build the frontend from a stable contract.
-- **Tasks:**
-  - [ ] Confirm OpenAPI at `/api/v2/docs` and `/api/v2/openapi.json` (FastAPI default).
-  - [ ] Point Developer B to [API_SPECIFICATION.md](../backend/app/api/v2/API_SPECIFICATION.md) and `/api/v2/docs` for endpoints, request/response, and SSE.
+- **Status:** `feature/sprint10-backend-api` was merged to `main` and pushed to `origin/main`. Developer B should pull latest `main` to get the API v2 implementation, Phase3 docs, and API spec.
+- **Tasks for Developer B:**
+  - [ ] Pull latest `main`: `git pull origin main`
+  - [ ] OpenAPI: `GET /api/v2/openapi.json` and Swagger UI at `/api/v2/docs` (when backend is running)
+  - [ ] Spec document: [API_SPECIFICATION.md](../backend/app/api/v2/API_SPECIFICATION.md) — endpoints, request/response, SSE (§6)
 
 ### 5. **Later (Sprint 10 backlog)**
 
@@ -548,14 +550,14 @@ The following are **already implemented** in the codebase (no need to redo):
 - [ ] Task 10A.6: Unit tests
 
 ### After API Complete: API Spec Handoff
-- [ ] Publish OpenAPI + SSE docs
-- [ ] Pass spec to Developer B for frontend development (no joint session)
+- [x] Publish OpenAPI + SSE docs (available at `/api/v2/docs` and `/api/v2/openapi.json`)
+- [x] Pass spec to Developer B — **main branch published** (Feb 2026); Developer B pulls `main`
 
 ### Sprint 10 Days 10-15 (Mar 15-19, 2026)
 - [ ] Integration testing (once Developer B frontend is ready)
 - [ ] Fix any integration issues
 - [ ] Code review
-- [ ] Merge to `develop` branch
+- [x] **Merge to main** — Done Feb 2026: `feature/sprint10-backend-api` merged to `main` and pushed to `origin/main`
 - [ ] Sprint 10 retrospective
 
 ---
@@ -625,8 +627,8 @@ The following are **already implemented** in the codebase (no need to redo):
 
 **Prepared By:** AI Development Assistant  
 **Date:** February 10, 2026  
-**Status:** ✅ **READY FOR SPRINT 10**  
-**Next Action:** Begin Week 1 preparation tasks. After API is complete, pass spec to Developer B for frontend (no joint session).
+**Status:** ✅ **SPRINT 10 API COMPLETE; MERGED TO MAIN & PUBLISHED** (Feb 2026)  
+**Next Action:** Developer B pulls `main` and uses API_SPECIFICATION.md + `/api/v2/docs` for frontend. Developer A: optional 10A.8 iterative improvement, 10A.7–10A.11 backlog.
 
 ---
 

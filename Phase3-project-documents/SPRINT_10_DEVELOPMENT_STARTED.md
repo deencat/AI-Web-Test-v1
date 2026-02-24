@@ -5,6 +5,8 @@
 **Commit:** 3033155  
 **Status:** ✅ **READY FOR DEVELOPMENT**
 
+**Update (Feb 2026):** The feature branch was merged into `main` and pushed to `origin/main`. All API v2 implementation (generate-tests, SSE, workflow cancel, unit tests, Phase3 docs, API spec) is now on `main`. Developer B should use the `main` branch.
+
 ---
 
 ## 🎉 What Was Created

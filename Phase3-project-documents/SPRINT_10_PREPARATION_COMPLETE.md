@@ -5,6 +5,8 @@
 **Branch:** `feature/sprint10-backend-api`  
 **Status:** ✅ **READY FOR SPRINT 10**
 
+**Update (Feb 2026):** Feature branch merged to `main` and published. API v2 is on `main`; Developer B uses `main`.
+
 ---
 
 ## 📋 What Was Completed
