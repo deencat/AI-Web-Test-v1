@@ -122,6 +122,9 @@ python -m pytest tests/agents/test_requirements_agent_three_hk.py -v
 
 # Run E2E integration (8 tests)
 python -m pytest tests/agents/test_requirements_integration.py -v
+
+# Run 4-Agent E2E REAL test (live crawl + LLM + execution) - see tests/integration/E2E_REAL_RUN_GUIDE.md
+python -u -m pytest tests/integration/test_four_agent_e2e_real.py::TestFourAgentE2EReal::test_complete_4_agent_workflow_real -v -s
 ```
 
 **Phase 3 Status:**
@@ -418,7 +421,8 @@ Proprietary - All rights reserved
 OPENROUTER_API_KEY=sk-or-v1-...          # Get from https://openrouter.ai/keys
 GOOGLE_API_KEY=...                       # Get from https://aistudio.google.com/app/apikey
 CEREBRAS_API_KEY=...                     # Get from https://cloud.cerebras.ai/ (Phase 3)
-AZURE_OPENAI_API_KEY=...                 # Azure GPT-4o for RequirementsAgent
+AZURE_OPENAI_API_KEY=...                 # Azure OpenAI for 4-agent E2E (ObservationAgent, RequirementsAgent, etc.)
+AZURE_OPENAI_ENDPOINT=...                # Azure OpenAI endpoint (e.g. https://your-resource.openai.azure.com)
 DATABASE_URL=sqlite:///./aiwebtest.db
 SECRET_KEY=your-secret-key-here          # Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
 

@@ -117,11 +117,16 @@ app.include_router(api_v2_router, prefix=settings.API_V2_STR)  # Sprint 10: Agen
 
 @app.on_event("startup")
 async def startup_event():
-    """Startup event to ensure Windows event loop policy is set."""
+    """Startup event to ensure Windows event loop policy is set and to log loop type."""
     if sys.platform == 'win32':
-        # Force ProactorEventLoop policy for Playwright
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-        print("[STARTUP] Windows ProactorEventLoop policy set for Playwright compatibility")
+        loop = asyncio.get_event_loop()
+        kind = type(loop).__name__
+        if isinstance(loop, asyncio.ProactorEventLoop):
+            print("[STARTUP] Windows ProactorEventLoop active (Playwright/browser-use subprocesses supported)")
+        else:
+            print(f"[STARTUP] WARNING: event loop is {kind}, not ProactorEventLoop. "
+                  "Browser/Playwright may fail. Run with: python start_server.py (no reload on Windows)")
 
 
 @app.get("/")

@@ -12,13 +12,17 @@ if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
     print("[INFO] Set WindowsProactorEventLoopPolicy for Playwright compatibility")
 
+# On Windows, reload must be False so the same process that sets the policy runs the app.
+# With reload=True, a child process runs the app and may get SelectorEventLoop, which
+# does not support subprocesses (browser-use and Playwright will raise NotImplementedError).
+USE_RELOAD = sys.platform != 'win32'
+
 if __name__ == "__main__":
-    # Start Uvicorn with custom config
     uvicorn.run(
         "app.main:app",
         host="127.0.0.1",
         port=8000,
-        reload=True,
+        reload=USE_RELOAD,
         log_level="info",
-        loop="asyncio"  # Use asyncio event loop (respects our policy)
+        loop="asyncio",
     )

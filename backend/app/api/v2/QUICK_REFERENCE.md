@@ -5,12 +5,33 @@
 
 ---
 
+**Full API reference (parameters, input/output, examples):** [API_SPECIFICATION.md](./API_SPECIFICATION.md). OpenAPI: `/api/v2/docs`.
+
+---
+
+## Entry Points (multi-entry API)
+
+| Endpoint | Purpose |
+|----------|---------|
+| POST `/api/v2/generate-tests` | Full pipeline from URL |
+| POST `/api/v2/observation` | ObservationAgent only; chain with `workflow_id` |
+| POST `/api/v2/requirements` | RequirementsAgent; input: `workflow_id` or `observation_result` |
+| POST `/api/v2/analysis` | AnalysisAgent; input: `workflow_id` or prior results |
+| POST `/api/v2/evolution` | EvolutionAgent; input: `workflow_id` or prior results |
+| POST `/api/v2/improve-tests` | Iterative improvement by `test_case_ids` |
+| GET `/api/v2/workflows/{id}` | Status |
+| GET `/api/v2/workflows/{id}/results` | Results (partial or full) |
+| GET `/api/v2/workflows/{id}/stream` | SSE progress |
+
+---
+
 ## File Locations
 
 | Component | File Path |
 |-----------|-----------|
 | API Router | `backend/app/api/v2/api.py` |
 | Generate Tests Endpoint | `backend/app/api/v2/endpoints/generate_tests.py` |
+| Observation / Requirements / Analysis / Evolution / Improve | `backend/app/api/v2/endpoints/observation.py`, `requirements.py`, `analysis.py`, `evolution.py`, `improve_tests.py` |
 | SSE Stream Endpoint | `backend/app/api/v2/endpoints/sse_stream.py` |
 | Workflow Status Endpoints | `backend/app/api/v2/endpoints/workflows.py` |
 | Pydantic Schemas | `backend/app/schemas/workflow.py` |

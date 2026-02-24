@@ -7,9 +7,6 @@ This service coordinates the execution of the 4-agent workflow:
 3. AnalysisAgent - Analyzes risks, ROI, and dependencies
 4. EvolutionAgent - Generates executable test code
 
-Status: STUB (Basic structure, not yet implemented)
-Will be implemented in Sprint 10 Days 6-7.
-
 Reference: Sprint 10 - Frontend Integration & Real-time Agent Progress
 """
 from typing import Dict, Any, Optional, List
@@ -21,105 +18,706 @@ import asyncio
 logger = logging.getLogger(__name__)
 
 
+class _MockMessageQueue:
+    """Minimal message queue for agents when run via API (no pub/sub)."""
+    async def publish(self, *args, **kwargs):
+        pass
+    async def subscribe(self, *args, **kwargs):
+        pass
+
+
 class OrchestrationService:
     """
     Coordinates the 4-agent workflow with progress tracking.
-    
-    This is a STUB implementation. Full implementation will be completed in Sprint 10 Days 6-7.
+    Creates agents on demand and runs Observation -> Requirements -> Analysis -> Evolution.
     """
-    
+
     def __init__(self, progress_tracker=None):
         """
         Initialize OrchestrationService.
-        
+
         Args:
             progress_tracker: ProgressTracker instance for emitting progress events
         """
         self.progress_tracker = progress_tracker
-        # TODO: Sprint 10 Days 6-7 - Initialize agent instances
-        # self.observation_agent = ObservationAgent()
-        # self.requirements_agent = RequirementsAgent()
-        # self.analysis_agent = AnalysisAgent()
-        # self.evolution_agent = EvolutionAgent()
-    
+
+    def _create_agents(self, db=None):
+        """Create agent instances with shared message queue and config. db used for Analysis + Evolution."""
+        from agents.base_agent import TaskContext, TaskResult
+        from agents.observation_agent import ObservationAgent
+        from agents.requirements_agent import RequirementsAgent
+        from agents.analysis_agent import AnalysisAgent
+        from agents.evolution_agent import EvolutionAgent
+
+        mq = _MockMessageQueue()
+        obs_config = {"use_llm": True, "max_depth": 1, "max_pages": 1}
+        req_config = {"use_llm": True}
+        ana_config = {"use_llm": True, "db": db, "enable_realtime_execution": False}
+        evo_config = {"use_llm": True, "db": db}
+
+        observation_agent = ObservationAgent(
+            message_queue=mq, agent_id="api_observation", priority=8, config=obs_config
+        )
+        requirements_agent = RequirementsAgent(
+            agent_id="api_requirements", agent_type="requirements", priority=5,
+            message_queue=mq, config=req_config
+        )
+        analysis_agent = AnalysisAgent(
+            agent_id="api_analysis", agent_type="analysis", priority=5,
+            message_queue=mq, config=ana_config
+        )
+        evolution_agent = EvolutionAgent(
+            agent_id="api_evolution", agent_type="evolution", priority=5,
+            message_queue=mq, config=evo_config
+        )
+        return observation_agent, requirements_agent, analysis_agent, evolution_agent
+
     async def run_workflow(
         self,
         workflow_id: str,
         request: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Run the 4-agent workflow.
-        
-        Args:
-            workflow_id: Unique workflow identifier
-            request: GenerateTestsRequest data (url, user_instruction, etc.)
-        
-        Returns:
-            Dict containing workflow results
-        
-        Status: STUB - Not yet implemented
-        Implementation: Sprint 10 Days 6-7
+        Run the 4-agent workflow: Observation -> Requirements -> Analysis -> Evolution.
+        Updates workflow store and emits progress events after each stage.
         """
-        logger.info(f"[STUB] OrchestrationService.run_workflow called for workflow {workflow_id}")
-        
-        # TODO: Sprint 10 Days 6-7 Implementation
-        # try:
-        #     # Stage 1: Observation
-        #     await self.progress_tracker.emit(workflow_id, "agent_started", {
-        #         "agent": "observation",
-        #         "timestamp": datetime.utcnow().isoformat()
-        #     })
-        #     observation_result = await self.observation_agent.observe(request["url"])
-        #     await self.progress_tracker.emit(workflow_id, "agent_completed", {
-        #         "agent": "observation",
-        #         "result": observation_result,
-        #         "duration": ...
-        #     })
-        #     
-        #     # Stage 2: Requirements
-        #     await self.progress_tracker.emit(workflow_id, "agent_started", {
-        #         "agent": "requirements"
-        #     })
-        #     requirements_result = await self.requirements_agent.extract_requirements(
-        #         observation_result,
-        #         user_instruction=request.get("user_instruction")
-        #     )
-        #     await self.progress_tracker.emit(workflow_id, "agent_completed", {
-        #         "agent": "requirements",
-        #         "result": requirements_result
-        #     })
-        #     
-        #     # Stage 3: Analysis
-        #     # ... similar pattern
-        #     
-        #     # Stage 4: Evolution
-        #     # ... similar pattern
-        #     
-        #     # Final
-        #     await self.progress_tracker.emit(workflow_id, "workflow_completed", {
-        #         "workflow_id": workflow_id,
-        #         "results": {...}
-        #     })
-        #     
-        #     return {
-        #         "workflow_id": workflow_id,
-        #         "status": "completed",
-        #         "results": {...}
-        #     }
-        #     
-        # except Exception as e:
-        #     await self.progress_tracker.emit(workflow_id, "workflow_failed", {
-        #         "error": str(e)
-        #     })
-        #     raise
-        
-        # STUB: Return mock response
+        from agents.base_agent import TaskContext
+        from app.services.workflow_store import update_state, set_state, get_state, is_cancel_requested
+
+        url = str(request.get("url", ""))
+        user_instruction = request.get("user_instruction") or ""
+        depth = request.get("depth", 1)
+        login_credentials = request.get("login_credentials") or {}
+        gmail_credentials = request.get("gmail_credentials") or {}
+
+        db = None
+        try:
+            from app.db.session import SessionLocal
+            db = SessionLocal()
+        except Exception as e:
+            logger.warning(f"DB session not available: {e}. Evolution storage will be skipped.")
+
+        observation_agent, requirements_agent, analysis_agent, evolution_agent = self._create_agents(db=db)
+
+        started_at = datetime.utcnow()
+        pt = self.progress_tracker
+
+        def _emit(evt: str, data: dict):
+            if pt:
+                asyncio.create_task(pt.emit(workflow_id, evt, data))
+            update_state(workflow_id, current_agent=data.get("agent"), status="running")
+
+        def _check_cancelled() -> bool:
+            if not is_cancel_requested(workflow_id):
+                return False
+            if pt:
+                asyncio.create_task(pt.emit(workflow_id, "workflow_failed", {"error": "Cancelled by user"}))
+            set_state(workflow_id, {
+                "workflow_id": workflow_id,
+                "status": "cancelled",
+                "current_agent": None,
+                "error": "Cancelled by user",
+                "started_at": started_at.isoformat(),
+                "completed_at": datetime.utcnow().isoformat(),
+            })
+            if db:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+            return True
+
+        try:
+            if _check_cancelled():
+                return {"workflow_id": workflow_id, "status": "cancelled"}
+
+            # Stage 1: Observation
+            _emit("agent_started", {"agent": "observation", "timestamp": started_at.isoformat()})
+            obs_payload = {"url": url, "max_depth": depth}
+            if user_instruction:
+                obs_payload["user_instruction"] = user_instruction
+            if login_credentials:
+                obs_payload["login_credentials"] = login_credentials
+            if gmail_credentials:
+                obs_payload["gmail_credentials"] = gmail_credentials
+            obs_task = TaskContext(
+                conversation_id=workflow_id,
+                task_id=f"{workflow_id}-obs",
+                task_type="ui_element_extraction",
+                payload=obs_payload,
+                priority=8,
+            )
+            observation_result = await observation_agent.execute_task(obs_task)
+            if not observation_result.success:
+                raise RuntimeError(observation_result.error or "Observation failed")
+            obs_data = observation_result.result
+            ui_elements = obs_data.get("ui_elements", [])
+            _emit("agent_completed", {
+                "agent": "observation",
+                "elements_found": len(ui_elements),
+                "duration_seconds": getattr(observation_result, "execution_time_seconds", None),
+            })
+            if _check_cancelled():
+                return {"workflow_id": workflow_id, "status": "cancelled"}
+
+            # Stage 2: Requirements
+            _emit("agent_started", {"agent": "requirements"})
+            observation_data = {
+                "ui_elements": ui_elements,
+                "page_structure": obs_data.get("page_structure", {}),
+                "page_context": obs_data.get("page_context", {}),
+            }
+            if "url" not in observation_data["page_context"]:
+                observation_data["page_context"]["url"] = url
+            req_payload = {**observation_data}
+            if user_instruction:
+                req_payload["user_instruction"] = user_instruction
+            req_task = TaskContext(
+                conversation_id=workflow_id,
+                task_id=f"{workflow_id}-req",
+                task_type="requirement_extraction",
+                payload=req_payload,
+                priority=5,
+            )
+            requirements_result = await requirements_agent.execute_task(req_task)
+            if not requirements_result.success:
+                raise RuntimeError(requirements_result.error or "Requirements failed")
+            scenarios = requirements_result.result.get("scenarios", [])
+            _emit("agent_completed", {
+                "agent": "requirements",
+                "scenarios_generated": len(scenarios),
+                "duration_seconds": getattr(requirements_result, "execution_time_seconds", None),
+            })
+            if _check_cancelled():
+                return {"workflow_id": workflow_id, "status": "cancelled"}
+
+            # Stage 3: Analysis
+            _emit("agent_started", {"agent": "analysis"})
+            analysis_task = TaskContext(
+                conversation_id=workflow_id,
+                task_id=f"{workflow_id}-ana",
+                task_type="risk_analysis",
+                payload={
+                    "scenarios": scenarios,
+                    "test_data": requirements_result.result.get("test_data", []),
+                    "coverage_metrics": requirements_result.result.get("coverage_metrics", {}),
+                    "page_context": observation_data["page_context"],
+                },
+                priority=5,
+            )
+            analysis_result = await analysis_agent.execute_task(analysis_task)
+            if not analysis_result.success:
+                raise RuntimeError(analysis_result.error or "Analysis failed")
+            _emit("agent_completed", {
+                "agent": "analysis",
+                "duration_seconds": getattr(analysis_result, "execution_time_seconds", None),
+            })
+            if _check_cancelled():
+                return {"workflow_id": workflow_id, "status": "cancelled"}
+
+            # Stage 4: Evolution
+            _emit("agent_started", {"agent": "evolution"})
+            evolution_payload = {
+                "scenarios": scenarios,
+                "risk_scores": analysis_result.result.get("risk_scores", []),
+                "final_prioritization": analysis_result.result.get("final_prioritization", []),
+                "page_context": observation_data["page_context"],
+                "test_data": requirements_result.result.get("test_data", []),
+                "db": db,
+            }
+            if user_instruction:
+                evolution_payload["user_instruction"] = user_instruction
+            if login_credentials:
+                evolution_payload["login_credentials"] = login_credentials
+            if gmail_credentials:
+                evolution_payload["gmail_credentials"] = gmail_credentials
+            evolution_task = TaskContext(
+                conversation_id=workflow_id,
+                task_id=f"{workflow_id}-evo",
+                task_type="test_generation",
+                payload=evolution_payload,
+                priority=5,
+            )
+            evolution_result = await evolution_agent.execute_task(evolution_task)
+            if not evolution_result.success:
+                raise RuntimeError(evolution_result.error or "Evolution failed")
+            test_case_ids = evolution_result.result.get("test_case_ids", [])
+            test_count = evolution_result.result.get("test_count", 0)
+            _emit("agent_completed", {
+                "agent": "evolution",
+                "tests_generated": test_count,
+                "duration_seconds": getattr(evolution_result, "execution_time_seconds", None),
+            })
+
+            completed_at = datetime.utcnow()
+            total_duration = (completed_at - started_at).total_seconds()
+            if pt:
+                await pt.emit(workflow_id, "workflow_completed", {
+                    "workflow_id": workflow_id,
+                    "status": "completed",
+                    "test_case_ids": test_case_ids,
+                    "test_count": test_count,
+                    "total_duration_seconds": total_duration,
+                })
+
+            set_state(workflow_id, {
+                "workflow_id": workflow_id,
+                "status": "completed",
+                "current_agent": None,
+                "progress": {},
+                "total_progress": 1.0,
+                "started_at": started_at.isoformat(),
+                "completed_at": completed_at.isoformat(),
+                "error": None,
+                "result": {
+                    "test_case_ids": test_case_ids,
+                    "test_count": test_count,
+                    "observation_result": obs_data,
+                    "requirements_result": requirements_result.result,
+                    "analysis_result": analysis_result.result,
+                    "evolution_result": evolution_result.result,
+                    "total_duration_seconds": total_duration,
+                },
+            })
+
+            if db:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+
+            return {
+                "workflow_id": workflow_id,
+                "status": "completed",
+                "result": {
+                    "test_case_ids": test_case_ids,
+                    "test_count": test_count,
+                    "total_duration_seconds": total_duration,
+                },
+            }
+        except Exception as e:
+            logger.exception(f"Workflow {workflow_id} failed: {e}")
+            if pt:
+                await pt.emit(workflow_id, "workflow_failed", {"error": str(e)})
+            set_state(workflow_id, {
+                "workflow_id": workflow_id,
+                "status": "failed",
+                "error": str(e),
+                "started_at": started_at.isoformat(),
+                "completed_at": datetime.utcnow().isoformat(),
+            })
+            if db:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+            raise
+
+    async def run_observation_only(
+        self,
+        workflow_id: str,
+        request: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Run only ObservationAgent; persist observation_result in workflow store.
+        Use workflow_id to chain into requirements/analysis/evolution later.
+        """
+        from agents.base_agent import TaskContext
+
+        url = str(request.get("url", ""))
+        user_instruction = request.get("user_instruction") or ""
+        depth = request.get("depth", 1)
+        login_credentials = request.get("login_credentials") or {}
+        gmail_credentials = request.get("gmail_credentials") or {}
+        started_at = datetime.utcnow()
+        pt = self.progress_tracker
+
+        def _emit(evt: str, data: dict):
+            if pt:
+                asyncio.create_task(pt.emit(workflow_id, evt, data))
+            update_state(workflow_id, current_agent=data.get("agent"), status="running")
+
+        observation_agent, _, _, _ = self._create_agents(db=None)
+        _emit("agent_started", {"agent": "observation", "timestamp": started_at.isoformat()})
+        obs_payload = {"url": url, "max_depth": depth}
+        if user_instruction:
+            obs_payload["user_instruction"] = user_instruction
+        if login_credentials:
+            obs_payload["login_credentials"] = login_credentials
+        if gmail_credentials:
+            obs_payload["gmail_credentials"] = gmail_credentials
+        obs_task = TaskContext(
+            conversation_id=workflow_id,
+            task_id=f"{workflow_id}-obs",
+            task_type="ui_element_extraction",
+            payload=obs_payload,
+            priority=8,
+        )
+        observation_result = await observation_agent.execute_task(obs_task)
+        if not observation_result.success:
+            _emit("agent_completed", {"agent": "observation", "error": observation_result.error})
+            set_state(workflow_id, {
+                "workflow_id": workflow_id,
+                "status": "failed",
+                "error": observation_result.error or "Observation failed",
+                "started_at": started_at.isoformat(),
+                "completed_at": datetime.utcnow().isoformat(),
+                "workflow_type": "observation",
+            })
+            raise RuntimeError(observation_result.error or "Observation failed")
+        obs_data = observation_result.result
+        ui_elements = obs_data.get("ui_elements", [])
+        _emit("agent_completed", {
+            "agent": "observation",
+            "elements_found": len(ui_elements),
+            "duration_seconds": getattr(observation_result, "execution_time_seconds", None),
+        })
+        completed_at = datetime.utcnow()
+        total_duration = (completed_at - started_at).total_seconds()
+        if pt:
+            await pt.emit(workflow_id, "workflow_completed", {
+                "workflow_id": workflow_id,
+                "status": "completed",
+                "workflow_type": "observation",
+                "total_duration_seconds": total_duration,
+            })
+        set_state(workflow_id, {
+            "workflow_id": workflow_id,
+            "status": "completed",
+            "current_agent": None,
+            "progress": {},
+            "total_progress": 1.0,
+            "started_at": started_at.isoformat(),
+            "completed_at": completed_at.isoformat(),
+            "error": None,
+            "workflow_type": "observation",
+            "result": {
+                "observation_result": obs_data,
+                "test_case_ids": [],
+                "test_count": 0,
+                "total_duration_seconds": total_duration,
+            },
+        })
+        return {"workflow_id": workflow_id, "status": "completed", "observation_result": obs_data}
+
+    async def run_requirements_after_observation(
+        self,
+        workflow_id: str,
+        request: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Run RequirementsAgent. Input: workflow_id (with observation_result in store) or inline observation_result.
+        Persists requirements_result in workflow store.
+        """
+        from agents.base_agent import TaskContext
+
+        user_instruction = request.get("user_instruction") or ""
+        obs_from_store = None
+        source_wid = request.get("workflow_id") or workflow_id
+        state = get_state(source_wid)
+        if state:
+            obs_from_store = (state.get("result") or {}).get("observation_result")
+        observation_result = request.get("observation_result") or obs_from_store
+        if not observation_result:
+            raise ValueError("Missing observation data: provide workflow_id (with prior observation) or observation_result")
+        ui_elements = observation_result.get("ui_elements", [])
+        page_context = observation_result.get("page_context", {})
+        url = str(request.get("url") or page_context.get("url") or "")
+        started_at = datetime.utcnow()
+        pt = self.progress_tracker
+
+        def _emit(evt: str, data: dict):
+            if pt:
+                asyncio.create_task(pt.emit(workflow_id, evt, data))
+            update_state(workflow_id, current_agent=data.get("agent"), status="running")
+
+        _, requirements_agent, _, _ = self._create_agents(db=None)
+        _emit("agent_started", {"agent": "requirements"})
+        observation_data = {
+            "ui_elements": ui_elements,
+            "page_structure": observation_result.get("page_structure", {}),
+            "page_context": {**page_context, "url": url or page_context.get("url")},
+        }
+        if user_instruction:
+            observation_data["user_instruction"] = user_instruction
+        req_task = TaskContext(
+            conversation_id=workflow_id,
+            task_id=f"{workflow_id}-req",
+            task_type="requirement_extraction",
+            payload=observation_data,
+            priority=5,
+        )
+        requirements_result = await requirements_agent.execute_task(req_task)
+        if not requirements_result.success:
+            set_state(workflow_id, {
+                "workflow_id": workflow_id,
+                "status": "failed",
+                "error": requirements_result.error or "Requirements failed",
+                "started_at": started_at.isoformat(),
+                "completed_at": datetime.utcnow().isoformat(),
+                "workflow_type": "requirements",
+            })
+            raise RuntimeError(requirements_result.error or "Requirements failed")
+        scenarios = requirements_result.result.get("scenarios", [])
+        _emit("agent_completed", {
+            "agent": "requirements",
+            "scenarios_generated": len(scenarios),
+            "duration_seconds": getattr(requirements_result, "execution_time_seconds", None),
+        })
+        completed_at = datetime.utcnow()
+        total_duration = (completed_at - started_at).total_seconds()
+        if pt:
+            await pt.emit(workflow_id, "workflow_completed", {
+                "workflow_id": workflow_id,
+                "status": "completed",
+                "workflow_type": "requirements",
+                "total_duration_seconds": total_duration,
+            })
+        state = get_state(workflow_id) or {}
+        existing_result = state.get("result") or {}
+        set_state(workflow_id, {
+            **state,
+            "workflow_id": workflow_id,
+            "status": "completed",
+            "current_agent": None,
+            "total_progress": 1.0,
+            "started_at": started_at.isoformat(),
+            "completed_at": completed_at.isoformat(),
+            "error": None,
+            "workflow_type": "requirements",
+            "result": {
+                **existing_result,
+                "observation_result": observation_result,
+                "requirements_result": requirements_result.result,
+                "test_case_ids": [],
+                "test_count": 0,
+                "total_duration_seconds": total_duration,
+            },
+        })
+        return {"workflow_id": workflow_id, "status": "completed", "requirements_result": requirements_result.result}
+
+    async def run_analysis_after_requirements(
+        self,
+        workflow_id: str,
+        request: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Run AnalysisAgent. Input: workflow_id (with requirements + observation in store) or inline requirements_result + observation_result.
+        Persists analysis_result in workflow store.
+        """
+        from agents.base_agent import TaskContext
+
+        state = get_state(workflow_id) or {}
+        existing_result = state.get("result") or {}
+        requirements_result = request.get("requirements_result") or existing_result.get("requirements_result")
+        observation_result = request.get("observation_result") or existing_result.get("observation_result")
+        if request.get("workflow_id") and not requirements_result:
+            other = get_state(request["workflow_id"])
+            if other:
+                existing_result = other.get("result") or {}
+                requirements_result = existing_result.get("requirements_result")
+                observation_result = observation_result or existing_result.get("observation_result")
+        if not requirements_result or not observation_result:
+            raise ValueError("Missing requirements/observation: provide workflow_id or inline requirements_result and observation_result")
+        scenarios = requirements_result.get("scenarios", [])
+        page_context = observation_result.get("page_context", {})
+        started_at = datetime.utcnow()
+        pt = self.progress_tracker
+
+        def _emit(evt: str, data: dict):
+            if pt:
+                asyncio.create_task(pt.emit(workflow_id, evt, data))
+            update_state(workflow_id, current_agent=data.get("agent"), status="running")
+
+        _, _, analysis_agent, _ = self._create_agents(db=None)
+        _emit("agent_started", {"agent": "analysis"})
+        analysis_task = TaskContext(
+            conversation_id=workflow_id,
+            task_id=f"{workflow_id}-ana",
+            task_type="risk_analysis",
+            payload={
+                "scenarios": scenarios,
+                "test_data": requirements_result.get("test_data", []),
+                "coverage_metrics": requirements_result.get("coverage_metrics", {}),
+                "page_context": page_context,
+            },
+            priority=5,
+        )
+        analysis_result = await analysis_agent.execute_task(analysis_task)
+        if not analysis_result.success:
+            set_state(workflow_id, {
+                "workflow_id": workflow_id,
+                "status": "failed",
+                "error": analysis_result.error or "Analysis failed",
+                "started_at": started_at.isoformat(),
+                "completed_at": datetime.utcnow().isoformat(),
+                "workflow_type": "analysis",
+            })
+            raise RuntimeError(analysis_result.error or "Analysis failed")
+        _emit("agent_completed", {
+            "agent": "analysis",
+            "duration_seconds": getattr(analysis_result, "execution_time_seconds", None),
+        })
+        completed_at = datetime.utcnow()
+        total_duration = (completed_at - started_at).total_seconds()
+        if pt:
+            await pt.emit(workflow_id, "workflow_completed", {
+                "workflow_id": workflow_id,
+                "status": "completed",
+                "workflow_type": "analysis",
+                "total_duration_seconds": total_duration,
+            })
+        set_state(workflow_id, {
+            **state,
+            "workflow_id": workflow_id,
+            "status": "completed",
+            "current_agent": None,
+            "total_progress": 1.0,
+            "started_at": started_at.isoformat(),
+            "completed_at": completed_at.isoformat(),
+            "error": None,
+            "workflow_type": "analysis",
+            "result": {
+                **existing_result,
+                "observation_result": observation_result,
+                "requirements_result": requirements_result,
+                "analysis_result": analysis_result.result,
+                "test_case_ids": [],
+                "test_count": 0,
+                "total_duration_seconds": total_duration,
+            },
+        })
+        return {"workflow_id": workflow_id, "status": "completed", "analysis_result": analysis_result.result}
+
+    async def run_evolution_after_analysis(
+        self,
+        workflow_id: str,
+        request: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Run EvolutionAgent (test generation). Input: workflow_id (with analysis + requirements + observation in store) or inline payload.
+        Persists evolution_result and test_case_ids in workflow store.
+        """
+        from agents.base_agent import TaskContext
+
+        db = None
+        try:
+            from app.db.session import SessionLocal
+            db = SessionLocal()
+        except Exception as e:
+            logger.warning(f"DB session not available: {e}")
+        state = get_state(workflow_id) or {}
+        existing_result = state.get("result") or {}
+        analysis_result = request.get("analysis_result") or existing_result.get("analysis_result")
+        requirements_result = request.get("requirements_result") or existing_result.get("requirements_result")
+        observation_result = request.get("observation_result") or existing_result.get("observation_result")
+        if request.get("workflow_id") and not analysis_result:
+            other = get_state(request["workflow_id"])
+            if other:
+                existing_result = other.get("result") or {}
+                analysis_result = existing_result.get("analysis_result")
+                requirements_result = requirements_result or existing_result.get("requirements_result")
+                observation_result = observation_result or existing_result.get("observation_result")
+        if not analysis_result or not requirements_result or not observation_result:
+            raise ValueError("Missing analysis/requirements/observation: provide workflow_id or inline payloads")
+        scenarios = requirements_result.get("scenarios", [])
+        page_context = observation_result.get("page_context", {})
+        user_instruction = request.get("user_instruction") or ""
+        login_credentials = request.get("login_credentials") or {}
+        gmail_credentials = request.get("gmail_credentials") or {}
+        started_at = datetime.utcnow()
+        pt = self.progress_tracker
+
+        def _emit(evt: str, data: dict):
+            if pt:
+                asyncio.create_task(pt.emit(workflow_id, evt, data))
+            update_state(workflow_id, current_agent=data.get("agent"), status="running")
+
+        _, _, _, evolution_agent = self._create_agents(db=db)
+        _emit("agent_started", {"agent": "evolution"})
+        evolution_payload = {
+            "scenarios": scenarios,
+            "risk_scores": analysis_result.get("risk_scores", []),
+            "final_prioritization": analysis_result.get("final_prioritization", []),
+            "page_context": page_context,
+            "test_data": requirements_result.get("test_data", []),
+            "db": db,
+        }
+        if user_instruction:
+            evolution_payload["user_instruction"] = user_instruction
+        if login_credentials:
+            evolution_payload["login_credentials"] = login_credentials
+        if gmail_credentials:
+            evolution_payload["gmail_credentials"] = gmail_credentials
+        evolution_task = TaskContext(
+            conversation_id=workflow_id,
+            task_id=f"{workflow_id}-evo",
+            task_type="test_generation",
+            payload=evolution_payload,
+            priority=5,
+        )
+        evolution_result = await evolution_agent.execute_task(evolution_task)
+        if db:
+            try:
+                db.close()
+            except Exception:
+                pass
+        if not evolution_result.success:
+            set_state(workflow_id, {
+                "workflow_id": workflow_id,
+                "status": "failed",
+                "error": evolution_result.error or "Evolution failed",
+                "started_at": started_at.isoformat(),
+                "completed_at": datetime.utcnow().isoformat(),
+                "workflow_type": "evolution",
+            })
+            raise RuntimeError(evolution_result.error or "Evolution failed")
+        test_case_ids = evolution_result.result.get("test_case_ids", [])
+        test_count = evolution_result.result.get("test_count", 0)
+        _emit("agent_completed", {
+            "agent": "evolution",
+            "tests_generated": test_count,
+            "duration_seconds": getattr(evolution_result, "execution_time_seconds", None),
+        })
+        completed_at = datetime.utcnow()
+        total_duration = (completed_at - started_at).total_seconds()
+        if pt:
+            await pt.emit(workflow_id, "workflow_completed", {
+                "workflow_id": workflow_id,
+                "status": "completed",
+                "test_case_ids": test_case_ids,
+                "test_count": test_count,
+                "total_duration_seconds": total_duration,
+            })
+        set_state(workflow_id, {
+            **state,
+            "workflow_id": workflow_id,
+            "status": "completed",
+            "current_agent": None,
+            "total_progress": 1.0,
+            "started_at": started_at.isoformat(),
+            "completed_at": completed_at.isoformat(),
+            "error": None,
+            "workflow_type": "evolution",
+            "result": {
+                **existing_result,
+                "observation_result": observation_result,
+                "requirements_result": requirements_result,
+                "analysis_result": analysis_result,
+                "evolution_result": evolution_result.result,
+                "test_case_ids": test_case_ids,
+                "test_count": test_count,
+                "total_duration_seconds": total_duration,
+            },
+        })
         return {
             "workflow_id": workflow_id,
-            "status": "stub",
-            "message": "OrchestrationService not yet implemented. Will be completed in Sprint 10 Days 6-7."
+            "status": "completed",
+            "test_case_ids": test_case_ids,
+            "test_count": test_count,
+            "evolution_result": evolution_result.result,
         }
-    
+
     async def run_iterative_workflow(
         self,
         workflow_id: str,

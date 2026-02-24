@@ -65,30 +65,24 @@
 
 ## 🚀 Sprint 10: Optimized Task Split
 
-### Phase 1: API Contract Definition (Day 1 - Both Developers)
+### Phase 1: API-First Handoff (No Joint Session)
 
-**Goal:** Define API contracts and TypeScript types **BEFORE** implementation
+**Goal:** Developer A completes the API and publishes the spec; Developer B consumes the spec for frontend. No API Contract Definition session required.
 
 **Developer A (Backend Lead):**
-- [ ] Create API v2 router structure: `backend/app/api/v2/api.py`
+- [ ] Create API v2 router structure: `backend/app/api/v2/api.py` (stubs already exist)
 - [ ] Define Pydantic schemas: `backend/app/schemas/workflow.py`
-  - `GenerateTestsRequest`
-  - `WorkflowStatusResponse`
-  - `AgentProgressEvent`
-  - `WorkflowResultsResponse`
-- [ ] Create stub endpoints (return 501 Not Implemented)
-- [ ] Document API contract in OpenAPI/Swagger
+- [ ] Implement full API (generate-tests, SSE, workflow endpoints)
+- [ ] Publish OpenAPI at `/api/v2/docs` and document SSE (stream URL, event types, example payloads)
+- [ ] **Hand off spec to Developer B** (OpenAPI + SSE docs; short handoff note if needed)
 
-**Developer B (Frontend Lead):**
-- [ ] Create TypeScript types: `frontend/src/types/agentWorkflow.types.ts`
-  - Match Pydantic schemas exactly
-  - `WorkflowId`, `WorkflowStatus`, `AgentProgress`, etc.
-- [ ] Create API client stub: `frontend/src/services/agentWorkflowService.ts`
-  - Methods return mock data
-  - No actual HTTP calls yet
-- [ ] Create SSE service stub: `frontend/src/services/sseService.ts`
+**Developer B (Frontend Lead)—after spec handoff:**
+- [ ] Consume API spec (OpenAPI + SSE docs from Dev A)
+- [ ] Create TypeScript types: `frontend/src/types/agentWorkflow.types.ts` (from spec or codegen)
+- [ ] Create API client: `frontend/src/services/agentWorkflowService.ts`
+- [ ] Create SSE service: `frontend/src/services/sseService.ts`
 
-**Result:** ✅ API contract locked, zero conflicts, both can work in parallel
+**Result:** ✅ Zero conflicts; Dev A owns backend, Dev B builds frontend from spec when ready
 
 ---
 
@@ -151,8 +145,8 @@ backend/app/schemas/
 frontend/src/features/agent-workflow/
 ├── components/                    # Dev B (all 5 components)
 ├── hooks/                         # Dev B (all 3 hooks)
-├── services/                      # Dev B (update stubs from Phase 1)
-└── types/                         # Dev B (already defined in Phase 1)
+├── services/                      # Dev B (from API spec)
+└── types/                         # Dev B (from API spec when Dev A handoff)
 
 backend/tests/
 ├── integration/
@@ -466,20 +460,17 @@ class ExperimentManager(IExperimentManager):
 
 ### Sprint 10 Kickoff (Day 1)
 
-**Both Developers:**
-- [ ] **API Contract Definition Session (2 hours)**
-  - [ ] Define Pydantic schemas (Dev A)
-  - [ ] Define TypeScript types (Dev B)
-  - [ ] Review and approve contracts
-  - [ ] Lock contracts (no changes without discussion)
-- [ ] **Create Feature Branches**
-  - [ ] Dev A: `feature/sprint10-backend-api`
-  - [ ] Dev B: `feature/sprint10-frontend-ui`
-- [ ] **Create Stub Implementations**
-  - [ ] Dev A: Stub API endpoints (return 501)
-  - [ ] Dev B: Mock API client (return mock data)
+**Developer A only (no joint session):**
+- [ ] Verify API v2 stubs and structure (branch `feature/sprint10-backend-api` already has stubs)
+- [ ] Begin full implementation (generate-tests, SSE, OrchestrationService, workflow endpoints)
+- [ ] When API is complete: publish OpenAPI + SSE docs and **hand off spec to Developer B**
 
-**Result:** ✅ Contracts locked, branches created, ready for parallel development
+**Developer B (after spec handoff):**
+- [ ] Create feature branch: `feature/sprint10-frontend-ui`
+- [ ] Consume API spec (OpenAPI + SSE docs); create TypeScript types and API client
+- [ ] Implement frontend components and hooks
+
+**Result:** ✅ API-first handoff; Dev A completes API, Dev B builds from spec—no coordination session required
 
 ---
 

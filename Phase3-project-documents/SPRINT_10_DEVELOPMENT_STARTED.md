@@ -111,16 +111,11 @@ curl -X POST http://localhost:8000/api/v2/generate-tests \
 
 ### Sprint 10 Day 1 (Mar 6, 2026)
 
-**Morning Session (2 hours) with Developer B:**
-- [ ] API Contract Definition session
-- [ ] Review and lock Pydantic schemas
-- [ ] Verify TypeScript types match
-- [ ] Create example payloads
+**No joint session required.** Developer A completes the API; then passes the spec to Developer B for frontend.
 
-**Afternoon:**
-- [ ] Test stub endpoints
-- [ ] Verify API v2 router registration
-- [ ] Prepare for Days 2-3 implementation
+- [ ] Verify stub endpoints and API v2 router registration
+- [ ] Begin full implementation (Task 10A.2)
+- [ ] After API is complete: publish OpenAPI + SSE docs and hand off spec to Developer B
 
 ### Sprint 10 Days 2-9 (Mar 7-14, 2026)
 
@@ -136,11 +131,12 @@ Follow the detailed plan in [Developer A Next Steps](DEVELOPER_A_NEXT_STEPS.md)
 - ✅ `backend/app/services/orchestration_service.py`
 - ✅ `backend/app/services/progress_tracker.py`
 
-**Developer B Owns:**
+**Developer B (after spec handoff):**
+- Consumes API spec (OpenAPI + SSE docs) from Developer A
 - `frontend/src/features/agent-workflow/` - Entire directory
-- All integration tests
+- Integration tests when frontend is ready
 
-**Result:** ✅ Zero merge conflicts (separate file trees)
+**Result:** ✅ Zero merge conflicts (separate file trees); API-first handoff, no joint session
 
 ---
 
@@ -224,7 +220,7 @@ curl http://localhost:8000/api/v2/workflows/test-id/stream
 **Next Action:** 
 1. Review created structure
 2. Research SSE implementation
-3. Prepare for Day 1 API Contract Definition (Mar 6, 2026)
+3. Sprint 10 Day 1 (Mar 6): Verify stubs, begin implementation; after API complete, pass spec to Developer B
 
 **Branch:** `feature/sprint10-backend-api`  
 **Commit:** 3033155  

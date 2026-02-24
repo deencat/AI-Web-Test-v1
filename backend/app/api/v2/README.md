@@ -3,18 +3,37 @@
 **Sprint:** Sprint 10 - Frontend Integration & Real-time Agent Progress  
 **Developer:** Developer A  
 **Branch:** `feature/sprint10-backend-api`  
-**Status:** 🔨 **STUB IMPLEMENTATION** (Ready for Day 1 API Contract Definition)
+**Status:** ✅ **PARTIAL** — generate-tests, status, results, SSE implemented; DELETE cancel still stub (Feb 2026)
 
 ---
 
 ## 📋 Overview
 
-API v2 provides endpoints for managing the 4-agent workflow:
-- **POST** `/api/v2/generate-tests` - Trigger workflow
+API v2 provides **multiple entry points** (per-agent and per-use-case). All runs return a `workflow_id`; status and results use the shared workflow resource.
+
+- **POST** `/api/v2/generate-tests` - Full pipeline (generate from URL)
+- **POST** `/api/v2/observation` - ObservationAgent only
+- **POST** `/api/v2/requirements` - RequirementsAgent only (input: workflow_id or observation_result)
+- **POST** `/api/v2/analysis` - AnalysisAgent only (input: workflow_id or prior results)
+- **POST** `/api/v2/evolution` - EvolutionAgent only (input: workflow_id or prior results)
+- **POST** `/api/v2/improve-tests` - Improve existing tests by ID (iterative)
 - **GET** `/api/v2/workflows/{id}/stream` - SSE progress stream
-- **GET** `/api/v2/workflows/{id}` - Get workflow status
-- **GET** `/api/v2/workflows/{id}/results` - Get workflow results
+- **GET** `/api/v2/workflows/{id}` - Workflow status
+- **GET** `/api/v2/workflows/{id}/results` - Workflow results (partial or full)
 - **DELETE** `/api/v2/workflows/{id}` - Cancel workflow
+
+**📖 API reference:** Full request/response parameters, types, and examples: **[API_SPECIFICATION.md](./API_SPECIFICATION.md)**. Interactive docs: `/api/v2/docs`.
+
+### What this API does
+
+- **Full pipeline:** POST `/generate-tests` with a URL runs all 4 agents and returns `workflow_id`; results include `test_case_ids` and agent outputs.
+- **Per-agent / improve:** POST `/observation`, `/requirements`, `/analysis`, `/evolution` run one stage (chain via `workflow_id`). POST `/improve-tests` with `test_case_ids` runs iterative improvement. 
+
+- **Unified resource:** GET `/workflows/{id}` and GET `/workflows/{id}/results` for status and partial/full results.
+
+### (Obsolete) What this API did *not* do before multi-entry
+
+- **Re-run or improve by test case ID (now supported via POST /improve-tests):** The request body does **not** accept “existing test case IDs” to re-run or to ask the agents to “improve these tests.” Input is always a **URL** (and optional instruction/credentials). To **run** existing test cases (by ID), use the **execution API** (e.g. API v1: run test by ID). To **improve** existing tests in a loop (e.g. iterative evolution → analysis), the design exists in the codebase (e.g. `run_iterative_workflow` stub) but is **not** exposed as an API endpoint yet.
 
 ---
 
@@ -29,16 +48,21 @@ backend/app/api/v2/
 ├── README.md                      ✅ Created (this file)
 └── endpoints/
     ├── __init__.py                ✅ Created
-    ├── generate_tests.py           ✅ Created (STUB - returns 501)
-    ├── workflows.py                ✅ Created (STUB - returns 501)
-    └── sse_stream.py              ✅ Created (STUB - returns 501)
+    ├── generate_tests.py          ✅ Full pipeline (POST /generate-tests)
+    ├── observation.py             ✅ Observation only (POST /observation)
+    ├── requirements.py            ✅ Requirements only (POST /requirements)
+    ├── analysis.py                ✅ Analysis only (POST /analysis)
+    ├── evolution.py               ✅ Evolution only (POST /evolution)
+    ├── improve_tests.py           ✅ Improve by ID (POST /improve-tests)
+    ├── workflows.py               ✅ Status, results, cancel
+    └── sse_stream.py              ✅ SSE progress stream
 
 backend/app/schemas/
 └── workflow.py                    ✅ Created (Pydantic models)
 
 backend/app/services/
-├── orchestration_service.py       ✅ Created (STUB)
-└── progress_tracker.py            ✅ Created (STUB)
+├── orchestration_service.py       ✅ Implemented (run_workflow, per-stage)
+└── progress_tracker.py            ✅ Implemented (in-memory queues, emit, subscribe)
 ```
 
 ### Updated Files
@@ -48,17 +72,15 @@ backend/app/services/
 
 ---
 
-## 🔨 Stub Implementation Status
+## 🔨 Implementation Status (Feb 2026)
 
-All endpoints currently return **501 Not Implemented**. This is intentional - they will be implemented during Sprint 10:
-
-| Endpoint | Status | Implementation |
-|----------|--------|----------------|
-| POST `/api/v2/generate-tests` | 🔨 STUB | Sprint 10 Days 2-3 |
-| GET `/api/v2/workflows/{id}/stream` | 🔨 STUB | Sprint 10 Days 4-5 |
-| GET `/api/v2/workflows/{id}` | 🔨 STUB | Sprint 10 Day 8 |
-| GET `/api/v2/workflows/{id}/results` | 🔨 STUB | Sprint 10 Day 8 |
-| DELETE `/api/v2/workflows/{id}` | 🔨 STUB | Sprint 10 Day 8 |
+| Endpoint | Status | Notes |
+|----------|--------|--------|
+| POST `/api/v2/generate-tests` | ✅ Done | 202, background workflow; Observation (browser-use/Playwright) working on Windows |
+| GET `/api/v2/workflows/{id}/stream` | ✅ Done | SSE; in-memory ProgressTracker, event types per API spec |
+| GET `/api/v2/workflows/{id}` | ✅ Done | Workflow status |
+| GET `/api/v2/workflows/{id}/results` | ✅ Done | Partial/full results |
+| DELETE `/api/v2/workflows/{id}` | 🔨 Stub (501) | Next: implement cancel (store flag + orchestration check) |
 
 ---
 

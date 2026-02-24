@@ -1,0 +1,13 @@
+{
+  "url": "https://example.com",
+  "user_instruction": "Complete purchase flow for '5G寬頻數據無限任用' plan with 48 months contract term",
+  "depth": 1,
+  "login_credentials": {
+    "username": "your-email@example.com",
+    "password": "your-website-password"
+  },
+  "gmail_credentials": {
+    "email": "your-account@gmail.com",
+    "password": "gmail-app-password"
+  }
+}

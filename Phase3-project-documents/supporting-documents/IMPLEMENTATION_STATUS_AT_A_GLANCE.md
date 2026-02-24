@@ -1,8 +1,8 @@
 # Implementation Status at a Glance
 
 **Quick Reference:** What's working now vs. what's planned  
-**Last Updated:** February 6, 2026  
-**Status:** Sprint 8 Complete (100%), Sprint 9 Starting
+**Last Updated:** February 23, 2026  
+**Status:** Sprint 8–9 Complete; Sprint 10 API v2 in progress (Observation + SSE done)
 
 ---
 
@@ -30,6 +30,12 @@
    - `RequirementsAgent` accepts `execution_feedback`
    - `EvolutionAgent.learn_from_feedback()` method exists
    - ⚠️ **Not yet active** (can be activated in Sprint 9 or Sprint 11)
+
+5. **API v2 & Observation (Sprint 10)** ✅
+   - POST `/api/v2/generate-tests` (202, background workflow); GET workflow status/results
+   - **Observation / multi-page flow:** Working (Windows: ProactorEventLoop fix in `start_server.py`)
+   - **SSE progress stream:** `GET /api/v2/workflows/{id}/stream` — in-memory ProgressTracker, orchestration emits events
+   - Still stub: DELETE cancel workflow (10A.5); next: implement cancel, then unit tests (10A.6)
 
 ---
 

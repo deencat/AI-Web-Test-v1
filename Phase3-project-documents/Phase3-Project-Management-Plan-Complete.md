@@ -12,8 +12,20 @@
 > - **Status Tracking:** Current progress, completed tasks, sprint goals
 > - **Team Coordination:** Developer A vs Developer B task breakdown
 > - **Budget & Timeline:** Cost analysis, schedule, resource allocation
+> - **API reference (endpoints, request/response):** [API v2 Specification](../backend/app/api/v2/API_SPECIFICATION.md) · OpenAPI: `/api/v2/docs`
 > - **For Code Details:** See [Implementation Guide](Phase3-Implementation-Guide-Complete.md)
 > - **For Architecture:** See [Architecture Document](Phase3-Architecture-Design-Complete.md)
+
+---
+
+## 📍 Where to Find Key Documents
+
+| Document | Location | Use it for |
+|----------|----------|------------|
+| **This document** | [Phase3-Project-Management-Plan-Complete.md](Phase3-Project-Management-Plan-Complete.md) | Sprint planning, budget, task breakdown |
+| **Architecture** | [Phase3-Architecture-Design-Complete.md](Phase3-Architecture-Design-Complete.md) | System design, agent patterns |
+| **Implementation Guide** | [Phase3-Implementation-Guide-Complete.md](Phase3-Implementation-Guide-Complete.md) | Code examples, sprint tasks, testing |
+| **API v2 Specification** | [API_SPECIFICATION.md](../backend/app/api/v2/API_SPECIFICATION.md) | Endpoints, request/response parameters, examples, chaining |
 
 ---
 
@@ -45,6 +57,9 @@ This document is part of the Phase 3 documentation suite. For complete context, 
 - **[Phase3-Agent-Performance-Scoring-Framework.md](supporting-documents/Phase3-Agent-Performance-Scoring-Framework.md)** - Agent performance metrics and scoring methodology
   - **Use for:** Understanding how agents measure their own performance, quality validation methods
   - **Key sections:** Section 2-4 (Agent-specific scoring), Section 6 (Implementation roadmap)
+- **[API v2 Specification](../backend/app/api/v2/API_SPECIFICATION.md)** - API v2 specification (request/response parameters, types, examples)
+  - **Use for:** API reference for frontend integration, contract definition, OpenAPI-style details
+  - **Key content:** All entry points (generate-tests, observation, requirements, analysis, evolution, improve-tests), workflow resource, errors, SSE stream, chaining flows
 
 **Document Usage Guide:**
 - **Project Management Plan (This Document):** Sprint planning, task assignments, status tracking, budget
@@ -56,6 +71,7 @@ This document is part of the Phase 3 documentation suite. For complete context, 
 - Agent design: See Architecture Document Section 6
 - Code examples: See Implementation Guide Section 3
 - Performance scoring: See [Performance Scoring Framework](supporting-documents/Phase3-Agent-Performance-Scoring-Framework.md) document
+- API v2 reference (parameters, input/output): [API v2 Specification](../backend/app/api/v2/API_SPECIFICATION.md) (OpenAPI: `/api/v2/docs`)
 
 **Supporting Documents:**
 For detailed analysis, strategies, and agent-specific documentation, see the [Supporting Documents](#supporting-documents) section at the end of this document.
@@ -831,7 +847,7 @@ After successful Phase 2 + Phase 3 merge and integration testing, comprehensive 
 
 | Task | Description | Duration | Dependencies | Details |
 |------|-------------|----------|--------------|---------|
-| **10A.1** | **API Contract Definition** (Day 1 with Dev B) | 0.5 day | Sprint 9 | Define Pydantic schemas, lock API contract, create stub endpoints |
+| **10A.1** | **API schema & stubs** (Day 1) | 0.5 day | Sprint 9 | Pydantic schemas, stub endpoints; no joint session—Dev A completes API then passes spec to Dev B |
 | **10A.2** | Create `/api/v2/generate-tests` endpoint | 2 days | 10A.1 | POST endpoint to trigger 4-agent workflow, returns workflow_id |
 | **10A.3** | Implement Server-Sent Events (SSE) for real-time progress | 2 days | 10A.2 | Stream agent progress events (agent_started, agent_progress, agent_completed, workflow_completed) |
 | **10A.4** | Implement OrchestrationService | 2 days | 10A.2 | Coordinate 4-agent workflow with progress tracking via Redis pub/sub |
@@ -843,13 +859,13 @@ After successful Phase 2 + Phase 3 merge and integration testing, comprehensive 
 | **10A.10** | **Goal-Oriented Navigation (ObservationAgent)** | 1 day | 10A.7 | Navigate until goal reached (e.g., purchase confirmation), goal detection logic |
 | **10A.11** | Integration tests for iterative workflow | 1 day | 10A.10 | Test multi-page crawling, iteration loop, convergence, dynamic URL crawling |
 
-**Total: 45 points, 16.5 days** (includes 0.5 day API contract definition + iterative workflow enhancements)
+**Total: 45 points, 16.5 days** (includes 0.5 day API schema & stubs; after API complete, Dev A passes spec to Dev B)
 
 **File Ownership (Zero Conflicts):**
 - `backend/app/api/v2/` - Developer A owns entire directory
 - `backend/app/services/orchestration_service.py` - Developer A
 - `backend/app/services/progress_tracker.py` - Developer A
-- `backend/app/schemas/workflow.py` - Developer A (defined Day 1)
+- `backend/app/schemas/workflow.py` - Developer A (stubs already in branch)
 
 **New Backend Components:**
 ```python
@@ -871,7 +887,7 @@ class ProgressTracker:
 
 | Task | Description | Duration | Dependencies | Details |
 |------|-------------|----------|--------------|---------|
-| **10B.1** | **API Contract Definition** (Day 1 with Dev A) | 0.5 day | Sprint 9 | Define TypeScript types, create mock API client, lock contract |
+| **10B.1** | **Consume API spec from Dev A** | 0.5 day | 10A complete | Use OpenAPI + SSE docs from Dev A; define TypeScript types, API client (no joint session) |
 | **10B.2** | Agent Workflow Trigger component | 1 day | 10B.1 | "AI Generate Tests" button, URL input, user instructions form |
 | **10B.3** | Real-time Progress Pipeline UI | 2 days | 10B.1 | GitHub Actions style: 4-stage pipeline with live status (uses mock data initially) |
 | **10B.4** | Server-Sent Events React hook | 1 day | 10B.1 | useWorkflowProgress(workflowId) for real-time updates |
@@ -882,11 +898,11 @@ class ProgressTracker:
 | **10B.9** | GitHub Actions CI/CD | 1 day | 10B.7 | Run tests on every PR |
 | **10B.10** | System integration tests | 1 day | 10B.7 | 15+ scenarios (happy path + edge cases) |
 
-**Total: 29 points, 11.5 days** (includes 0.5 day API contract definition + 4 days testing)
+**Total: 29 points, 11.5 days** (Dev B consumes API spec from Dev A when ready; 4 days testing)
 
 **File Ownership (Zero Conflicts):**
 - `frontend/src/features/agent-workflow/` - Developer B owns entire directory
-- `frontend/src/types/agentWorkflow.types.ts` - Developer B (defined Day 1)
+- `frontend/src/types/agentWorkflow.types.ts` - Developer B (from API spec when Dev A handoff)
 - `backend/tests/integration/test_agent_workflow_e2e.py` - Developer B
 - `backend/tests/load/test_agent_workflow_load.py` - Developer B
 

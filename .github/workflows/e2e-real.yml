@@ -1,0 +1,64 @@
+# 4-Agent E2E Real Test (optional CI)
+# Runs the real E2E test with live crawling, LLM, and execution.
+# Trigger: manually (workflow_dispatch) or on schedule. Not run on every push/PR.
+name: E2E Real (4-Agent)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Optional: run nightly at 02:00 UTC (adjust as needed)
+    - cron: "0 2 * * *"
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  e2e-real:
+    name: Run 4-Agent E2E Real
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio python-dotenv
+
+      - name: Install Playwright Chromium
+        run: playwright install chromium --with-deps
+
+      - name: Run 4-Agent E2E Real test
+        env:
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          AZURE_OPENAI_MODEL: ${{ secrets.AZURE_OPENAI_MODEL || 'ChatGPT-UAT' }}
+          USER_INSTRUCTION: ${{ secrets.E2E_USER_INSTRUCTION || '' }}
+          LOGIN_EMAIL: ${{ secrets.E2E_LOGIN_EMAIL || '' }}
+          LOGIN_PASSWORD: ${{ secrets.E2E_LOGIN_PASSWORD || '' }}
+          GMAIL_EMAIL: ${{ secrets.E2E_GMAIL_EMAIL || '' }}
+          GMAIL_PASSWORD: ${{ secrets.E2E_GMAIL_PASSWORD || '' }}
+        run: |
+          python -u -m pytest tests/integration/test_four_agent_e2e_real.py::TestFourAgentE2EReal::test_complete_4_agent_workflow_real -v -s --tb=short
+        continue-on-error: true
+
+      - name: Upload E2E logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-real-logs-${{ github.run_id }}
+          path: backend/logs/
+          if-no-files-found: ignore

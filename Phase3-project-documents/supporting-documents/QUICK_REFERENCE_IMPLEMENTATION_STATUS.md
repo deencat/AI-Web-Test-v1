@@ -1,8 +1,8 @@
 # Quick Reference: Implementation Status & Timeline
 
 **Purpose:** Quick reference guide for what's working now vs. what's planned  
-**Last Updated:** February 6, 2026  
-**Status:** Sprint 8 Complete (100%), Sprint 9 Starting
+**Last Updated:** February 23, 2026  
+**Status:** Sprint 8–9 Complete; Sprint 10 API v2 in progress (Observation + SSE done)
 
 ---
 
@@ -28,6 +28,12 @@
 - ✅ **Infrastructure Complete:** Methods and parameters exist
 - ⚠️ **Not Yet Active:** Can be activated in Sprint 9 or Sprint 11
 - **Location:** `backend/agents/requirements_agent.py`, `backend/agents/evolution_agent.py`
+
+### API v2 & Observation (Sprint 10 – Feb 2026)
+- ✅ **generate-tests + workflow status/results:** Implemented
+- ✅ **Observation / multi-page flow:** Working (Windows ProactorEventLoop fix)
+- ✅ **SSE stream:** `GET /api/v2/workflows/{id}/stream` — in-memory ProgressTracker
+- 🔨 **Next:** DELETE cancel workflow (10A.5), then unit tests (10A.6)
 
 ---
 

@@ -75,17 +75,12 @@ python -m app.api.v2.verify_setup
    - [ ] Create technical design document
 
 ### Sprint 10 Day 1 (Mar 6, 2026)
-**Morning Session (2 hours) with Developer B:**
-- [ ] API Contract Definition session
-- [ ] Review and lock Pydantic schemas
-- [ ] Verify TypeScript types match
-- [ ] Create example payloads
+**No joint session with Developer B.** Developer A completes API and passes spec to Developer B for frontend.
 
-**Afternoon:**
-- [ ] Test stub endpoints (should return 501)
+- [ ] Verify stub endpoints (should return 501)
 - [ ] Verify API v2 router registration
 - [ ] Test OpenAPI docs at `/api/v2/docs`
-- [ ] Prepare for Days 2-3 implementation
+- [ ] Begin implementation (Days 2-3); after API complete, publish spec and hand off to Developer B
 
 ### Sprint 10 Days 2-9 (Mar 7-14, 2026)
 Follow the detailed plan in:
@@ -175,5 +170,5 @@ All preparation work is complete:
 - ✅ Quick reference guide
 - ✅ Setup verification passing
 
-**Next Action:** Day 1 API Contract Definition session (Mar 6, 2026)
+**Next Action:** Day 1 verify stubs and begin implementation (Mar 6); after API complete, hand off spec to Developer B
 

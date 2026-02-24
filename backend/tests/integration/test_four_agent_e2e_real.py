@@ -954,10 +954,25 @@ class TestFourAgentE2EReal:
                          f"stored_in_db={stored_in_db}, test_case_ids={len(test_case_ids) if test_case_ids else 0}")
             print_flush("\nStep 4.5: Skipping database verification (database not available or not stored)")
         
-        # Step 5: Print summary
+        # Step 5: Print summary (including per-agent timing)
+        t_obs = getattr(observation_result, "execution_time_seconds", 0.0) or 0.0
+        t_req = getattr(requirements_result, "execution_time_seconds", 0.0) or 0.0
+        t_ana = getattr(analysis_result, "execution_time_seconds", 0.0) or 0.0
+        t_evo = getattr(evolution_result, "execution_time_seconds", 0.0) or 0.0
+        t_total = t_obs + t_req + t_ana + t_evo
+        logger.info(
+            "E2E agent timing: observation=%.2fs requirements=%.2fs analysis=%.2fs evolution=%.2fs total=%.2fs",
+            t_obs, t_req, t_ana, t_evo, t_total
+        )
         print_flush(f"\n{'='*80}")
         print_flush("TEST SUMMARY")
         print_flush(f"{'='*80}")
+        print_flush("Agent timing:")
+        print_flush(f"  ObservationAgent:  {t_obs:.2f}s")
+        print_flush(f"  RequirementsAgent: {t_req:.2f}s")
+        print_flush(f"  AnalysisAgent:     {t_ana:.2f}s")
+        print_flush(f"  EvolutionAgent:    {t_evo:.2f}s")
+        print_flush(f"  Total:             {t_total:.2f}s")
         print_flush(f"Page URL: {target_url}")
         print_flush(f"UI Elements Observed: {len(observation_data['ui_elements'])}")
         print_flush(f"Scenarios Generated: {len(scenarios)}")

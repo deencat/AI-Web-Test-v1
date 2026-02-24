@@ -10,12 +10,27 @@ from fastapi import APIRouter
 
 # Import endpoints (will be implemented in Sprint 10)
 try:
-    from app.api.v2.endpoints import generate_tests, workflows, sse_stream
-    
+    from app.api.v2.endpoints import (
+        generate_tests,
+        workflows,
+        sse_stream,
+        observation,
+        requirements,
+        analysis,
+        evolution,
+        improve_tests,
+    )
+
     api_router = APIRouter()
-    
-    # Register all v2 endpoints
-    api_router.include_router(generate_tests.router, prefix="/generate-tests", tags=["agent-workflow"])
+
+    # Single-entry (full pipeline) and multi-entry (per-agent) endpoints
+    api_router.include_router(generate_tests.router, tags=["agent-workflow"])
+    api_router.include_router(observation.router, tags=["agent-workflow"])
+    api_router.include_router(requirements.router, tags=["agent-workflow"])
+    api_router.include_router(analysis.router, tags=["agent-workflow"])
+    api_router.include_router(evolution.router, tags=["agent-workflow"])
+    api_router.include_router(improve_tests.router, tags=["agent-workflow"])
+    # Workflow resource: status, results, stream, cancel
     api_router.include_router(workflows.router, prefix="/workflows", tags=["agent-workflow"])
     api_router.include_router(sse_stream.router, prefix="/workflows", tags=["agent-workflow"])
 except ImportError as e:

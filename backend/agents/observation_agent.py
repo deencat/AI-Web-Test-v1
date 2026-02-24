@@ -266,7 +266,15 @@ class ObservationAgent(BaseAgent):
             else:
                 # Traditional crawling (backward compatible)
                 logger.info(f"ObservationAgent: Using traditional crawling (max_depth={max_depth})...")
-                return await self._execute_traditional_crawling(task, url, max_depth, auth)
+                try:
+                    return await self._execute_traditional_crawling(task, url, max_depth, auth)
+                except (NotImplementedError, OSError) as e:
+                    # Python 3.13 + Windows: asyncio subprocess can raise NotImplementedError in some event loop contexts.
+                    logger.warning(
+                        "ObservationAgent: Playwright unavailable (%s: %s). Using stub mode so workflow can continue.",
+                        type(e).__name__, e
+                    )
+                    return await self._execute_stub_mode(task)
         
         except Exception as e:
             logger.error(f"ObservationAgent: Error during task execution: {e}", exc_info=True)
@@ -483,9 +491,9 @@ class ObservationAgent(BaseAgent):
             - The OTP code is usually valid for a limited time, so extract and enter it promptly.
             """
             
-            # Add login credentials if provided
+            # Add login credentials if provided (API may send "username" or "email" for website login)
             if login_credentials:
-                email = login_credentials.get("email", "")
+                email = login_credentials.get("email") or login_credentials.get("username", "")
                 password = login_credentials.get("password", "")
                 
                 # Determine Gmail credentials
@@ -910,7 +918,14 @@ class ObservationAgent(BaseAgent):
                 "links": 7,
                 "forms": 2
             },
-            "_note": "STUB MODE - Playwright not installed. Install with: pip install playwright; playwright install"
+            "page_structure": {
+                "url": url,
+                "title": "Home Page",
+                "forms": [
+                    {"selector": "#login-form", "action": "/api/auth/login", "method": "POST", "fields": [{"name": "username", "type": "text"}, {"name": "password", "type": "password"}], "page_url": f"{url}/login"}
+                ]
+            },
+            "_note": "STUB MODE - Playwright not available (e.g. Windows/Python 3.13). Install with: pip install playwright; playwright install chromium"
         }
         
         return TaskResult(

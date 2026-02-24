@@ -4,11 +4,13 @@
 **Date:** February 11, 2026  
 **Purpose:** Step-by-step implementation guide with code examples
 
+**API reference:** For request/response schemas, parameters, and examples see **[API_SPECIFICATION.md](./API_SPECIFICATION.md)**.
+
 ---
 
 ## Overview
 
-This guide provides concrete code examples for implementing Sprint 10 API v2 endpoints, based on existing codebase patterns.
+This guide provides concrete code examples for implementing Sprint 10 API v2 endpoints, based on existing codebase patterns. API v2 supports multiple entry points (full pipeline, per-agent, improve-tests); the authoritative spec is in API_SPECIFICATION.md.
 
 ---
 
