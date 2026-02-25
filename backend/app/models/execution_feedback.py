@@ -3,7 +3,7 @@ from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Floa
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
-from app.db.base import Base
+from app.db.base import Base, utc_now
 
 
 class ExecutionFeedback(Base):
@@ -68,8 +68,8 @@ class ExecutionFeedback(Base):
     tags = Column(JSON, nullable=True)  # Tags for categorization
     
     # Timestamps
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=utc_now, index=True)
+    updated_at = Column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
     
     def __repr__(self):
         return f"<ExecutionFeedback(id={self.id}, execution_id={self.execution_id}, failure_type={self.failure_type})>"

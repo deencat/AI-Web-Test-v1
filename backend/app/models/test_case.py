@@ -4,7 +4,7 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
 
-from app.db.base import Base
+from app.db.base import Base, utc_now
 
 
 class TestType(str, enum.Enum):
@@ -59,8 +59,8 @@ class TestCase(Base):
     test_metadata = Column(JSON, nullable=True)  # Additional metadata (renamed from 'metadata' to avoid SQLAlchemy conflict)
     
     # Metadata
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=utc_now)
+    updated_at = Column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
     
     # User association
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)

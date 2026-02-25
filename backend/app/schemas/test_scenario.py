@@ -35,9 +35,9 @@ class ScenarioGenerationRequest(BaseModel):
 
 class BatchGenerationRequest(BaseModel):
     """Schema for batch scenario generation"""
-    template_ids: List[int] = Field(..., min_items=1, description="Template IDs to generate from")
+    template_ids: List[int] = Field(..., min_length=1, description="Template IDs to generate from")
     base_context: Dict[str, Any] = Field(default_factory=dict, description="Base context for all scenarios")
-    variations: List[Dict[str, Any]] = Field(..., min_items=1, description="Context variations for each scenario")
+    variations: List[Dict[str, Any]] = Field(..., min_length=1, description="Context variations for each scenario")
 
 
 class TestScenarioUpdate(BaseModel):
@@ -76,7 +76,7 @@ class TestScenarioListResponse(BaseModel):
 class ScenarioValidationRequest(BaseModel):
     """Schema for validating scenario JSON"""
     name: str = Field(..., min_length=1, max_length=200)
-    steps: List[Dict[str, Any]] = Field(..., min_items=1)
+    steps: List[Dict[str, Any]] = Field(..., min_length=1)
     dependencies: Optional[List[Dict[str, Any]]] = None
 
 

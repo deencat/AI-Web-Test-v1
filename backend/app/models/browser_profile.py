@@ -7,7 +7,7 @@ from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Bool
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
-from app.db.base import Base
+from app.db.base import Base, utc_now
 
 
 class BrowserProfile(Base):
@@ -41,8 +41,8 @@ class BrowserProfile(Base):
     auto_sync = Column(Boolean, default=False, nullable=False)
     
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
     last_sync_at = Column(DateTime, nullable=True)  # Last time profile was synced
     
     # Relationships

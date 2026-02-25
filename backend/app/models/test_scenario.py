@@ -4,8 +4,8 @@ Stores generated test scenarios with steps, dependencies, and test data
 """
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
-from datetime import datetime
-from app.db.base import Base
+from datetime import datetime, timezone
+from app.db.base import Base, utc_now
 
 
 class TestScenario(Base):
@@ -35,8 +35,8 @@ class TestScenario(Base):
     
     # Metadata
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
     
     # Relationships
     template = relationship("TestTemplate", back_populates="scenarios")
@@ -57,7 +57,7 @@ class TestScenario(Base):
     def record_execution(self, success: bool):
         """Record execution result"""
         self.execution_count += 1
-        self.last_execution = datetime.utcnow()
+        self.last_execution = datetime.now(timezone.utc)
         self.last_execution_status = "passed" if success else "failed"
         self.status = "executed"
     

@@ -51,7 +51,7 @@ The following are **already implemented** in the codebase (no need to redo):
 
 | Item | Status | What to do |
 |------|--------|------------|
-| **10A.8** Iterative improvement | 🔨 Stub | `run_iterative_workflow` logs only; implement evolution → analysis loop |
+| **10A.8** Iterative improvement | ✅ Done (Feb 2026) | `run_iterative_workflow` implemented: load test cases by ID → evolution → analysis loop with cancel and convergence |
 | **10A.7, 10A.9, 10A.10, 10A.11** | ⏳ Pending | Multi-page crawl, dynamic URL, goal-oriented nav, integration tests |
 
 ---
@@ -82,7 +82,7 @@ The following are **already implemented** in the codebase (no need to redo):
 
 ### 5. **Later (Sprint 10 backlog)**
 
-- **10A.8** Iterative improvement: implement `run_iterative_workflow` (evolution → analysis loop, convergence).
+- ~~**10A.8** Iterative improvement~~ — ✅ **DONE** (Feb 2026): `run_iterative_workflow` and POST `/api/v2/improve-tests` implemented.
 - **10A.7** Multi-page flow crawling (ObservationAgent).
 - **10A.9** Dynamic URL crawling (EvolutionAgent).
 - **10A.10** Goal-oriented navigation (ObservationAgent).

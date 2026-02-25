@@ -5,7 +5,7 @@ Stores reusable test templates for different test types (API, E2E, Mobile, Perfo
 from sqlalchemy import Column, Integer, String, Text, Boolean, Float, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
-from app.db.base import Base
+from app.db.base import Base, utc_now
 
 
 class TestTemplate(Base):
@@ -36,8 +36,8 @@ class TestTemplate(Base):
     
     # Metadata
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
     
     # Relationships
     category = relationship("KBCategory", back_populates="test_templates")

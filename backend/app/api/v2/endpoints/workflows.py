@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, status, Path
 from app.schemas.workflow import WorkflowStatusResponse, WorkflowResultsResponse, WorkflowErrorResponse
 from app.services.workflow_store import get_state, request_cancel
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 router = APIRouter()
 
@@ -42,10 +42,10 @@ async def get_workflow_status(
                 "error": "Workflow not found",
                 "code": "NOT_FOUND",
                 "workflow_id": workflow_id,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             },
         )
-    started_at = _parse_datetime(state.get("started_at")) or datetime.utcnow()
+    started_at = _parse_datetime(state.get("started_at")) or datetime.now(timezone.utc)
     return WorkflowStatusResponse(
         workflow_id=state.get("workflow_id", workflow_id),
         status=state.get("status", "pending"),
@@ -79,7 +79,7 @@ async def get_workflow_results(
                 "error": "Workflow not found",
                 "code": "NOT_FOUND",
                 "workflow_id": workflow_id,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             },
         )
     result = state.get("result")
@@ -91,10 +91,10 @@ async def get_workflow_results(
                 "code": "NOT_READY",
                 "workflow_id": workflow_id,
                 "status": state.get("status"),
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             },
         )
-    completed_at = _parse_datetime(state.get("completed_at")) or datetime.utcnow()
+    completed_at = _parse_datetime(state.get("completed_at")) or datetime.now(timezone.utc)
     return WorkflowResultsResponse(
         workflow_id=workflow_id,
         status=state.get("status", "completed"),
@@ -134,7 +134,7 @@ async def cancel_workflow(
                 "error": "Workflow not found",
                 "code": "NOT_FOUND",
                 "workflow_id": workflow_id,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             },
         )
     request_cancel(workflow_id)

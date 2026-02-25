@@ -15,7 +15,7 @@ Usage:
 import os
 import sys
 import importlib.util
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -26,13 +26,17 @@ engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False} i
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+def _utc_now():
+    return datetime.now(timezone.utc)
+
+
 # Migration tracking table
 class MigrationHistory(Base):
     __tablename__ = "migration_history"
     
     id = Column(Integer, primary_key=True)
     migration_name = Column(String(255), unique=True, nullable=False)
-    applied_at = Column(DateTime, default=datetime.utcnow)
+    applied_at = Column(DateTime, default=_utc_now)
     success = Column(Integer, default=1)  # 1 = success, 0 = failed
     error_message = Column(Text, nullable=True)
 
@@ -95,7 +99,7 @@ def run_migration(migration_file, db):
         # Record successful migration
         history = MigrationHistory(
             migration_name=migration_name,
-            applied_at=datetime.utcnow(),
+            applied_at=_utc_now(),
             success=1
         )
         db.add(history)
@@ -110,7 +114,7 @@ def run_migration(migration_file, db):
         # Record failed migration
         history = MigrationHistory(
             migration_name=migration_name,
-            applied_at=datetime.utcnow(),
+            applied_at=_utc_now(),
             success=0,
             error_message=str(e)
         )

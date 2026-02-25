@@ -1,6 +1,6 @@
 """Pydantic schemas for test case API."""
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import datetime
 from app.models.test_case import TestType, Priority, TestStatus
 
@@ -13,8 +13,8 @@ class TestCaseBase(BaseModel):
     test_type: TestType = Field(..., description="Type of test (e2e, unit, integration, api)")
     priority: Priority = Field(default=Priority.MEDIUM, description="Test priority level")
     steps: List[str | Dict[str, Any]] = Field(
-        ..., 
-        min_items=1, 
+        ...,
+        min_length=1,
         description="""List of test steps (strings or step objects). 
         Step objects can include:
         - action: 'click', 'fill', 'navigate', 'verify', 'upload_file', etc.
@@ -79,7 +79,7 @@ class TestCaseUpdate(BaseModel):
     test_type: Optional[TestType] = None
     priority: Optional[Priority] = None
     status: Optional[TestStatus] = None
-    steps: Optional[List[str | Dict[str, Any]]] = Field(None, min_items=1)
+    steps: Optional[List[str | Dict[str, Any]]] = Field(None, min_length=1)
     expected_result: Optional[str] = Field(None, min_length=1)
     preconditions: Optional[str] = None
     test_data: Optional[Dict[str, Any]] = None
@@ -109,9 +109,7 @@ class TestCaseInDB(TestCaseBase):
     user_id: int
     scenario_id: Optional[int] = None
     template_id: Optional[int] = None
-    
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Schema for API response
@@ -171,9 +169,8 @@ class TestGenerationResponse(BaseModel):
     """Schema for test generation API response."""
     test_cases: List[GeneratedTestCase]
     metadata: Dict[str, Any] = Field(..., description="Generation metadata (model, tokens, etc.)")
-    
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "test_cases": [
                     {
@@ -202,6 +199,7 @@ class TestGenerationResponse(BaseModel):
                 }
             }
         }
+    )
 
 
 # Schema for test case list response (with pagination)

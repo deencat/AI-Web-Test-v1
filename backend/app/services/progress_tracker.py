@@ -7,7 +7,7 @@ and streams events to the frontend. Optional Redis backend can be added later.
 Reference: Sprint 10 - Frontend Integration & Real-time Agent Progress
 """
 from typing import Dict, Any, Optional, AsyncIterator
-from datetime import datetime
+from datetime import datetime, timezone
 import asyncio
 import json
 import logging
@@ -47,7 +47,7 @@ class ProgressTracker:
         event = {
             "event": event_type,
             "data": data,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         logger.debug("ProgressTracker.emit: workflow=%s event=%s", workflow_id, event_type)
         queue = await self._get_queue(workflow_id)
@@ -81,7 +81,7 @@ class ProgressTracker:
                 if asyncio.get_event_loop().time() - start >= timeout_seconds:
                     logger.info("ProgressTracker subscribe timeout workflow=%s", workflow_id)
                     break
-                yield {"event": "_keepalive", "data": {}, "timestamp": datetime.utcnow().isoformat()}
+                yield {"event": "_keepalive", "data": {}, "timestamp": datetime.now(timezone.utc).isoformat()}
                 continue
             yield event
             if event.get("event") in TERMINAL_EVENTS:

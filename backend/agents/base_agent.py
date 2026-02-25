@@ -11,7 +11,7 @@ Design Philosophy:
 
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Tuple, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 import asyncio
 import logging
@@ -91,7 +91,7 @@ class TaskContext:
         self.conversation_id = conversation_id
         self.priority = priority
         self.metadata = metadata or {}
-        self.created_at = datetime.utcnow()
+        self.created_at = datetime.now(timezone.utc)
         self.status = TaskStatus.PENDING
     
     def to_dict(self) -> Dict[str, Any]:
@@ -141,7 +141,7 @@ class TaskResult:
         self.confidence = confidence
         self.execution_time_seconds = execution_time_seconds
         self.metadata = metadata or {}
-        self.completed_at = datetime.utcnow()
+        self.completed_at = datetime.now(timezone.utc)
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -329,7 +329,7 @@ class BaseAgent(ABC):
         logger.info(f"Starting agent {self.agent_id} (type: {self.agent_type})")
         
         self.accepting_requests = True
-        self.started_at = datetime.utcnow()
+        self.started_at = datetime.now(timezone.utc)
         
         # Start background tasks
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
@@ -353,8 +353,8 @@ class BaseAgent(ABC):
         
         # Wait for active tasks (max 30 seconds)
         timeout = 30
-        start_wait = datetime.utcnow()
-        while self.active_tasks and (datetime.utcnow() - start_wait).total_seconds() < timeout:
+        start_wait = datetime.now(timezone.utc)
+        while self.active_tasks and (datetime.now(timezone.utc) - start_wait).total_seconds() < timeout:
             await asyncio.sleep(0.5)
         
         if self.active_tasks:
@@ -423,7 +423,7 @@ class BaseAgent(ABC):
             - average_execution_time
             - success_rate
         """
-        uptime = (datetime.utcnow() - self.started_at).total_seconds() if self.started_at else 0
+        uptime = (datetime.now(timezone.utc) - self.started_at).total_seconds() if self.started_at else 0
         total_tasks = self.tasks_completed + self.tasks_failed
         success_rate = self.tasks_completed / total_tasks if total_tasks > 0 else 0.0
         avg_exec_time = self.total_execution_time / self.tasks_completed if self.tasks_completed > 0 else 0.0

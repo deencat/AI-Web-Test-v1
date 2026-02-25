@@ -10,7 +10,7 @@ This service coordinates the execution of the 4-agent workflow:
 Reference: Sprint 10 - Frontend Integration & Real-time Agent Progress
 """
 from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 import logging
 import asyncio
@@ -99,7 +99,7 @@ class OrchestrationService:
 
         observation_agent, requirements_agent, analysis_agent, evolution_agent = self._create_agents(db=db)
 
-        started_at = datetime.utcnow()
+        started_at = datetime.now(timezone.utc)
         pt = self.progress_tracker
 
         def _emit(evt: str, data: dict):
@@ -118,7 +118,7 @@ class OrchestrationService:
                 "current_agent": None,
                 "error": "Cancelled by user",
                 "started_at": started_at.isoformat(),
-                "completed_at": datetime.utcnow().isoformat(),
+                "completed_at": datetime.now(timezone.utc).isoformat(),
             })
             if db:
                 try:
@@ -249,7 +249,7 @@ class OrchestrationService:
                 "duration_seconds": getattr(evolution_result, "execution_time_seconds", None),
             })
 
-            completed_at = datetime.utcnow()
+            completed_at = datetime.now(timezone.utc)
             total_duration = (completed_at - started_at).total_seconds()
             if pt:
                 await pt.emit(workflow_id, "workflow_completed", {
@@ -304,7 +304,7 @@ class OrchestrationService:
                 "status": "failed",
                 "error": str(e),
                 "started_at": started_at.isoformat(),
-                "completed_at": datetime.utcnow().isoformat(),
+                "completed_at": datetime.now(timezone.utc).isoformat(),
             })
             if db:
                 try:
@@ -329,7 +329,7 @@ class OrchestrationService:
         depth = request.get("depth", 1)
         login_credentials = request.get("login_credentials") or {}
         gmail_credentials = request.get("gmail_credentials") or {}
-        started_at = datetime.utcnow()
+        started_at = datetime.now(timezone.utc)
         pt = self.progress_tracker
 
         def _emit(evt: str, data: dict):
@@ -361,7 +361,7 @@ class OrchestrationService:
                 "status": "failed",
                 "error": observation_result.error or "Observation failed",
                 "started_at": started_at.isoformat(),
-                "completed_at": datetime.utcnow().isoformat(),
+                "completed_at": datetime.now(timezone.utc).isoformat(),
                 "workflow_type": "observation",
             })
             raise RuntimeError(observation_result.error or "Observation failed")
@@ -372,7 +372,7 @@ class OrchestrationService:
             "elements_found": len(ui_elements),
             "duration_seconds": getattr(observation_result, "execution_time_seconds", None),
         })
-        completed_at = datetime.utcnow()
+        completed_at = datetime.now(timezone.utc)
         total_duration = (completed_at - started_at).total_seconds()
         if pt:
             await pt.emit(workflow_id, "workflow_completed", {
@@ -423,7 +423,7 @@ class OrchestrationService:
         ui_elements = observation_result.get("ui_elements", [])
         page_context = observation_result.get("page_context", {})
         url = str(request.get("url") or page_context.get("url") or "")
-        started_at = datetime.utcnow()
+        started_at = datetime.now(timezone.utc)
         pt = self.progress_tracker
 
         def _emit(evt: str, data: dict):
@@ -454,7 +454,7 @@ class OrchestrationService:
                 "status": "failed",
                 "error": requirements_result.error or "Requirements failed",
                 "started_at": started_at.isoformat(),
-                "completed_at": datetime.utcnow().isoformat(),
+                "completed_at": datetime.now(timezone.utc).isoformat(),
                 "workflow_type": "requirements",
             })
             raise RuntimeError(requirements_result.error or "Requirements failed")
@@ -464,7 +464,7 @@ class OrchestrationService:
             "scenarios_generated": len(scenarios),
             "duration_seconds": getattr(requirements_result, "execution_time_seconds", None),
         })
-        completed_at = datetime.utcnow()
+        completed_at = datetime.now(timezone.utc)
         total_duration = (completed_at - started_at).total_seconds()
         if pt:
             await pt.emit(workflow_id, "workflow_completed", {
@@ -521,7 +521,7 @@ class OrchestrationService:
             raise ValueError("Missing requirements/observation: provide workflow_id or inline requirements_result and observation_result")
         scenarios = requirements_result.get("scenarios", [])
         page_context = observation_result.get("page_context", {})
-        started_at = datetime.utcnow()
+        started_at = datetime.now(timezone.utc)
         pt = self.progress_tracker
 
         def _emit(evt: str, data: dict):
@@ -550,7 +550,7 @@ class OrchestrationService:
                 "status": "failed",
                 "error": analysis_result.error or "Analysis failed",
                 "started_at": started_at.isoformat(),
-                "completed_at": datetime.utcnow().isoformat(),
+                "completed_at": datetime.now(timezone.utc).isoformat(),
                 "workflow_type": "analysis",
             })
             raise RuntimeError(analysis_result.error or "Analysis failed")
@@ -558,7 +558,7 @@ class OrchestrationService:
             "agent": "analysis",
             "duration_seconds": getattr(analysis_result, "execution_time_seconds", None),
         })
-        completed_at = datetime.utcnow()
+        completed_at = datetime.now(timezone.utc)
         total_duration = (completed_at - started_at).total_seconds()
         if pt:
             await pt.emit(workflow_id, "workflow_completed", {
@@ -625,7 +625,7 @@ class OrchestrationService:
         user_instruction = request.get("user_instruction") or ""
         login_credentials = request.get("login_credentials") or {}
         gmail_credentials = request.get("gmail_credentials") or {}
-        started_at = datetime.utcnow()
+        started_at = datetime.now(timezone.utc)
         pt = self.progress_tracker
 
         def _emit(evt: str, data: dict):
@@ -668,7 +668,7 @@ class OrchestrationService:
                 "status": "failed",
                 "error": evolution_result.error or "Evolution failed",
                 "started_at": started_at.isoformat(),
-                "completed_at": datetime.utcnow().isoformat(),
+                "completed_at": datetime.now(timezone.utc).isoformat(),
                 "workflow_type": "evolution",
             })
             raise RuntimeError(evolution_result.error or "Evolution failed")
@@ -679,7 +679,7 @@ class OrchestrationService:
             "tests_generated": test_count,
             "duration_seconds": getattr(evolution_result, "execution_time_seconds", None),
         })
-        completed_at = datetime.utcnow()
+        completed_at = datetime.now(timezone.utc)
         total_duration = (completed_at - started_at).total_seconds()
         if pt:
             await pt.emit(workflow_id, "workflow_completed", {
@@ -744,240 +744,246 @@ class OrchestrationService:
         Returns:
             Dict containing final workflow results with iteration history
         
-        Status: STUB - Not yet implemented
-        Implementation: Sprint 10 Task 10A.8
+        Implementation: Sprint 10 Task 10A.8 (improve-tests path: test_case_ids → evolution→analysis loop).
         """
-        logger.info(f"[STUB] OrchestrationService.run_iterative_workflow called for workflow {workflow_id}")
-        logger.info(f"  Max iterations: {max_iterations}")
-        logger.info(f"  Goal indicators: {goal_indicators}")
-        
-        # TODO: Sprint 10 Task 10A.8 Implementation
-        # try:
-        #     url = request.get("url")
-        #     user_instruction = request.get("user_instruction", "")
-        #     login_credentials = request.get("login_credentials", {})
-        #     
-        #     # Initialize iteration tracking
-        #     iteration_history = []
-        #     best_score = 0.0
-        #     best_test_cases = None
-        #     goal_reached = False
-        #     
-        #     # Stage 1: Initial Observation (Multi-Page Flow Crawling)
-        #     logger.info(f"[Iterative] Stage 1: Multi-page flow crawling...")
-        #     await self.progress_tracker.emit(workflow_id, "agent_started", {
-        #         "agent": "observation",
-        #         "stage": "initial_crawl",
-        #         "timestamp": datetime.utcnow().isoformat()
-        #     })
-        #     
-        #     observation_task = TaskContext(
-        #         task_id=f"{workflow_id}-observation-0",
-        #         task_type="multi_page_crawl",
-        #         payload={
-        #             "url": url,
-        #             "user_instruction": user_instruction,
-        #             "login_credentials": login_credentials
-        #         }
-        #     )
-        #     observation_result = await self.observation_agent.execute_task(observation_task)
-        #     
-        #     if not observation_result.success:
-        #         raise ValueError(f"ObservationAgent failed: {observation_result.error}")
-        #     
-        #     pages_data = observation_result.result.get("pages", [])
-        #     all_urls = [p.get("url") for p in pages_data]
-        #     
-        #     await self.progress_tracker.emit(workflow_id, "agent_completed", {
-        #         "agent": "observation",
-        #         "pages_crawled": len(pages_data),
-        #         "urls": all_urls
-        #     })
-        #     
-        #     # Stage 2: Requirements Generation (from all pages)
-        #     logger.info(f"[Iterative] Stage 2: Generating test requirements from {len(pages_data)} pages...")
-        #     await self.progress_tracker.emit(workflow_id, "agent_started", {
-        #         "agent": "requirements",
-        #         "stage": "initial_generation"
-        #     })
-        #     
-        #     requirements_task = TaskContext(
-        #         task_id=f"{workflow_id}-requirements-0",
-        #         task_type="test_requirements",
-        #         payload={
-        #             "pages": pages_data,
-        #             "user_instruction": user_instruction,
-        #             "urls": all_urls
-        #         }
-        #     )
-        #     requirements_result = await self.requirements_agent.execute_task(requirements_task)
-        #     
-        #     if not requirements_result.success:
-        #         raise ValueError(f"RequirementsAgent failed: {requirements_result.error}")
-        #     
-        #     initial_scenarios = requirements_result.result.get("scenarios", [])
-        #     
-        #     await self.progress_tracker.emit(workflow_id, "agent_completed", {
-        #         "agent": "requirements",
-        #         "scenarios_generated": len(initial_scenarios)
-        #     })
-        #     
-        #     # Iterative Improvement Loop
-        #     current_scenarios = initial_scenarios
-        #     current_test_cases = None
-        #     
-        #     for iteration in range(1, max_iterations + 1):
-        #         logger.info(f"[Iterative] Iteration {iteration}/{max_iterations}...")
-        #         
-        #         # Stage 3: Evolution - Generate/Improve Test Cases
-        #         logger.info(f"[Iterative] Stage 3.{iteration}: EvolutionAgent generating test cases...")
-        #         await self.progress_tracker.emit(workflow_id, "agent_started", {
-        #             "agent": "evolution",
-        #             "iteration": iteration,
-        #             "stage": "test_generation"
-        #         })
-        #         
-        #         evolution_payload = {
-        #             "scenarios": current_scenarios,
-        #             "iteration": iteration,
-        #             "previous_feedback": iteration_history[-1].get("analysis_feedback") if iteration_history else None
-        #         }
-        #         
-        #         # If EvolutionAgent needs to crawl specific URLs, call ObservationAgent
-        #         if iteration > 1 and iteration_history[-1].get("needs_additional_crawl"):
-        #             logger.info(f"[Iterative] EvolutionAgent requesting additional crawl...")
-        #             additional_urls = iteration_history[-1].get("urls_to_crawl", [])
-        #             
-        #             for additional_url in additional_urls:
-        #                 obs_task = TaskContext(
-        #                     task_id=f"{workflow_id}-observation-{iteration}-{additional_url}",
-        #                     task_type="single_page_crawl",
-        #                     payload={"url": additional_url}
-        #                 )
-        #                 additional_result = await self.observation_agent.execute_task(obs_task)
-        #                 if additional_result.success:
-        #                     evolution_payload["additional_pages"] = additional_result.result.get("pages", [])
-        #         
-        #         evolution_task = TaskContext(
-        #             task_id=f"{workflow_id}-evolution-{iteration}",
-        #             task_type="test_generation",
-        #             payload=evolution_payload
-        #         )
-        #         evolution_result = await self.evolution_agent.execute_task(evolution_task)
-        #         
-        #         if not evolution_result.success:
-        #             logger.warning(f"EvolutionAgent failed in iteration {iteration}: {evolution_result.error}")
-        #             break
-        #         
-        #         current_test_cases = evolution_result.result.get("test_cases", [])
-        #         
-        #         await self.progress_tracker.emit(workflow_id, "agent_completed", {
-        #             "agent": "evolution",
-        #             "iteration": iteration,
-        #             "test_cases_generated": len(current_test_cases)
-        #         })
-        #         
-        #         # Stage 4: Analysis - Run Tests and Score
-        #         logger.info(f"[Iterative] Stage 4.{iteration}: AnalysisAgent running tests and scoring...")
-        #         await self.progress_tracker.emit(workflow_id, "agent_started", {
-        #             "agent": "analysis",
-        #             "iteration": iteration,
-        #             "stage": "test_execution"
-        #         })
-        #         
-        #         analysis_task = TaskContext(
-        #             task_id=f"{workflow_id}-analysis-{iteration}",
-        #             task_type="test_analysis",
-        #             payload={
-        #                 "test_cases": current_test_cases,
-        #                 "pages": pages_data,
-        #                 "enable_realtime_execution": True,  # Execute tests in real-time
-        #                 "goal_indicators": goal_indicators or ["confirmation", "success", "order"]
-        #             }
-        #         )
-        #         analysis_result = await self.analysis_agent.execute_task(analysis_task)
-        #         
-        #         if not analysis_result.success:
-        #             logger.warning(f"AnalysisAgent failed in iteration {iteration}: {analysis_result.error}")
-        #             break
-        #         
-        #         # Extract scoring and feedback
-        #         analysis_data = analysis_result.result
-        #         overall_score = analysis_data.get("overall_score", 0.0)
-        #         goal_reached_flag = analysis_data.get("goal_reached", False)
-        #         feedback = analysis_data.get("feedback", {})
-        #         
-        #         # Track best result
-        #         if overall_score > best_score:
-        #             best_score = overall_score
-        #             best_test_cases = current_test_cases
-        #         
-        #         # Record iteration
-        #         iteration_record = {
-        #             "iteration": iteration,
-        #             "test_cases": current_test_cases,
-        #             "score": overall_score,
-        #             "goal_reached": goal_reached_flag,
-        #             "analysis_feedback": feedback,
-        #             "needs_additional_crawl": feedback.get("needs_additional_crawl", False),
-        #             "urls_to_crawl": feedback.get("urls_to_crawl", [])
-        #         }
-        #         iteration_history.append(iteration_record)
-        #         
-        #         await self.progress_tracker.emit(workflow_id, "agent_completed", {
-        #             "agent": "analysis",
-        #             "iteration": iteration,
-        #             "score": overall_score,
-        #             "goal_reached": goal_reached_flag
-        #         })
-        #         
-        #         # Check convergence criteria
-        #         if goal_reached_flag:
-        #             logger.info(f"[Iterative] Goal reached at iteration {iteration}!")
-        #             goal_reached = True
-        #             break
-        #         
-        #         if overall_score >= 0.95:  # High score threshold
-        #             logger.info(f"[Iterative] High score achieved ({overall_score}) at iteration {iteration}")
-        #             break
-        #         
-        #         # Update scenarios for next iteration based on feedback
-        #         if feedback.get("improved_scenarios"):
-        #             current_scenarios = feedback.get("improved_scenarios")
-        #     
-        #     # Final Results
-        #     final_result = {
-        #         "workflow_id": workflow_id,
-        #         "status": "completed",
-        #         "goal_reached": goal_reached,
-        #         "iterations_completed": len(iteration_history),
-        #         "best_score": best_score,
-        #         "final_test_cases": best_test_cases or current_test_cases,
-        #         "iteration_history": iteration_history,
-        #         "pages_crawled": len(pages_data),
-        #         "initial_scenarios": len(initial_scenarios)
-        #     }
-        #     
-        #     await self.progress_tracker.emit(workflow_id, "workflow_completed", final_result)
-        #     
-        #     return final_result
-        #     
-        # except Exception as e:
-        #     logger.error(f"Iterative workflow failed: {e}", exc_info=True)
-        #     await self.progress_tracker.emit(workflow_id, "workflow_failed", {
-        #         "error": str(e)
-        #     })
-        #     raise
-        
-        # STUB: Return mock response
-        return {
-            "workflow_id": workflow_id,
-            "status": "stub",
-            "message": "Iterative workflow not yet implemented. Will be completed in Sprint 10 Task 10A.8.",
-            "max_iterations": max_iterations,
-            "goal_indicators": goal_indicators
+        from agents.base_agent import TaskContext
+        from app.services.workflow_store import update_state, set_state, get_state, is_cancel_requested
+
+        test_case_ids = request.get("test_case_ids") or []
+        user_instruction = (request.get("user_instruction") or "").strip()
+        if not test_case_ids:
+            raise ValueError("run_iterative_workflow requires test_case_ids (improve-tests path)")
+
+        db = None
+        try:
+            from app.db.session import SessionLocal
+            db = SessionLocal()
+        except Exception as e:
+            logger.warning(f"DB session not available: {e}")
+            raise ValueError("Database required for iterative improvement workflow") from e
+
+        from app.crud.test_case import get_test_case
+
+        def _test_cases_to_scenarios(tcs: List[Any]) -> List[Dict[str, Any]]:
+            """Build scenario-like dicts for analysis/evolution from TestCase list."""
+            scenarios = []
+            for tc in tcs:
+                steps = tc.steps if isinstance(tc.steps, list) else []
+                when = " | ".join(steps) if steps else (tc.description or "")
+                scenarios.append({
+                    "scenario_id": str(tc.id),
+                    "title": tc.title or "",
+                    "given": tc.description or "",
+                    "when": when,
+                    "then": tc.expected_result or "",
+                })
+            return scenarios
+
+        # Load initial test cases
+        test_cases = []
+        for tid in test_case_ids:
+            tc = get_test_case(db, int(tid))
+            if not tc:
+                raise ValueError(f"Test case not found: {tid}")
+            test_cases.append(tc)
+
+        current_scenarios = _test_cases_to_scenarios(test_cases)
+        page_context: Dict[str, Any] = {}
+        requirements_result = {
+            "scenarios": current_scenarios,
+            "test_data": [],
+            "coverage_metrics": {},
         }
-    
+        observation_result = {"page_context": page_context}
+
+        started_at = datetime.now(timezone.utc)
+        pt = self.progress_tracker
+        iteration_history: List[Dict[str, Any]] = []
+        best_score = 0.0
+        final_test_case_ids = list(test_case_ids)
+        previous_analysis: Dict[str, Any] = {}
+
+        def _emit(evt: str, data: dict):
+            if pt:
+                asyncio.create_task(pt.emit(workflow_id, evt, data))
+            update_state(workflow_id, current_agent=data.get("agent"), status="running")
+
+        def _check_cancelled() -> bool:
+            if not is_cancel_requested(workflow_id):
+                return False
+            if pt:
+                asyncio.create_task(pt.emit(workflow_id, "workflow_failed", {"error": "Cancelled by user"}))
+            set_state(workflow_id, {
+                "workflow_id": workflow_id,
+                "status": "cancelled",
+                "current_agent": None,
+                "error": "Cancelled by user",
+                "started_at": started_at.isoformat(),
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "workflow_type": "improve",
+                "result": {
+                    "test_case_ids": final_test_case_ids,
+                    "iteration_history": iteration_history,
+                    "iterations_completed": len(iteration_history),
+                },
+            })
+            return True
+
+        update_state(workflow_id, status="running", workflow_type="improve")
+        _, _, analysis_agent, evolution_agent = self._create_agents(db=db)
+        try:
+            for iteration in range(1, max_iterations + 1):
+                logger.info(f"[Iterative] Iteration {iteration}/{max_iterations}")
+
+                if _check_cancelled():
+                    return {"workflow_id": workflow_id, "status": "cancelled", "iteration_history": iteration_history}
+
+                # Evolution: improve tests from current scenarios + prior analysis + user_instruction
+                _emit("agent_started", {"agent": "evolution", "iteration": iteration})
+                evolution_payload = {
+                    "scenarios": current_scenarios,
+                    "risk_scores": previous_analysis.get("risk_scores", []),
+                    "final_prioritization": previous_analysis.get("final_prioritization", []),
+                    "page_context": page_context,
+                    "test_data": requirements_result.get("test_data", []),
+                }
+                if user_instruction:
+                    evolution_payload["user_instruction"] = user_instruction
+                evolution_task = TaskContext(
+                    conversation_id=workflow_id,
+                    task_id=f"{workflow_id}-evo-{iteration}",
+                    task_type="test_generation",
+                    payload=evolution_payload,
+                    priority=5,
+                )
+                evolution_result = await evolution_agent.execute_task(evolution_task)
+                if not evolution_result.success:
+                    set_state(workflow_id, {
+                        "workflow_id": workflow_id,
+                        "status": "failed",
+                        "error": evolution_result.error or "Evolution failed",
+                        "started_at": started_at.isoformat(),
+                        "completed_at": datetime.now(timezone.utc).isoformat(),
+                        "workflow_type": "improve",
+                        "result": {"iteration_history": iteration_history},
+                    })
+                    raise RuntimeError(evolution_result.error or "Evolution failed")
+
+                new_test_case_ids = evolution_result.result.get("test_case_ids", [])
+                _emit("agent_completed", {"agent": "evolution", "iteration": iteration, "test_count": len(new_test_case_ids)})
+
+                if _check_cancelled():
+                    return {"workflow_id": workflow_id, "status": "cancelled", "iteration_history": iteration_history}
+
+                # Load new test cases for analysis (and next evolution round)
+                next_test_cases = []
+                for tid in new_test_case_ids:
+                    tc = get_test_case(db, int(tid))
+                    if tc:
+                        next_test_cases.append(tc)
+                if next_test_cases:
+                    current_scenarios = _test_cases_to_scenarios(next_test_cases)
+                    final_test_case_ids = list(new_test_case_ids)
+                requirements_result["scenarios"] = current_scenarios
+
+                # Analysis: score current scenarios
+                _emit("agent_started", {"agent": "analysis", "iteration": iteration})
+                analysis_task = TaskContext(
+                    conversation_id=workflow_id,
+                    task_id=f"{workflow_id}-ana-{iteration}",
+                    task_type="risk_analysis",
+                    payload={
+                        "scenarios": current_scenarios,
+                        "test_data": requirements_result.get("test_data", []),
+                        "coverage_metrics": requirements_result.get("coverage_metrics", {}),
+                        "page_context": page_context,
+                    },
+                    priority=5,
+                )
+                analysis_result = await analysis_agent.execute_task(analysis_task)
+                if not analysis_result.success:
+                    set_state(workflow_id, {
+                        "workflow_id": workflow_id,
+                        "status": "failed",
+                        "error": analysis_result.error or "Analysis failed",
+                        "started_at": started_at.isoformat(),
+                        "completed_at": datetime.now(timezone.utc).isoformat(),
+                        "workflow_type": "improve",
+                        "result": {"iteration_history": iteration_history},
+                    })
+                    raise RuntimeError(analysis_result.error or "Analysis failed")
+
+                previous_analysis = analysis_result.result or {}
+                risk_list = previous_analysis.get("risk_scores", [])
+                # Simple score: lower average RPN is better; normalize to 0-1 (e.g. 1 - min(1, avg_rpn/100))
+                rpns = [r.get("rpn", 0) for r in risk_list if isinstance(r, dict)]
+                avg_rpn = (sum(rpns) / len(rpns)) if rpns else 0
+                score = max(0.0, 1.0 - (avg_rpn / 100.0))
+                if score > best_score:
+                    best_score = score
+                iteration_history.append({
+                    "iteration": iteration,
+                    "test_case_ids": list(final_test_case_ids),
+                    "test_count": len(final_test_case_ids),
+                    "score": score,
+                    "avg_rpn": avg_rpn,
+                })
+                _emit("agent_completed", {"agent": "analysis", "iteration": iteration, "score": score})
+
+                # Convergence: stop at max_iterations or if score is high enough
+                if iteration >= max_iterations or score >= 0.95:
+                    logger.info(f"[Iterative] Stopping at iteration {iteration} (score={score}, max_iterations={max_iterations})")
+                    break
+
+            completed_at = datetime.now(timezone.utc)
+            total_duration = (completed_at - started_at).total_seconds()
+            result = {
+                "test_case_ids": final_test_case_ids,
+                "test_count": len(final_test_case_ids),
+                "iteration_history": iteration_history,
+                "iterations_completed": len(iteration_history),
+                "best_score": best_score,
+                "total_duration_seconds": total_duration,
+            }
+            if pt:
+                await pt.emit(workflow_id, "workflow_completed", {
+                    "workflow_id": workflow_id,
+                    "status": "completed",
+                    **result,
+                })
+            set_state(workflow_id, {
+                "workflow_id": workflow_id,
+                "status": "completed",
+                "current_agent": None,
+                "total_progress": 1.0,
+                "started_at": started_at.isoformat(),
+                "completed_at": completed_at.isoformat(),
+                "error": None,
+                "workflow_type": "improve",
+                "result": result,
+            })
+            return {"workflow_id": workflow_id, "status": "completed", **result}
+        except Exception as e:
+            logger.exception("Iterative workflow %s failed: %s", workflow_id, e)
+            if pt:
+                asyncio.create_task(pt.emit(workflow_id, "workflow_failed", {"error": str(e)}))
+            set_state(workflow_id, {
+                "workflow_id": workflow_id,
+                "status": "failed",
+                "error": str(e),
+                "started_at": started_at.isoformat(),
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "workflow_type": "improve",
+                "result": {"iteration_history": iteration_history},
+            })
+            raise
+        finally:
+            if db:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+
     async def cancel_workflow(self, workflow_id: str) -> bool:
         """
         Cancel a running workflow.
