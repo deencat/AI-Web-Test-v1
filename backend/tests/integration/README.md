@@ -3,6 +3,7 @@
 ## Active Documentation
 
 ### User Guides (Keep These)
+- **[E2E_REAL_RUN_GUIDE.md](./E2E_REAL_RUN_GUIDE.md)** - How to run the 4-agent E2E real test (env vars, Gmail/OTP, run script)
 - **[USER_INSTRUCTION_USAGE.md](./USER_INSTRUCTION_USAGE.md)** - How to use user instruction support
 - **[LOGIN_CREDENTIALS_USAGE.md](./LOGIN_CREDENTIALS_USAGE.md)** - How to pass login credentials
 - **[HOW_TO_VIEW_TEST_STEPS.md](./HOW_TO_VIEW_TEST_STEPS.md)** - How to view generated test steps
@@ -32,6 +33,16 @@
 ```powershell
 $env:USER_INSTRUCTION = "Complete purchase flow for '5G寬頻數據無限任用' plan with 48個月 contract term"
 python -u -m pytest .\tests\integration\test_four_agent_e2e_real.py -v -s
+```
+
+### Run 4-Agent E2E Real Test
+See **[E2E_REAL_RUN_GUIDE.md](./E2E_REAL_RUN_GUIDE.md)** for required env vars (Azure OpenAI, optional Gmail/OTP) and Gmail "+" alias behaviour.
+
+```powershell
+# From backend with venv active (set AZURE_OPENAI_* first)
+python -u -m pytest .\tests\integration\test_four_agent_e2e_real.py::TestFourAgentE2EReal::test_complete_4_agent_workflow_real -v -s
+# Or use helper script:
+.\scripts\run_e2e_real.ps1
 ```
 
 ### Run Test with Login Credentials

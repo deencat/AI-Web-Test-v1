@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field, HttpUrl
 
 
 class GenerateTestsRequest(BaseModel):
-    """Request to generate tests using 4-agent workflow."""
+    """Request to generate tests using full 4-agent workflow (single entry)."""
     url: HttpUrl = Field(..., description="Target URL to analyze and generate tests for")
     user_instruction: Optional[str] = Field(
         None,
@@ -26,7 +26,11 @@ class GenerateTestsRequest(BaseModel):
     )
     login_credentials: Optional[Dict[str, str]] = Field(
         None,
-        description="Optional login credentials: {'username': '...', 'password': '...'}"
+        description="Website login: {'username': '...', 'password': '...'} or {'email': '...', 'password': '...'}"
+    )
+    gmail_credentials: Optional[Dict[str, str]] = Field(
+        None,
+        description="Gmail login for OTP verification: {'email': '...', 'password': '...'}. Used when flow requires checking email for OTP."
     )
 
     class Config:
@@ -38,8 +42,88 @@ class GenerateTestsRequest(BaseModel):
                 "login_credentials": {
                     "username": "test@example.com",
                     "password": "password123"
+                },
+                "gmail_credentials": {
+                    "email": "myaccount@gmail.com",
+                    "password": "gmail-app-password"
                 }
             }
+        }
+
+
+# ---- Multi-entry-point: per-agent / per-stage requests ----
+
+
+class ObservationRequest(BaseModel):
+    """Request to run ObservationAgent only (crawl URL, extract UI elements)."""
+    url: HttpUrl = Field(..., description="Target URL to observe")
+    user_instruction: Optional[str] = Field(None, description="Optional instruction for observation")
+    depth: int = Field(default=1, ge=1, le=3, description="Crawl depth")
+    login_credentials: Optional[Dict[str, str]] = Field(None, description="Website login (username/email + password)")
+    gmail_credentials: Optional[Dict[str, str]] = Field(None, description="Gmail login for OTP verification (email + password)")
+
+    class Config:
+        json_schema_extra = {
+            "example": {"url": "https://example.com/login", "depth": 1}
+        }
+
+
+class RequirementsRequest(BaseModel):
+    """Request to run RequirementsAgent. Provide workflow_id (from observation) or inline observation payload."""
+    workflow_id: Optional[str] = Field(None, description="ID of workflow that has observation results")
+    observation_result: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Inline observation result (ui_elements, page_structure, page_context) if no workflow_id"
+    )
+    user_instruction: Optional[str] = Field(None, description="Optional instruction for scenarios")
+
+    class Config:
+        json_schema_extra = {
+            "example": {"workflow_id": "wf-abc123"}
+        }
+
+
+class AnalysisRequest(BaseModel):
+    """Request to run AnalysisAgent. Provide workflow_id (from requirements) or inline payload."""
+    workflow_id: Optional[str] = Field(None, description="ID of workflow that has requirements (and observation) results")
+    requirements_result: Optional[Dict[str, Any]] = Field(None, description="Inline requirements result if no workflow_id")
+    observation_result: Optional[Dict[str, Any]] = Field(None, description="Inline observation (page_context etc.) if no workflow_id")
+    user_instruction: Optional[str] = Field(None, description="Optional instruction")
+
+    class Config:
+        json_schema_extra = {
+            "example": {"workflow_id": "wf-abc123"}
+        }
+
+
+class EvolutionRequest(BaseModel):
+    """Request to run EvolutionAgent (test generation). Provide workflow_id or inline payload."""
+    workflow_id: Optional[str] = Field(None, description="ID of workflow that has analysis (and prior) results")
+    analysis_result: Optional[Dict[str, Any]] = Field(None, description="Inline analysis result if no workflow_id")
+    requirements_result: Optional[Dict[str, Any]] = Field(None, description="Inline requirements if no workflow_id")
+    observation_result: Optional[Dict[str, Any]] = Field(None, description="Inline observation (page_context) if no workflow_id")
+    user_instruction: Optional[str] = Field(None, description="Optional instruction for test generation")
+    login_credentials: Optional[Dict[str, str]] = Field(None, description="Website login for evolution step generation")
+    gmail_credentials: Optional[Dict[str, str]] = Field(None, description="Gmail login for OTP (if tests need to reference it)")
+
+    class Config:
+        json_schema_extra = {
+            "example": {"workflow_id": "wf-abc123"}
+        }
+
+
+class ImproveTestsRequest(BaseModel):
+    """Request to improve existing tests (iterative evolution + analysis)."""
+    test_case_ids: List[int] = Field(..., description="IDs of test cases to improve")
+    user_instruction: Optional[str] = Field(
+        None,
+        description="Optional instruction (e.g., 'Focus on edge cases', 'Add assertions')"
+    )
+    max_iterations: int = Field(default=5, ge=1, le=20, description="Max improvement iterations")
+
+    class Config:
+        json_schema_extra = {
+            "example": {"test_case_ids": [101, 102], "user_instruction": "Add more assertions", "max_iterations": 3}
         }
 
 

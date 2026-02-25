@@ -4,6 +4,8 @@
 **Date:** February 11, 2026  
 **Purpose:** Technical research and implementation patterns for Sprint 10
 
+**API reference:** Request/response details and parameters: **[API_SPECIFICATION.md](./API_SPECIFICATION.md)**.
+
 ---
 
 ## 1. Server-Sent Events (SSE) Implementation

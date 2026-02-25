@@ -1,8 +1,9 @@
 # Developer A: Next Steps & Action Plan
-**Date:** February 10, 2026  
-**Status:** 📋 **READY FOR SPRINT 10**  
+**Date:** February 23, 2026  
+**Status:** ✅ **SPRINT 10 API COMPLETE — MERGED TO MAIN & PUBLISHED**  
 **Sprint 9 Status:** ✅ **100% COMPLETE** (30/30 points)  
-**Sprint 10 Start:** March 6, 2026 (24 days from now)
+**Sprint 10 Start:** March 6, 2026  
+**Last doc update:** Feb 2026 — API v2 complete; feature branch merged to `main` and pushed to `origin/main`. Developer B can pull `main` for API spec and running backend.
 
 ---
 
@@ -26,6 +27,69 @@
 
 ---
 
+## ✅ What’s Already Done (API v2 – as of Feb 2026)
+
+The following are **already implemented** in the codebase (no need to redo):
+
+| Item | Status | Location |
+|------|--------|----------|
+| **10A.1** API schema & stubs | ✅ Done | `backend/app/schemas/workflow.py`, all v2 endpoints |
+| **10A.2** POST `/api/v2/generate-tests` | ✅ Done | `backend/app/api/v2/endpoints/generate_tests.py` — 202, background workflow |
+| **Multi-entry API** | ✅ Done | POST `/observation`, `/requirements`, `/analysis`, `/evolution`, `/improve-tests` |
+| **10A.4** OrchestrationService | ✅ Done | `backend/app/services/orchestration_service.py` — `run_workflow` + per-stage methods |
+| **10A.5** GET workflow status & results | ✅ Done | `backend/app/api/v2/endpoints/workflows.py` — GET `/{id}`, GET `/{id}/results` |
+| **10A.3** SSE stream | ✅ Done | `backend/app/api/v2/endpoints/sse_stream.py` — StreamingResponse; `ProgressTracker` in-memory queues + `subscribe()` |
+| **ProgressTracker** | ✅ Done | `backend/app/services/progress_tracker.py` — in-memory queues, `emit()`, `subscribe()`; orchestration emits; optional Redis hook |
+| **API specification** | ✅ Done | [API_SPECIFICATION.md](../backend/app/api/v2/API_SPECIFICATION.md) — parameters, examples, chaining |
+| **Workflow store** | ✅ Done | In-memory store in `workflow_store.py` (status/results); `request_cancel` / `is_cancel_requested` for cancel |
+| **10A.5** DELETE cancel workflow | ✅ Done | `workflows.py` — 204/404; store flag; orchestration checks between stages |
+| **10A.6** Unit tests | ✅ Done | `tests/unit/test_workflow_store.py`, `test_api_v2_endpoints.py`, `test_orchestration_cancel.py` (20 tests) |
+
+**Recent (Feb 2026):** Observation working (Windows ProactorEventLoop); SSE (10A.3) implemented; workflow cancel (10A.5) and unit tests (10A.6) implemented.
+
+**Still stub / not implemented:**
+
+| Item | Status | What to do |
+|------|--------|------------|
+| **10A.8** Iterative improvement | 🔨 Stub | `run_iterative_workflow` logs only; implement evolution → analysis loop |
+| **10A.7, 10A.9, 10A.10, 10A.11** | ⏳ Pending | Multi-page crawl, dynamic URL, goal-oriented nav, integration tests |
+
+---
+
+## 🎯 Developer A: Next Steps (in order)
+
+### 1. ~~**SSE real-time progress (10A.3)**~~ — ✅ **DONE** (Feb 2026)
+
+- **Goal:** Frontend can open `GET /api/v2/workflows/{workflow_id}/stream` and receive real-time events.
+- **Implemented:** In-memory `ProgressTracker` (queues + `subscribe()`), SSE endpoint in `sse_stream.py` (StreamingResponse, event types per API spec). Optional Redis can be added later.
+
+### 2. ~~**Implement workflow cancel (10A.5)**~~ — ✅ **DONE** (Feb 2026)
+
+- **Implemented:** DELETE returns 204/404; `request_cancel` / `is_cancel_requested` in workflow store; orchestration checks between stages and sets status `cancelled`.
+
+### 3. ~~**Unit tests (10A.6)**~~ — ✅ **DONE** (Feb 2026)
+
+- **Implemented:** 20 unit tests in `tests/unit/`: workflow_store (get/set/update/delete, request_cancel, is_cancel_requested), API v2 endpoints (POST generate-tests 202, GET status/results 200/404, DELETE cancel 204/404), orchestration cancel (run_workflow exits when cancel requested).
+
+### 4. **API spec handoff to Developer B** — ✅ **READY** (main published)
+
+- **Goal:** Developer B can build the frontend from a stable contract.
+- **Status:** `feature/sprint10-backend-api` was merged to `main` and pushed to `origin/main`. Developer B should pull latest `main` to get the API v2 implementation, Phase3 docs, and API spec.
+- **Tasks for Developer B:**
+  - [ ] Pull latest `main`: `git pull origin main`
+  - [ ] OpenAPI: `GET /api/v2/openapi.json` and Swagger UI at `/api/v2/docs` (when backend is running)
+  - [ ] Spec document: [API_SPECIFICATION.md](../backend/app/api/v2/API_SPECIFICATION.md) — endpoints, request/response, SSE (§6)
+
+### 5. **Later (Sprint 10 backlog)**
+
+- **10A.8** Iterative improvement: implement `run_iterative_workflow` (evolution → analysis loop, convergence).
+- **10A.7** Multi-page flow crawling (ObservationAgent).
+- **10A.9** Dynamic URL crawling (EvolutionAgent).
+- **10A.10** Goal-oriented navigation (ObservationAgent).
+- **10A.11** Integration tests for iterative workflow.
+
+---
+
 ## 🚀 Immediate Next Steps (Before Sprint 10)
 
 ### Week 1: Preparation & Planning (Feb 10-16, 2026)
@@ -36,7 +100,7 @@
 - [ ] **Review Sprint 10 Requirements**
   - [ ] Read [Sprint 10 Gap Analysis](supporting-documents/SPRINT_10_GAP_ANALYSIS_AND_PLAN.md)
   - [ ] Review [Task Split Strategy](SPRINT_10_11_TASK_SPLIT_STRATEGY.md)
-  - [ ] Understand API contract definition process
+  - [ ] Understand API-first handoff (complete API → pass spec to Developer B)
   - [ ] Review Server-Sent Events (SSE) implementation patterns
 
 - [ ] **Technical Research**
@@ -132,74 +196,45 @@
 
 ---
 
-#### Day 11-14: Team Coordination (Feb 20-23)
+#### Day 11-14: Final Preparation (Feb 20-23)
 
 **Action Items:**
-- [ ] **Coordinate with Developer B**
-  - [ ] Schedule API Contract Definition session (Day 1 of Sprint 10)
-  - [ ] Share API design document
-  - [ ] Review TypeScript types together
-  - [ ] Agree on event schema
-
 - [ ] **Final Preparation**
   - [ ] Review all Sprint 10 tasks
   - [ ] Prepare implementation checklist
   - [ ] Set up development tools
   - [ ] Create task tracking (if using Jira/Linear)
 
+- [ ] **Plan API Handoff (for Developer B)**
+  - [ ] Ensure OpenAPI/Swagger will be available at `/api/v2/docs` when API is complete
+  - [ ] Note: No joint session required; Developer A completes API and passes spec to Developer B for frontend development
+
 **Deliverables:**
-- ✅ Team alignment
-- ✅ API contract session scheduled
 - ✅ Ready for Sprint 10 kickoff
+- ✅ Clear handoff approach (API spec → Developer B)
 
 ---
 
 ## 📅 Sprint 10: Detailed Action Plan
 
-### Day 1: API Contract Definition (Mar 6, 2026) - 0.5 Day
+**Workflow:** Developer A completes the API and documents the spec; then passes the spec to Developer B for frontend development. No joint API Contract Definition session required.
 
-**Goal:** Define and lock API contracts with Developer B
+### Day 1: Verify Stubs & Start Implementation (Mar 6, 2026)
+
+**Goal:** Confirm API v2 stubs and structure; begin full implementation.
 
 **Tasks:**
-- [ ] **Morning Session (2 hours) with Developer B:**
-  - [ ] Review API design document together
-  - [ ] Define Pydantic schemas:
-    ```python
-    # backend/app/schemas/workflow.py
-    - GenerateTestsRequest
-    - WorkflowStatusResponse
-    - AgentProgressEvent
-    - WorkflowResultsResponse
-    - WorkflowErrorResponse
-    ```
-  - [ ] Define SSE event types:
-    ```python
-    - agent_started
-    - agent_progress
-    - agent_completed
-    - workflow_completed
-    - workflow_failed
-    ```
-  - [ ] Lock contracts (no changes without discussion)
-  - [ ] Create stub endpoints (return 501)
-
-- [ ] **Afternoon: Implementation Setup**
-  - [ ] Create `backend/app/api/v2/` directory structure
-  - [ ] Create `backend/app/schemas/workflow.py` with Pydantic models
-  - [ ] Create stub endpoints in `backend/app/api/v2/endpoints/`
-  - [ ] Register v2 router in main app
-  - [ ] Test stub endpoints return 501
+- [ ] **Verify existing structure** (stubs already created in `feature/sprint10-backend-api`):
+  - [ ] Confirm `backend/app/api/v2/` and `backend/app/schemas/workflow.py` exist
+  - [ ] Confirm Pydantic schemas: `GenerateTestsRequest`, `WorkflowStatusResponse`, `AgentProgressEvent`, `WorkflowResultsResponse`, `WorkflowErrorResponse`
+  - [ ] Confirm stub endpoints return 501; v2 router registered in main app
+- [ ] **SSE event types** (already in design; implement during Days 2–5):
+  - `agent_started`, `agent_progress`, `agent_completed`, `workflow_completed`, `workflow_failed`
+- [ ] **Begin Task 10A.2** if time permits (generate-tests endpoint)
 
 **Deliverables:**
-- ✅ API contracts locked
-- ✅ Pydantic schemas defined
-- ✅ Stub endpoints created
-- ✅ Developer B has TypeScript types
-
-**Success Criteria:**
-- ✅ API contract document approved by both developers
-- ✅ Stub endpoints return 501 (Not Implemented)
-- ✅ Developer B can create mock API client
+- ✅ Stubs verified
+- ✅ Ready to implement full API
 
 ---
 
@@ -476,6 +511,24 @@
 
 ---
 
+### After API Complete: API Spec Handoff to Developer B
+
+**Goal:** Hand off API spec so Developer B can build the frontend against a stable contract. No joint session required.
+
+**Tasks:**
+- [ ] **Publish API spec**
+  - [ ] Ensure OpenAPI available at `GET /api/v2/openapi.json` and Swagger UI at `/api/v2/docs`
+  - [ ] Document SSE: stream URL, event types, and example JSON payloads (e.g. in `backend/app/api/v2/README.md` or a short handoff note)
+- [ ] **Hand off to Developer B**
+  - [ ] Share spec location and any handoff note (endpoints, auth, SSE URL, event shapes)
+  - [ ] Developer B uses spec to generate TypeScript types / API client and implement frontend
+
+**Deliverables:**
+- ✅ OpenAPI + SSE docs available
+- ✅ Developer B has everything needed to start frontend development
+
+---
+
 ## 📋 Sprint 10 Checklist
 
 ### Pre-Sprint Preparation (Feb 10 - Mar 5, 2026)
@@ -483,14 +536,11 @@
 - [ ] Research SSE implementation
 - [ ] Design API v2 structure
 - [ ] Create technical design document
-- [ ] Coordinate with Developer B
 - [ ] Set up development environment
 
 ### Sprint 10 Day 1 (Mar 6, 2026)
-- [ ] API Contract Definition session (2 hours with Dev B)
-- [ ] Create Pydantic schemas
-- [ ] Create stub endpoints
-- [ ] Lock API contracts
+- [ ] Verify API v2 stubs and structure
+- [ ] Begin implementation (Task 10A.2 if time permits)
 
 ### Sprint 10 Days 2-9 (Mar 7-14, 2026)
 - [ ] Task 10A.2: Create `/api/v2/generate-tests` endpoint
@@ -499,11 +549,15 @@
 - [ ] Task 10A.5: Create workflow status endpoints
 - [ ] Task 10A.6: Unit tests
 
+### After API Complete: API Spec Handoff
+- [x] Publish OpenAPI + SSE docs (available at `/api/v2/docs` and `/api/v2/openapi.json`)
+- [x] Pass spec to Developer B — **main branch published** (Feb 2026); Developer B pulls `main`
+
 ### Sprint 10 Days 10-15 (Mar 15-19, 2026)
-- [ ] Integration testing with Developer B
+- [ ] Integration testing (once Developer B frontend is ready)
 - [ ] Fix any integration issues
 - [ ] Code review
-- [ ] Merge to `develop` branch
+- [x] **Merge to main** — Done Feb 2026: `feature/sprint10-backend-api` merged to `main` and pushed to `origin/main`
 - [ ] Sprint 10 retrospective
 
 ---
@@ -522,13 +576,14 @@
 - ✅ All unit tests passing
 - ✅ API documentation complete
 - ✅ Code review approved
-- ✅ Integration tests passing (with Dev B)
+- ✅ Integration tests passing (after frontend integration)
 
 ---
 
 ## 📚 Key Resources
 
 ### Documentation
+- **[API v2 Specification](../backend/app/api/v2/API_SPECIFICATION.md)** — Endpoints, request/response parameters, examples, SSE (§6), chaining
 - [Sprint 10 Gap Analysis](supporting-documents/SPRINT_10_GAP_ANALYSIS_AND_PLAN.md)
 - [Task Split Strategy](SPRINT_10_11_TASK_SPLIT_STRATEGY.md)
 - [Architecture Design](Phase3-Architecture-Design-Complete.md)
@@ -572,8 +627,8 @@
 
 **Prepared By:** AI Development Assistant  
 **Date:** February 10, 2026  
-**Status:** ✅ **READY FOR SPRINT 10**  
-**Next Action:** Begin Week 1 preparation tasks
+**Status:** ✅ **SPRINT 10 API COMPLETE; MERGED TO MAIN & PUBLISHED** (Feb 2026)  
+**Next Action:** Developer B pulls `main` and uses API_SPECIFICATION.md + `/api/v2/docs` for frontend. Developer A: optional 10A.8 iterative improvement, 10A.7–10A.11 backlog.
 
 ---
 

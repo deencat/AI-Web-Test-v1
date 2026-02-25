@@ -10,8 +10,20 @@
 > - **Writing Code:** Code templates, implementation examples, API patterns
 > - **Sprint Tasks:** Detailed task breakdowns with dependencies and durations
 > - **Testing Strategy:** Unit test examples, integration test patterns
+> - **API reference (parameters, input/output):** [API v2 Specification](../backend/app/api/v2/API_SPECIFICATION.md) · OpenAPI: `/api/v2/docs`
 > - **For Sprint Planning:** See [Project Management Plan](Phase3-Project-Management-Plan-Complete.md) Section 2.4
 > - **For Architecture Design:** See [Architecture Document](Phase3-Architecture-Design-Complete.md) Section 6
+
+---
+
+## 📍 Where to Find Key Documents
+
+| Document | Location | Use it for |
+|----------|----------|------------|
+| **This document** | [Phase3-Implementation-Guide-Complete.md](Phase3-Implementation-Guide-Complete.md) | Code examples, sprint tasks, testing |
+| **Architecture** | [Phase3-Architecture-Design-Complete.md](Phase3-Architecture-Design-Complete.md) | System design, agent patterns |
+| **Project Management Plan** | [Phase3-Project-Management-Plan-Complete.md](Phase3-Project-Management-Plan-Complete.md) | Sprint planning, budget, tasks |
+| **API v2 Specification** | [API_SPECIFICATION.md](../backend/app/api/v2/API_SPECIFICATION.md) | Endpoints, request/response parameters, examples, chaining |
 
 ---
 
@@ -3501,7 +3513,12 @@ CREATE TABLE agent_metrics (
 ### 4.3 API Versioning
 
 **Old endpoint (Phase 2):** `/api/v1/generate-tests` (unchanged)  
-**New endpoint (Phase 3):** `/api/v2/generate-tests` (uses agents)
+**New endpoint (Phase 3):** `/api/v2/` — multiple entry points (full pipeline, per-agent, improve-tests). See [API v2 Specification](../backend/app/api/v2/API_SPECIFICATION.md) for full request/response parameters, types, and examples; OpenAPI at `/api/v2/docs`.
+
+- **Full pipeline:** `POST /api/v2/generate-tests` (single call from URL; uses agents).
+- **Per-agent:** `POST /api/v2/observation`, `/requirements`, `/analysis`, `/evolution` (chain via `workflow_id` or inline payloads).
+- **Improve by ID:** `POST /api/v2/improve-tests` (iterative improvement on test case IDs).
+- **Workflow resource:** `GET /api/v2/workflows/{id}`, `GET /api/v2/workflows/{id}/results`, `GET /api/v2/workflows/{id}/stream`.
 
 ```python
 # backend/api/v2/tests.py

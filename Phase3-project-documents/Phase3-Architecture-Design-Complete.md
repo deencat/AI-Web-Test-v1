@@ -11,10 +11,22 @@
 > - **System Design:** Understanding overall architecture, agent patterns, data flow
 > - **Technology Decisions:** Framework selection, communication patterns, infrastructure
 > - **Agent Specifications:** Detailed agent design, capabilities, interactions
+> - **API reference (endpoints, request/response):** [API v2 Specification](../backend/app/api/v2/API_SPECIFICATION.md) · OpenAPI: `/api/v2/docs`
 > - **For Implementation:** See [Implementation Guide](Phase3-Implementation-Guide-Complete.md) Section 3
 > - **For Sprint Planning:** See [Project Management Plan](Phase3-Project-Management-Plan-Complete.md) Section 2.4
 
 > **Note:** For implementation details, code examples, and Sprint-specific tasks, see [Phase3-Implementation-Guide-Complete.md](./Phase3-Implementation-Guide-Complete.md)
+
+---
+
+## 📍 Where to Find Key Documents
+
+| Document | Location | Use it for |
+|----------|----------|------------|
+| **This document** | [Phase3-Architecture-Design-Complete.md](Phase3-Architecture-Design-Complete.md) | Architecture, agent design, system components |
+| **Implementation Guide** | [Phase3-Implementation-Guide-Complete.md](Phase3-Implementation-Guide-Complete.md) | Code examples, sprint tasks, testing |
+| **Project Management Plan** | [Phase3-Project-Management-Plan-Complete.md](Phase3-Project-Management-Plan-Complete.md) | Sprint planning, budget, task breakdown |
+| **API v2 Specification** | [API_SPECIFICATION.md](../backend/app/api/v2/API_SPECIFICATION.md) | Endpoints, request/response parameters, examples, chaining |
 
 ---
 
@@ -1214,15 +1226,27 @@ src/features/agent-workflow/
 
 #### 6.2.4 Backend API Endpoints (Sprint 10)
 
-```python
-# New endpoints for agent workflow
-POST   /api/v2/generate-tests          # Trigger 4-agent workflow
-GET    /api/v2/workflows/{id}          # Get workflow status
-GET    /api/v2/workflows/{id}/stream   # SSE progress stream
-GET    /api/v2/workflows/{id}/results  # Get generated tests
-DELETE /api/v2/workflows/{id}          # Cancel workflow
-GET    /api/v2/workflows                # List user workflows
-```
+API v2 uses **multiple entry points** (industry best practice: composition over a single monolith). All workflow runs return a `workflow_id`; status and results are exposed via a shared workflow resource. The authoritative reference for request/response parameters, types, and examples is **[API v2 Specification](../backend/app/api/v2/API_SPECIFICATION.md)** (see also OpenAPI at `/api/v2/docs`).
+
+**Entry points (workflow triggers):**
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/api/v2/generate-tests` | Full 4-agent pipeline from URL |
+| POST | `/api/v2/observation` | ObservationAgent only |
+| POST | `/api/v2/requirements` | RequirementsAgent only (input: workflow_id or observation_result) |
+| POST | `/api/v2/analysis` | AnalysisAgent only (input: workflow_id or prior results) |
+| POST | `/api/v2/evolution` | EvolutionAgent only (input: workflow_id or prior results) |
+| POST | `/api/v2/improve-tests` | Iterative improvement by test case IDs |
+
+**Workflow resource (shared):**
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/v2/workflows/{id}` | Workflow status |
+| GET | `/api/v2/workflows/{id}/results` | Workflow results (partial or full) |
+| GET | `/api/v2/workflows/{id}/stream` | SSE progress stream |
+| DELETE | `/api/v2/workflows/{id}` | Cancel workflow (stub) |
 
 #### 6.2.5 Industrial Best Practices Applied
 
@@ -2122,6 +2146,9 @@ This document provides the high-level architecture and design. For detailed anal
 - `Phase3-Architecture-Design-Complete.md` - This document (high-level architecture)
 - `Phase3-Implementation-Guide-Complete.md` - Detailed implementation tasks and code examples
 - `Phase3-Project-Management-Plan-Complete.md` - Sprint planning, task breakdown, budget, timeline
+
+**API v2 Specification (Backend):**
+- [API_SPECIFICATION.md](../backend/app/api/v2/API_SPECIFICATION.md) - Authoritative API reference: request/response parameters, types, examples, chaining flows (OpenAPI: `/api/v2/docs`)
 
 **Supporting Documents (supporting-documents/ folder):**
 - Detailed analysis documents

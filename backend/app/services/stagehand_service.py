@@ -105,7 +105,7 @@ class StagehandExecutionService:
                     model_provider = "cerebras"
                 elif use_google_direct:
                     model_provider = "google"
-                print(f"[DEBUG] 📋 Using .env default provider: {model_provider}")
+                print(f"[DEBUG] Using .env default provider: {model_provider}")
             
             # Configure model based on provider
             if model_provider == "cerebras":
@@ -406,7 +406,7 @@ class StagehandExecutionService:
                     model_provider = "cerebras"
                 elif use_google_direct:
                     model_provider = "google"
-                print(f"[DEBUG] 📋 Using .env default provider: {model_provider}")
+                print(f"[DEBUG] Using .env default provider: {model_provider}")
             
             # Configure model based on provider (same logic as initialize())
             if model_provider == "cerebras":
