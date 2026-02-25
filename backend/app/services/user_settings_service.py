@@ -48,7 +48,7 @@ class UserSettingsService:
                 "meta-llama/llama-3.2-1b-instruct:free",
                 "microsoft/phi-3-mini-128k-instruct:free",
                 "qwen/qwen-2-7b-instruct:free",
-                "mistralai/mistral-7b-instruct:free",
+                "mistralai/mixtral-8x7b-instruct",
                 "nousresearch/hermes-3-llama-3.1-405b:free",
                 "gpt-4o",
                 "claude-3-opus-20240229",

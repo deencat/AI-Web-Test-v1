@@ -46,10 +46,53 @@ class TestsService {
 
     // Real API call
     try {
-      const response = await api.get<any>('/tests', { params });
-      // Backend returns { items, total, skip, limit }
-      // We need to extract items array
-      return response.data.items || response.data.data || [];
+      const pageSize = params?.per_page || 100;
+      const hasExplicitPagination = Boolean(params?.page || params?.per_page);
+      const startSkip = hasExplicitPagination ? Math.max(((params?.page || 1) - 1) * pageSize, 0) : 0;
+
+      const filters = {
+        ...(params?.status ? { status: params.status } : {}),
+        ...(params?.priority ? { priority: params.priority } : {}),
+        ...(params?.agent ? { agent: params.agent } : {}),
+      };
+
+      const firstResponse = await api.get<any>('/tests', {
+        params: {
+          ...filters,
+          skip: startSkip,
+          limit: pageSize,
+        },
+      });
+
+      const firstPageItems = firstResponse.data.items || firstResponse.data.data || [];
+
+      if (hasExplicitPagination) {
+        return firstPageItems;
+      }
+
+      const allItems: Test[] = [...firstPageItems];
+      const total = firstResponse.data.total || allItems.length;
+      let currentSkip = startSkip + firstPageItems.length;
+
+      while (allItems.length < total && firstPageItems.length > 0) {
+        const response = await api.get<any>('/tests', {
+          params: {
+            ...filters,
+            skip: currentSkip,
+            limit: pageSize,
+          },
+        });
+
+        const pageItems = response.data.items || response.data.data || [];
+        if (pageItems.length === 0) {
+          break;
+        }
+
+        allItems.push(...pageItems);
+        currentSkip += pageItems.length;
+      }
+
+      return allItems;
     } catch (error) {
       throw new Error(apiHelpers.getErrorMessage(error));
     }

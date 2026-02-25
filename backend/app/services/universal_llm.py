@@ -10,6 +10,9 @@ from app.core.config import settings
 
 class UniversalLLMService:
     """Service for interacting with multiple LLM providers."""
+
+    OPENROUTER_DEFAULT_FALLBACK_MODEL = "google/gemini-2.0-flash-exp:free"
+    CEREBRAS_DEFAULT_FALLBACK_MODEL = "llama3.1-8b"
     
     def __init__(self):
         # Use settings object which loads from .env via pydantic_settings
@@ -151,44 +154,49 @@ class UniversalLLMService:
                 "Get your key from: https://cloud.cerebras.ai/"
             )
         
-        # Use default model if not specified
-        if not model:
-            model = "llama3.1-8b"
-        
         # Cerebras API endpoint (OpenAI-compatible)
         base_url = "https://api.cerebras.ai/v1"
-        
-        # Prepare request payload (OpenAI format)
-        payload = {
-            "model": model,
-            "messages": messages,
-            "temperature": temperature,
-        }
-        
-        if max_tokens:
-            payload["max_tokens"] = max_tokens
-        
+
+        candidate_models = self._build_cerebras_model_candidates(model)
+
         # OPT-1: Reuse HTTP client for connection pooling (20-30% faster)
         client = await self._get_http_client()
-        try:
-            response = await client.post(
-                f"{base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.cerebras_api_key}",
-                    "Content-Type": "application/json"
-                },
-                json=payload
-            )
-            response.raise_for_status()
-            return response.json()
-            
-        except httpx.TimeoutException:
-            raise Exception("Cerebras API request timed out (90s)")
-        except httpx.HTTPStatusError as e:
-            error_detail = e.response.text if e.response else "Unknown error"
-            raise Exception(f"Cerebras API error ({e.response.status_code}): {error_detail}")
-        except httpx.HTTPError as e:
-            raise Exception(f"Cerebras API connection error: {str(e)}")
+        for index, candidate_model in enumerate(candidate_models):
+            payload = {
+                "model": candidate_model,
+                "messages": messages,
+                "temperature": temperature,
+            }
+
+            if max_tokens:
+                payload["max_tokens"] = max_tokens
+
+            try:
+                response = await client.post(
+                    f"{base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.cerebras_api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json=payload
+                )
+                response.raise_for_status()
+                return response.json()
+
+            except httpx.TimeoutException:
+                raise Exception("Cerebras API request timed out (90s)")
+            except httpx.HTTPStatusError as e:
+                can_retry_with_next_model = (
+                    index < len(candidate_models) - 1
+                    and self._is_model_unavailable_error(e)
+                )
+                if can_retry_with_next_model:
+                    continue
+
+                error_detail = e.response.text if e.response else "Unknown error"
+                raise Exception(f"Cerebras API error ({e.response.status_code}): {error_detail}")
+            except httpx.HTTPError as e:
+                raise Exception(f"Cerebras API connection error: {str(e)}")
     
     async def _call_azure(
         self,
@@ -263,46 +271,108 @@ class UniversalLLMService:
                 "Please add it to backend/.env file."
             )
         
-        # Use default model if not specified
-        if not model:
-            model = settings.OPENROUTER_MODEL
-        
         # OpenRouter API endpoint
         base_url = "https://openrouter.ai/api/v1"
-        
-        # Prepare request payload
-        payload = {
-            "model": model,
-            "messages": messages,
-            "temperature": temperature,
-        }
-        
-        if max_tokens:
-            payload["max_tokens"] = max_tokens
-        
+
+        candidate_models = self._build_openrouter_model_candidates(model)
+
         # OPT-1: Reuse HTTP client for connection pooling (20-30% faster)
         client = await self._get_http_client()
-        try:
-            response = await client.post(
-                f"{base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.openrouter_api_key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "http://localhost:8000",
-                    "X-Title": "AI Web Test"
-                },
-                json=payload
-            )
-            response.raise_for_status()
-            return response.json()
-            
-        except httpx.TimeoutException:
-            raise Exception("OpenRouter API request timed out (90s)")
-        except httpx.HTTPStatusError as e:
-            error_detail = e.response.text if e.response else "Unknown error"
-            raise Exception(f"OpenRouter API error ({e.response.status_code}): {error_detail}")
-        except httpx.HTTPError as e:
-            raise Exception(f"OpenRouter API connection error: {str(e)}")
+        for index, candidate_model in enumerate(candidate_models):
+            payload = {
+                "model": candidate_model,
+                "messages": messages,
+                "temperature": temperature,
+            }
+
+            if max_tokens:
+                payload["max_tokens"] = max_tokens
+
+            try:
+                response = await client.post(
+                    f"{base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.openrouter_api_key}",
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": "http://localhost:8000",
+                        "X-Title": "AI Web Test"
+                    },
+                    json=payload
+                )
+                response.raise_for_status()
+                return response.json()
+
+            except httpx.TimeoutException:
+                raise Exception("OpenRouter API request timed out (90s)")
+            except httpx.HTTPStatusError as e:
+                can_retry_with_next_model = (
+                    index < len(candidate_models) - 1
+                    and self._is_model_unavailable_error(e)
+                )
+                if can_retry_with_next_model:
+                    continue
+
+                error_detail = e.response.text if e.response else "Unknown error"
+                raise Exception(f"OpenRouter API error ({e.response.status_code}): {error_detail}")
+            except httpx.HTTPError as e:
+                raise Exception(f"OpenRouter API connection error: {str(e)}")
+
+    @staticmethod
+    def _is_model_unavailable_error(error: httpx.HTTPStatusError) -> bool:
+        """Return True for provider responses indicating the selected model is unavailable."""
+        response = error.response
+        if response is None or response.status_code not in (400, 404):
+            return False
+
+        error_text = response.text.lower()
+        unavailable_markers = [
+            "no endpoints found",
+            "model not found",
+            "invalid model",
+            "unknown model",
+            "does not exist",
+        ]
+        return any(marker in error_text for marker in unavailable_markers)
+
+    def _build_openrouter_model_candidates(self, requested_model: Optional[str]) -> List[str]:
+        """Build OpenRouter model retry candidates in priority order without duplicates."""
+        primary_model = requested_model or settings.OPENROUTER_MODEL
+        candidates: List[str] = [primary_model]
+
+        if primary_model and primary_model.endswith(":free"):
+            candidates.append(primary_model[:-5])
+
+        candidates.extend(
+            [
+                settings.OPENROUTER_MODEL,
+                self.OPENROUTER_DEFAULT_FALLBACK_MODEL,
+            ]
+        )
+        return self._unique_non_empty(candidates)
+
+    def _build_cerebras_model_candidates(self, requested_model: Optional[str]) -> List[str]:
+        """Build Cerebras model retry candidates in priority order without duplicates."""
+        primary_model = requested_model or settings.CEREBRAS_MODEL or self.CEREBRAS_DEFAULT_FALLBACK_MODEL
+        candidates: List[str] = [
+            primary_model,
+            settings.CEREBRAS_MODEL,
+            self.CEREBRAS_DEFAULT_FALLBACK_MODEL,
+        ]
+        return self._unique_non_empty(candidates)
+
+    @staticmethod
+    def _unique_non_empty(values: List[Optional[str]]) -> List[str]:
+        """Return non-empty strings in original order without duplicates."""
+        unique_values: List[str] = []
+        seen = set()
+        for value in values:
+            if not value:
+                continue
+            if value in seen:
+                continue
+            seen.add(value)
+            unique_values.append(value)
+        return unique_values
     
     async def _get_http_client(self) -> httpx.AsyncClient:
         """
