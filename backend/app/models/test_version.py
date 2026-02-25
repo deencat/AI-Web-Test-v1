@@ -3,7 +3,7 @@ from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
-from app.db.base import Base
+from app.db.base import Base, utc_now
 
 
 class TestCaseVersion(Base):
@@ -27,7 +27,7 @@ class TestCaseVersion(Base):
     test_data = Column(JSON, nullable=True)  # Test data at this version
     
     # Version metadata
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, nullable=False, default=utc_now, index=True)
     created_by = Column(String(50), nullable=False)  # "user", "ai", or user_id
     change_reason = Column(String(100), nullable=True)  # "manual_fix", "ai_improvement", "execution_failure", etc.
     

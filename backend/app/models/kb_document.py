@@ -4,7 +4,7 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
 
-from app.db.base import Base
+from app.db.base import Base, utc_now
 
 
 class FileType(str, enum.Enum):
@@ -54,8 +54,8 @@ class KBDocument(Base):
     
     # Metadata
     referenced_count = Column(Integer, default=0)  # How many times referenced
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=utc_now)
+    updated_at = Column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
     
     # Relationships
     category_id = Column(Integer, ForeignKey("kb_categories.id"), nullable=False, index=True)

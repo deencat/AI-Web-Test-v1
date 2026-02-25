@@ -4,7 +4,7 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
 
-from app.db.base import Base
+from app.db.base import Base, utc_now
 
 
 class ExecutionStatus(str, enum.Enum):
@@ -125,7 +125,7 @@ class TestExecutionStep(Base):
     retry_count = Column(Integer, default=0)  # Number of retries
     is_critical = Column(Boolean, default=False)  # If this step fails, stop execution
     
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=utc_now)
     
     def __repr__(self):
         return f"<TestExecutionStep(id={self.id}, execution_id={self.execution_id}, step={self.step_number}, result={self.result})>"

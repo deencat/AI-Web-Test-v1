@@ -16,7 +16,7 @@ class TestSuiteBase(BaseModel):
 
 class TestSuiteCreate(TestSuiteBase):
     """Schema for creating a test suite."""
-    test_case_ids: List[int] = Field(..., min_items=1, description="List of test case IDs in execution order")
+    test_case_ids: List[int] = Field(..., min_length=1, description="List of test case IDs in execution order")
 
 
 class TestSuiteUpdate(BaseModel):
@@ -24,7 +24,7 @@ class TestSuiteUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
     tags: Optional[List[str]] = None
-    test_case_ids: Optional[List[int]] = Field(None, min_items=1)
+    test_case_ids: Optional[List[int]] = Field(None, min_length=1)
 
 
 class TestSuiteItemResponse(BaseModel):

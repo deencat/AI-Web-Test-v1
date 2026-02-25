@@ -82,6 +82,36 @@ async def test_generate_tests_invalid_url(client: httpx.AsyncClient):
     assert response.status_code == 422
 
 
+# --- POST /improve-tests (10A.8) ---
+
+
+@pytest.mark.asyncio
+async def test_improve_tests_returns_202_and_workflow_id(client: httpx.AsyncClient):
+    """10A.8: improve-tests accepts test_case_ids and returns workflow_id (runs in background)."""
+    response = await client.post(
+        "/api/v2/improve-tests",
+        json={
+            "test_case_ids": [1, 2, 3],
+            "user_instruction": "Add assertions",
+            "max_iterations": 2,
+        },
+    )
+    assert response.status_code == 202
+    data = response.json()
+    assert "workflow_id" in data
+    assert data["workflow_id"]
+    assert data.get("status") in ("pending", "running")
+
+
+@pytest.mark.asyncio
+async def test_improve_tests_requires_test_case_ids(client: httpx.AsyncClient):
+    response = await client.post(
+        "/api/v2/improve-tests",
+        json={"test_case_ids": [], "max_iterations": 1},
+    )
+    assert response.status_code == 422
+
+
 # --- GET /workflows/{id} ---
 
 

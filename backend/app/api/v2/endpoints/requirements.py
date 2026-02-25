@@ -11,7 +11,7 @@ from app.services.orchestration_service import OrchestrationService, get_orchest
 from app.services.progress_tracker import ProgressTracker, get_progress_tracker
 from app.services.workflow_store import set_state, get_state
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 router = APIRouter()
 
@@ -51,7 +51,7 @@ async def run_requirements(
             detail={"error": "Workflow not found", "code": "NOT_FOUND", "workflow_id": request.workflow_id},
         )
     workflow_id = str(uuid.uuid4())
-    started_at = datetime.utcnow()
+    started_at = datetime.now(timezone.utc)
     request_dict = {
         "workflow_id": request.workflow_id,
         "observation_result": request.observation_result,

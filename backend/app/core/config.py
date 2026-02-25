@@ -1,5 +1,5 @@
 from typing import List
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -54,11 +54,11 @@ class Settings(BaseSettings):
     MAX_CONCURRENT_EXECUTIONS: int = 5  # Maximum concurrent test executions
     QUEUE_CHECK_INTERVAL: int = 2  # How often to check queue (seconds)
     EXECUTION_TIMEOUT: int = 300  # Execution timeout (seconds)
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-        extra = "ignore"  # Allow extra fields in .env without errors
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore",  # Allow extra fields in .env without errors
+    )
 
 
 settings = Settings()

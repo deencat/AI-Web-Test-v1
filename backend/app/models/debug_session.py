@@ -4,7 +4,7 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
 
-from app.db.base import Base
+from app.db.base import Base, utc_now
 
 
 class DebugMode(str, enum.Enum):
@@ -60,9 +60,9 @@ class DebugSession(Base):
     iterations_count = Column(Integer, default=0)  # Number of times target step was executed
     
     # Timing
-    started_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    started_at = Column(DateTime, nullable=False, default=utc_now)
     setup_completed_at = Column(DateTime, nullable=True)  # When prerequisite steps finished
-    last_activity_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    last_activity_at = Column(DateTime, nullable=False, default=utc_now)
     ended_at = Column(DateTime, nullable=True)
     
     # Results
@@ -100,14 +100,14 @@ class DebugStepExecution(Base):
     screenshot_path = Column(String(500), nullable=True)
     
     # Timing
-    started_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    started_at = Column(DateTime, nullable=False, default=utc_now)
     completed_at = Column(DateTime, nullable=True)
     duration_seconds = Column(Integer, nullable=True)
     
     # Token usage
     tokens_used = Column(Integer, default=0)
     
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=utc_now)
     
     def __repr__(self):
         return f"<DebugStepExecution(id={self.id}, session_id={self.session_id}, step={self.step_number}, success={self.success})>"

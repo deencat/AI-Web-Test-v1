@@ -15,7 +15,7 @@ from app.services.progress_tracker import ProgressTracker, get_progress_tracker
 from app.services.workflow_store import set_state
 import asyncio
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 router = APIRouter()
 
@@ -51,7 +51,7 @@ async def generate_tests(
 ) -> WorkflowStatusResponse:
     """Start 4-agent workflow in background; return workflow_id immediately."""
     workflow_id = str(uuid.uuid4())
-    started_at = datetime.utcnow()
+    started_at = datetime.now(timezone.utc)
 
     request_dict = {
         "url": str(request.url),

@@ -7,8 +7,8 @@ Used for triggering workflows, tracking progress, and retrieving results.
 Reference: Sprint 10 - Frontend Integration & Real-time Agent Progress
 """
 from typing import Optional, List, Dict, Any
-from datetime import datetime
-from pydantic import BaseModel, Field, HttpUrl
+from datetime import datetime, timezone
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
 class GenerateTestsRequest(BaseModel):
@@ -32,9 +32,8 @@ class GenerateTestsRequest(BaseModel):
         None,
         description="Gmail login for OTP verification: {'email': '...', 'password': '...'}. Used when flow requires checking email for OTP."
     )
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "url": "https://example.com/login",
                 "user_instruction": "Test login flow with invalid credentials",
@@ -49,6 +48,7 @@ class GenerateTestsRequest(BaseModel):
                 }
             }
         }
+    )
 
 
 # ---- Multi-entry-point: per-agent / per-stage requests ----
@@ -61,11 +61,7 @@ class ObservationRequest(BaseModel):
     depth: int = Field(default=1, ge=1, le=3, description="Crawl depth")
     login_credentials: Optional[Dict[str, str]] = Field(None, description="Website login (username/email + password)")
     gmail_credentials: Optional[Dict[str, str]] = Field(None, description="Gmail login for OTP verification (email + password)")
-
-    class Config:
-        json_schema_extra = {
-            "example": {"url": "https://example.com/login", "depth": 1}
-        }
+    model_config = ConfigDict(json_schema_extra={"example": {"url": "https://example.com/login", "depth": 1}})
 
 
 class RequirementsRequest(BaseModel):
@@ -76,11 +72,7 @@ class RequirementsRequest(BaseModel):
         description="Inline observation result (ui_elements, page_structure, page_context) if no workflow_id"
     )
     user_instruction: Optional[str] = Field(None, description="Optional instruction for scenarios")
-
-    class Config:
-        json_schema_extra = {
-            "example": {"workflow_id": "wf-abc123"}
-        }
+    model_config = ConfigDict(json_schema_extra={"example": {"workflow_id": "wf-abc123"}})
 
 
 class AnalysisRequest(BaseModel):
@@ -89,11 +81,7 @@ class AnalysisRequest(BaseModel):
     requirements_result: Optional[Dict[str, Any]] = Field(None, description="Inline requirements result if no workflow_id")
     observation_result: Optional[Dict[str, Any]] = Field(None, description="Inline observation (page_context etc.) if no workflow_id")
     user_instruction: Optional[str] = Field(None, description="Optional instruction")
-
-    class Config:
-        json_schema_extra = {
-            "example": {"workflow_id": "wf-abc123"}
-        }
+    model_config = ConfigDict(json_schema_extra={"example": {"workflow_id": "wf-abc123"}})
 
 
 class EvolutionRequest(BaseModel):
@@ -105,26 +93,20 @@ class EvolutionRequest(BaseModel):
     user_instruction: Optional[str] = Field(None, description="Optional instruction for test generation")
     login_credentials: Optional[Dict[str, str]] = Field(None, description="Website login for evolution step generation")
     gmail_credentials: Optional[Dict[str, str]] = Field(None, description="Gmail login for OTP (if tests need to reference it)")
-
-    class Config:
-        json_schema_extra = {
-            "example": {"workflow_id": "wf-abc123"}
-        }
+    model_config = ConfigDict(json_schema_extra={"example": {"workflow_id": "wf-abc123"}})
 
 
 class ImproveTestsRequest(BaseModel):
     """Request to improve existing tests (iterative evolution + analysis)."""
-    test_case_ids: List[int] = Field(..., description="IDs of test cases to improve")
+    test_case_ids: List[int] = Field(..., min_length=1, description="IDs of test cases to improve")
     user_instruction: Optional[str] = Field(
         None,
         description="Optional instruction (e.g., 'Focus on edge cases', 'Add assertions')"
     )
     max_iterations: int = Field(default=5, ge=1, le=20, description="Max improvement iterations")
-
-    class Config:
-        json_schema_extra = {
-            "example": {"test_case_ids": [101, 102], "user_instruction": "Add more assertions", "max_iterations": 3}
-        }
+    model_config = ConfigDict(
+        json_schema_extra={"example": {"test_case_ids": [101, 102], "user_instruction": "Add more assertions", "max_iterations": 3}}
+    )
 
 
 class AgentProgress(BaseModel):
@@ -162,9 +144,8 @@ class WorkflowStatusResponse(BaseModel):
     started_at: datetime = Field(..., description="When workflow started")
     estimated_completion: Optional[datetime] = Field(None, description="Estimated completion time")
     error: Optional[str] = Field(None, description="Error message if workflow failed")
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "workflow_id": "wf-abc123",
                 "status": "running",
@@ -190,13 +171,14 @@ class WorkflowStatusResponse(BaseModel):
                 "estimated_completion": "2026-03-06T10:02:30Z"
             }
         }
+    )
 
 
 class AgentProgressEvent(BaseModel):
     """SSE event for agent progress updates."""
     event: str = Field(..., description="Event type: agent_started, agent_progress, agent_completed, workflow_completed, workflow_failed")
     data: Dict[str, Any] = Field(..., description="Event data")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Event timestamp")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Event timestamp")
 
 
 class WorkflowResultsResponse(BaseModel):
@@ -211,9 +193,8 @@ class WorkflowResultsResponse(BaseModel):
     evolution_result: Optional[Dict[str, Any]] = Field(None, description="EvolutionAgent results")
     completed_at: datetime = Field(..., description="When workflow completed")
     total_duration_seconds: float = Field(..., description="Total workflow duration")
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "workflow_id": "wf-abc123",
                 "status": "completed",
@@ -223,6 +204,7 @@ class WorkflowResultsResponse(BaseModel):
                 "total_duration_seconds": 135.5
             }
         }
+    )
 
 
 class WorkflowErrorResponse(BaseModel):
@@ -230,5 +212,5 @@ class WorkflowErrorResponse(BaseModel):
     error: str = Field(..., description="Error message")
     code: str = Field(..., description="Error code")
     workflow_id: Optional[str] = Field(None, description="Workflow ID if available")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Error timestamp")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Error timestamp")
 
