@@ -1,13 +1,12 @@
 /**
- * SSE Service — Mock Stub
+ * SSE Service — Real EventSource implementation (Sprint 10)
  *
- * Sprint 10 Phase 1 — API Contract Definition (Developer B)
- *
- * Provides a mock implementation of the Server-Sent Events client.
- * In production this will open a real EventSource to:
+ * Opens a real EventSource to:
  *   GET /api/v2/workflows/{workflow_id}/stream
  *
- * In mock mode (or in tests), use simulateEvent() to fire callbacks directly.
+ * Named SSE events from the backend:
+ *   agent_started | agent_progress | agent_completed |
+ *   workflow_completed | workflow_failed
  *
  * Usage:
  *   const subId = sseService.connect(workflowId, (event) => { ... });
@@ -15,29 +14,28 @@
  */
 import type { AgentProgressEvent, WorkflowEventCallback } from '../types/agentWorkflow.types';
 
-// ---------------------------------------------------------------------------
-// Internal Types
-// ---------------------------------------------------------------------------
+const SSE_BASE = '/api/v2/workflows';
+
+const SSE_EVENT_TYPES = [
+  'agent_started',
+  'agent_progress',
+  'agent_completed',
+  'workflow_completed',
+  'workflow_failed',
+] as const;
 
 interface Subscription {
   subscriptionId: string;
   workflowId: string;
   callback: WorkflowEventCallback;
-  /** Real EventSource instance — null while in mock mode */
-  eventSource: EventSource | null;
+  eventSource: EventSource;
 }
 
-// ---------------------------------------------------------------------------
-// SSEService
-// ---------------------------------------------------------------------------
-
 class SSEService {
-  private readonly sseBaseUrl = '/api/v2/workflows';
-  private subscriptions: Map<string, Subscription> = new Map();
+  private subscriptions = new Map<string, Subscription>();
 
   /**
-   * Connect to the workflow SSE stream.
-   * In mock mode no real HTTP connection is opened.
+   * Connect to the real SSE stream for a workflow.
    *
    * @param workflowId  Workflow to subscribe to
    * @param callback    Called with each AgentProgressEvent
@@ -45,27 +43,34 @@ class SSEService {
    */
   connect(workflowId: string, callback: WorkflowEventCallback): string {
     const subscriptionId = `sub-${workflowId}-${Math.random().toString(36).slice(2, 8)}`;
+    const url = `${SSE_BASE}/${workflowId}/stream`;
+    const eventSource = new EventSource(url);
 
-    const isMock = this.isMockMode();
-    let eventSource: EventSource | null = null;
-
-    if (!isMock) {
-      const url = `${this.sseBaseUrl}/${workflowId}/stream`;
-      eventSource = new EventSource(url);
-
-      eventSource.onmessage = (messageEvent: MessageEvent) => {
+    // The backend sends named events; attach a listener for each type
+    for (const eventType of SSE_EVENT_TYPES) {
+      eventSource.addEventListener(eventType, (messageEvent: MessageEvent) => {
         try {
-          const event: AgentProgressEvent = JSON.parse(messageEvent.data as string);
-          callback(event);
-        } catch {
-          console.error('[SSEService] Failed to parse SSE event:', messageEvent.data);
+          const parsed = JSON.parse(messageEvent.data as string) as AgentProgressEvent;
+          callback(parsed);
+        } catch (err) {
+          console.error(`[SSEService] Failed to parse "${eventType}" event:`, err);
         }
-      };
-
-      eventSource.onerror = (err) => {
-        console.error('[SSEService] SSE stream error for workflow', workflowId, err);
-      };
+      });
     }
+
+    // Fallback for generic messages (no event name)
+    eventSource.onmessage = (messageEvent: MessageEvent) => {
+      try {
+        const parsed = JSON.parse(messageEvent.data as string) as AgentProgressEvent;
+        callback(parsed);
+      } catch {
+        // Ignore unparseable keepalives
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      console.error('[SSEService] SSE stream error for workflow', workflowId, err);
+    };
 
     this.subscriptions.set(subscriptionId, {
       subscriptionId,
@@ -78,64 +83,33 @@ class SSEService {
   }
 
   /**
-   * Disconnect a specific subscription by id.
-   *
-   * @returns true if the subscription existed and was removed, false otherwise
+   * Disconnect a specific subscription.
+   * @returns true if the subscription existed and was removed
    */
   disconnect(subscriptionId: string): boolean {
     const sub = this.subscriptions.get(subscriptionId);
     if (!sub) return false;
-
-    sub.eventSource?.close();
+    sub.eventSource.close();
     this.subscriptions.delete(subscriptionId);
     return true;
   }
 
-  /**
-   * Disconnect all active subscriptions.
-   */
+  /** Close all active subscriptions. */
   disconnectAll(): void {
     for (const sub of this.subscriptions.values()) {
-      sub.eventSource?.close();
+      sub.eventSource.close();
     }
     this.subscriptions.clear();
   }
 
-  /**
-   * Check whether a subscription is currently active.
-   */
+  /** Check whether a subscription is active. */
   isConnected(subscriptionId: string): boolean {
     return this.subscriptions.has(subscriptionId);
   }
 
-  /**
-   * Return the total number of active subscriptions.
-   */
+  /** Total active subscriptions. */
   getActiveCount(): number {
     return this.subscriptions.size;
-  }
-
-  /**
-   * Manually push an event to all subscribers of a workflow.
-   * Used in mock mode and unit tests to simulate SSE events without a real server.
-   *
-   * @param workflowId  Target workflow id
-   * @param event       AgentProgressEvent to deliver
-   */
-  simulateEvent(workflowId: string, event: AgentProgressEvent): void {
-    for (const sub of this.subscriptions.values()) {
-      if (sub.workflowId === workflowId) {
-        sub.callback(event);
-      }
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Private Helpers
-  // ---------------------------------------------------------------------------
-
-  private isMockMode(): boolean {
-    return import.meta.env.VITE_USE_MOCK !== 'false';
   }
 }
 

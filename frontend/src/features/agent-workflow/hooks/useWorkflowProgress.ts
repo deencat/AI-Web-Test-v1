@@ -1,48 +1,53 @@
 /**
- * useWorkflowProgress — React hook
+ * useWorkflowProgress — React hook (Sprint 10 Real API)
  *
- * Sprint 10 Phase 2 — Developer B
- *
- * Connects to the SSE stream for a running workflow and provides
- * live progress updates.  Falls back to polling every POLL_INTERVAL_MS
- * when SSE is not supported or when the EventSource errors out.
+ * Connects to the SSE stream for a running workflow and provides live progress.
+ * Falls back to polling every POLL_INTERVAL_MS when SSE delivers nothing within
+ * 5 seconds (network proxy, test env, etc.).
  *
  * Usage:
- *   const { status, progress, error, isConnected, cancel } =
+ *   const { status, currentAgent, totalProgress, agentProgress, error, cancel } =
  *     useWorkflowProgress(workflowId);
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AgentProgress, AgentProgressEvent, WorkflowStatus } from '../../../types/agentWorkflow.types';
+import type {
+  AgentProgress,
+  AgentProgressEvent,
+  WorkflowStatus,
+} from '../../../types/agentWorkflow.types';
 import sseService from '../../../services/sseService';
 import agentWorkflowService from '../../../services/agentWorkflowService';
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
 const POLL_INTERVAL_MS = 3_000;
-const TERMINAL_STATUSES: WorkflowStatus[] = ['completed', 'failed', 'cancelled'];
+const SSE_FALLBACK_TIMEOUT_MS = 5_000;
+const TERMINAL: WorkflowStatus[] = ['completed', 'failed', 'cancelled'];
 
 // ---------------------------------------------------------------------------
 // State Shape
 // ---------------------------------------------------------------------------
 
 export interface WorkflowProgressState {
-  /** Latest lifecycle status, null while workflow_id is not yet set */
+  /** Lifecycle status; null before workflowId is set */
   status: WorkflowStatus | null;
-  /** Granular progress detail; null until first update */
-  progress: AgentProgress | null;
-  /** Human-readable error message, present when status === 'failed' */
+  /** Currently active agent name; null when idle */
+  currentAgent: string | null;
+  /** Overall progress 0.0–1.0 */
+  totalProgress: number;
+  /** Per-agent progress map, keyed by agent name */
+  agentProgress: Record<string, AgentProgress>;
+  /** Error message when status === 'failed' */
   error: string | null;
-  /** True while the SSE stream (or polling) is active */
+  /** True while SSE / polling is active */
   isConnected: boolean;
-  /** True during the initial load before any update arrives */
+  /** True during the initial load */
   isLoading: boolean;
 }
 
 const INITIAL_STATE: WorkflowProgressState = {
   status: null,
-  progress: null,
+  currentAgent: null,
+  totalProgress: 0,
+  agentProgress: {},
   error: null,
   isConnected: false,
   isLoading: false,
@@ -52,30 +57,21 @@ const INITIAL_STATE: WorkflowProgressState = {
 // Hook
 // ---------------------------------------------------------------------------
 
-/**
- * Subscribe to a workflow's progress via SSE (with polling fallback).
- *
- * @param workflowId  The workflow to track. Pass null/undefined to idle.
- * @returns           Live progress state and a cancel function.
- */
-export function useWorkflowProgress(workflowId: string | null | undefined): WorkflowProgressState & {
-  cancel: () => void;
-} {
+export function useWorkflowProgress(
+  workflowId: string | null | undefined
+): WorkflowProgressState & { cancel: () => void } {
   const [state, setState] = useState<WorkflowProgressState>(INITIAL_STATE);
 
-  // Stable refs so callbacks can always read the latest value
-  const workflowIdRef = useRef<string | null | undefined>(workflowId);
+  const workflowIdRef = useRef(workflowId);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sseSubIdRef = useRef<string | null>(null);
-  const sseErroredRef = useRef(false);
-  const sseReceivedEventRef = useRef(false);
+  const sseGotEventRef = useRef(false);
 
   workflowIdRef.current = workflowId;
 
-  // -------------------------------------------------------------------------
-  // Helpers
-  // -------------------------------------------------------------------------
+  const isTerminal = (s: WorkflowStatus | null) => s !== null && TERMINAL.includes(s);
 
+  // ---- stop helpers ----
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current !== null) {
       clearInterval(pollTimerRef.current);
@@ -90,54 +86,83 @@ export function useWorkflowProgress(workflowId: string | null | undefined): Work
     }
   }, []);
 
-  const isTerminal = (s: WorkflowStatus | null) =>
-    s !== null && TERMINAL_STATUSES.includes(s);
-
-  // -------------------------------------------------------------------------
-  // Apply an SSE event to local state
-  // -------------------------------------------------------------------------
-  const applyEvent = useCallback((event: AgentProgressEvent) => {
-    setState((prev) => {
-      const next: WorkflowProgressState = {
-        ...prev,
-        status: event.event_type === 'completed'
-          ? 'completed'
-          : event.event_type === 'failed'
-          ? 'failed'
-          : event.event_type === 'cancelled'
-          ? 'cancelled'
-          : 'running',
-        progress: event.progress,
-        error: event.error ?? null,
-        isConnected: true,
-        isLoading: false,
-      };
-      return next;
-    });
-  }, []);
-
-  // -------------------------------------------------------------------------
-  // Poll the status endpoint
-  // -------------------------------------------------------------------------
-  const pollOnce = useCallback(async () => {
-    const id = workflowIdRef.current;
-    if (!id) return;
-
-    try {
-      const response = await agentWorkflowService.getWorkflowStatus(id);
+  // ---- apply a real WorkflowStatusResponse from poll ----
+  const applyStatusResponse = useCallback(
+    (res: Awaited<ReturnType<typeof agentWorkflowService.getWorkflowStatus>>) => {
       setState((prev) => ({
         ...prev,
-        status: response.status,
-        progress: response.progress,
-        error: response.error ?? null,
+        status: res.status,
+        currentAgent: res.current_agent,
+        totalProgress: res.total_progress,
+        agentProgress: res.progress ?? {},
+        error: res.error ?? null,
         isLoading: false,
       }));
-
-      // Stop polling once workflow reaches a terminal state
-      if (isTerminal(response.status)) {
+      if (isTerminal(res.status)) {
         stopPolling();
         setState((prev) => ({ ...prev, isConnected: false }));
       }
+    },
+    [stopPolling] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  // ---- apply a real AgentProgressEvent from SSE ----
+  const applySSEEvent = useCallback(
+    (event: AgentProgressEvent) => {
+      sseGotEventRef.current = true;
+      stopPolling(); // SSE is working — stop polling
+
+      setState((prev) => {
+        const nextStatus: WorkflowStatus =
+          event.event === 'workflow_completed' ? 'completed'
+          : event.event === 'workflow_failed' ? 'failed'
+          : 'running';
+
+        // Merge per-agent progress if the event carries it
+        const agentName = event.data?.agent as string | undefined;
+        const agentProg = agentName
+          ? {
+              ...prev.agentProgress,
+              [agentName]: {
+                agent: agentName,
+                status:
+                  event.event === 'agent_completed' ? 'completed'
+                  : event.event === 'agent_started' ? 'running'
+                  : 'running',
+                progress: typeof event.data?.progress === 'number' ? event.data.progress : 0,
+                message: event.data?.message as string | undefined,
+                elements_found: event.data?.elements_found as number | undefined,
+                scenarios_generated: event.data?.scenarios_generated as number | undefined,
+                tests_generated: event.data?.tests_generated as number | undefined,
+              } as AgentProgress,
+            }
+          : prev.agentProgress;
+
+        return {
+          ...prev,
+          status: nextStatus,
+          currentAgent: agentName ?? prev.currentAgent,
+          agentProgress: agentProg,
+          error: (event.data?.error as string) ?? null,
+          isConnected: !isTerminal(nextStatus),
+          isLoading: false,
+        };
+      });
+
+      if (['workflow_completed', 'workflow_failed'].includes(event.event)) {
+        stopSSE();
+      }
+    },
+    [stopPolling, stopSSE] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  // ---- poll once ----
+  const pollOnce = useCallback(async () => {
+    const id = workflowIdRef.current;
+    if (!id) return;
+    try {
+      const res = await agentWorkflowService.getWorkflowStatus(id);
+      applyStatusResponse(res);
     } catch (err) {
       setState((prev) => ({
         ...prev,
@@ -145,7 +170,7 @@ export function useWorkflowProgress(workflowId: string | null | undefined): Work
         isLoading: false,
       }));
     }
-  }, [stopPolling]);
+  }, [applyStatusResponse]);
 
   const startPolling = useCallback(() => {
     stopPolling();
@@ -153,74 +178,19 @@ export function useWorkflowProgress(workflowId: string | null | undefined): Work
     pollTimerRef.current = setInterval(pollOnce, POLL_INTERVAL_MS);
   }, [pollOnce, stopPolling]);
 
-  // -------------------------------------------------------------------------
-  // Start SSE stream
-  // -------------------------------------------------------------------------
-  const startSSE = useCallback(
-    (id: string) => {
-      sseErroredRef.current = false;
-
-      sseReceivedEventRef.current = false;
-
-      const subId = sseService.connect(id, (event: AgentProgressEvent) => {
-        sseReceivedEventRef.current = true;
-        applyEvent(event);
-
-        // Stop polling if SSE is now delivering updates
-        stopPolling();
-
-        if (isTerminal(event.event_type === 'completed'
-          ? 'completed'
-          : event.event_type === 'failed'
-          ? 'failed'
-          : event.event_type === 'cancelled'
-          ? 'cancelled'
-          : null)) {
-          stopSSE();
-          setState((prev) => ({ ...prev, isConnected: false }));
-        }
-      });
-
-      sseSubIdRef.current = subId;
-
-      // Kick off one polling pass immediately so we don't wait for first SSE frame
-      pollOnce();
-
-      // Ensure polling starts as fallback if SSE delivers nothing within 5 s
-      const fallbackTimer = setTimeout(() => {
-        // Start polling if SSE errored OR if SSE never delivered any event
-        // (covers mock mode where SSE silently does nothing)
-        if (!sseErroredRef.current && sseReceivedEventRef.current) return;
-        startPolling();
-      }, 5_000);
-
-      return () => clearTimeout(fallbackTimer);
-    },
-    [applyEvent, pollOnce, startPolling, stopPolling, stopSSE]
-  );
-
-  // -------------------------------------------------------------------------
-  // Cancel (public API)
-  // -------------------------------------------------------------------------
+  // ---- cancel (public) ----
   const cancel = useCallback(async () => {
     const id = workflowIdRef.current;
     stopPolling();
     stopSSE();
     setState((prev) => ({ ...prev, status: 'cancelled', isConnected: false }));
     if (id) {
-      try {
-        await agentWorkflowService.cancelWorkflow(id);
-      } catch {
-        // Best-effort cancel
-      }
+      try { await agentWorkflowService.cancelWorkflow(id); } catch { /* best-effort */ }
     }
   }, [stopPolling, stopSSE]);
 
-  // -------------------------------------------------------------------------
-  // Main effect — reacts to workflowId changes
-  // -------------------------------------------------------------------------
+  // ---- main effect ----
   useEffect(() => {
-    // Reset when no workflow is set
     if (!workflowId) {
       stopPolling();
       stopSSE();
@@ -228,12 +198,25 @@ export function useWorkflowProgress(workflowId: string | null | undefined): Work
       return;
     }
 
+    sseGotEventRef.current = false;
     setState({ ...INITIAL_STATE, isLoading: true, isConnected: true });
 
-    const cleanupFallback = startSSE(workflowId);
+    // Start SSE
+    const subId = sseService.connect(workflowId, applySSEEvent);
+    sseSubIdRef.current = subId;
+
+    // Immediate poll so we don't wait for first SSE frame
+    pollOnce();
+
+    // Start polling as fallback if SSE delivers nothing after timeout
+    const fallbackTimer = setTimeout(() => {
+      if (!sseGotEventRef.current) {
+        startPolling();
+      }
+    }, SSE_FALLBACK_TIMEOUT_MS);
 
     return () => {
-      cleanupFallback?.();
+      clearTimeout(fallbackTimer);
       stopPolling();
       stopSSE();
     };

@@ -1,9 +1,11 @@
 /**
- * Tests for agentWorkflowService.ts (mock stub)
- * Verifies the API client stub returns correctly shaped mock data
- * before the real backend (Developer A) is available.
+ * Tests for agentWorkflowService — Real API integration (Sprint 10)
+ *
+ * No mock data path.  All methods make real HTTP calls via axios (mocked here).
+ * Tests verify correct endpoint, request shape, response mapping, and error handling.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { AxiosResponse } from 'axios';
 import agentWorkflowService from '../../services/agentWorkflowService';
 import type {
   GenerateTestsRequest,
@@ -11,20 +13,89 @@ import type {
   WorkflowResultsResponse,
 } from '../../types/agentWorkflow.types';
 
-// Mock the api module so tests never make real HTTP calls
+// ---------------------------------------------------------------------------
+// Mock axios so no real HTTP is made
+// ---------------------------------------------------------------------------
+
+const mockPost = vi.fn();
+const mockGet = vi.fn();
+const mockDelete = vi.fn();
+
 vi.mock('../../services/api', () => ({
   default: {
-    post: vi.fn(),
-    get: vi.fn(),
-    delete: vi.fn(),
+    post:   (...args: unknown[]) => mockPost(...args),
+    get:    (...args: unknown[]) => mockGet(...args),
+    delete: (...args: unknown[]) => mockDelete(...args),
+  },
+  // Named export used by agentWorkflowService
+  apiV2: {
+    post:   (...args: unknown[]) => mockPost(...args),
+    get:    (...args: unknown[]) => mockGet(...args),
+    delete: (...args: unknown[]) => mockDelete(...args),
   },
   apiHelpers: {
-    useMockData: vi.fn().mockReturnValue(true),
-    getErrorMessage: vi.fn((e: unknown) => String(e)),
+    useMockData:    vi.fn().mockReturnValue(false), // ← REAL API
+    getErrorMessage: vi.fn((e: unknown) => (e instanceof Error ? e.message : String(e))),
   },
 }));
 
-describe('agentWorkflowService - Mock Stub', () => {
+// ---------------------------------------------------------------------------
+// Fixtures — shapes that match the real backend schemas
+// ---------------------------------------------------------------------------
+
+const WORKFLOW_ID = 'wf-real-001';
+
+const REAL_STATUS_RESPONSE: WorkflowStatusResponse = {
+  workflow_id: WORKFLOW_ID,
+  status: 'pending',
+  current_agent: null,
+  progress: {},
+  total_progress: 0.0,
+  started_at: new Date().toISOString(),
+  estimated_completion: null,
+  error: null,
+};
+
+const RUNNING_STATUS: WorkflowStatusResponse = {
+  workflow_id: WORKFLOW_ID,
+  status: 'running',
+  current_agent: 'observation',
+  progress: {
+    observation: {
+      agent: 'observation',
+      status: 'running',
+      progress: 0.5,
+      message: 'Extracting UI elements…',
+    },
+  },
+  total_progress: 0.125,
+  started_at: new Date().toISOString(),
+  estimated_completion: null,
+  error: null,
+};
+
+const REAL_RESULTS_RESPONSE: WorkflowResultsResponse = {
+  workflow_id: WORKFLOW_ID,
+  status: 'completed',
+  test_case_ids: [101, 102, 103],
+  test_count: 3,
+  observation_result: { ui_elements: [], page_context: { url: 'https://example.com' } },
+  requirements_result: { scenarios: [] },
+  analysis_result: { risk_scores: [] },
+  evolution_result: { test_count: 3, test_case_ids: [101, 102, 103] },
+  completed_at: new Date().toISOString(),
+  total_duration_seconds: 42.5,
+};
+
+function axiosRes<T>(data: T): AxiosResponse<T> {
+  return { data, status: 200, statusText: 'OK', headers: {}, config: {} } as AxiosResponse<T>;
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe('agentWorkflowService — Real API', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -33,28 +104,39 @@ describe('agentWorkflowService - Mock Stub', () => {
   // generateTests
   // ---------------------------------------------------------------------------
   describe('generateTests()', () => {
-    it('should return a workflow_id string when mock data is enabled', async () => {
-      const request: GenerateTestsRequest = { url: 'https://example.com' };
-      const result = await agentWorkflowService.generateTests(request);
+    it('calls POST /api/v2/generate-tests with correct payload', async () => {
+      mockPost.mockResolvedValue(axiosRes(REAL_STATUS_RESPONSE));
 
-      expect(result).toHaveProperty('workflow_id');
-      expect(typeof result.workflow_id).toBe('string');
-      expect(result.workflow_id.length).toBeGreaterThan(0);
+      const request: GenerateTestsRequest = {
+        url: 'https://example.com',
+        user_instruction: 'Test login flow',
+        depth: 1,
+      };
+      await agentWorkflowService.generateTests(request);
+
+      expect(mockPost).toHaveBeenCalledWith(
+        '/api/v2/generate-tests',
+        expect.objectContaining({ url: 'https://example.com', user_instruction: 'Test login flow', depth: 1 })
+      );
     });
 
-    it('should return status pending for a new workflow', async () => {
-      const request: GenerateTestsRequest = { url: 'https://example.com' };
-      const result = await agentWorkflowService.generateTests(request);
+    it('returns a WorkflowStatusResponse with workflow_id and status pending', async () => {
+      mockPost.mockResolvedValue(axiosRes(REAL_STATUS_RESPONSE));
 
+      const result = await agentWorkflowService.generateTests({ url: 'https://example.com' });
+
+      expect(result.workflow_id).toBe(WORKFLOW_ID);
       expect(result.status).toBe('pending');
+      expect(result).toHaveProperty('total_progress');
+      expect(result).toHaveProperty('started_at');
     });
 
-    it('should include message and estimated_duration_seconds in mock response', async () => {
-      const request: GenerateTestsRequest = { url: 'https://example.com' };
-      const result = await agentWorkflowService.generateTests(request);
+    it('throws an error when the API call fails', async () => {
+      mockPost.mockRejectedValue(new Error('Network error'));
 
-      expect(result).toHaveProperty('message');
-      expect(result).toHaveProperty('estimated_duration_seconds');
+      await expect(
+        agentWorkflowService.generateTests({ url: 'https://example.com' })
+      ).rejects.toThrow('Network error');
     });
   });
 
@@ -62,36 +144,31 @@ describe('agentWorkflowService - Mock Stub', () => {
   // getWorkflowStatus
   // ---------------------------------------------------------------------------
   describe('getWorkflowStatus()', () => {
-    it('should return a WorkflowStatusResponse for a given workflow id', async () => {
-      const response: WorkflowStatusResponse =
-        await agentWorkflowService.getWorkflowStatus('wf-mock-001');
+    it('calls GET /api/v2/workflows/{id}', async () => {
+      mockGet.mockResolvedValue(axiosRes(RUNNING_STATUS));
 
-      expect(response).toHaveProperty('workflow_id');
-      expect(response).toHaveProperty('status');
-      expect(response).toHaveProperty('progress');
-      expect(response).toHaveProperty('created_at');
-      expect(response).toHaveProperty('updated_at');
+      await agentWorkflowService.getWorkflowStatus(WORKFLOW_ID);
+
+      expect(mockGet).toHaveBeenCalledWith(`/api/v2/workflows/${WORKFLOW_ID}`);
     });
 
-    it('should echo back the provided workflow id', async () => {
-      const id = 'wf-mock-007';
-      const response = await agentWorkflowService.getWorkflowStatus(id);
-      expect(response.workflow_id).toBe(id);
+    it('returns a WorkflowStatusResponse with real-API shape', async () => {
+      mockGet.mockResolvedValue(axiosRes(RUNNING_STATUS));
+
+      const result: WorkflowStatusResponse = await agentWorkflowService.getWorkflowStatus(WORKFLOW_ID);
+
+      expect(result.workflow_id).toBe(WORKFLOW_ID);
+      expect(result.status).toBe('running');
+      expect(result.current_agent).toBe('observation');
+      expect(typeof result.total_progress).toBe('number');
+      expect(result.progress).toHaveProperty('observation');
+      expect(result.progress.observation.progress).toBe(0.5);
     });
 
-    it('should return a valid WorkflowStatus value', async () => {
-      const response = await agentWorkflowService.getWorkflowStatus('wf-mock-001');
-      const validStatuses = ['pending', 'running', 'completed', 'failed', 'cancelled'];
-      expect(validStatuses).toContain(response.status);
-    });
+    it('throws an error when the API call fails', async () => {
+      mockGet.mockRejectedValue(new Error('Timeout'));
 
-    it('should include progress with stage, percentage and message', async () => {
-      const response = await agentWorkflowService.getWorkflowStatus('wf-mock-001');
-      expect(response.progress).toHaveProperty('stage');
-      expect(response.progress).toHaveProperty('percentage');
-      expect(response.progress).toHaveProperty('message');
-      expect(response.progress.percentage).toBeGreaterThanOrEqual(0);
-      expect(response.progress.percentage).toBeLessThanOrEqual(100);
+      await expect(agentWorkflowService.getWorkflowStatus(WORKFLOW_ID)).rejects.toThrow('Timeout');
     });
   });
 
@@ -99,35 +176,33 @@ describe('agentWorkflowService - Mock Stub', () => {
   // getWorkflowResults
   // ---------------------------------------------------------------------------
   describe('getWorkflowResults()', () => {
-    it('should return a WorkflowResultsResponse for a given workflow id', async () => {
-      const response: WorkflowResultsResponse =
-        await agentWorkflowService.getWorkflowResults('wf-mock-001');
+    it('calls GET /api/v2/workflows/{id}/results', async () => {
+      mockGet.mockResolvedValue(axiosRes(REAL_RESULTS_RESPONSE));
 
-      expect(response).toHaveProperty('workflow_id');
-      expect(response).toHaveProperty('status');
-      expect(response).toHaveProperty('test_cases');
-      expect(response).toHaveProperty('summary');
-      expect(response).toHaveProperty('generated_at');
+      await agentWorkflowService.getWorkflowResults(WORKFLOW_ID);
+
+      expect(mockGet).toHaveBeenCalledWith(`/api/v2/workflows/${WORKFLOW_ID}/results`);
     });
 
-    it('should echo back the provided workflow id', async () => {
-      const id = 'wf-mock-007';
-      const response = await agentWorkflowService.getWorkflowResults(id);
-      expect(response.workflow_id).toBe(id);
+    it('returns a WorkflowResultsResponse with real-API shape', async () => {
+      mockGet.mockResolvedValue(axiosRes(REAL_RESULTS_RESPONSE));
+
+      const result: WorkflowResultsResponse = await agentWorkflowService.getWorkflowResults(WORKFLOW_ID);
+
+      expect(result.workflow_id).toBe(WORKFLOW_ID);
+      expect(result.status).toBe('completed');
+      expect(Array.isArray(result.test_case_ids)).toBe(true);
+      expect(result.test_case_ids).toEqual([101, 102, 103]);
+      expect(result.test_count).toBe(3);
+      expect(result).toHaveProperty('completed_at');
+      expect(result).toHaveProperty('total_duration_seconds');
+      expect(result.evolution_result).toBeTruthy();
     });
 
-    it('should return an array of test cases', async () => {
-      const response = await agentWorkflowService.getWorkflowResults('wf-mock-001');
-      expect(Array.isArray(response.test_cases)).toBe(true);
-    });
+    it('throws when API call fails', async () => {
+      mockGet.mockRejectedValue(new Error('Not found'));
 
-    it('should include valid summary fields', async () => {
-      const response = await agentWorkflowService.getWorkflowResults('wf-mock-001');
-      expect(response.summary).toHaveProperty('total_tests');
-      expect(response.summary).toHaveProperty('test_types');
-      expect(response.summary).toHaveProperty('avg_confidence_score');
-      expect(response.summary).toHaveProperty('total_steps');
-      expect(response.summary.total_tests).toBeGreaterThanOrEqual(0);
+      await expect(agentWorkflowService.getWorkflowResults(WORKFLOW_ID)).rejects.toThrow('Not found');
     });
   });
 
@@ -135,15 +210,24 @@ describe('agentWorkflowService - Mock Stub', () => {
   // cancelWorkflow
   // ---------------------------------------------------------------------------
   describe('cancelWorkflow()', () => {
-    it('should return success true for a mock cancellation', async () => {
-      const result = await agentWorkflowService.cancelWorkflow('wf-mock-001');
-      expect(result).toHaveProperty('success');
-      expect(result.success).toBe(true);
+    it('calls DELETE /api/v2/workflows/{id}', async () => {
+      mockDelete.mockResolvedValue({ data: null, status: 204 });
+
+      await agentWorkflowService.cancelWorkflow(WORKFLOW_ID);
+
+      expect(mockDelete).toHaveBeenCalledWith(`/api/v2/workflows/${WORKFLOW_ID}`);
     });
 
-    it('should return a message confirming cancellation', async () => {
-      const result = await agentWorkflowService.cancelWorkflow('wf-mock-001');
-      expect(typeof result.message).toBe('string');
+    it('resolves without throwing on 204 response', async () => {
+      mockDelete.mockResolvedValue({ data: null, status: 204 });
+
+      await expect(agentWorkflowService.cancelWorkflow(WORKFLOW_ID)).resolves.not.toThrow();
+    });
+
+    it('throws when API call fails', async () => {
+      mockDelete.mockRejectedValue(new Error('Server error'));
+
+      await expect(agentWorkflowService.cancelWorkflow(WORKFLOW_ID)).rejects.toThrow('Server error');
     });
   });
 });

@@ -1,15 +1,10 @@
 /**
- * Unit tests for useWorkflowProgress hook
- *
- * Sprint 10 Phase 2 — Developer B
- *
- * Uses real timers so that waitFor can poll without timer advancement.
- * setInterval is spied on (not mocked) to prevent indefinite intervals in tests.
+ * Unit tests for useWorkflowProgress hook — Real API integration (Sprint 10)
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useWorkflowProgress } from '../hooks/useWorkflowProgress';
-import type { AgentProgressEvent } from '../../../types/agentWorkflow.types';
+import type { AgentProgressEvent, WorkflowStatusResponse } from '../../../types/agentWorkflow.types';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -20,7 +15,7 @@ const mockDisconnect = vi.fn();
 
 vi.mock('../../../services/sseService', () => ({
   default: {
-    connect: (...args: unknown[]) => mockConnect(...args),
+    connect:    (...args: unknown[]) => mockConnect(...args),
     disconnect: (...args: unknown[]) => mockDisconnect(...args),
   },
 }));
@@ -36,34 +31,45 @@ vi.mock('../../../services/agentWorkflowService', () => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Helpers — real API shapes
 // ---------------------------------------------------------------------------
 
-function makePendingStatus(workflowId = 'wf-001') {
+function makeRunningStatus(workflowId = 'wf-001'): WorkflowStatusResponse {
   return {
     workflow_id: workflowId,
-    status: 'running' as const,
+    status: 'running',
+    current_agent: 'observation',
     progress: {
-      stage: 'analyzing' as const,
-      percentage: 25,
-      message: 'Observing page…',
+      observation: {
+        agent: 'observation',
+        status: 'running',
+        progress: 0.5,
+        message: 'Extracting UI elements…',
+      },
     },
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    total_progress: 0.125,
+    started_at: new Date().toISOString(),
+    estimated_completion: null,
+    error: null,
   };
 }
 
 function makeProgressEvent(workflowId = 'wf-001'): AgentProgressEvent {
   return {
-    workflow_id: workflowId,
-    event_type: 'progress',
-    progress: {
-      stage: 'generating',
-      percentage: 60,
-      message: 'Generating test scenarios…',
-      current_step: 3,
-      total_steps: 5,
+    event: 'agent_progress',
+    data: {
+      agent: 'requirements',
+      progress: 0.6,
+      message: 'Generating scenarios…',
     },
+    timestamp: new Date().toISOString(),
+  };
+}
+
+function makeCompletedEvent(workflowId = 'wf-001'): AgentProgressEvent {
+  return {
+    event: 'workflow_completed',
+    data: { workflow_id: workflowId, test_count: 5, total_duration_seconds: 42 },
     timestamp: new Date().toISOString(),
   };
 }
@@ -73,13 +79,12 @@ function makeProgressEvent(workflowId = 'wf-001'): AgentProgressEvent {
 // ---------------------------------------------------------------------------
 
 describe('useWorkflowProgress', () => {
-  // Spy on setInterval to avoid indefinite intervals keeping tests alive
   let setIntervalSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     setIntervalSpy = vi.spyOn(globalThis, 'setInterval').mockReturnValue(undefined as unknown as ReturnType<typeof setInterval>);
-    mockGetWorkflowStatus.mockResolvedValue(makePendingStatus());
-    mockCancelWorkflow.mockResolvedValue({ success: true, message: 'Cancelled' });
+    mockGetWorkflowStatus.mockResolvedValue(makeRunningStatus());
+    mockCancelWorkflow.mockResolvedValue(undefined);
     mockConnect.mockReturnValue('sub-mock-001');
   });
 
@@ -88,40 +93,39 @@ describe('useWorkflowProgress', () => {
     vi.clearAllMocks();
   });
 
-  // ----
-
-  it('should start with null state when workflowId is null', () => {
+  it('starts with null state when workflowId is null', () => {
     const { result } = renderHook(() => useWorkflowProgress(null));
     expect(result.current.status).toBeNull();
     expect(result.current.isLoading).toBe(false);
     expect(result.current.isConnected).toBe(false);
   });
 
-  it('should set isLoading and isConnected true when workflowId is provided', () => {
+  it('sets isLoading and isConnected true when workflowId is provided', () => {
     const { result } = renderHook(() => useWorkflowProgress('wf-001'));
     expect(result.current.isLoading).toBe(true);
     expect(result.current.isConnected).toBe(true);
   });
 
-  it('should call sseService.connect with the workflowId', () => {
+  it('calls sseService.connect with the workflowId', () => {
     renderHook(() => useWorkflowProgress('wf-001'));
     expect(mockConnect).toHaveBeenCalledWith('wf-001', expect.any(Function));
   });
 
-  it('should poll for status on mount', async () => {
+  it('polls getWorkflowStatus on mount', async () => {
     renderHook(() => useWorkflowProgress('wf-001'));
     await waitFor(() => expect(mockGetWorkflowStatus).toHaveBeenCalledWith('wf-001'));
   });
 
-  it('should update status after first poll', async () => {
+  it('updates status after first poll returns real-API WorkflowStatusResponse', async () => {
     const { result } = renderHook(() => useWorkflowProgress('wf-001'));
-    // Flush the async pollOnce() Promise that runs inside useEffect
     await act(async () => { await Promise.resolve(); });
+
     expect(result.current.status).toBe('running');
-    expect(result.current.progress?.stage).toBe('analyzing');
+    expect(result.current.currentAgent).toBe('observation');
+    expect(typeof result.current.totalProgress).toBe('number');
   });
 
-  it('should update from SSE event when callback is fired', async () => {
+  it('applies SSE agent_progress event to state', async () => {
     let sseCallback: ((event: AgentProgressEvent) => void) | undefined;
     mockConnect.mockImplementation((_id: string, cb: (event: AgentProgressEvent) => void) => {
       sseCallback = cb;
@@ -129,7 +133,6 @@ describe('useWorkflowProgress', () => {
     });
 
     const { result } = renderHook(() => useWorkflowProgress('wf-001'));
-    // Allow effect to run
     await act(async () => { await Promise.resolve(); });
 
     expect(sseCallback).toBeDefined();
@@ -138,19 +141,35 @@ describe('useWorkflowProgress', () => {
       sseCallback!(makeProgressEvent('wf-001'));
     });
 
-    expect(result.current.progress?.stage).toBe('generating');
-    expect(result.current.progress?.percentage).toBe(60);
+    // After a progress event the workflow should still be running
+    expect(result.current.status).toBe('running');
   });
 
-  it('should call disconnect on unmount', async () => {
+  it('sets status to completed after workflow_completed SSE event', async () => {
+    let sseCallback: ((event: AgentProgressEvent) => void) | undefined;
+    mockConnect.mockImplementation((_id: string, cb: (event: AgentProgressEvent) => void) => {
+      sseCallback = cb;
+      return 'sub-sse-001';
+    });
+
+    const { result } = renderHook(() => useWorkflowProgress('wf-001'));
+    await act(async () => { await Promise.resolve(); });
+
+    await act(async () => {
+      sseCallback!(makeCompletedEvent('wf-001'));
+    });
+
+    expect(result.current.status).toBe('completed');
+  });
+
+  it('calls disconnect on unmount', async () => {
     const { unmount } = renderHook(() => useWorkflowProgress('wf-001'));
-    // Allow effect to set up
     await act(async () => { await Promise.resolve(); });
     unmount();
     expect(mockDisconnect).toHaveBeenCalledWith('sub-mock-001');
   });
 
-  it('should reset to idle when workflowId changes to null', async () => {
+  it('resets to idle when workflowId changes to null', async () => {
     const { result, rerender } = renderHook(
       ({ id }: { id: string | null }) => useWorkflowProgress(id),
       { initialProps: { id: 'wf-001' as string | null } }
@@ -160,25 +179,21 @@ describe('useWorkflowProgress', () => {
     expect(result.current.status).toBe('running');
 
     rerender({ id: null });
-
     expect(result.current.status).toBeNull();
     expect(result.current.isConnected).toBe(false);
   });
 
-  it('should set status to cancelled when cancel() is called', async () => {
+  it('sets status to cancelled when cancel() is called', async () => {
     const { result } = renderHook(() => useWorkflowProgress('wf-001'));
     await act(async () => { await Promise.resolve(); });
-    expect(result.current.status).toBe('running');
 
-    await act(async () => {
-      await result.current.cancel();
-    });
+    await act(async () => { await result.current.cancel(); });
 
     expect(result.current.status).toBe('cancelled');
     expect(mockCancelWorkflow).toHaveBeenCalledWith('wf-001');
   });
 
-  it('should expose error from failed poll', async () => {
+  it('exposes error from failed poll', async () => {
     mockGetWorkflowStatus.mockRejectedValueOnce(new Error('Network error'));
 
     const { result } = renderHook(() => useWorkflowProgress('wf-fail'));

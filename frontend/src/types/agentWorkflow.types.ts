@@ -1,15 +1,11 @@
 /**
- * Agent Workflow API Contract Types
+ * Agent Workflow API Contract Types — Sprint 10 (Real API Integration)
  *
- * Sprint 10 Phase 1 — API Contract Definition (Developer B)
- * These TypeScript types mirror the Pydantic schemas defined by Developer A:
- *   - GenerateTestsRequest
- *   - WorkflowStatusResponse
- *   - AgentProgressEvent
- *   - WorkflowResultsResponse
+ * These TypeScript types mirror the Pydantic schemas in
+ * backend/app/schemas/workflow.py and the API spec in
+ * backend/app/api/v2/API_SPECIFICATION.md.
  *
- * ⚠️  CONTRACT LOCKED — Do not modify without coordinating with Developer A.
- *     Any schema changes must be agreed before implementation resumes.
+ * ⚠️  REAL API — No more mock data. VITE_USE_MOCK=false.
  */
 
 // ---------------------------------------------------------------------------
@@ -20,167 +16,188 @@
 export type WorkflowId = string;
 
 /** Lifecycle status of a workflow */
-export type WorkflowStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
-
-/** Processing stage within a running workflow */
-export type AgentStage =
-  | 'initializing'
-  | 'analyzing'
-  | 'generating'
-  | 'validating'
-  | 'complete';
+export type WorkflowStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
 
 // ---------------------------------------------------------------------------
-// Progress Tracking
+// Per-Agent Progress (matches backend AgentProgress Pydantic model)
 // ---------------------------------------------------------------------------
 
-/** Current progress detail for a running workflow.
- *  Maps to Pydantic AgentProgressDetail.
+/**
+ * Progress detail for a single agent.
+ * Returned inside WorkflowStatusResponse.progress (a Record<agentName, AgentProgress>).
  */
 export interface AgentProgress {
-  /** Current processing stage */
-  stage: AgentStage;
-  /** Overall completion percentage (0–100) */
-  percentage: number;
+  /** Agent name: observation | requirements | analysis | evolution */
+  agent: string;
+  /** Status: pending | running | completed | failed */
+  status: string;
+  /** Completion fraction 0.0–1.0 */
+  progress: number;
   /** Human-readable status message */
-  message: string;
-  /** Index of the current processing step (1-based, optional) */
-  current_step?: number;
-  /** Total number of steps in this stage (optional) */
-  total_steps?: number;
+  message?: string | null;
+  /** ISO 8601 timestamp when agent started */
+  started_at?: string | null;
+  /** ISO 8601 timestamp when agent completed */
+  completed_at?: string | null;
+  /** Duration in seconds */
+  duration_seconds?: number | null;
+  /** AI confidence score (ObservationAgent) */
+  confidence?: number | null;
+  /** Number of UI elements found (ObservationAgent) */
+  elements_found?: number | null;
+  /** Number of scenarios generated (RequirementsAgent) */
+  scenarios_generated?: number | null;
+  /** Number of tests generated (EvolutionAgent) */
+  tests_generated?: number | null;
 }
 
 // ---------------------------------------------------------------------------
 // Request Types (Frontend → Backend)
 // ---------------------------------------------------------------------------
 
-/** Request body for POST /api/v2/generate-tests.
- *  Mirrors Pydantic GenerateTestsRequest.
+/**
+ * Request body for POST /api/v2/generate-tests.
+ * Mirrors Pydantic GenerateTestsRequest.
  */
 export interface GenerateTestsRequest {
   /** Target URL to analyse and generate tests for */
   url: string;
-  /** Subset of test types to generate (e.g. 'smoke', 'regression') */
-  test_types?: string[];
-  /** Maximum number of test cases to generate */
-  max_tests?: number;
-  /** Browser to use during page analysis */
-  browser?: 'chromium' | 'firefox' | 'webkit';
-  /** Whether to include assertion steps in generated tests */
-  include_assertions?: boolean;
-  /** Optional freeform context description to guide generation */
-  context?: string;
+  /** Optional instruction (e.g. "Test purchase flow for 5G plan") */
+  user_instruction?: string;
+  /** Crawl depth: 1 = current page, 2 = include links, 3 = deep crawl. Default: 1 */
+  depth?: number;
+  /** Optional login credentials */
+  login_credentials?: { username?: string; email?: string; password: string };
+  /** Optional Gmail credentials for OTP */
+  gmail_credentials?: { email: string; password: string };
 }
 
 // ---------------------------------------------------------------------------
-// Response Types (Backend → Frontend)
+// Response Types (Backend → Frontend) — matches real API spec
 // ---------------------------------------------------------------------------
 
-/** Response body for POST /api/v2/generate-tests.
- *  Mirrors Pydantic WorkflowCreateResponse.
- */
-export interface WorkflowCreateResponse {
-  workflow_id: WorkflowId;
-  status: Extract<WorkflowStatus, 'pending'>;
-  message: string;
-  estimated_duration_seconds: number;
-}
-
-/** Response body for GET /api/v2/workflows/{workflow_id}.
- *  Mirrors Pydantic WorkflowStatusResponse.
+/**
+ * Response body for POST /api/v2/generate-tests (202 Accepted).
+ * All POST entry points return WorkflowStatusResponse.
+ * Mirrors Pydantic WorkflowStatusResponse.
  */
 export interface WorkflowStatusResponse {
   workflow_id: WorkflowId;
+  /** Overall lifecycle status */
   status: WorkflowStatus;
-  progress: AgentProgress;
-  created_at: string;   // ISO 8601
-  updated_at: string;   // ISO 8601
-  /** Present only when status is 'failed' */
-  error?: string;
+  /** Name of the currently executing agent, or null */
+  current_agent: string | null;
+  /** Per-agent progress map */
+  progress: Record<string, AgentProgress>;
+  /** Overall progress fraction 0.0–1.0 */
+  total_progress: number;
+  /** ISO 8601 start time */
+  started_at: string;
+  /** Estimated completion time (ISO 8601); null if unknown */
+  estimated_completion?: string | null;
+  /** Error message when status === 'failed' */
+  error?: string | null;
 }
 
-// ---------------------------------------------------------------------------
-// SSE Event Types (Server-Sent Events payload)
-// ---------------------------------------------------------------------------
-
-/** Payload delivered over the SSE stream for a running workflow.
- *  Mirrors Pydantic AgentProgressEvent.
- */
-export interface AgentProgressEvent {
-  workflow_id: WorkflowId;
-  /** Discriminator for the event kind */
-  event_type: 'progress' | 'completed' | 'failed' | 'cancelled';
-  progress: AgentProgress;
-  timestamp: string;    // ISO 8601
-  /** Present only when event_type is 'completed' */
-  result_summary?: {
-    total_tests: number;
-    duration_seconds: number;
-  };
-  /** Present only when event_type is 'failed' */
-  error?: string;
-}
-
-// ---------------------------------------------------------------------------
-// Results Types
-// ---------------------------------------------------------------------------
-
-/** A single test step within a generated test case */
-export interface TestStep {
-  step_number: number;
-  action: string;
-  target: string;
-  value: string;
-  description?: string;
-}
-
-/** A single assertion within a generated test case */
-export interface TestAssertion {
-  assertion_type: string;
-  target: string;
-  expected_value: string;
-  description?: string;
-}
-
-/** A single AI-generated test case.
- *  Mirrors Pydantic GeneratedTestCase.
- */
-export interface GeneratedTestCase {
-  id: string;
-  title: string;
-  description: string;
-  test_type: string;
-  steps: TestStep[];
-  assertions: TestAssertion[];
-  estimated_duration_seconds: number;
-  /** AI confidence in the quality of this test case (0.0–1.0) */
-  confidence_score: number;
-  tags?: string[];
-}
-
-/** Summary statistics for a completed workflow */
-export interface WorkflowResultsSummary {
-  total_tests: number;
-  /** Map of test_type → count */
-  test_types: Record<string, number>;
-  avg_confidence_score: number;
-  total_steps: number;
-}
-
-/** Full results payload for a completed workflow.
- *  Mirrors Pydantic WorkflowResultsResponse.
+/**
+ * Full results payload for a completed workflow.
+ * Mirrors Pydantic WorkflowResultsResponse.
+ * GET /api/v2/workflows/{id}/results
  */
 export interface WorkflowResultsResponse {
   workflow_id: WorkflowId;
-  status: Extract<WorkflowStatus, 'completed'>;
-  test_cases: GeneratedTestCase[];
-  summary: WorkflowResultsSummary;
-  generated_at: string;  // ISO 8601
+  status: WorkflowStatus;
+  /** Database IDs of generated test cases */
+  test_case_ids: number[];
+  /** Count of generated tests */
+  test_count: number;
+  /** ObservationAgent result payload */
+  observation_result?: Record<string, unknown> | null;
+  /** RequirementsAgent result payload */
+  requirements_result?: Record<string, unknown> | null;
+  /** AnalysisAgent result payload */
+  analysis_result?: Record<string, unknown> | null;
+  /** EvolutionAgent result payload */
+  evolution_result?: Record<string, unknown> | null;
+  /** ISO 8601 completion timestamp */
+  completed_at: string;
+  /** Total duration in seconds */
+  total_duration_seconds: number;
+}
+
+/**
+ * Error response for 4xx / 5xx status codes.
+ * Mirrors Pydantic WorkflowErrorResponse.
+ */
+export interface WorkflowErrorResponse {
+  error: string;
+  code: string;
+  workflow_id?: string | null;
+  timestamp: string;
 }
 
 // ---------------------------------------------------------------------------
-// Callback Type
+// SSE Event Types — matches real backend event format
 // ---------------------------------------------------------------------------
+
+export type SseEventType =
+  | 'agent_started'
+  | 'agent_progress'
+  | 'agent_completed'
+  | 'workflow_completed'
+  | 'workflow_failed';
+
+/**
+ * SSE event payload received from GET /api/v2/workflows/{id}/stream.
+ *
+ * The backend sends named SSE events.  Each message data JSON has this shape.
+ * Event names: agent_started | agent_progress | agent_completed |
+ *              workflow_completed | workflow_failed
+ */
+export interface AgentProgressEvent {
+  /** Event name (same as SSE `event:` field) */
+  event: SseEventType;
+  /** Event-specific data payload */
+  data: Record<string, unknown>;
+  /** ISO 8601 timestamp */
+  timestamp: string;
+}
 
 /** Callback signature for SSE event subscribers */
 export type WorkflowEventCallback = (event: AgentProgressEvent) => void;
+
+// ---------------------------------------------------------------------------
+// Display Types — used by UI components, derived from real API responses
+// ---------------------------------------------------------------------------
+
+/**
+ * Stage identifier for the pipeline visualisation.
+ * Maps from the four real agents + idle/complete states.
+ */
+export type AgentStage =
+  | 'idle'
+  | 'observation'
+  | 'requirements'
+  | 'analysis'
+  | 'evolution'
+  | 'complete';
+
+/**
+ * Simplified progress model used by AgentProgressPipeline.
+ * Derived from WorkflowStatusResponse by the hook/service layer.
+ */
+export interface DisplayProgress {
+  /** Active agent name (maps to AgentStage) */
+  currentAgent: AgentStage;
+  /** Overall percentage 0–100 */
+  percentage: number;
+  /** Human-readable status message */
+  message: string;
+  /** Per-agent progress map (pass-through from API) */
+  agentProgress: Record<string, AgentProgress>;
+}

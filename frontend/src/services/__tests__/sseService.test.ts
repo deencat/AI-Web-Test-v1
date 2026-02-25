@@ -1,176 +1,307 @@
 /**
- * Tests for sseService.ts (mock stub)
- * Verifies the SSE client stub correctly manages subscriptions
- * and fires callbacks with mock AgentProgressEvent payloads.
+ * Tests for sseService.ts — Real EventSource implementation (Sprint 10)
+ *
+ * Strategy: mock the global EventSource so tests run without a real HTTP server.
+ * Verified behaviors:
+ *   - connect() opens an EventSource at the correct URL
+ *   - connect() registers named event listeners for all 5 SSE event types
+ *   - connect() returns a unique subscription id
+ *   - disconnect() closes the EventSource and removes the subscription
+ *   - disconnectAll() closes every active EventSource
+ *   - isConnected() / getActiveCount() reflect subscription state
+ *   - Callbacks are fired with correctly-parsed AgentProgressEvent payloads
+ *   - Parsing errors do not throw (they are silently logged)
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import sseService from '../../services/sseService';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { AgentProgressEvent } from '../../types/agentWorkflow.types';
 
-describe('sseService - Mock SSE Stub', () => {
-  beforeEach(() => {
-    // Disconnect any lingering connections between tests
+// ---------------------------------------------------------------------------
+// Mock EventSource
+// ---------------------------------------------------------------------------
+
+type Listener = (event: MessageEvent) => void;
+
+class MockEventSource {
+  static instances: MockEventSource[] = [];
+
+  public onmessage: Listener | null = null;
+  public onerror: ((e: Event) => void) | null = null;
+  public close = vi.fn();
+  private listenerMap = new Map<string, Listener[]>();
+
+  constructor(public readonly url: string) {
+    MockEventSource.instances.push(this);
+  }
+
+  addEventListener(type: string, listener: Listener): void {
+    const current = this.listenerMap.get(type) ?? [];
+    this.listenerMap.set(type, [...current, listener]);
+  }
+
+  /** Test helper — fire a named SSE event to registered listeners. */
+  triggerEvent(type: string, data: unknown): void {
+    const event = new MessageEvent(type, { data: JSON.stringify(data) });
+    (this.listenerMap.get(type) ?? []).forEach((l) => l(event));
+  }
+
+  /** Test helper — fire the generic onmessage handler. */
+  triggerMessage(data: unknown): void {
+    if (this.onmessage) {
+      this.onmessage(new MessageEvent('message', { data: JSON.stringify(data) }));
+    }
+  }
+
+  /** Returns the listeners registered for a given event type. */
+  getListeners(type: string): Listener[] {
+    return this.listenerMap.get(type) ?? [];
+  }
+}
+
+// Install the mock globally before importing the service
+vi.stubGlobal('EventSource', MockEventSource);
+
+// ---------------------------------------------------------------------------
+// Import service AFTER stubbing EventSource
+// ---------------------------------------------------------------------------
+import sseService from '../../services/sseService';
+
+// ---------------------------------------------------------------------------
+// Lifecycle helpers
+// ---------------------------------------------------------------------------
+
+beforeEach(() => {
+  MockEventSource.instances = [];
+  vi.clearAllMocks();
+  sseService.disconnectAll();
+  MockEventSource.instances = [];
+});
+
+afterEach(() => {
+  sseService.disconnectAll();
+  MockEventSource.instances = [];
+});
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const AGENT_PROGRESS_EVENT: AgentProgressEvent = {
+  event: 'agent_progress',
+  data: { agent: 'observation', status: 'running', progress: 0.5 },
+  timestamp: new Date().toISOString(),
+};
+
+const WORKFLOW_COMPLETED_EVENT: AgentProgressEvent = {
+  event: 'workflow_completed',
+  data: { workflow_id: 'wf-001', status: 'completed', total_progress: 1.0 },
+  timestamp: new Date().toISOString(),
+};
+
+// ---------------------------------------------------------------------------
+// connect()
+// ---------------------------------------------------------------------------
+
+describe('connect()', () => {
+  it('returns a non-empty subscription id', () => {
+    const id = sseService.connect('wf-001', vi.fn());
+    expect(typeof id).toBe('string');
+    expect(id.length).toBeGreaterThan(0);
+  });
+
+  it('returns unique ids for different workflows', () => {
+    const id1 = sseService.connect('wf-001', vi.fn());
+    const id2 = sseService.connect('wf-002', vi.fn());
+    expect(id1).not.toBe(id2);
+  });
+
+  it('returns unique ids for the same workflow (multiple subscribers)', () => {
+    const id1 = sseService.connect('wf-001', vi.fn());
+    const id2 = sseService.connect('wf-001', vi.fn());
+    expect(id1).not.toBe(id2);
+  });
+
+  it('opens EventSource at the correct URL', () => {
+    sseService.connect('wf-abc-123', vi.fn());
+    expect(MockEventSource.instances).toHaveLength(1);
+    expect(MockEventSource.instances[0].url).toBe('/api/v2/workflows/wf-abc-123/stream');
+  });
+
+  it('registers named listeners for all 5 SSE event types', () => {
+    sseService.connect('wf-001', vi.fn());
+    const es = MockEventSource.instances[0];
+    for (const type of [
+      'agent_started',
+      'agent_progress',
+      'agent_completed',
+      'workflow_completed',
+      'workflow_failed',
+    ]) {
+      expect(es.getListeners(type).length).toBeGreaterThan(0);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// disconnect()
+// ---------------------------------------------------------------------------
+
+describe('disconnect()', () => {
+  it('returns true for an active subscription', () => {
+    const id = sseService.connect('wf-001', vi.fn());
+    expect(sseService.disconnect(id)).toBe(true);
+  });
+
+  it('returns false for an unknown subscription id', () => {
+    expect(sseService.disconnect('non-existent-id')).toBe(false);
+  });
+
+  it('calls EventSource.close()', () => {
+    const id = sseService.connect('wf-001', vi.fn());
+    const es = MockEventSource.instances[0];
+    sseService.disconnect(id);
+    expect(es.close).toHaveBeenCalledOnce();
+  });
+
+  it('makes isConnected return false', () => {
+    const id = sseService.connect('wf-001', vi.fn());
+    sseService.disconnect(id);
+    expect(sseService.isConnected(id)).toBe(false);
+  });
+
+  it('does not throw when called twice for the same id', () => {
+    const id = sseService.connect('wf-001', vi.fn());
+    sseService.disconnect(id);
+    expect(() => sseService.disconnect(id)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// disconnectAll()
+// ---------------------------------------------------------------------------
+
+describe('disconnectAll()', () => {
+  it('does not throw when there are no subscriptions', () => {
+    expect(() => sseService.disconnectAll()).not.toThrow();
+  });
+
+  it('closes all EventSources', () => {
+    sseService.connect('wf-001', vi.fn());
+    sseService.connect('wf-002', vi.fn());
     sseService.disconnectAll();
-    vi.clearAllMocks();
-    vi.useRealTimers();
+    expect(MockEventSource.instances[0].close).toHaveBeenCalledOnce();
+    expect(MockEventSource.instances[1].close).toHaveBeenCalledOnce();
   });
 
-  // ---------------------------------------------------------------------------
-  // connect / disconnect lifecycle
-  // ---------------------------------------------------------------------------
-  describe('connect()', () => {
-    it('should return a subscription id when connecting to a workflow stream', () => {
-      const subscriptionId = sseService.connect('wf-mock-001', vi.fn());
-      expect(typeof subscriptionId).toBe('string');
-      expect(subscriptionId.length).toBeGreaterThan(0);
-    });
+  it('sets getActiveCount to 0', () => {
+    sseService.connect('wf-001', vi.fn());
+    sseService.connect('wf-002', vi.fn());
+    sseService.disconnectAll();
+    expect(sseService.getActiveCount()).toBe(0);
+  });
+});
 
-    it('should return unique subscription ids for different workflows', () => {
-      const id1 = sseService.connect('wf-mock-001', vi.fn());
-      const id2 = sseService.connect('wf-mock-002', vi.fn());
-      expect(id1).not.toBe(id2);
-    });
+// ---------------------------------------------------------------------------
+// isConnected()
+// ---------------------------------------------------------------------------
+
+describe('isConnected()', () => {
+  it('returns true for an active subscription', () => {
+    const id = sseService.connect('wf-001', vi.fn());
+    expect(sseService.isConnected(id)).toBe(true);
   });
 
-  describe('disconnect()', () => {
-    it('should disconnect a specific subscription without throwing', () => {
-      const subscriptionId = sseService.connect('wf-mock-001', vi.fn());
-      expect(() => sseService.disconnect(subscriptionId)).not.toThrow();
-    });
-
-    it('should return true when disconnecting an active subscription', () => {
-      const subscriptionId = sseService.connect('wf-mock-001', vi.fn());
-      expect(sseService.disconnect(subscriptionId)).toBe(true);
-    });
-
-    it('should return false when disconnecting a non-existent subscription', () => {
-      expect(sseService.disconnect('nonexistent-sub-id')).toBe(false);
-    });
+  it('returns false after disconnection', () => {
+    const id = sseService.connect('wf-001', vi.fn());
+    sseService.disconnect(id);
+    expect(sseService.isConnected(id)).toBe(false);
   });
 
-  describe('disconnectAll()', () => {
-    it('should disconnect all active subscriptions without throwing', () => {
-      sseService.connect('wf-001', vi.fn());
-      sseService.connect('wf-002', vi.fn());
-      expect(() => sseService.disconnectAll()).not.toThrow();
-    });
+  it('returns false for unknown id', () => {
+    expect(sseService.isConnected('ghost-id')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getActiveCount()
+// ---------------------------------------------------------------------------
+
+describe('getActiveCount()', () => {
+  it('returns 0 when no subscriptions', () => {
+    expect(sseService.getActiveCount()).toBe(0);
   });
 
-  // ---------------------------------------------------------------------------
-  // isConnected
-  // ---------------------------------------------------------------------------
-  describe('isConnected()', () => {
-    it('should return true for an active subscription', () => {
-      const subscriptionId = sseService.connect('wf-mock-001', vi.fn());
-      expect(sseService.isConnected(subscriptionId)).toBe(true);
-    });
-
-    it('should return false after disconnecting', () => {
-      const subscriptionId = sseService.connect('wf-mock-001', vi.fn());
-      sseService.disconnect(subscriptionId);
-      expect(sseService.isConnected(subscriptionId)).toBe(false);
-    });
-
-    it('should return false for an unknown subscription id', () => {
-      expect(sseService.isConnected('unknown-id')).toBe(false);
-    });
+  it('increments on each connect()', () => {
+    sseService.connect('wf-001', vi.fn());
+    expect(sseService.getActiveCount()).toBe(1);
+    sseService.connect('wf-002', vi.fn());
+    expect(sseService.getActiveCount()).toBe(2);
   });
 
-  // ---------------------------------------------------------------------------
-  // getActiveCount
-  // ---------------------------------------------------------------------------
-  describe('getActiveCount()', () => {
-    it('should return 0 when there are no active subscriptions', () => {
-      expect(sseService.getActiveCount()).toBe(0);
-    });
+  it('decrements on disconnect()', () => {
+    const id = sseService.connect('wf-001', vi.fn());
+    sseService.connect('wf-002', vi.fn());
+    sseService.disconnect(id);
+    expect(sseService.getActiveCount()).toBe(1);
+  });
+});
 
-    it('should increment when a subscription is connected', () => {
-      sseService.connect('wf-001', vi.fn());
-      expect(sseService.getActiveCount()).toBe(1);
-    });
+// ---------------------------------------------------------------------------
+// Callback delivery via named events
+// ---------------------------------------------------------------------------
 
-    it('should decrement when a subscription is disconnected', () => {
-      const id = sseService.connect('wf-001', vi.fn());
-      sseService.connect('wf-002', vi.fn());
-      sseService.disconnect(id);
-      expect(sseService.getActiveCount()).toBe(1);
-    });
+describe('callback delivery', () => {
+  it('calls callback when a named agent_progress event fires', () => {
+    const callback = vi.fn();
+    sseService.connect('wf-001', callback);
+    const es = MockEventSource.instances[0];
 
-    it('should return 0 after disconnectAll', () => {
-      sseService.connect('wf-001', vi.fn());
-      sseService.connect('wf-002', vi.fn());
-      sseService.disconnectAll();
-      expect(sseService.getActiveCount()).toBe(0);
-    });
+    es.triggerEvent('agent_progress', AGENT_PROGRESS_EVENT);
+
+    expect(callback).toHaveBeenCalledOnce();
+    expect(callback).toHaveBeenCalledWith(AGENT_PROGRESS_EVENT);
   });
 
-  // ---------------------------------------------------------------------------
-  // Mock event delivery (simulated SSE events)
-  // ---------------------------------------------------------------------------
-  describe('simulateEvent() - mock event delivery', () => {
-    it('should call the registered callback when an event is simulated', () => {
-      const callback = vi.fn();
-      sseService.connect('wf-mock-001', callback);
+  it('calls callback when a workflow_completed event fires', () => {
+    const callback = vi.fn();
+    sseService.connect('wf-001', callback);
+    const es = MockEventSource.instances[0];
 
-      const event: AgentProgressEvent = {
-        workflow_id: 'wf-mock-001',
-        event_type: 'progress',
-        progress: { stage: 'generating', percentage: 50, message: 'Half way' },
-        timestamp: new Date().toISOString(),
-      };
+    es.triggerEvent('workflow_completed', WORKFLOW_COMPLETED_EVENT);
 
-      sseService.simulateEvent('wf-mock-001', event);
-      expect(callback).toHaveBeenCalledOnce();
-      expect(callback).toHaveBeenCalledWith(event);
-    });
+    expect(callback).toHaveBeenCalledOnce();
+    expect(callback).toHaveBeenCalledWith(WORKFLOW_COMPLETED_EVENT);
+  });
 
-    it('should not call callback for a different workflow id', () => {
-      const callback = vi.fn();
-      sseService.connect('wf-mock-001', callback);
+  it('calls callback via generic onmessage fallback', () => {
+    const callback = vi.fn();
+    sseService.connect('wf-001', callback);
+    const es = MockEventSource.instances[0];
 
-      const event: AgentProgressEvent = {
-        workflow_id: 'wf-mock-002',
-        event_type: 'progress',
-        progress: { stage: 'analyzing', percentage: 20, message: 'Analyzing' },
-        timestamp: new Date().toISOString(),
-      };
+    es.triggerMessage(AGENT_PROGRESS_EVENT);
 
-      sseService.simulateEvent('wf-mock-002', event);
-      expect(callback).not.toHaveBeenCalled();
-    });
+    expect(callback).toHaveBeenCalledOnce();
+  });
 
-    it('should not call callback after disconnection', () => {
-      const callback = vi.fn();
-      const id = sseService.connect('wf-mock-001', callback);
-      sseService.disconnect(id);
+  it('does not throw when event data is malformed JSON', () => {
+    sseService.connect('wf-001', vi.fn());
+    const es = MockEventSource.instances[0];
+    const badEvent = new MessageEvent('agent_progress', { data: '{not: valid json}' });
+    expect(() =>
+      es.getListeners('agent_progress').forEach((l) => l(badEvent))
+    ).not.toThrow();
+  });
 
-      const event: AgentProgressEvent = {
-        workflow_id: 'wf-mock-001',
-        event_type: 'completed',
-        progress: { stage: 'complete', percentage: 100, message: 'Done' },
-        timestamp: new Date().toISOString(),
-      };
+  it('delivers events to multiple subscribers of the same workflow independently', () => {
+    const cb1 = vi.fn();
+    const cb2 = vi.fn();
+    sseService.connect('wf-shared', cb1);
+    sseService.connect('wf-shared', cb2);
 
-      sseService.simulateEvent('wf-mock-001', event);
-      expect(callback).not.toHaveBeenCalled();
-    });
+    // Two separate EventSource instances — each fires its own event
+    MockEventSource.instances[0].triggerEvent('agent_progress', AGENT_PROGRESS_EVENT);
+    MockEventSource.instances[1].triggerEvent('agent_progress', AGENT_PROGRESS_EVENT);
 
-    it('should deliver events to all subscribers of the same workflow', () => {
-      const cb1 = vi.fn();
-      const cb2 = vi.fn();
-      sseService.connect('wf-shared', cb1);
-      sseService.connect('wf-shared', cb2);
-
-      const event: AgentProgressEvent = {
-        workflow_id: 'wf-shared',
-        event_type: 'progress',
-        progress: { stage: 'validating', percentage: 75, message: 'Validating' },
-        timestamp: new Date().toISOString(),
-      };
-
-      sseService.simulateEvent('wf-shared', event);
-      expect(cb1).toHaveBeenCalledOnce();
-      expect(cb2).toHaveBeenCalledOnce();
-    });
+    expect(cb1).toHaveBeenCalledOnce();
+    expect(cb2).toHaveBeenCalledOnce();
   });
 });
