@@ -11,6 +11,7 @@ Industry Standards:
 from agents.base_agent import BaseAgent, AgentCapability, TaskContext, TaskResult
 from typing import Dict, List, Tuple, Optional, Any
 from pathlib import Path
+import asyncio
 import time
 import json
 import logging
@@ -273,7 +274,8 @@ class EvolutionAgent(BaseAgent):
             prompt = prompt_builder(scenario, risk_scores, prioritization, page_context, test_data, user_instruction, login_credentials)
             
             # Call LLM (Azure OpenAI create is synchronous, not async)
-            response = self.llm_client.client.chat.completions.create(
+            response = await asyncio.to_thread(
+                self.llm_client.client.chat.completions.create,
                 model=self.llm_client.deployment,
                 messages=[
                     {"role": "system", "content": "You are an expert test automation engineer. Generate executable test steps as an array of strings."},

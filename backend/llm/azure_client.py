@@ -5,6 +5,7 @@ Uses your company's Azure OpenAI deployment (ChatGPT-UAT with GPT-4o)
 """
 
 import os
+import asyncio
 import logging
 from typing import Dict, List, Optional, Any
 import json
@@ -110,7 +111,8 @@ class AzureClient:
             )
             
             # Call Azure OpenAI
-            response = self.client.chat.completions.create(
+            response = await asyncio.to_thread(
+                self.client.chat.completions.create,
                 model=self.deployment,
                 messages=[
                     {

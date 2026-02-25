@@ -19,15 +19,20 @@ def _sse_format(event_type: str, data: dict) -> str:
 
 
 async def _event_generator(workflow_id: str, progress_tracker: ProgressTracker, request: Request):
-    """Async generator that yields SSE-formatted bytes."""
+    """Async generator that yields SSE-formatted bytes.
+
+    NOTE: We intentionally do NOT call request.is_disconnected() here.
+    Calling receive() from inside a StreamingResponse generator breaks the
+    Starlette/uvicorn ASGI lifecycle and can stall the stream after a few
+    events.  Natural termination happens via terminal events or the 300s
+    timeout; uvicorn raises CancelledError on a broken-pipe disconnect.
+    """
     try:
         async for event in progress_tracker.subscribe(
             workflow_id,
             timeout_seconds=300.0,
             keepalive_interval=15.0,
         ):
-            if request and hasattr(request, "is_disconnected") and request.is_disconnected():
-                break
             ev_type = event.get("event", "message")
             if ev_type == "_keepalive":
                 yield ": keepalive\n\n".encode("utf-8")

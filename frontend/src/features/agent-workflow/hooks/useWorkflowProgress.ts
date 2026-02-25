@@ -1,25 +1,26 @@
 /**
  * useWorkflowProgress — React hook (Sprint 10 Real API)
  *
- * Connects to the SSE stream for a running workflow and provides live progress.
- * Falls back to polling every POLL_INTERVAL_MS when SSE delivers nothing within
- * 5 seconds (network proxy, test env, etc.).
+ * Connects to the SSE stream for a running workflow AND keeps a polling loop
+ * running throughout. SSE provides real-time updates; polling (every
+ * POLL_INTERVAL_MS) is a guaranteed safety net for when SSE events are
+ * delayed by event-loop contention inside long-running LLM/browser-use calls.
  *
  * Usage:
  *   const { status, currentAgent, totalProgress, agentProgress, error, cancel } =
  *     useWorkflowProgress(workflowId);
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AgentProgress,
   AgentProgressEvent,
+  DisplayProgress,
   WorkflowStatus,
 } from '../../../types/agentWorkflow.types';
 import sseService from '../../../services/sseService';
 import agentWorkflowService from '../../../services/agentWorkflowService';
 
 const POLL_INTERVAL_MS = 3_000;
-const SSE_FALLBACK_TIMEOUT_MS = 5_000;
 const TERMINAL: WorkflowStatus[] = ['completed', 'failed', 'cancelled'];
 
 // ---------------------------------------------------------------------------
@@ -65,7 +66,6 @@ export function useWorkflowProgress(
   const workflowIdRef = useRef(workflowId);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sseSubIdRef = useRef<string | null>(null);
-  const sseGotEventRef = useRef(false);
 
   workflowIdRef.current = workflowId;
 
@@ -109,8 +109,6 @@ export function useWorkflowProgress(
   // ---- apply a real AgentProgressEvent from SSE ----
   const applySSEEvent = useCallback(
     (event: AgentProgressEvent) => {
-      sseGotEventRef.current = true;
-      stopPolling(); // SSE is working — stop polling
 
       setState((prev) => {
         const nextStatus: WorkflowStatus =
@@ -141,7 +139,10 @@ export function useWorkflowProgress(
         return {
           ...prev,
           status: nextStatus,
-          currentAgent: agentName ?? prev.currentAgent,
+          currentAgent: nextStatus === 'completed' ? null : (agentName ?? prev.currentAgent),
+          totalProgress: typeof event.data?.total_progress === 'number'
+            ? event.data.total_progress
+            : prev.totalProgress,
           agentProgress: agentProg,
           error: (event.data?.error as string) ?? null,
           isConnected: !isTerminal(nextStatus),
@@ -153,7 +154,7 @@ export function useWorkflowProgress(
         stopSSE();
       }
     },
-    [stopPolling, stopSSE] // eslint-disable-line react-hooks/exhaustive-deps
+    [stopSSE] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // ---- poll once ----
@@ -198,29 +199,64 @@ export function useWorkflowProgress(
       return;
     }
 
-    sseGotEventRef.current = false;
     setState({ ...INITIAL_STATE, isLoading: true, isConnected: true });
-
-    // Start SSE
     const subId = sseService.connect(workflowId, applySSEEvent);
     sseSubIdRef.current = subId;
 
-    // Immediate poll so we don't wait for first SSE frame
-    pollOnce();
-
-    // Start polling as fallback if SSE delivers nothing after timeout
-    const fallbackTimer = setTimeout(() => {
-      if (!sseGotEventRef.current) {
-        startPolling();
-      }
-    }, SSE_FALLBACK_TIMEOUT_MS);
+    // Poll immediately, then every POLL_INTERVAL_MS throughout the workflow.
+    // Polling acts as a guaranteed safety net when SSE events are delayed
+    // (e.g. event-loop contention during long-running LLM/browser-use calls).
+    startPolling();
 
     return () => {
-      clearTimeout(fallbackTimer);
       stopPolling();
       stopSSE();
     };
   }, [workflowId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { ...state, cancel };
+  // ---- derived DisplayProgress for AgentProgressPipeline ----
+  const progress = useMemo<DisplayProgress | null>(() => {
+    if (!state.currentAgent && state.totalProgress === 0 && !state.status) return null;
+
+    // Derive percentage: prefer totalProgress from SSE/polling, otherwise count completed agents
+    const AGENT_ORDER = ['observation', 'requirements', 'analysis', 'evolution'] as const;
+    const completedCount = AGENT_ORDER.filter(
+      (a) => state.agentProgress[a]?.status === 'completed'
+    ).length;
+    const derivedPercentage = state.totalProgress > 0
+      ? Math.round(state.totalProgress * 100)
+      : Math.round((completedCount / AGENT_ORDER.length) * 100);
+
+    const AGENT_INDEX: Record<string, number> = {
+      idle: -1,
+      observation: 0,
+      requirements: 1,
+      analysis: 2,
+      evolution: 3,
+      complete: 4,
+    };
+
+    const stageFromProgress: DisplayProgress['currentAgent'] =
+      state.totalProgress >= 1 ? 'complete'
+      : state.totalProgress >= 0.80 ? 'evolution'
+      : state.totalProgress >= 0.55 ? 'analysis'
+      : state.totalProgress >= 0.30 ? 'requirements'
+      : state.totalProgress >= 0.05 ? 'observation'
+      : 'idle';
+
+    const stageFromCurrent = (state.currentAgent ?? 'idle') as DisplayProgress['currentAgent'];
+    const resolvedStage =
+      AGENT_INDEX[stageFromCurrent] >= AGENT_INDEX[stageFromProgress]
+        ? stageFromCurrent
+        : stageFromProgress;
+
+    return {
+      currentAgent: resolvedStage,
+      percentage: derivedPercentage,
+      message: state.currentAgent ? `Running ${state.currentAgent} agent…` : (state.status ?? ''),
+      agentProgress: state.agentProgress,
+    };
+  }, [state.currentAgent, state.totalProgress, state.agentProgress, state.status]);
+
+  return { ...state, progress, cancel };
 }

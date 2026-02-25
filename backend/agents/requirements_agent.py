@@ -4,6 +4,7 @@ Follows BDD, ISTQB, WCAG 2.1, OWASP security standards
 """
 from agents.base_agent import BaseAgent, AgentCapability, TaskContext, TaskResult
 from typing import Dict, List, Tuple, Optional
+import asyncio
 import time
 import re
 import json
@@ -701,7 +702,8 @@ class RequirementsAgent(BaseAgent):
             )
             
             # Call Azure OpenAI
-            response = self.llm_client.client.chat.completions.create(
+            response = await asyncio.to_thread(
+                self.llm_client.client.chat.completions.create,
                 model=self.llm_client.deployment,
                 messages=[
                     {

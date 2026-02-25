@@ -102,10 +102,31 @@ class OrchestrationService:
         started_at = datetime.now(timezone.utc)
         pt = self.progress_tracker
 
+        # Total progress milestones per (event, agent) pair
+        _STAGE_PROGRESS: Dict[tuple, float] = {
+            ("agent_started",   "observation"):  0.05,
+            ("agent_completed", "observation"):  0.25,
+            ("agent_started",   "requirements"): 0.30,
+            ("agent_completed", "requirements"): 0.50,
+            ("agent_started",   "analysis"):     0.55,
+            ("agent_completed", "analysis"):     0.75,
+            ("agent_started",   "evolution"):    0.80,
+            ("agent_completed", "evolution"):    0.95,
+        }
+
         def _emit(evt: str, data: dict):
+            agent = data.get("agent")
+            prog = _STAGE_PROGRESS.get((evt, agent))
+            # Include total_progress in SSE payload so frontend can use it directly
+            payload = {**data}
+            if prog is not None:
+                payload["total_progress"] = prog
             if pt:
-                asyncio.create_task(pt.emit(workflow_id, evt, data))
-            update_state(workflow_id, current_agent=data.get("agent"), status="running")
+                asyncio.create_task(pt.emit(workflow_id, evt, payload))
+            store_updates: Dict[str, Any] = {"current_agent": agent, "status": "running"}
+            if prog is not None:
+                store_updates["total_progress"] = prog
+            update_state(workflow_id, **store_updates)
 
         def _check_cancelled() -> bool:
             if not is_cancel_requested(workflow_id):

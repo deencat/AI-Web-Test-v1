@@ -396,7 +396,8 @@ class AnalysisAgent(BaseAgent):
         if self.use_llm and self.llm_client and self.llm_client.enabled:
             try:
                 # Call LLM for risk assessment using Azure OpenAI
-                response = self.llm_client.client.chat.completions.create(
+                response = await asyncio.to_thread(
+                    self.llm_client.client.chat.completions.create,
                     model=self.llm_client.deployment,
                     messages=[
                         {
