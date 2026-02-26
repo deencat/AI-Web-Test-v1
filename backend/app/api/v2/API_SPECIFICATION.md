@@ -145,7 +145,7 @@ Runs all four agents in sequence: Observation → Requirements → Analysis → 
 
 **Scope:** This is the **only** full 4-agent pipeline API; there is **no separate API** for “pipeline with execution.” Test execution is **part of** this pipeline: AnalysisAgent may run real-time execution of critical scenarios (RPN ≥ 80) via the Phase 2 execution engine (3-tier: Playwright → Hybrid → Stagehand AI) to measure success rates and refine risk scores. This execution is for **scoring and prioritization**; results appear in `analysis_result.execution_success`. The final API output is `test_case_ids` and agent artifacts from Evolution. Running the full generated test suite after the workflow (e.g. from the UI) is a separate flow. See Phase3-Architecture-Design-Complete.md §6.4 (AnalysisAgent).
 
-**Real-time execution:** Whether AnalysisAgent runs real-time scenario execution is **server-configured** (e.g. `enable_realtime_execution`, `execution_rpn_threshold`). When enabled, `GET /workflows/{id}/results` → `analysis_result.execution_success` contains per-scenario results (`scenario_id`, `success_rate`, `passed_steps`, `total_steps`, `tier_used`, `reliability`, `source`). Verified by `test_four_agent_e2e_real.py`.
+**Real-time execution:** Enabled by default via server config `ENABLE_ANALYSIS_REALTIME_EXECUTION` (default: true). Set to `false` in `.env` to disable. When enabled, `GET /workflows/{id}/results` → `analysis_result.execution_success` contains per-scenario results (`scenario_id`, `success_rate`, `passed_steps`, `total_steps`, `tier_used`, `reliability`, `source`). Verified by `test_four_agent_e2e_real.py`.
 
 **Request body:** `GenerateTestsRequest`
 

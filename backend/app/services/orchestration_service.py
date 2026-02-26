@@ -48,11 +48,16 @@ class OrchestrationService:
         from agents.requirements_agent import RequirementsAgent
         from agents.analysis_agent import AnalysisAgent
         from agents.evolution_agent import EvolutionAgent
+        from app.core.config import settings
 
         mq = _MockMessageQueue()
         obs_config = {"use_llm": True, "max_depth": 1, "max_pages": 1}
         req_config = {"use_llm": True}
-        ana_config = {"use_llm": True, "db": db, "enable_realtime_execution": False}
+        ana_config = {
+            "use_llm": True,
+            "db": db,
+            "enable_realtime_execution": getattr(settings, "ENABLE_ANALYSIS_REALTIME_EXECUTION", True),
+        }
         evo_config = {"use_llm": True, "db": db}
 
         observation_agent = ObservationAgent(
@@ -550,65 +555,78 @@ class OrchestrationService:
                 asyncio.create_task(pt.emit(workflow_id, evt, data))
             update_state(workflow_id, current_agent=data.get("agent"), status="running")
 
-        _, _, analysis_agent, _ = self._create_agents(db=None)
+        db = None
+        try:
+            from app.db.session import SessionLocal
+            db = SessionLocal()
+        except Exception as e:
+            logger.warning(f"DB session not available for analysis: {e}")
+        _, _, analysis_agent, _ = self._create_agents(db=db)
         _emit("agent_started", {"agent": "analysis"})
-        analysis_task = TaskContext(
-            conversation_id=workflow_id,
-            task_id=f"{workflow_id}-ana",
-            task_type="risk_analysis",
-            payload={
-                "scenarios": scenarios,
-                "test_data": requirements_result.get("test_data", []),
-                "coverage_metrics": requirements_result.get("coverage_metrics", {}),
-                "page_context": page_context,
-            },
-            priority=5,
-        )
-        analysis_result = await analysis_agent.execute_task(analysis_task)
-        if not analysis_result.success:
-            set_state(workflow_id, {
-                "workflow_id": workflow_id,
-                "status": "failed",
-                "error": analysis_result.error or "Analysis failed",
-                "started_at": started_at.isoformat(),
-                "completed_at": datetime.now(timezone.utc).isoformat(),
-                "workflow_type": "analysis",
+        try:
+            analysis_task = TaskContext(
+                conversation_id=workflow_id,
+                task_id=f"{workflow_id}-ana",
+                task_type="risk_analysis",
+                payload={
+                    "scenarios": scenarios,
+                    "test_data": requirements_result.get("test_data", []),
+                    "coverage_metrics": requirements_result.get("coverage_metrics", {}),
+                    "page_context": page_context,
+                },
+                priority=5,
+            )
+            analysis_result = await analysis_agent.execute_task(analysis_task)
+            if not analysis_result.success:
+                set_state(workflow_id, {
+                    "workflow_id": workflow_id,
+                    "status": "failed",
+                    "error": analysis_result.error or "Analysis failed",
+                    "started_at": started_at.isoformat(),
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "workflow_type": "analysis",
+                })
+                raise RuntimeError(analysis_result.error or "Analysis failed")
+            _emit("agent_completed", {
+                "agent": "analysis",
+                "duration_seconds": getattr(analysis_result, "execution_time_seconds", None),
             })
-            raise RuntimeError(analysis_result.error or "Analysis failed")
-        _emit("agent_completed", {
-            "agent": "analysis",
-            "duration_seconds": getattr(analysis_result, "execution_time_seconds", None),
-        })
-        completed_at = datetime.now(timezone.utc)
-        total_duration = (completed_at - started_at).total_seconds()
-        if pt:
-            await pt.emit(workflow_id, "workflow_completed", {
+            completed_at = datetime.now(timezone.utc)
+            total_duration = (completed_at - started_at).total_seconds()
+            if pt:
+                await pt.emit(workflow_id, "workflow_completed", {
+                    "workflow_id": workflow_id,
+                    "status": "completed",
+                    "workflow_type": "analysis",
+                    "total_duration_seconds": total_duration,
+                })
+            set_state(workflow_id, {
+                **state,
                 "workflow_id": workflow_id,
                 "status": "completed",
+                "current_agent": None,
+                "total_progress": 1.0,
+                "started_at": started_at.isoformat(),
+                "completed_at": completed_at.isoformat(),
+                "error": None,
                 "workflow_type": "analysis",
-                "total_duration_seconds": total_duration,
+                "result": {
+                    **existing_result,
+                    "observation_result": observation_result,
+                    "requirements_result": requirements_result,
+                    "analysis_result": analysis_result.result,
+                    "test_case_ids": [],
+                    "test_count": 0,
+                    "total_duration_seconds": total_duration,
+                },
             })
-        set_state(workflow_id, {
-            **state,
-            "workflow_id": workflow_id,
-            "status": "completed",
-            "current_agent": None,
-            "total_progress": 1.0,
-            "started_at": started_at.isoformat(),
-            "completed_at": completed_at.isoformat(),
-            "error": None,
-            "workflow_type": "analysis",
-            "result": {
-                **existing_result,
-                "observation_result": observation_result,
-                "requirements_result": requirements_result,
-                "analysis_result": analysis_result.result,
-                "test_case_ids": [],
-                "test_count": 0,
-                "total_duration_seconds": total_duration,
-            },
-        })
-        return {"workflow_id": workflow_id, "status": "completed", "analysis_result": analysis_result.result}
+            return {"workflow_id": workflow_id, "status": "completed", "analysis_result": analysis_result.result}
+        finally:
+            if db:
+                try:
+                    db.close()
+                except Exception:
+                    pass
 
     async def run_evolution_after_analysis(
         self,
@@ -677,12 +695,14 @@ class OrchestrationService:
             payload=evolution_payload,
             priority=5,
         )
-        evolution_result = await evolution_agent.execute_task(evolution_task)
-        if db:
-            try:
-                db.close()
-            except Exception:
-                pass
+        try:
+            evolution_result = await evolution_agent.execute_task(evolution_task)
+        finally:
+            if db:
+                try:
+                    db.close()
+                except Exception:
+                    pass
         if not evolution_result.success:
             set_state(workflow_id, {
                 "workflow_id": workflow_id,
