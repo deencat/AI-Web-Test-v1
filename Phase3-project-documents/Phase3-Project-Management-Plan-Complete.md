@@ -824,7 +824,7 @@ After successful Phase 2 + Phase 3 merge and integration testing, comprehensive 
 - ✅ All 10 Developer B tasks complete (`feature/sprint10-frontend-ui`, ready to merge)
 - ⚠️ **Known bug for Dev A:** Generate-tests route registered as `/api/v2/generate-tests/generate-tests` (doubled prefix). Fix: change `@router.post("/generate-tests")` to `@router.post("/")`
 
-#### Developer A Tasks - Backend API (29 points, 8 days)
+#### Developer A Tasks - Backend API (34 points, 10 days)
 
 **Strategy:** Layer-based separation - Backend only, zero merge conflicts with Developer B  
 **Reference:** [Sprint 10 & 11 Task Split Strategy](SPRINT_10_11_TASK_SPLIT_STRATEGY.md)
@@ -835,15 +835,16 @@ After successful Phase 2 + Phase 3 merge and integration testing, comprehensive 
 | **10A.2** | Create `/api/v2/generate-tests` endpoint | 2 days | 10A.1 | POST endpoint to trigger 4-agent workflow, returns workflow_id |
 | **10A.3** | Implement Server-Sent Events (SSE) for real-time progress | 2 days | 10A.2 | Stream agent progress events (agent_started, agent_progress, agent_completed, workflow_completed) |
 | **10A.4** | Implement OrchestrationService | 2 days | 10A.2 | Coordinate 4-agent workflow with progress tracking via Redis pub/sub |
-| **10A.5** | Create workflow status endpoints | 1 day | 10A.2 | GET /workflows/{id}, GET /workflows/{id}/results, DELETE /workflows/{id} (cancel) |
-| **10A.6** | Unit tests for orchestration + SSE | 1 day | 10A.5 | Test workflow coordination, SSE streaming, cancellation |
+| **10A.5** | Create workflow status endpoints | 1 day | 10A.2 | GET /workflows/{id}, GET /workflows/{id}/results |
+| **10A.5b** | **Implement DELETE /workflows/{id} endpoint (Cancel Workflow)** | 1 day | 10A.5 | Set workflow status to 'cancelled', signal running agent to stop, close SSE gracefully, return updated status. Works with frontend stop button (10B.12) |
+| **10A.6** | Unit tests for orchestration + SSE + cancellation | 1 day | 10A.5b | Test workflow coordination, SSE streaming, cancellation flow |
 | **10A.7** | **Multi-Page Flow Crawling (ObservationAgent)** | 4 days | Sprint 9 | Integrate browser-use for LLM-guided navigation, crawl entire purchase flow (4-5 pages), extract elements from all pages |
 | **10A.8** | **Iterative Improvement Loop (OrchestrationService)** | 3 days | 10A.4, 10A.7 | Implement EvolutionAgent → AnalysisAgent loop (up to 5 iterations, configurable), convergence criteria (pass rate >= 90%) |
 | **10A.9** | **Dynamic URL Crawling (EvolutionAgent)** | 2 days | 10A.7, 10A.8 | EvolutionAgent can call ObservationAgent for specific URLs, on-demand page observation |
 | **10A.10** | **Goal-Oriented Navigation (ObservationAgent)** | 1 day | 10A.7 | Navigate until goal reached (e.g., purchase confirmation), goal detection logic |
 | **10A.11** | Integration tests for iterative workflow | 1 day | 10A.10 | Test multi-page crawling, iteration loop, convergence, dynamic URL crawling |
 
-**Total: 45 points, 16.5 days** (includes 0.5 day API contract definition + iterative workflow enhancements)
+**Total: 50 points, 19.5 days** (includes 0.5 day API contract definition + 1 day DELETE endpoint + iterative workflow enhancements)
 
 **File Ownership (Zero Conflicts):**
 - `backend/app/api/v2/` - Developer A owns entire directory
@@ -864,7 +865,7 @@ class ProgressTracker:
     async def emit(event_type, data): ...
 ```
 
-#### Developer B Tasks - Frontend UI & Integration Testing (29 points, 7 days) — ✅ COMPLETE (Feb 23, 2026)
+#### Developer B Tasks - Frontend UI & Integration Testing (37 points, 10 days) — ✅ COMPLETE (Feb 23, 2026)
 
 **Status:** All tasks complete. Branch `feature/sprint10-frontend-ui` ready to merge.  
 **Strategy:** Layer-based separation - Frontend + Testing, zero merge conflicts with Developer A  
@@ -882,8 +883,10 @@ class ProgressTracker:
 | **10B.8** | Load testing | 1 day | 10A.5 | 12 load tests passing (5/20/50 concurrent users, p95 < 1.0s, min 10 rps) | ✅ **DONE** |
 | **10B.9** | GitHub Actions CI/CD | 1 day | 10B.7 | `.github/workflows/sprint10-tests.yml` — 4 jobs (frontend, integration, load, PR summary) | ✅ **DONE** |
 | **10B.10** | System integration tests | 1 day | 10B.7 | API contract + schema tests, 7 test classes covering all v2 endpoints | ✅ **DONE** |
+| **10B.11** | **Agent Status Progress Tracking (Structured SSE)** | 1.5 days | 10B.4 | Display structured agent progress (not raw logs): agent timeline, progress bar, status message, expandable "View Logs" section with backend log details (DEBUG/INFO levels) | 🔄 **NEW** |
+| **10B.12** | **Stop Agent Button Implementation** | 1 day | 10B.3, 10A.5 | Add "⏹ Stop Agent" button to pipeline UI, disable when workflow complete/failed, show confirmation toast, call DELETE /workflows/{id}, handle cancellation response | 🔄 **NEW** |
 
-**Total: 29 points, 11.5 days** (includes 0.5 day API contract definition + 4 days testing)
+**Total: 37 points, 14.5 days** (includes 0.5 day API contract definition + 4 days testing + 2.5 days agent monitoring features)
 
 **File Ownership (Zero Conflicts):**
 - `frontend/src/features/agent-workflow/` - Developer B owns entire directory
@@ -899,6 +902,7 @@ class ProgressTracker:
 │   ├── AgentProgressPipeline.tsx      // 4-stage pipeline visualization
 │   ├── AgentStageCard.tsx             // Individual agent status card
 │   ├── AgentLogViewer.tsx             // Expandable log viewer
+│   ├── AgentStatusMonitor.tsx         // NEW: Structured progress + "View Logs" toggle
 │   └── WorkflowResults.tsx            // Generated tests review UI
 ├── hooks/
 │   ├── useAgentWorkflow.ts            // Trigger and manage workflows
@@ -911,7 +915,544 @@ class ProgressTracker:
     └── agentWorkflow.types.ts         // TypeScript interfaces
 ```
 
-**Note:** Integration & Testing tasks moved to Developer B's Frontend UI section above (10B.7-10B.10) for better task organization and conflict minimization.
+---
+
+### Agent Status Display & Stop Button: Design & Implementation (10B.11 & 10B.12 Details)
+
+#### Overview
+
+Developer B testing the agent workflow requires **visibility into agent execution** and the **ability to stop long-running workflows**. Rather than displaying raw backend logs (verbose and noisy), the frontend uses **structured SSE events** from the backend to show meaningful progress with optional detailed logs.
+
+#### 10B.11: Agent Status Progress Tracking (Structured SSE)
+
+**Problem:** Raw logs are 100+ lines, hard to parse, contain token counts and internal details. Developers get lost.
+
+**Solution:** Display **structured progress timeline** from SSE events, with optional **expandable logs** section for drilling down.
+
+**Implementation:**
+
+```typescript
+// frontend/src/features/agent-workflow/components/AgentStatusMonitor.tsx
+export const AgentStatusMonitor: React.FC<{ workflowId: string }> = ({ workflowId }) => {
+  const { progress, logs, isLoading } = useWorkflowProgress(workflowId);
+  const [showLogs, setShowLogs] = useState(false);
+
+  return (
+    <div className="agent-status-monitor">
+      {/* Structured Progress Timeline */}
+      <div className="progress-timeline">
+        {progress.agents.map((agent) => (
+          <div key={agent.name} className="agent-step">
+            <div className="step-header">
+              <span className="agent-name">{agent.name}</span>
+              <span className="duration">{agent.duration_seconds?.toFixed(1)}s</span>
+              <span className="status-badge">{agent.status}</span>
+            </div>
+            
+            {agent.status === 'running' && (
+              <progress value={agent.progress} max={1} className="progress-bar" />
+            )}
+            
+            {agent.message && (
+              <p className="status-message">{agent.message}</p>
+            )}
+            
+            {agent.elements_found && (
+              <p className="detail">✓ Found {agent.elements_found} UI elements (confidence: {agent.confidence?.toFixed(2)})</p>
+            )}
+            {agent.scenarios_generated && (
+              <p className="detail">✓ Generated {agent.scenarios_generated} scenarios</p>
+            )}
+            {agent.scenarios_executed && (
+              <p className="detail">✓ Executed {agent.scenarios_executed} scenarios in real-time</p>
+            )}
+            {agent.tests_generated && (
+              <p className="detail">✓ Generated {agent.tests_generated} test cases</p>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Optional: Expandable Logs Section */}
+      <div className="logs-section">
+        <button onClick={() => setShowLogs(!showLogs)} className="toggle-logs">
+          {showLogs ? '▼' : '▶'} Backend Logs ({logs.length} events)
+        </button>
+        
+        {showLogs && (
+          <div className="log-viewer">
+            {logs.map((log, idx) => (
+              <div key={idx} className={`log-line log-${log.level}`}>
+                <span className="timestamp">{log.timestamp}</span>
+                <span className="level">[{log.level}]</span>
+                <span className="message">{log.message}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Stop Button */}
+      <button 
+        onClick={handleStopAgent}
+        disabled={progress.status === 'completed' || progress.status === 'failed'}
+        className="btn-stop-agent"
+      >
+        ⏹ Stop Agent
+      </button>
+    </div>
+  );
+};
+```
+
+**SSE Events (Backend → Frontend):**
+
+The backend `OrchestrationService` emits structured events via `GET /api/v2/workflows/{id}/stream`:
+
+```json
+event: agent_started
+data: {"agent": "observation", "timestamp": "2026-02-26T10:00:00Z"}
+
+event: agent_progress
+data: {"agent": "observation", "progress": 0.65, "message": "Found 38 elements, analyzing..."}
+
+event: agent_completed
+data: {
+  "agent": "observation",
+  "elements_found": 38,
+  "confidence": 0.90,
+  "duration_seconds": 12.5
+}
+
+event: agent_started
+data: {"agent": "requirements", "timestamp": "2026-02-26T10:00:13Z"}
+
+event: agent_progress
+data: {"agent": "requirements", "progress": 0.40, "message": "Generating 8 BDD scenarios..."}
+
+event: agent_completed
+data: {
+  "agent": "requirements",
+  "scenarios_generated": 18,
+  "duration_seconds": 18.3
+}
+
+event: agent_started
+data: {"agent": "analysis", "timestamp": "2026-02-26T10:00:31Z"}
+
+event: agent_progress
+data: {"agent": "analysis", "progress": 0.75, "message": "Executing 5 critical scenarios in real-time..."}
+
+event: agent_completed
+data: {
+  "agent": "analysis",
+  "scenarios_executed": 17,
+  "duration_seconds": 45.0
+}
+
+event: agent_started
+data: {"agent": "evolution", "timestamp": "2026-02-26T10:01:16Z"}
+
+event: agent_progress
+data: {"agent": "evolution", "progress": 0.50, "message": "Generating test code for 17 scenarios..."}
+
+event: agent_completed
+data: {
+  "agent": "evolution",
+  "tests_generated": 17,
+  "duration_seconds": 22.1
+}
+
+event: workflow_completed
+data: {
+  "workflow_id": "wf-123",
+  "status": "completed",
+  "total_duration_seconds": 97.9,
+  "test_case_ids": [101, 102, 103, ..., 117]
+}
+```
+
+**React Hook (Frontend):**
+
+```typescript
+// frontend/src/features/agent-workflow/hooks/useWorkflowProgress.ts
+export const useWorkflowProgress = (workflowId: string) => {
+  const [progress, setProgress] = useState<WorkflowProgress>({
+    status: 'pending',
+    agents: [],
+    total_progress: 0
+  });
+  const [logs, setLogs] = useState<LogEvent[]>([]);
+
+  useEffect(() => {
+    const eventSource = new EventSource(`/api/v2/workflows/${workflowId}/stream`);
+
+    eventSource.addEventListener('agent_started', (e) => {
+      const data = JSON.parse(e.data);
+      setProgress(prev => ({
+        ...prev,
+        agents: [...prev.agents, { name: data.agent, status: 'running', progress: 0 }]
+      }));
+    });
+
+    eventSource.addEventListener('agent_progress', (e) => {
+      const data = JSON.parse(e.data);
+      setProgress(prev => ({
+        ...prev,
+        agents: prev.agents.map(a => 
+          a.name === data.agent 
+            ? { ...a, progress: data.progress, message: data.message }
+            : a
+        )
+      }));
+    });
+
+    eventSource.addEventListener('agent_completed', (e) => {
+      const data = JSON.parse(e.data);
+      setProgress(prev => ({
+        ...prev,
+        agents: prev.agents.map(a =>
+          a.name === data.agent
+            ? { 
+                ...a, 
+                status: 'completed', 
+                progress: 1,
+                duration_seconds: data.duration_seconds,
+                elements_found: data.elements_found,
+                scenarios_generated: data.scenarios_generated,
+                scenarios_executed: data.scenarios_executed,
+                tests_generated: data.tests_generated,
+                confidence: data.confidence
+              }
+            : a
+        )
+      }));
+    });
+
+    eventSource.addEventListener('workflow_completed', (e) => {
+      const data = JSON.parse(e.data);
+      setProgress(prev => ({
+        ...prev,
+        status: 'completed',
+        total_duration_seconds: data.total_duration_seconds
+      }));
+      eventSource.close();
+    });
+
+    return () => eventSource.close();
+  }, [workflowId]);
+
+  return { progress, logs, isLoading: progress.status === 'pending' };
+};
+```
+
+**Benefits:**
+- ✅ Clean, scannable progress display (4 agents, not 100+ log lines)
+- ✅ Real-time updates via SSE (no polling overhead)
+- ✅ Backend logs available via optional toggle (for debugging)
+- ✅ Shows meaningful metrics: elements found, confidence, execution time, test count
+- ✅ Easy to correlate with backend logs by timestamp
+- ✅ Matches industrial UI patterns (GitHub Actions, ChatGPT, Vercel)
+
+**Styling (Tailwind CSS example):**
+
+```css
+.agent-status-monitor {
+  @apply w-full bg-gray-50 rounded-lg p-4 space-y-4;
+}
+
+.progress-timeline {
+  @apply space-y-3;
+}
+
+.agent-step {
+  @apply bg-white border-l-4 border-blue-500 p-4 rounded;
+}
+
+.agent-step.completed {
+  @apply border-l-4 border-green-500;
+}
+
+.agent-step.failed {
+  @apply border-l-4 border-red-500;
+}
+
+.step-header {
+  @apply flex items-center gap-3 mb-2;
+}
+
+.agent-name {
+  @apply font-semibold text-gray-800 capitalize;
+}
+
+.duration {
+  @apply text-sm text-gray-500;
+}
+
+.status-badge {
+  @apply px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700;
+}
+
+.status-badge.completed {
+  @apply bg-green-100 text-green-700;
+}
+
+.progress-bar {
+  @apply w-full h-2 bg-gray-200 rounded;
+}
+
+.status-message {
+  @apply text-sm text-gray-600 mt-2;
+}
+
+.detail {
+  @apply text-sm text-gray-500 mt-1;
+}
+
+.logs-section {
+  @apply mt-4 border-t pt-4;
+}
+
+.toggle-logs {
+  @apply text-sm text-blue-600 hover:underline;
+}
+
+.log-viewer {
+  @apply mt-2 bg-gray-900 text-gray-100 p-3 rounded font-mono text-xs overflow-y-auto max-h-56;
+}
+
+.log-line {
+  @apply block;
+}
+
+.log-line.ERROR {
+  @apply text-red-400;
+}
+
+.log-line.WARNING {
+  @apply text-yellow-400;
+}
+
+.log-line.INFO {
+  @apply text-green-400;
+}
+
+.timestamp {
+  @apply text-gray-600;
+}
+
+.btn-stop-agent {
+  @apply mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed;
+}
+```
+
+---
+
+#### 10B.12: Stop Agent Button Implementation
+
+**Problem:** Long-running workflows (5+ minutes) need a way to stop early for testing.
+
+**Solution:** Add **"⏹ Stop Agent" button** that calls `DELETE /api/v2/workflows/{workflowId}`, with UI feedback and confirmation.
+
+**Implementation:**
+
+```typescript
+// In AgentStatusMonitor.tsx
+const handleStopAgent = async () => {
+  if (!confirm('Stop running agent? Any partial results will be discarded.')) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/v2/workflows/${workflowId}`, {
+      method: 'DELETE'
+    });
+
+    if (!response.ok) {
+      toast.error('Failed to stop agent');
+      return;
+    }
+
+    // Close SSE connection
+    eventSource?.close();
+
+    // Update UI
+    setProgress(prev => ({
+      ...prev,
+      status: 'cancelled'
+    }));
+
+    toast.success('Agent process stopped');
+    
+    // Navigate back to main page after 2 seconds
+    setTimeout(() => {
+      navigate('/tests');
+    }, 2000);
+
+  } catch (error) {
+    toast.error('Error stopping agent: ' + error.message);
+  }
+};
+
+return (
+  <>
+    <button
+      onClick={handleStopAgent}
+      disabled={
+        progress.status === 'completed' || 
+        progress.status === 'failed' || 
+        progress.status === 'cancelled'
+      }
+      className="btn-stop-agent"
+      title={
+        progress.status === 'completed' 
+          ? 'Workflow already completed' 
+          : 'Stop running agent'
+      }
+    >
+      ⏹ Stop Agent
+    </button>
+    
+    {progress.status === 'cancelled' && (
+      <div className="alert alert-info mt-2">
+        ✓ Workflow cancelled. Partial results discarded.
+      </div>
+    )}
+  </>
+);
+```
+
+**Backend Implementation (Developer A - Sprint 10):**
+
+The backend `DELETE /api/v2/workflows/{workflow_id}` endpoint (currently a 501 stub) needs implementation:
+
+```python
+# backend/app/api/v2/endpoints/workflows.py
+@router.delete("/workflows/{workflow_id}", status_code=200)
+async def cancel_workflow(workflow_id: str) -> WorkflowStatusResponse:
+    """
+    Cancel a running workflow.
+    
+    - Sets workflow status to 'cancelled'
+    - Signals running agent to stop (via cancellation flag)
+    - Closes SSE stream gracefully
+    - Returns updated workflow status
+    """
+    workflow = await WorkflowService.get_workflow(workflow_id)
+    
+    if workflow.status in ('completed', 'failed', 'cancelled'):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot cancel workflow in {workflow.status} state"
+        )
+    
+    # Set cancellation flag
+    await WorkflowService.set_cancelled_flag(workflow_id)
+    
+    # Update status
+    workflow.status = 'cancelled'
+    await WorkflowService.update_workflow(workflow)
+    
+    # Signal orchestration service to clean up
+    await OrchestrationService.cancel_workflow(workflow_id)
+    
+    return WorkflowStatusResponse.from_workflow(workflow)
+```
+
+**UI State Management:**
+
+```typescript
+// frontend/src/features/agent-workflow/types/agentWorkflow.types.ts
+export type WorkflowStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export interface WorkflowProgress {
+  workflow_id: string;
+  status: WorkflowStatus;
+  agents: AgentProgress[];
+  total_progress: number;
+  started_at?: string;
+  estimated_completion?: string;
+  error?: string;
+}
+```
+
+**Confirmation Dialog:**
+
+```typescript
+// Show confirmation when user clicks stop
+const handleStopAgent = async () => {
+  const confirmed = await showDialog({
+    title: 'Stop Agent Workflow?',
+    message: 'This will stop the running agent process. Any partial results will be discarded.',
+    buttons: ['Cancel', 'Stop'],
+    defaultButton: 'Cancel'
+  });
+
+  if (confirmed === 'Stop') {
+    // Make DELETE request and update UI
+    ...
+  }
+};
+```
+
+**Toast Notifications:**
+
+```typescript
+// Provide user feedback
+toast.loading('Stopping agent...');
+
+const response = await fetch(`/api/v2/workflows/${workflowId}`, {
+  method: 'DELETE'
+});
+
+if (response.ok) {
+  toast.success('Agent workflow stopped', {
+    description: 'Redirecting to test list...',
+    duration: 2000
+  });
+  
+  // Redirect after toast
+  setTimeout(() => navigate('/tests'), 2000);
+} else {
+  toast.error('Failed to stop agent workflow');
+}
+```
+
+**Button Styling & States:**
+
+| State | UI | Disabled | Action |
+|-------|----|---------| -------|
+| Running | Red button, ⏹ Stop Agent | No | Show confirmation → DELETE request |
+| Completed | Gray button | Yes | Already done |
+| Failed | Gray button | Yes | Already failed |
+| Cancelled | Gray button | Yes | Already cancelled |
+
+**Benefits:**
+- ✅ Developers can stop long-running workflows without killing the process
+- ✅ Graceful shutdown (agent can clean up, save partial results if needed)
+- ✅ Clear confirmation prevents accidental stops
+- ✅ User feedback via toast notifications
+- ✅ Disabled state prevents stopping after workflow done
+- ✅ Reuses existing DELETE endpoint (already in API spec)
+
+---
+
+**File Organization for 10B.11 & 10B.12:**
+
+```
+frontend/src/features/agent-workflow/
+├── components/
+│   ├── AgentStatusMonitor.tsx         ← NEW (combines 10B.11 + 10B.12)
+│   └── ... (existing components)
+├── hooks/
+│   ├── useWorkflowProgress.ts         ← UPDATE (structured SSE parsing)
+│   └── ... (existing hooks)
+├── styles/
+│   └── agentStatusMonitor.css         ← NEW (styling + animations)
+└── types/
+    └── agentWorkflow.types.ts         ← UPDATE (add WorkflowProgress interface)
+```
+
 
 **Sprint 10 Success Criteria (Updated with Iterative Workflow):**
 - ✅ Multi-page flow crawling: ObservationAgent crawls entire purchase flow (4-5 pages)
@@ -924,7 +1465,7 @@ class ProgressTracker:
 - ✅ Test quality improvement: Single-pass → Iterative improvement
 - ✅ Pass rate improvement: ~70% → ~90% (after iterations)
 
-**Sprint 10 Success Criteria — Developer B Scope (✅ ALL COMPLETE Feb 23, 2026):**
+**Sprint 10 Success Criteria — Developer B Scope (✅ ALL COMPLETE Feb 23, 2026 + NEW FEATURES Feb 26, 2026):**
 - ✅ **Real-time progress visible in UI** — SSE + polling hook (`useWorkflowProgress`) implemented
 - ✅ **Agent pipeline visualization** — 5-stage `AgentProgressPipeline` with `aria-current="step"`
 - ✅ **User can trigger workflow from frontend** — `AgentWorkflowTrigger` form with validation
@@ -934,10 +1475,29 @@ class ProgressTracker:
 - ✅ **12 load tests passing** — 5/20/50 concurrent users, p95 < 1.0s, min 10 rps
 - ✅ **CI/CD pipeline** — GitHub Actions (4 jobs: frontend, integration, load, PR summary)
 - ✅ **Zero merge conflicts** — Layer-based separation, all new files, no overlap with Dev A
+- 🔄 **Agent Status Monitoring (10B.11)** — Structured SSE-based progress with optional expandable logs (not raw logs)
+  - Agent timeline showing: name, status, progress bar, duration, metrics (elements found, confidence, scenarios generated, etc.)
+  - "View Logs" toggle for backend logs (DEBUG/INFO levels, filterable by agent)
+  - Real-time updates via SSE (no polling)
+  - Uses industrial patterns: GitHub Actions style pipeline, ChatGPT style progress indicators
+- 🔄 **Stop Agent Button (10B.12)** — Cancel running workflows with graceful shutdown
+  - Red "⏹ Stop Agent" button visible during workflow execution
+  - Confirmation dialog prevents accidental stops
+  - Calls DELETE /api/v2/workflows/{id} endpoint
+  - Button disabled when workflow already completed/failed/cancelled
+  - Toast notifications for feedback (loading, success, error)
+  - Redirects to test list after cancellation
+
 
 **Sprint 10 Success Criteria — Developer A Scope (⏳ IN PROGRESS):**
 - ⏳ `/api/v2/generate-tests` operational (real implementation, not 501 stub)
-- ⏳ SSE streaming from OrchestrationService
+- ⏳ SSE streaming from OrchestrationService (real-time progress events)
+- ⏳ **Workflow cancellation via `DELETE /api/v2/workflows/{id}`** (works with frontend stop button)
+  - Sets workflow status to 'cancelled'
+  - Signals running agent to stop gracefully
+  - Closes SSE stream
+  - Returns updated workflow status
+  - Can't cancel already completed/failed/cancelled workflows
 - ⏳ Multi-page flow crawling (ObservationAgent)
 - ⏳ Iterative improvement loop (EvolutionAgent → AnalysisAgent)
 - ⏳ Load test with real backend: 100 users, <5s latency
