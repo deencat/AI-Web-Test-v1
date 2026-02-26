@@ -119,6 +119,13 @@ class OrchestrationService:
             ("agent_completed", "evolution"):    0.95,
         }
 
+        _STAGE_BOUNDS: Dict[str, tuple] = {
+            "observation": (0.05, 0.25),
+            "requirements": (0.30, 0.50),
+            "analysis": (0.55, 0.75),
+            "evolution": (0.80, 0.95),
+        }
+
         def _emit(evt: str, data: dict):
             agent = data.get("agent")
             prog = _STAGE_PROGRESS.get((evt, agent))
@@ -132,6 +139,30 @@ class OrchestrationService:
             if prog is not None:
                 store_updates["total_progress"] = prog
             update_state(workflow_id, **store_updates)
+
+        def _emit_progress(agent: str, progress: float, message: Optional[str] = None, **extra: Any):
+            progress = max(0.0, min(1.0, float(progress)))
+            start, end = _STAGE_BOUNDS.get(agent, (0.0, 1.0))
+            total_progress = start + ((end - start) * progress)
+
+            payload: Dict[str, Any] = {
+                "agent": agent,
+                "progress": progress,
+                "total_progress": total_progress,
+            }
+            if message:
+                payload["message"] = message
+            payload.update(extra)
+
+            if pt:
+                asyncio.create_task(pt.emit(workflow_id, "agent_progress", payload))
+
+            update_state(
+                workflow_id,
+                current_agent=agent,
+                status="running",
+                total_progress=total_progress,
+            )
 
         def _check_cancelled() -> bool:
             if not is_cancel_requested(workflow_id):
@@ -160,6 +191,16 @@ class OrchestrationService:
             # Stage 1: Observation
             _emit("agent_started", {"agent": "observation", "timestamp": started_at.isoformat()})
             obs_payload = {"url": url, "max_depth": depth}
+
+            def _observation_progress(progress_data: Dict[str, Any]):
+                data = dict(progress_data or {})
+                stage_progress = data.pop("progress", 0.0)
+                stage_message = data.pop("message", None)
+                _emit_progress("observation", stage_progress, stage_message, **data)
+
+            obs_payload["progress_callback"] = _observation_progress
+            obs_payload["cancel_check"] = lambda: is_cancel_requested(workflow_id)
+
             if user_instruction:
                 obs_payload["user_instruction"] = user_instruction
             if login_credentials:
@@ -174,6 +215,10 @@ class OrchestrationService:
                 priority=8,
             )
             observation_result = await observation_agent.execute_task(obs_task)
+
+            if _check_cancelled():
+                return {"workflow_id": workflow_id, "status": "cancelled"}
+
             if not observation_result.success:
                 raise RuntimeError(observation_result.error or "Observation failed")
             obs_data = observation_result.result
@@ -188,6 +233,7 @@ class OrchestrationService:
 
             # Stage 2: Requirements
             _emit("agent_started", {"agent": "requirements"})
+            _emit_progress("requirements", 0.1, "Preparing requirement extraction...")
             observation_data = {
                 "ui_elements": ui_elements,
                 "page_structure": obs_data.get("page_structure", {}),
@@ -206,6 +252,10 @@ class OrchestrationService:
                 priority=5,
             )
             requirements_result = await requirements_agent.execute_task(req_task)
+
+            if _check_cancelled():
+                return {"workflow_id": workflow_id, "status": "cancelled"}
+
             if not requirements_result.success:
                 raise RuntimeError(requirements_result.error or "Requirements failed")
             scenarios = requirements_result.result.get("scenarios", [])
@@ -219,6 +269,7 @@ class OrchestrationService:
 
             # Stage 3: Analysis
             _emit("agent_started", {"agent": "analysis"})
+            _emit_progress("analysis", 0.1, "Preparing risk analysis...")
             analysis_task = TaskContext(
                 conversation_id=workflow_id,
                 task_id=f"{workflow_id}-ana",
@@ -232,6 +283,10 @@ class OrchestrationService:
                 priority=5,
             )
             analysis_result = await analysis_agent.execute_task(analysis_task)
+
+            if _check_cancelled():
+                return {"workflow_id": workflow_id, "status": "cancelled"}
+
             if not analysis_result.success:
                 raise RuntimeError(analysis_result.error or "Analysis failed")
             _emit("agent_completed", {
@@ -243,6 +298,7 @@ class OrchestrationService:
 
             # Stage 4: Evolution
             _emit("agent_started", {"agent": "evolution"})
+            _emit_progress("evolution", 0.1, "Preparing test generation...")
             evolution_payload = {
                 "scenarios": scenarios,
                 "risk_scores": analysis_result.result.get("risk_scores", []),
@@ -265,6 +321,10 @@ class OrchestrationService:
                 priority=5,
             )
             evolution_result = await evolution_agent.execute_task(evolution_task)
+
+            if _check_cancelled():
+                return {"workflow_id": workflow_id, "status": "cancelled"}
+
             if not evolution_result.success:
                 raise RuntimeError(evolution_result.error or "Evolution failed")
             test_case_ids = evolution_result.result.get("test_case_ids", [])

@@ -252,6 +252,8 @@ class ObservationAgent(BaseAgent):
             user_instruction = task.payload.get("user_instruction", "")  # NEW: User instruction for flow navigation
             login_credentials = task.payload.get("login_credentials", {})  # NEW: Login credentials for target website
             gmail_credentials = task.payload.get("gmail_credentials", {})  # NEW: Separate Gmail login credentials (optional)
+            progress_callback = task.payload.get("progress_callback")
+            cancel_check = task.payload.get("cancel_check")
             
             logger.info(f"ObservationAgent: Crawling web application: {url} (task {task.task_id})")
             
@@ -261,13 +263,19 @@ class ObservationAgent(BaseAgent):
             if use_flow_crawling:
                 logger.info(f"ObservationAgent: Using LLM-guided flow navigation (user_instruction: '{user_instruction[:50]}...')")
                 return await self._execute_multi_page_flow_crawling(
-                    task, url, user_instruction, login_credentials, gmail_credentials, auth
+                    task, url, user_instruction, login_credentials, gmail_credentials, auth,
+                    progress_callback=progress_callback,
+                    cancel_check=cancel_check,
                 )
             else:
                 # Traditional crawling (backward compatible)
                 logger.info(f"ObservationAgent: Using traditional crawling (max_depth={max_depth})...")
                 try:
-                    return await self._execute_traditional_crawling(task, url, max_depth, auth)
+                    return await self._execute_traditional_crawling(
+                        task, url, max_depth, auth,
+                        progress_callback=progress_callback,
+                        cancel_check=cancel_check,
+                    )
                 except (NotImplementedError, OSError) as e:
                     # Python 3.13 + Windows: asyncio subprocess can raise NotImplementedError in some event loop contexts.
                     logger.warning(
@@ -291,8 +299,17 @@ class ObservationAgent(BaseAgent):
         url: str,
         max_depth: int,
         auth: Optional[Dict]
+        ,
+        progress_callback=None,
+        cancel_check=None,
     ) -> TaskResult:
         """Traditional Playwright crawling (backward compatible)"""
+        if callable(progress_callback):
+            progress_callback({
+                "progress": 0.05,
+                "message": "Launching browser for observation...",
+            })
+
         # Start Playwright browser
         # Read headless mode from env (default: True for CI/CD compatibility)
         # Support both HEADLESS_BROWSER (existing) and BROWSER_HEADLESS (for consistency)
@@ -322,17 +339,44 @@ class ObservationAgent(BaseAgent):
             logger.info(f"ObservationAgent: Crawling pages (max_depth={max_depth})...")
             pages = await self._crawl_pages(page, url, max_depth)
             logger.info(f"ObservationAgent: Found {len(pages)} page(s) to analyze")
+
+            if callable(progress_callback):
+                progress_callback({
+                    "progress": 0.20,
+                    "message": f"Discovered {len(pages)} pages. Starting element extraction...",
+                    "pages_total": len(pages),
+                    "pages_analyzed": 0,
+                })
             
             # Extract UI elements from all pages (Playwright baseline)
             logger.info("ObservationAgent: Extracting UI elements from pages...")
             all_elements = []
             all_forms = []
+            total_pages = max(len(pages), 1)
+            processed_pages = 0
+            cancelled_mid_stage = False
             for idx, page_info in enumerate(pages, 1):
+                if callable(cancel_check) and cancel_check():
+                    logger.info("ObservationAgent: Cancellation requested during page extraction. Returning partial results.")
+                    cancelled_mid_stage = True
+                    break
+
                 logger.debug(f"ObservationAgent: Extracting elements from page {idx}/{len(pages)}: {page_info.url}")
                 elements = await self._extract_ui_elements(page, page_info.url)
                 forms = await self._extract_forms(page, page_info.url)
                 all_elements.extend(elements)
                 all_forms.extend(forms)
+                processed_pages += 1
+
+                if callable(progress_callback):
+                    progress_callback({
+                        "progress": 0.20 + (0.55 * (idx / total_pages)),
+                        "message": f"Analyzing page {idx}/{total_pages}",
+                        "pages_total": total_pages,
+                        "pages_analyzed": idx,
+                        "elements_found": len(all_elements),
+                    })
+
                 logger.debug(f"ObservationAgent: Page {idx} - {len(elements)} elements, {len(forms)} forms")
             
             logger.info(f"ObservationAgent: Playwright baseline complete - {len(all_elements)} elements, {len(all_forms)} forms")
@@ -340,7 +384,7 @@ class ObservationAgent(BaseAgent):
             # ENHANCEMENT: Use LLM to find elements Playwright might miss
             llm_enhanced_elements = []
             llm_analysis = {}
-            if self.llm_client and self.llm_client.enabled:
+            if not cancelled_mid_stage and self.llm_client and self.llm_client.enabled:
                 try:
                     # Get page HTML for LLM analysis
                     html_content = await page.content()
@@ -357,6 +401,13 @@ class ObservationAgent(BaseAgent):
                     
                     llm_enhanced_elements = llm_analysis.get("enhanced_elements", [])
                     logger.info(f"LLM found {len(llm_enhanced_elements)} additional elements")
+
+                    if callable(progress_callback):
+                        progress_callback({
+                            "progress": 0.90,
+                            "message": f"LLM enrichment complete (+{len(llm_enhanced_elements)} elements)",
+                            "elements_found": len(all_elements) + len(llm_enhanced_elements),
+                        })
                     
                     # Merge LLM findings with Playwright results
                     all_elements.extend(llm_enhanced_elements)
@@ -366,6 +417,15 @@ class ObservationAgent(BaseAgent):
             
             # Identify navigation flows
             flows = self._identify_flows(pages)
+
+            if callable(progress_callback):
+                progress_callback({
+                    "progress": 1.0,
+                    "message": "Observation extraction complete",
+                    "pages_total": len(pages),
+                    "pages_analyzed": processed_pages,
+                    "elements_found": len(all_elements),
+                })
             
             await browser.close()
         
@@ -432,6 +492,9 @@ class ObservationAgent(BaseAgent):
         login_credentials: Dict,
         gmail_credentials: Dict,
         auth: Optional[Dict]
+        ,
+        progress_callback=None,
+        cancel_check=None,
     ) -> TaskResult:
         """
         Multi-page flow crawling using browser-use for LLM-guided navigation.
@@ -534,10 +597,78 @@ class ObservationAgent(BaseAgent):
             max_flow_timeout = self.config.get("max_flow_timeout_seconds", 600)
             logger.info(f"ObservationAgent: Running browser-use agent to navigate flow (max {max_flow_timeout}s, {self.max_browser_steps} steps)...")
             logger.info(f"ObservationAgent: Agent will navigate to Gmail if OTP verification is required")
+
+            if callable(progress_callback):
+                progress_callback({
+                    "progress": 0.10,
+                    "message": "Starting guided flow navigation...",
+                })
             
             try:
-                # Wrap agent.run() with timeout (increased for OTP flow)
-                history = await asyncio.wait_for(agent.run(), timeout=max_flow_timeout)
+                # Run with heartbeat ticks so we can emit mid-stage progress and react to cancellation.
+                run_task = asyncio.create_task(agent.run())
+                started = asyncio.get_running_loop().time()
+                history = None
+
+                while True:
+                    try:
+                        history = await asyncio.wait_for(asyncio.shield(run_task), timeout=1.0)
+                        break
+                    except asyncio.TimeoutError:
+                        elapsed = asyncio.get_running_loop().time() - started
+
+                        if callable(cancel_check) and cancel_check():
+                            logger.info("ObservationAgent: Cancellation requested during browser-use run. Cancelling current stage...")
+                            run_task.cancel()
+                            try:
+                                await run_task
+                            except asyncio.CancelledError:
+                                pass
+                            return TaskResult(
+                                task_id=task.task_id,
+                                success=True,
+                                result={
+                                    "start_url": url,
+                                    "pages_crawled": 0,
+                                    "total_elements": 0,
+                                    "total_forms": 0,
+                                    "pages": [],
+                                    "ui_elements": [],
+                                    "forms": [],
+                                    "navigation_flow": {
+                                        "start_url": url,
+                                        "goal_reached": False,
+                                        "pages_visited": [],
+                                        "flow_path": []
+                                    },
+                                    "page_context": {
+                                        "url": url,
+                                        "title": "",
+                                        "page_structure": {
+                                            "total_pages": 0,
+                                            "total_elements": 0,
+                                            "total_forms": 0
+                                        }
+                                    },
+                                },
+                                confidence=0.0,
+                                metadata={"cancelled": True},
+                            )
+
+                        # Emit heartbeat/mid-stage progress from observed browser-use steps
+                        if callable(progress_callback):
+                            history_obj = getattr(agent, "history", None)
+                            steps_done = len(getattr(history_obj, "history", []) or [])
+                            progress_callback({
+                                "progress": min(0.85, max(0.10, steps_done / max(1, self.max_browser_steps))),
+                                "message": f"Navigating flow... ({steps_done}/{self.max_browser_steps} steps)",
+                                "steps_completed": steps_done,
+                                "steps_total": self.max_browser_steps,
+                            })
+
+                        if elapsed >= max_flow_timeout:
+                            raise asyncio.TimeoutError()
+
                 logger.info(f"ObservationAgent: Browser-use agent completed successfully")
             except asyncio.TimeoutError:
                 logger.warning(f"ObservationAgent: Browser-use agent timed out after {max_flow_timeout}s. "
