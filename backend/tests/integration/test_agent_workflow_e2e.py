@@ -6,7 +6,11 @@ Tests cover:
 - Endpoint existence and HTTP method correctness
 - Request validation (required fields, type checks)
 - Real 202 responses — no more 501 stubs
-- End-to-end flow: trigger → status → results (mocked orchestration)
+- End-to-end flow: trigger → status → results for the 4-agent pipeline
+
+Note: Per Phase3 Architecture, AnalysisAgent may run test execution (critical scenarios)
+as a scoring criterion (Phase 2 engine, 3-tier strategy). These tests verify the
+API contract (202, status, results shape) and do not assert execution details.
 """
 import sys
 from pathlib import Path
@@ -294,8 +298,11 @@ class TestWorkflowSchema:
 
 class TestE2EWorkflowFlow:
     """
-    E2E contract test using real endpoint handlers with OrchestrationService mocked
-    so tests run without Playwright/LLM dependencies.
+    E2E contract test: trigger /generate-tests → poll status → fetch results.
+    Verifies the 4-agent pipeline (observation → requirements → analysis → evolution)
+    returns workflow_id, status, and results shape. AnalysisAgent may execute
+    critical scenarios for scoring (per Phase3 Architecture); this test does not
+    assert execution details.
     """
     BASE = "/api/v2/generate-tests"
 

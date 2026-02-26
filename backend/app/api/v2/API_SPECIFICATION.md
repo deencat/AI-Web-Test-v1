@@ -38,9 +38,11 @@
 
 ### 1.3 Entry Points Summary
 
+There is **one** full-pipeline entry point: **POST /generate-tests**. It runs all four agents in sequence (Observation → Requirements → Analysis → Evolution). Test execution is **part of** this pipeline: AnalysisAgent may run real-time execution of critical scenarios for scoring. There is no separate API for “pipeline with execution”—this is it.
+
 | Method | Path | Purpose |
 |--------|------|---------|
-| POST | `/generate-tests` | Full 4-agent pipeline from URL |
+| POST | `/generate-tests` | **Full 4-agent pipeline** from URL (Obs → Req → Analysis* → Evo). *Analysis may run real-time test execution for scoring. |
 | POST | `/observation` | ObservationAgent only |
 | POST | `/requirements` | RequirementsAgent only |
 | POST | `/analysis` | AnalysisAgent only |
@@ -83,6 +85,7 @@ Returned on **202 Accepted** (POST) or **200 OK** (GET status). Used as the sing
 | `confidence` | number \| null | 0.0–1.0 (e.g. ObservationAgent). |
 | `elements_found` | number \| null | UI elements found (Observation). |
 | `scenarios_generated` | number \| null | Scenarios (Requirements). |
+| `scenarios_executed` | number \| null | Scenarios executed in real-time (Analysis, when enabled). |
 | `tests_generated` | number \| null | Tests (Evolution). |
 
 ### 2.2 WorkflowResultsResponse (GET /workflows/{id}/results)
@@ -97,7 +100,7 @@ Returned when the workflow has finished and results are available (full or parti
 | `test_count` | integer | Number of tests (0 for partial runs). |
 | `observation_result` | object \| null | ObservationAgent output (ui_elements, page_structure, page_context). |
 | `requirements_result` | object \| null | RequirementsAgent output (scenarios, test_data, coverage_metrics). |
-| `analysis_result` | object \| null | AnalysisAgent output (risk_scores, final_prioritization). |
+| `analysis_result` | object \| null | AnalysisAgent output. See [Analysis result shape](#analysis-result-shape) below. |
 | `evolution_result` | object \| null | EvolutionAgent output. |
 | `completed_at` | string (ISO 8601) | When the workflow completed. |
 | `total_duration_seconds` | number | Total duration in seconds. |
@@ -111,6 +114,23 @@ Returned when the workflow has finished and results are available (full or parti
 | `workflow_id` | string \| null | Workflow ID if applicable. |
 | `timestamp` | string (ISO 8601) | When the error occurred. |
 
+#### Analysis result shape
+
+When AnalysisAgent ran in the pipeline or via POST /analysis, `analysis_result` has the following shape:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `risk_scores` | object[] | Per-scenario RPN (Severity × Occurrence × Detection), priority. |
+| `business_values` | object[] | Per-scenario revenue/user/compliance impact. |
+| `roi_scores` | object[] | Per-scenario ROI, bug_detection_value, test_cost. |
+| `execution_times` | object[] | Per-scenario estimated_seconds, category (fast/medium/slow). |
+| `dependencies` | object[] | Scenario dependencies, execution_order, can_run_parallel. |
+| `final_prioritization` | object[] | Per-scenario composite_score, rank, priority, execution_group. |
+| `execution_strategy` | object | `smoke_tests` (scenario IDs), `parallel_groups`, `estimated_total_time`, `estimated_parallel_time`. |
+| `execution_success` | object[] | **When real-time execution is enabled:** per-scenario execution results. Each entry: `scenario_id`, `success_rate` (0–1), `passed_steps`, `total_steps`, `tier_used` (e.g. "tier1", "tier2"), `reliability` (e.g. "high"), `source` (`"real_time_execution"` \| `"execution_results"` \| `"historical"`). Empty or omitted when real-time execution is disabled. |
+
+Reference: `test_four_agent_e2e_real.py` (AnalysisAgent with `enable_realtime_execution: True`).
+
 ---
 
 ## 3. Entry Points (Workflow Triggers)
@@ -119,9 +139,13 @@ All POST endpoints below return **202 Accepted** with a **WorkflowStatusResponse
 
 ---
 
-### 3.1 POST /generate-tests (full pipeline)
+### 3.1 POST /generate-tests (full 4-agent pipeline)
 
 Runs all four agents in sequence: Observation → Requirements → Analysis → Evolution. Single-call “generate from URL” flow.
+
+**Scope:** This is the **only** full 4-agent pipeline API; there is **no separate API** for “pipeline with execution.” Test execution is **part of** this pipeline: AnalysisAgent may run real-time execution of critical scenarios (RPN ≥ 80) via the Phase 2 execution engine (3-tier: Playwright → Hybrid → Stagehand AI) to measure success rates and refine risk scores. This execution is for **scoring and prioritization**; results appear in `analysis_result.execution_success`. The final API output is `test_case_ids` and agent artifacts from Evolution. Running the full generated test suite after the workflow (e.g. from the UI) is a separate flow. See Phase3-Architecture-Design-Complete.md §6.4 (AnalysisAgent).
+
+**Real-time execution:** Whether AnalysisAgent runs real-time scenario execution is **server-configured** (e.g. `enable_realtime_execution`, `execution_rpn_threshold`). When enabled, `GET /workflows/{id}/results` → `analysis_result.execution_success` contains per-scenario results (`scenario_id`, `success_rate`, `passed_steps`, `total_steps`, `tier_used`, `reliability`, `source`). Verified by `test_four_agent_e2e_real.py`.
 
 **Request body:** `GenerateTestsRequest`
 
@@ -239,7 +263,7 @@ Runs risk analysis and prioritization. Input is a workflow that has requirements
 
 **Response:** 202 Accepted, body = **WorkflowStatusResponse**.
 
-**Output (in results):** `analysis_result` (risk_scores, final_prioritization). Use this workflow_id in POST `/evolution` to generate tests.
+**Output (in results):** `analysis_result` with full shape (see [Analysis result shape](#analysis-result-shape)): `risk_scores`, `business_values`, `roi_scores`, `final_prioritization`, `execution_strategy`, and when real-time execution is enabled: `execution_success` (per-scenario `scenario_id`, `success_rate`, `passed_steps`, `total_steps`, `tier_used`, `reliability`, `source`). Use this workflow_id in POST `/evolution` to generate tests.
 
 ---
 
@@ -326,7 +350,8 @@ Returns workflow results (partial or full). Available once the workflow has comp
 
 **Response:** 200 OK → **WorkflowResultsResponse**.  
 - For observation-only: `observation_result` set, `test_case_ids`/`test_count` empty.  
-- For full pipeline or evolution: `test_case_ids`, `test_count`, and agent results as available.
+- For full pipeline or evolution: `test_case_ids`, `test_count`, and agent results as available.  
+- When the pipeline ran with AnalysisAgent real-time execution enabled: `analysis_result.execution_success` is an array of per-scenario execution results; `analysis_result.execution_strategy` includes `smoke_tests`, `parallel_groups`, and time estimates.
 
 **Errors:** 404 if workflow not found or results not ready (e.g. still running). Body includes `code: "NOT_READY"` when not ready.
 
@@ -366,7 +391,7 @@ Cancel a running workflow. **Status:** Stub (returns 501 Not Implemented).
 |-------|------|
 | `agent_started` | An agent begins (data includes `agent`, `timestamp`). |
 | `agent_progress` | Progress update (e.g. `progress`, `message`). |
-| `agent_completed` | An agent finishes (e.g. `elements_found`, `scenarios_generated`, `duration_seconds`). |
+| `agent_completed` | An agent finishes (e.g. `elements_found`, `scenarios_generated`, `scenarios_executed` for analysis when real-time execution ran, `duration_seconds`). |
 | `workflow_completed` | Workflow finished successfully. |
 | `workflow_failed` | Workflow failed (data includes `error`). |
 
