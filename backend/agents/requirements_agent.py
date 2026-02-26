@@ -3,7 +3,7 @@ RequirementsAgent - Extracts test requirements from UI observations
 Follows BDD, ISTQB, WCAG 2.1, OWASP security standards
 """
 from agents.base_agent import BaseAgent, AgentCapability, TaskContext, TaskResult
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any
 import asyncio
 import time
 import re
@@ -103,6 +103,38 @@ class RequirementsAgent(BaseAgent):
     async def execute_task(self, task: TaskContext) -> TaskResult:
         """Extract requirements from UI observations"""
         start_time = time.time()
+
+        progress_callback = task.payload.get("progress_callback")
+        cancel_check = task.payload.get("cancel_check")
+
+        def _emit_progress(progress: float, message: str, **extra: Any):
+            if not callable(progress_callback):
+                return
+            payload: Dict[str, Any] = {"progress": max(0.0, min(1.0, float(progress))), "message": message}
+            payload.update(extra)
+            try:
+                progress_callback(payload)
+            except Exception as emit_error:
+                logger.debug(f"RequirementsAgent: progress_callback failed: {emit_error}")
+
+        def _is_cancelled() -> bool:
+            if not callable(cancel_check):
+                return False
+            try:
+                return bool(cancel_check())
+            except Exception as cancel_error:
+                logger.debug(f"RequirementsAgent: cancel_check failed: {cancel_error}")
+                return False
+
+        def _cancelled_result() -> TaskResult:
+            return TaskResult(
+                task_id=task.task_id,
+                success=True,
+                result={"scenarios": [], "test_data": [], "coverage_metrics": {}},
+                confidence=0.0,
+                execution_time_seconds=time.time() - start_time,
+                metadata={"cancelled": True},
+            )
         
         try:
             # Extract input data
@@ -121,16 +153,31 @@ class RequirementsAgent(BaseAgent):
                 logger.info(f"RequirementsAgent: Will prioritize scenarios matching user intent")
             
             logger.info(f"RequirementsAgent: Processing {len(ui_elements)} UI elements for {page_structure.get('url', 'unknown')}")
+
+            _emit_progress(0.05, "Grouping UI elements", ui_elements=len(ui_elements))
+            if _is_cancelled():
+                logger.info("RequirementsAgent: Cancelled before Stage 1")
+                return _cancelled_result()
             
             # Stage 1: Group elements by page/component (Page Object Model)
             logger.debug("RequirementsAgent: Stage 1 - Grouping elements by page/component...")
             element_groups = self._group_elements_by_page(ui_elements, page_structure)
             logger.info(f"RequirementsAgent: Grouped elements into {len(element_groups)} sections")
+
+            _emit_progress(0.18, "Mapping user journeys", groups=len(element_groups))
+            if _is_cancelled():
+                logger.info("RequirementsAgent: Cancelled after Stage 1")
+                return _cancelled_result()
             
             # Stage 2: Map user journeys (multi-step flows)
             logger.debug("RequirementsAgent: Stage 2 - Mapping user journeys...")
             user_journeys = self._map_user_journeys(element_groups, page_context)
             logger.info(f"RequirementsAgent: Mapped {len(user_journeys)} user journeys")
+
+            _emit_progress(0.32, "Generating functional scenarios", user_journeys=len(user_journeys))
+            if _is_cancelled():
+                logger.info("RequirementsAgent: Cancelled after Stage 2")
+                return _cancelled_result()
             
             # Stage 3: Generate functional test scenarios
             logger.debug("RequirementsAgent: Stage 3 - Generating functional test scenarios...")
@@ -141,16 +188,31 @@ class RequirementsAgent(BaseAgent):
                 user_journeys, element_groups, page_context, page_structure, user_instruction, execution_feedback
             )
             logger.info(f"RequirementsAgent: Generated {len(functional_scenarios)} functional scenarios")
+
+            _emit_progress(0.48, "Generating accessibility scenarios", scenarios_generated=len(functional_scenarios))
+            if _is_cancelled():
+                logger.info("RequirementsAgent: Cancelled after Stage 3")
+                return _cancelled_result()
             
             # Stage 4: Generate accessibility scenarios (WCAG 2.1)
             logger.debug("RequirementsAgent: Stage 4 - Generating accessibility scenarios...")
             accessibility_scenarios = self._generate_accessibility_scenarios(ui_elements)
             logger.info(f"RequirementsAgent: Generated {len(accessibility_scenarios)} accessibility scenarios")
+
+            _emit_progress(0.60, "Generating security scenarios", scenarios_generated=(len(functional_scenarios) + len(accessibility_scenarios)))
+            if _is_cancelled():
+                logger.info("RequirementsAgent: Cancelled after Stage 4")
+                return _cancelled_result()
             
             # Stage 5: Generate security scenarios (OWASP)
             logger.debug("RequirementsAgent: Stage 5 - Generating security scenarios...")
             security_scenarios = self._generate_security_scenarios(ui_elements, page_context)
             logger.info(f"RequirementsAgent: Generated {len(security_scenarios)} security scenarios")
+
+            _emit_progress(0.72, "Generating edge-case scenarios", scenarios_generated=(len(functional_scenarios) + len(accessibility_scenarios) + len(security_scenarios)))
+            if _is_cancelled():
+                logger.info("RequirementsAgent: Cancelled after Stage 5")
+                return _cancelled_result()
             
             # Stage 6: Generate edge case scenarios
             logger.debug("RequirementsAgent: Stage 6 - Generating edge case scenarios...")
@@ -187,10 +249,20 @@ class RequirementsAgent(BaseAgent):
                     scenario.scenario_id = f"REQ-{type_prefix}-{counter:03d}"
                     logger.debug(f"RequirementsAgent: Renumbered duplicate scenario_id {old_id} -> {scenario.scenario_id}")
                 seen_ids.add(scenario.scenario_id)
+
+            _emit_progress(0.84, "Extracting test data", scenarios_total=len(all_scenarios))
+            if _is_cancelled():
+                logger.info("RequirementsAgent: Cancelled after Stage 6")
+                return _cancelled_result()
             
             # Stage 7: Extract test data
             test_data = self._extract_test_data(ui_elements)
             logger.debug(f"Extracted {len(test_data)} test data fields")
+
+            _emit_progress(0.92, "Calculating coverage metrics", test_data_fields=len(test_data))
+            if _is_cancelled():
+                logger.info("RequirementsAgent: Cancelled after Stage 7")
+                return _cancelled_result()
             
             # Stage 8: Calculate coverage metrics
             coverage_metrics = self._calculate_coverage(ui_elements, all_scenarios)
@@ -213,6 +285,8 @@ class RequirementsAgent(BaseAgent):
             logger.info(f"RequirementsAgent completed: {len(all_scenarios)} scenarios, "
                        f"{coverage_metrics['ui_coverage_percent']:.1f}% coverage, "
                        f"confidence={result['quality_indicators']['confidence']:.2f}")
+
+            _emit_progress(1.0, "Requirements extraction complete", scenarios_total=len(all_scenarios))
             
             return TaskResult(
                 task_id=task.task_id,

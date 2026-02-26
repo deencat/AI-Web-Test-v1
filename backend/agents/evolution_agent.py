@@ -117,6 +117,8 @@ class EvolutionAgent(BaseAgent):
             test_data = task.payload.get("test_data", [])
             user_instruction = task.payload.get("user_instruction", "")  # Get user instruction for goal-aware generation
             login_credentials = task.payload.get("login_credentials", {})  # Get login credentials if provided
+            progress_callback = task.payload.get("progress_callback")
+            cancel_check = task.payload.get("cancel_check")
             
             # Get database session from config or task payload
             db_session = self.db or task.payload.get("db")
@@ -135,13 +137,38 @@ class EvolutionAgent(BaseAgent):
             # Generate test steps for each scenario
             generated_test_cases = []
             total_tokens = 0
+
+            def _emit_progress(progress: float, message: str, **extra: Any) -> None:
+                if not callable(progress_callback):
+                    return
+                payload = {
+                    "progress": max(0.0, min(1.0, float(progress))),
+                    "message": message,
+                    **extra,
+                }
+                try:
+                    progress_callback(payload)
+                except Exception:
+                    logger.debug("EvolutionAgent: progress_callback raised error", exc_info=True)
             
             logger.info(f"EvolutionAgent: Generating test steps for {len(scenarios)} scenarios...")
+            _emit_progress(0.03, f"Preparing generation for {len(scenarios)} scenarios...", scenarios_total=len(scenarios), scenarios_processed=0)
             for idx, scenario in enumerate(scenarios, 1):
+                if callable(cancel_check) and cancel_check():
+                    logger.info(f"EvolutionAgent: Cancellation requested before scenario {idx}/{len(scenarios)}. Returning partial result.")
+                    break
+
                 scenario_id = scenario.get("scenario_id", "UNKNOWN")
                 scenario_title = scenario.get("title", "Unknown")[:50]  # Truncate long titles
                 
                 logger.info(f"EvolutionAgent: Processing scenario {idx}/{len(scenarios)}: {scenario_id} - {scenario_title}")
+                _emit_progress(
+                    min(0.95, max(0.05, idx / max(1, len(scenarios)))),
+                    f"Processing scenario {idx}/{len(scenarios)}: {scenario_id}",
+                    scenarios_total=len(scenarios),
+                    scenarios_processed=idx - 1,
+                    current_scenario_id=scenario_id,
+                )
                 
                 # Check cache first (if enabled)
                 cache_key = self._generate_cache_key(scenario, page_context)
@@ -155,6 +182,13 @@ class EvolutionAgent(BaseAgent):
                         "from_cache": True
                     })
                     logger.debug(f"EvolutionAgent: Cached scenario {scenario_id} has {len(cached_result['steps'])} steps")
+                    _emit_progress(
+                        min(0.95, idx / max(1, len(scenarios))),
+                        f"Generated scenario {idx}/{len(scenarios)} from cache",
+                        scenarios_total=len(scenarios),
+                        scenarios_processed=idx,
+                        current_scenario_id=scenario_id,
+                    )
                     continue
                 
                 # Generate test steps using LLM or template
@@ -188,6 +222,14 @@ class EvolutionAgent(BaseAgent):
                             "confidence": steps_result.get("confidence", 0.85),
                             "cached_at": datetime.now(timezone.utc).isoformat()
                         }
+
+                    _emit_progress(
+                        min(0.95, idx / max(1, len(scenarios))),
+                        f"Generated {steps_count} steps for scenario {idx}/{len(scenarios)}",
+                        scenarios_total=len(scenarios),
+                        scenarios_processed=idx,
+                        current_scenario_id=scenario_id,
+                    )
                 else:
                     logger.warning(f"EvolutionAgent: Failed to generate steps for scenario {scenario_id}")
             
@@ -215,6 +257,7 @@ class EvolutionAgent(BaseAgent):
                 overall_confidence = 0.0
             
             # Prepare result
+            cancelled = callable(cancel_check) and cancel_check()
             result = {
                 "generation_id": generation_id,
                 "test_count": len(generated_test_cases),
@@ -224,8 +267,19 @@ class EvolutionAgent(BaseAgent):
                 "prompt_variant": self.current_variant,
                 "cache_hits": sum(1 for t in generated_test_cases if t.get("from_cache", False)),
                 "cache_misses": sum(1 for t in generated_test_cases if not t.get("from_cache", False)),
-                "stored_in_database": len(db_test_case_ids) > 0
+                "stored_in_database": len(db_test_case_ids) > 0,
+                "cancelled": cancelled,
             }
+
+            if cancelled:
+                logger.info("EvolutionAgent: Returning partial generation result due to cancellation request")
+
+            _emit_progress(
+                1.0,
+                f"Evolution stage complete ({len(generated_test_cases)}/{len(scenarios)} scenarios)",
+                scenarios_total=len(scenarios),
+                scenarios_processed=len(generated_test_cases),
+            )
             
             logger.info(f"EvolutionAgent generated {len(generated_test_cases)} test cases "
                        f"(confidence: {overall_confidence:.2f}, tokens: {total_tokens}, "
@@ -242,7 +296,8 @@ class EvolutionAgent(BaseAgent):
                     "generation_id": generation_id,
                     "test_count": len(generated_test_cases),
                     "prompt_variant": self.current_variant,
-                    "database_ids": db_test_case_ids
+                    "database_ids": db_test_case_ids,
+                    "cancelled": cancelled,
                 }
             )
             

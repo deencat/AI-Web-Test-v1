@@ -107,6 +107,41 @@ class AnalysisAgent(BaseAgent):
     async def execute_task(self, task: TaskContext) -> TaskResult:
         """Analyze scenarios for risk, ROI, dependencies, and prioritization"""
         start_time = time.time()
+
+        progress_callback = task.payload.get("progress_callback")
+        cancel_check = task.payload.get("cancel_check")
+
+        def _emit_progress(progress: float, message: str, **extra: Any):
+            if not callable(progress_callback):
+                return
+            payload: Dict[str, Any] = {
+                "progress": max(0.0, min(1.0, float(progress))),
+                "message": message,
+            }
+            payload.update(extra)
+            try:
+                progress_callback(payload)
+            except Exception as emit_error:
+                logger.debug(f"AnalysisAgent: progress_callback failed: {emit_error}")
+
+        def _is_cancelled() -> bool:
+            if not callable(cancel_check):
+                return False
+            try:
+                return bool(cancel_check())
+            except Exception as cancel_error:
+                logger.debug(f"AnalysisAgent: cancel_check failed: {cancel_error}")
+                return False
+
+        def _cancelled_result() -> TaskResult:
+            return TaskResult(
+                task_id=task.task_id,
+                success=True,
+                result={"risk_scores": [], "final_prioritization": []},
+                confidence=0.0,
+                execution_time_seconds=time.time() - start_time,
+                metadata={"cancelled": True},
+            )
         
         try:
             # Extract input data
@@ -116,11 +151,21 @@ class AnalysisAgent(BaseAgent):
             page_context = task.payload.get("page_context", {})
             
             logger.info(f"AnalysisAgent: Processing {len(scenarios)} scenarios...")
+
+            _emit_progress(0.05, "Loading historical data", scenarios_total=len(scenarios))
+            if _is_cancelled():
+                logger.info("AnalysisAgent: Cancelled before Stage 1")
+                return _cancelled_result()
             
             # Stage 1: Historical data integration
             logger.debug("AnalysisAgent: Stage 1 - Loading historical data...")
             historical_data = await self._load_historical_data(scenarios)
             logger.debug(f"AnalysisAgent: Loaded historical data for {len(historical_data)} scenarios")
+
+            _emit_progress(0.16, "Calculating risk scores")
+            if _is_cancelled():
+                logger.info("AnalysisAgent: Cancelled after Stage 1")
+                return _cancelled_result()
             
             # Stage 2: Risk scoring (FMEA framework) - Initial scoring
             logger.debug("AnalysisAgent: Stage 2 - Calculating risk scores (FMEA framework)...")
@@ -128,30 +173,60 @@ class AnalysisAgent(BaseAgent):
                 scenarios, historical_data, page_context
             )
             logger.info(f"AnalysisAgent: Calculated risk scores for {len(risk_scores)} scenarios")
+
+            _emit_progress(0.26, "Calculating business values", scenarios_scored=len(risk_scores))
+            if _is_cancelled():
+                logger.info("AnalysisAgent: Cancelled after Stage 2")
+                return _cancelled_result()
             
             # Stage 3: Business value scoring
             logger.debug("AnalysisAgent: Stage 3 - Calculating business values...")
             business_values = self._calculate_business_values(scenarios, page_context)
+
+            _emit_progress(0.34, "Calculating ROI scores")
+            if _is_cancelled():
+                logger.info("AnalysisAgent: Cancelled after Stage 3")
+                return _cancelled_result()
             
             # Stage 4: ROI calculation
             logger.debug("AnalysisAgent: Stage 4 - Calculating ROI scores...")
             roi_scores = self._calculate_roi_scores(
                 scenarios, risk_scores, business_values, historical_data, page_context
             )
+
+            _emit_progress(0.42, "Estimating execution times")
+            if _is_cancelled():
+                logger.info("AnalysisAgent: Cancelled after Stage 4")
+                return _cancelled_result()
             
             # Stage 5: Execution time estimation
             logger.debug("AnalysisAgent: Stage 5 - Estimating execution times...")
             execution_times = self._estimate_execution_times(scenarios)
+
+            _emit_progress(0.50, "Analyzing dependencies")
+            if _is_cancelled():
+                logger.info("AnalysisAgent: Cancelled after Stage 5")
+                return _cancelled_result()
             
             # Stage 6: Dependency analysis
             logger.debug("AnalysisAgent: Stage 6 - Analyzing dependencies...")
             dependencies = self._analyze_dependencies(scenarios)
+
+            _emit_progress(0.56, "Analyzing coverage impact")
+            if _is_cancelled():
+                logger.info("AnalysisAgent: Cancelled after Stage 6")
+                return _cancelled_result()
             
             # Stage 7: Coverage impact analysis
             logger.debug("AnalysisAgent: Stage 7 - Analyzing coverage impact...")
             coverage_impact = self._analyze_coverage_impact(
                 scenarios, coverage_metrics
             )
+
+            _emit_progress(0.62, "Assessing regression risk")
+            if _is_cancelled():
+                logger.info("AnalysisAgent: Cancelled after Stage 7")
+                return _cancelled_result()
             
             # Stage 8: Regression risk assessment
             logger.debug("AnalysisAgent: Stage 8 - Assessing regression risk...")
@@ -163,6 +238,10 @@ class AnalysisAgent(BaseAgent):
             
             # Execute critical scenarios in real-time if enabled
             if enable_realtime_execution:
+                if _is_cancelled():
+                    logger.info("AnalysisAgent: Cancelled before real-time execution")
+                    return _cancelled_result()
+
                 # Get RPN threshold from config (default: 80 for production, lower for testing)
                 rpn_threshold = self.config.get("execution_rpn_threshold", 80) if self.config else 80
                 
@@ -188,15 +267,33 @@ class AnalysisAgent(BaseAgent):
                     # Get parallel execution batch size from config (default: 3)
                     batch_size = self.config.get("parallel_execution_batch_size", 3) if self.config else 3
                     scenarios_to_execute = critical_scenarios[:17]  # Execute all scenarios (or limit if needed)
+
+                    _emit_progress(
+                        0.68,
+                        "Executing critical scenarios in real time",
+                        scenarios_selected=len(scenarios_to_execute),
+                    )
                     
                     logger.info(f"AnalysisAgent: Executing {len(scenarios_to_execute)} scenarios in real-time "
                                f"(RPN threshold: {rpn_threshold}, parallel batch size: {batch_size})")
                     
                     # Execute scenarios in parallel batches
                     for batch_idx in range(0, len(scenarios_to_execute), batch_size):
+                        if _is_cancelled():
+                            logger.info("AnalysisAgent: Cancelled during real-time execution batches")
+                            return _cancelled_result()
+
                         batch = scenarios_to_execute[batch_idx:batch_idx + batch_size]
                         batch_num = (batch_idx // batch_size) + 1
                         total_batches = (len(scenarios_to_execute) + batch_size - 1) // batch_size
+
+                        realtime_progress = 0.68 + (0.10 * (batch_num / max(total_batches, 1)))
+                        _emit_progress(
+                            realtime_progress,
+                            f"Executing real-time batch {batch_num}/{total_batches}",
+                            batch_number=batch_num,
+                            batch_total=total_batches,
+                        )
                         
                         logger.info(f"AnalysisAgent: Executing batch {batch_num}/{total_batches} "
                                    f"({len(batch)} scenarios in parallel)")
@@ -234,6 +331,11 @@ class AnalysisAgent(BaseAgent):
                     logger.info("AnalysisAgent: No critical scenarios found for real-time execution")
             
             # Stage 10: Execution success rate analysis (incorporates real-time results)
+            if _is_cancelled():
+                logger.info("AnalysisAgent: Cancelled before execution success analysis")
+                return _cancelled_result()
+
+            _emit_progress(0.82, "Analyzing execution success")
             execution_success = await self._analyze_execution_success(
                 scenarios, execution_results, page_context
             )
@@ -254,6 +356,11 @@ class AnalysisAgent(BaseAgent):
                     )
             
             # Stage 10: Final prioritization
+            if _is_cancelled():
+                logger.info("AnalysisAgent: Cancelled before final prioritization")
+                return _cancelled_result()
+
+            _emit_progress(0.92, "Finalizing prioritization")
             final_prioritization = self._finalize_prioritization(
                 scenarios, risk_scores, business_values, roi_scores,
                 coverage_impact, regression_risk, execution_times, execution_success
@@ -298,6 +405,8 @@ class AnalysisAgent(BaseAgent):
                 "final_prioritization": final_prioritization,
                 "execution_strategy": execution_strategy
             }
+
+            _emit_progress(1.0, "Analysis complete", prioritized_scenarios=len(final_prioritization))
             
             execution_time = time.time() - start_time
             self.tasks_completed += 1

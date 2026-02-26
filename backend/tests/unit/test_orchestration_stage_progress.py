@@ -90,6 +90,20 @@ class _ObsAgent:
 
 class _ReqAgent:
     async def execute_task(self, task):
+        progress_callback = task.payload.get("progress_callback")
+        cancel_check = task.payload.get("cancel_check")
+        assert callable(progress_callback), "progress_callback must be provided in requirements payload"
+        assert callable(cancel_check), "cancel_check must be provided in requirements payload"
+
+        progress_callback(
+            {
+                "progress": 0.40,
+                "message": "Generating scenarios 1/2",
+                "scenarios_generated": 1,
+                "scenarios_total": 2,
+            }
+        )
+
         return _Result(
             task_id=task.task_id,
             success=True,
@@ -100,6 +114,20 @@ class _ReqAgent:
 
 class _AnalysisAgent:
     async def execute_task(self, task):
+        progress_callback = task.payload.get("progress_callback")
+        cancel_check = task.payload.get("cancel_check")
+        assert callable(progress_callback), "progress_callback must be provided in analysis payload"
+        assert callable(cancel_check), "cancel_check must be provided in analysis payload"
+
+        progress_callback(
+            {
+                "progress": 0.55,
+                "message": "Analyzing risk for scenario 1/2",
+                "scenarios_analyzed": 1,
+                "scenarios_total": 2,
+            }
+        )
+
         return _Result(
             task_id=task.task_id,
             success=True,

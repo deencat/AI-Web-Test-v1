@@ -242,6 +242,16 @@ class OrchestrationService:
             if "url" not in observation_data["page_context"]:
                 observation_data["page_context"]["url"] = url
             req_payload = {**observation_data}
+
+            def _requirements_progress(progress_data: Dict[str, Any]):
+                data = dict(progress_data or {})
+                stage_progress = data.pop("progress", 0.0)
+                stage_message = data.pop("message", None)
+                _emit_progress("requirements", stage_progress, stage_message, **data)
+
+            req_payload["progress_callback"] = _requirements_progress
+            req_payload["cancel_check"] = lambda: is_cancel_requested(workflow_id)
+
             if user_instruction:
                 req_payload["user_instruction"] = user_instruction
             req_task = TaskContext(
@@ -270,6 +280,12 @@ class OrchestrationService:
             # Stage 3: Analysis
             _emit("agent_started", {"agent": "analysis"})
             _emit_progress("analysis", 0.1, "Preparing risk analysis...")
+            def _analysis_progress(progress_data: Dict[str, Any]):
+                data = dict(progress_data or {})
+                stage_progress = data.pop("progress", 0.0)
+                stage_message = data.pop("message", None)
+                _emit_progress("analysis", stage_progress, stage_message, **data)
+
             analysis_task = TaskContext(
                 conversation_id=workflow_id,
                 task_id=f"{workflow_id}-ana",
@@ -279,6 +295,8 @@ class OrchestrationService:
                     "test_data": requirements_result.result.get("test_data", []),
                     "coverage_metrics": requirements_result.result.get("coverage_metrics", {}),
                     "page_context": observation_data["page_context"],
+                    "progress_callback": _analysis_progress,
+                    "cancel_check": lambda: is_cancel_requested(workflow_id),
                 },
                 priority=5,
             )
@@ -307,6 +325,16 @@ class OrchestrationService:
                 "test_data": requirements_result.result.get("test_data", []),
                 "db": db,
             }
+
+            def _evolution_progress(progress_data: Dict[str, Any]):
+                data = dict(progress_data or {})
+                stage_progress = data.pop("progress", 0.0)
+                stage_message = data.pop("message", None)
+                _emit_progress("evolution", stage_progress, stage_message, **data)
+
+            evolution_payload["progress_callback"] = _evolution_progress
+            evolution_payload["cancel_check"] = lambda: is_cancel_requested(workflow_id)
+
             if user_instruction:
                 evolution_payload["user_instruction"] = user_instruction
             if login_credentials:
