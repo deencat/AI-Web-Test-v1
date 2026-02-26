@@ -1,18 +1,10 @@
 /**
- * Unit tests for AgentStatusMonitor — Sprint 10 (10B.11)
- *
- * TDD: Tests written BEFORE implementation.
- * Covers: agent timeline rendering, status states, log viewer toggle, metrics,
- *         loading/error states, edge cases (empty progress, null status).
+ * Unit tests for AgentStatusMonitor — simplified Stage Details panel
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect } from 'vitest';
+import { render, screen } from '@testing-library/react';
 import { AgentStatusMonitor } from '../components/AgentStatusMonitor';
-import type { AgentProgress, WorkflowStatus } from '../../../types/agentWorkflow.types';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+import type { AgentProgress } from '../../../types/agentWorkflow.types';
 
 function makeProgress(overrides: Partial<AgentProgress> = {}): AgentProgress {
   return {
@@ -29,58 +21,34 @@ const RUNNING_PROGRESS: Record<string, AgentProgress> = {
     agent: 'observation',
     status: 'completed',
     progress: 1,
-    message: '38 elements found',
+    message: 'Found 38 elements',
     elements_found: 38,
-    duration_seconds: 12,
     confidence: 0.9,
   }),
   requirements: makeProgress({
     agent: 'requirements',
     status: 'running',
-    progress: 0.5,
-    message: 'Generating BDD scenarios...',
+    progress: 0.47,
+    message: 'Generating 8 BDD scenarios...',
     scenarios_generated: 8,
   }),
 };
 
-const COMPLETED_PROGRESS: Record<string, AgentProgress> = {
-  observation: makeProgress({ agent: 'observation', status: 'completed', progress: 1, message: 'Done' }),
-  requirements: makeProgress({ agent: 'requirements', status: 'completed', progress: 1, message: 'Done', scenarios_generated: 12 }),
-  analysis: makeProgress({ agent: 'analysis', status: 'completed', progress: 1, message: 'Done' }),
-  evolution: makeProgress({
-    agent: 'evolution',
-    status: 'completed',
-    progress: 1,
-    message: 'Done',
-    tests_generated: 17,
-    duration_seconds: 45,
-  }),
-};
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-describe('AgentStatusMonitor', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  // --- Core rendering ---
-
-  it('renders the monitor container', () => {
+describe('AgentStatusMonitor (simplified)', () => {
+  it('renders stage details panel', () => {
     render(
       <AgentStatusMonitor
-        workflowStatus={null}
-        agentProgress={{}}
-        currentAgent={null}
-        totalProgress={0}
+        workflowStatus="running"
+        agentProgress={RUNNING_PROGRESS}
+        currentAgent="requirements"
+        totalProgress={0.35}
       />
     );
     expect(screen.getByTestId('agent-status-monitor')).toBeInTheDocument();
+    expect(screen.getByTestId('current-stage-card')).toBeInTheDocument();
   });
 
-  it('renders all 4 agent stage rows', () => {
+  it('shows current stage name and status', () => {
     render(
       <AgentStatusMonitor
         workflowStatus="running"
@@ -89,15 +57,11 @@ describe('AgentStatusMonitor', () => {
         totalProgress={0.35}
       />
     );
-    expect(screen.getByTestId('agent-stage-observation')).toBeInTheDocument();
-    expect(screen.getByTestId('agent-stage-requirements')).toBeInTheDocument();
-    expect(screen.getByTestId('agent-stage-analysis')).toBeInTheDocument();
-    expect(screen.getByTestId('agent-stage-evolution')).toBeInTheDocument();
+    expect(screen.getByTestId('current-stage-name')).toHaveTextContent('Requirements');
+    expect(screen.getByTestId('current-stage-status')).toHaveTextContent('running');
   });
 
-  // --- Status states ---
-
-  it('marks a completed agent with data-status="completed"', () => {
+  it('shows current stage message', () => {
     render(
       <AgentStatusMonitor
         workflowStatus="running"
@@ -106,10 +70,10 @@ describe('AgentStatusMonitor', () => {
         totalProgress={0.35}
       />
     );
-    expect(screen.getByTestId('agent-stage-observation')).toHaveAttribute('data-status', 'completed');
+    expect(screen.getByTestId('current-stage-message')).toHaveTextContent('Generating 8 BDD scenarios...');
   });
 
-  it('marks the current agent with data-status="running"', () => {
+  it('shows in-stage progress when progress is available', () => {
     render(
       <AgentStatusMonitor
         workflowStatus="running"
@@ -118,10 +82,11 @@ describe('AgentStatusMonitor', () => {
         totalProgress={0.35}
       />
     );
-    expect(screen.getByTestId('agent-stage-requirements')).toHaveAttribute('data-status', 'running');
+    expect(screen.getByTestId('current-stage-progress')).toBeInTheDocument();
+    expect(screen.getByTestId('current-stage-progress-pct')).toHaveTextContent('47%');
   });
 
-  it('marks future agents with data-status="pending"', () => {
+  it('shows focused-stage metrics', () => {
     render(
       <AgentStatusMonitor
         workflowStatus="running"
@@ -130,28 +95,10 @@ describe('AgentStatusMonitor', () => {
         totalProgress={0.35}
       />
     );
-    expect(screen.getByTestId('agent-stage-analysis')).toHaveAttribute('data-status', 'pending');
-    expect(screen.getByTestId('agent-stage-evolution')).toHaveAttribute('data-status', 'pending');
+    expect(screen.getByTestId('metric-scenarios-current')).toHaveTextContent('8');
   });
 
-  it('marks all agents completed when workflowStatus is "completed"', () => {
-    render(
-      <AgentStatusMonitor
-        workflowStatus="completed"
-        agentProgress={COMPLETED_PROGRESS}
-        currentAgent={null}
-        totalProgress={1}
-      />
-    );
-    expect(screen.getByTestId('agent-stage-observation')).toHaveAttribute('data-status', 'completed');
-    expect(screen.getByTestId('agent-stage-requirements')).toHaveAttribute('data-status', 'completed');
-    expect(screen.getByTestId('agent-stage-analysis')).toHaveAttribute('data-status', 'completed');
-    expect(screen.getByTestId('agent-stage-evolution')).toHaveAttribute('data-status', 'completed');
-  });
-
-  // --- Messages ---
-
-  it('shows the agent message from agentProgress', () => {
+  it('shows completed stage chips', () => {
     render(
       <AgentStatusMonitor
         workflowStatus="running"
@@ -160,12 +107,10 @@ describe('AgentStatusMonitor', () => {
         totalProgress={0.35}
       />
     );
-    expect(screen.getByText('Generating BDD scenarios...')).toBeInTheDocument();
+    expect(screen.getByTestId('completed-observation')).toBeInTheDocument();
   });
 
-  // --- Metrics ---
-
-  it('shows elements_found metric for observation agent', () => {
+  it('does not show raw logs UI controls', () => {
     render(
       <AgentStatusMonitor
         workflowStatus="running"
@@ -174,166 +119,11 @@ describe('AgentStatusMonitor', () => {
         totalProgress={0.35}
       />
     );
-    expect(screen.getByTestId('metric-elements-observation').textContent).toContain('38');
-  });
-
-  it('shows scenarios_generated metric for requirements agent', () => {
-    render(
-      <AgentStatusMonitor
-        workflowStatus="running"
-        agentProgress={RUNNING_PROGRESS}
-        currentAgent="requirements"
-        totalProgress={0.35}
-      />
-    );
-    expect(screen.getByTestId('metric-scenarios-requirements').textContent).toContain('8');
-  });
-
-  it('shows tests_generated metric for evolution agent', () => {
-    render(
-      <AgentStatusMonitor
-        workflowStatus="completed"
-        agentProgress={COMPLETED_PROGRESS}
-        currentAgent={null}
-        totalProgress={1}
-      />
-    );
-    expect(screen.getByTestId('metric-tests-evolution').textContent).toContain('17');
-  });
-
-  it('shows confidence metric for observation agent', () => {
-    render(
-      <AgentStatusMonitor
-        workflowStatus="running"
-        agentProgress={RUNNING_PROGRESS}
-        currentAgent="requirements"
-        totalProgress={0.35}
-      />
-    );
-    expect(screen.getByTestId('metric-confidence-observation').textContent).toContain('90');
-  });
-
-  // --- Progress bar ---
-
-  it('displays the overall progress percentage', () => {
-    render(
-      <AgentStatusMonitor
-        workflowStatus="running"
-        agentProgress={RUNNING_PROGRESS}
-        currentAgent="requirements"
-        totalProgress={0.35}
-      />
-    );
-    expect(screen.getByTestId('overall-progress-pct')).toHaveTextContent('35%');
-  });
-
-  // --- Log viewer toggle ---
-
-  it('renders the "View Logs" toggle button', () => {
-    render(
-      <AgentStatusMonitor
-        workflowStatus="running"
-        agentProgress={RUNNING_PROGRESS}
-        currentAgent="requirements"
-        totalProgress={0.35}
-      />
-    );
-    expect(screen.getByTestId('toggle-logs-button')).toBeInTheDocument();
-  });
-
-  it('hides the log viewer by default', () => {
-    render(
-      <AgentStatusMonitor
-        workflowStatus="running"
-        agentProgress={RUNNING_PROGRESS}
-        currentAgent="requirements"
-        totalProgress={0.35}
-      />
-    );
+    expect(screen.queryByTestId('toggle-logs-button')).not.toBeInTheDocument();
     expect(screen.queryByTestId('log-viewer')).not.toBeInTheDocument();
   });
 
-  it('shows the log viewer after clicking "View Logs"', () => {
-    render(
-      <AgentStatusMonitor
-        workflowStatus="running"
-        agentProgress={RUNNING_PROGRESS}
-        currentAgent="requirements"
-        totalProgress={0.35}
-      />
-    );
-    fireEvent.click(screen.getByTestId('toggle-logs-button'));
-    expect(screen.getByTestId('log-viewer')).toBeInTheDocument();
-  });
-
-  it('hides the log viewer after toggling twice', () => {
-    render(
-      <AgentStatusMonitor
-        workflowStatus="running"
-        agentProgress={RUNNING_PROGRESS}
-        currentAgent="requirements"
-        totalProgress={0.35}
-      />
-    );
-    fireEvent.click(screen.getByTestId('toggle-logs-button'));
-    fireEvent.click(screen.getByTestId('toggle-logs-button'));
-    expect(screen.queryByTestId('log-viewer')).not.toBeInTheDocument();
-  });
-
-  it('shows log entries from agentProgress messages when logs are expanded', () => {
-    render(
-      <AgentStatusMonitor
-        workflowStatus="running"
-        agentProgress={RUNNING_PROGRESS}
-        currentAgent="requirements"
-        totalProgress={0.35}
-      />
-    );
-    fireEvent.click(screen.getByTestId('toggle-logs-button'));
-    expect(screen.getByTestId('log-viewer').textContent).toContain('38 elements found');
-  });
-
-  it('shows "No log entries yet" when agentProgress has no messages', () => {
-    render(
-      <AgentStatusMonitor
-        workflowStatus="running"
-        agentProgress={{ observation: makeProgress({ message: null }) }}
-        currentAgent="observation"
-        totalProgress={0.1}
-      />
-    );
-    fireEvent.click(screen.getByTestId('toggle-logs-button'));
-    expect(screen.getByTestId('log-viewer').textContent).toContain('No log entries yet');
-  });
-
-  it('toggle button shows "Hide Logs" when expanded', () => {
-    render(
-      <AgentStatusMonitor
-        workflowStatus="running"
-        agentProgress={RUNNING_PROGRESS}
-        currentAgent="requirements"
-        totalProgress={0.35}
-      />
-    );
-    fireEvent.click(screen.getByTestId('toggle-logs-button'));
-    expect(screen.getByTestId('toggle-logs-button').textContent).toContain('Hide Logs');
-  });
-
-  it('toggle button shows "View Logs" when collapsed', () => {
-    render(
-      <AgentStatusMonitor
-        workflowStatus="running"
-        agentProgress={RUNNING_PROGRESS}
-        currentAgent="requirements"
-        totalProgress={0.35}
-      />
-    );
-    expect(screen.getByTestId('toggle-logs-button').textContent).toContain('View Logs');
-  });
-
-  // --- Loading state ---
-
-  it('shows a loading indicator when isLoading is true', () => {
+  it('shows loading indicator when loading', () => {
     render(
       <AgentStatusMonitor
         workflowStatus={null}
@@ -346,82 +136,30 @@ describe('AgentStatusMonitor', () => {
     expect(screen.getByTestId('status-loading')).toBeInTheDocument();
   });
 
-  it('does NOT show loading indicator when isLoading is false', () => {
-    render(
-      <AgentStatusMonitor
-        workflowStatus="running"
-        agentProgress={{}}
-        currentAgent={null}
-        totalProgress={0}
-        isLoading={false}
-      />
-    );
-    expect(screen.queryByTestId('status-loading')).not.toBeInTheDocument();
-  });
-
-  // --- Error state ---
-
-  it('shows the error message when error prop is set', () => {
+  it('shows error state when provided', () => {
     render(
       <AgentStatusMonitor
         workflowStatus="failed"
         agentProgress={{}}
         currentAgent={null}
         totalProgress={0}
-        error="Network error: connection refused"
+        error="Workflow failed"
       />
     );
-    expect(screen.getByText(/Network error: connection refused/i)).toBeInTheDocument();
+    expect(screen.getByTestId('status-error')).toHaveTextContent('Workflow failed');
   });
 
-  it('does NOT show error element when error is null', () => {
+  it('shows None yet when no stages are completed', () => {
     render(
       <AgentStatusMonitor
         workflowStatus="running"
-        agentProgress={{}}
-        currentAgent={null}
-        totalProgress={0}
-        error={null}
+        agentProgress={{
+          observation: makeProgress({ agent: 'observation', status: 'running', progress: 0.15 }),
+        }}
+        currentAgent="observation"
+        totalProgress={0.1}
       />
     );
-    expect(screen.queryByTestId('status-error')).not.toBeInTheDocument();
-  });
-
-  // --- Edge cases ---
-
-  it('renders without crashing when agentProgress is empty', () => {
-    render(
-      <AgentStatusMonitor
-        workflowStatus={null}
-        agentProgress={{}}
-        currentAgent={null}
-        totalProgress={0}
-      />
-    );
-    expect(screen.getByTestId('agent-status-monitor')).toBeInTheDocument();
-  });
-
-  it('renders 0% progress when totalProgress is 0', () => {
-    render(
-      <AgentStatusMonitor
-        workflowStatus={null}
-        agentProgress={{}}
-        currentAgent={null}
-        totalProgress={0}
-      />
-    );
-    expect(screen.getByTestId('overall-progress-pct')).toHaveTextContent('0%');
-  });
-
-  it('renders 100% progress when totalProgress is 1', () => {
-    render(
-      <AgentStatusMonitor
-        workflowStatus="completed"
-        agentProgress={COMPLETED_PROGRESS}
-        currentAgent={null}
-        totalProgress={1}
-      />
-    );
-    expect(screen.getByTestId('overall-progress-pct')).toHaveTextContent('100%');
+    expect(screen.getByTestId('no-completed-stages')).toBeInTheDocument();
   });
 });

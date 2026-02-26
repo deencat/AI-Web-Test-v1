@@ -1,16 +1,14 @@
 /**
  * AgentStatusMonitor — Sprint 10 (10B.11)
  *
- * Displays structured agent execution progress derived from SSE events:
- *   • Agent timeline (4 stages) with live status indicators
- *   • Per-agent key metrics: elements_found, scenarios_generated, tests_generated, confidence
- *   • Overall progress bar
- *   • Expandable "View Logs" section with agent messages
- *   • Error display and loading indicator
- *
- * Props come from the parent (fed by useWorkflowProgress) — avoids double SSE connections.
+ * Lightweight stage-details panel (not a second progress pipeline):
+ *   • Current/most-relevant stage details
+ *   • Mid-stage progress (when backend provides agent progress)
+ *   • Key metrics for the focused stage
+ *   • Completed-stage chips for quick scan
+ *   • Error/loading states
  */
-import React, { useState } from 'react';
+import React from 'react';
 import type { AgentProgress, WorkflowStatus } from '../../../types/agentWorkflow.types';
 
 // ---------------------------------------------------------------------------
@@ -57,6 +55,25 @@ function getStageStatus(
   if (currentAgent === agent)       return 'running';
   if (prog?.status === 'running')   return 'running';
   return 'pending';
+}
+
+function getFocusedAgent(
+  currentAgent: string | null,
+  workflowStatus: WorkflowStatus | null,
+  agentProgress: Record<string, AgentProgress>
+): AgentName {
+  if (currentAgent && AGENT_ORDER.includes(currentAgent as AgentName)) {
+    return currentAgent as AgentName;
+  }
+
+  const running = AGENT_ORDER.find((agent) => agentProgress[agent]?.status === 'running');
+  if (running) return running;
+
+  const lastCompleted = [...AGENT_ORDER].reverse().find((agent) => agentProgress[agent]?.status === 'completed');
+  if (lastCompleted) return lastCompleted;
+
+  if (workflowStatus === 'completed') return 'evolution';
+  return 'observation';
 }
 
 function formatDuration(seconds: number | null | undefined): string {
@@ -114,16 +131,14 @@ export const AgentStatusMonitor: React.FC<AgentStatusMonitorProps> = ({
   error,
   className = '',
 }) => {
-  const [logsExpanded, setLogsExpanded] = useState(false);
+  const focusedAgent = getFocusedAgent(currentAgent, workflowStatus, agentProgress);
+  const focusedProgress = agentProgress[focusedAgent];
+  const focusedStatus = getStageStatus(focusedAgent, currentAgent, workflowStatus, agentProgress);
+  const focusedPct = Math.round((focusedProgress?.progress ?? 0) * 100);
 
-  const progressPct = Math.round(Math.min(totalProgress, 1) * 100);
-
-  // Derive log entries from agent messages — ordered by execution sequence
-  const logEntries = AGENT_ORDER.flatMap((agent) => {
-    const prog = agentProgress[agent];
-    if (!prog?.message) return [];
-    return [{ agent, message: prog.message, status: prog.status }];
-  });
+  const completedAgents = AGENT_ORDER.filter((agent) =>
+    getStageStatus(agent, currentAgent, workflowStatus, agentProgress) === 'completed'
+  );
 
   return (
     <div
@@ -132,7 +147,7 @@ export const AgentStatusMonitor: React.FC<AgentStatusMonitorProps> = ({
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
-        <h3 className="text-base font-semibold text-gray-900">Agent Status</h3>
+        <h3 className="text-base font-semibold text-gray-900">Stage Details</h3>
         {isLoading && (
           <span
             data-testid="status-loading"
@@ -145,96 +160,100 @@ export const AgentStatusMonitor: React.FC<AgentStatusMonitorProps> = ({
         )}
       </div>
 
-      {/* Overall progress bar */}
-      <div className="mb-5">
-        <div className="flex justify-between items-center text-xs text-gray-500 mb-1">
-          <span>Overall Progress</span>
-          <span data-testid="overall-progress-pct">{progressPct}%</span>
+      {/* Focused stage card */}
+      <div
+        data-testid="current-stage-card"
+        className={[
+          'p-4 rounded-lg border',
+          focusedStatus === 'running' ? 'border-blue-200 bg-blue-50' :
+          focusedStatus === 'completed' ? 'border-green-200 bg-green-50' :
+          focusedStatus === 'failed' ? 'border-red-200 bg-red-50' :
+          'border-gray-100 bg-gray-50',
+        ].join(' ')}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <StatusDot status={focusedStatus} />
+            <span className="text-sm font-medium text-gray-800" data-testid="current-stage-name">
+              {AGENT_LABELS[focusedAgent]}
+            </span>
+            <span
+              data-testid="current-stage-status"
+              className={[
+                'text-xs px-2 py-0.5 rounded-full capitalize',
+                focusedStatus === 'running' ? 'bg-blue-100 text-blue-700' :
+                focusedStatus === 'completed' ? 'bg-green-100 text-green-700' :
+                focusedStatus === 'failed' ? 'bg-red-100 text-red-700' :
+                'bg-gray-100 text-gray-600',
+              ].join(' ')}
+            >
+              {focusedStatus}
+            </span>
+          </div>
+          {focusedProgress?.duration_seconds != null && (
+            <span className="text-xs text-gray-500 tabular-nums" data-testid="current-stage-duration">
+              {formatDuration(focusedProgress.duration_seconds)}
+            </span>
+          )}
         </div>
-        <div className="w-full bg-gray-100 rounded-full h-2" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100}>
-          <div
-            className={[
-              'h-2 rounded-full transition-all duration-500',
-              workflowStatus === 'failed'    ? 'bg-red-500'   :
-              workflowStatus === 'completed' ? 'bg-green-500' :
-              'bg-blue-600',
-            ].join(' ')}
-            style={{ width: `${progressPct}%` }}
-            data-testid="overall-progress-bar"
-          />
+
+        <p className="text-xs text-gray-500 mt-1">{AGENT_DESCRIPTIONS[focusedAgent]}</p>
+
+        {focusedProgress?.message && (
+          <p className="text-sm text-gray-700 mt-2" data-testid="current-stage-message">
+            {focusedProgress.message}
+          </p>
+        )}
+
+        {/* Mid-stage progress (shown only when available and meaningful) */}
+        {focusedPct > 0 && focusedPct < 100 && focusedStatus === 'running' && (
+          <div className="mt-3" data-testid="current-stage-progress">
+            <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+              <span>In-stage progress</span>
+              <span data-testid="current-stage-progress-pct">{focusedPct}%</span>
+            </div>
+            <div className="w-full bg-gray-100 rounded-full h-2">
+              <div
+                className="h-2 rounded-full bg-blue-600 transition-all duration-500"
+                style={{ width: `${focusedPct}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-3 mt-3 text-xs text-gray-600">
+          {focusedProgress?.elements_found != null && (
+            <span data-testid="metric-elements-current">{focusedProgress.elements_found} elements</span>
+          )}
+          {focusedProgress?.scenarios_generated != null && (
+            <span data-testid="metric-scenarios-current">{focusedProgress.scenarios_generated} scenarios</span>
+          )}
+          {focusedProgress?.tests_generated != null && (
+            <span data-testid="metric-tests-current">{focusedProgress.tests_generated} tests</span>
+          )}
+          {focusedProgress?.confidence != null && (
+            <span data-testid="metric-confidence-current">{(focusedProgress.confidence * 100).toFixed(0)}% confidence</span>
+          )}
         </div>
       </div>
 
-      {/* Agent timeline */}
-      <ol className="space-y-2" aria-label="Agent execution timeline">
-        {AGENT_ORDER.map((agent) => {
-          const status = getStageStatus(agent, currentAgent, workflowStatus, agentProgress);
-          const prog   = agentProgress[agent];
-
-          return (
-            <li
+      {/* Completed stage chips (compact context, avoids duplicating full pipeline) */}
+      <div className="mt-4" data-testid="completed-stages">
+        <p className="text-xs text-gray-500 mb-2">Completed stages</p>
+        <div className="flex flex-wrap gap-2">
+          {completedAgents.length === 0 ? (
+            <span className="text-xs text-gray-400" data-testid="no-completed-stages">None yet</span>
+          ) : completedAgents.map((agent) => (
+            <span
               key={agent}
-              data-testid={`agent-stage-${agent}`}
-              data-status={status}
-              className={[
-                'flex items-start gap-3 p-3 rounded-lg border transition-colors',
-                status === 'running'   ? 'border-blue-200 bg-blue-50'   :
-                status === 'completed' ? 'border-green-200 bg-green-50' :
-                status === 'failed'    ? 'border-red-200 bg-red-50'     :
-                'border-gray-100 bg-gray-50',
-              ].join(' ')}
+              data-testid={`completed-${agent}`}
+              className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700"
             >
-              <StatusDot status={status} />
-
-              <div className="flex-1 min-w-0">
-                {/* Agent name + duration */}
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-800">
-                    {AGENT_LABELS[agent]}
-                  </span>
-                  {prog?.duration_seconds != null && (
-                    <span className="text-xs text-gray-400 ml-2 tabular-nums">
-                      {formatDuration(prog.duration_seconds)}
-                    </span>
-                  )}
-                </div>
-
-                {/* Description */}
-                <p className="text-xs text-gray-500 mt-0.5">{AGENT_DESCRIPTIONS[agent]}</p>
-
-                {/* Status message */}
-                {prog?.message && (
-                  <p className="text-xs text-gray-600 mt-1 italic truncate">{prog.message}</p>
-                )}
-
-                {/* Key metrics */}
-                <div className="flex flex-wrap gap-3 mt-1 text-xs text-gray-500">
-                  {prog?.elements_found != null && (
-                    <span data-testid={`metric-elements-${agent}`}>
-                      {prog.elements_found} elements
-                    </span>
-                  )}
-                  {prog?.scenarios_generated != null && (
-                    <span data-testid={`metric-scenarios-${agent}`}>
-                      {prog.scenarios_generated} scenarios
-                    </span>
-                  )}
-                  {prog?.tests_generated != null && (
-                    <span data-testid={`metric-tests-${agent}`}>
-                      {prog.tests_generated} tests
-                    </span>
-                  )}
-                  {prog?.confidence != null && (
-                    <span data-testid={`metric-confidence-${agent}`}>
-                      {(prog.confidence * 100).toFixed(0)}% confidence
-                    </span>
-                  )}
-                </div>
-              </div>
-            </li>
-          );
-        })}
-      </ol>
+              ✓ {AGENT_LABELS[agent]}
+            </span>
+          ))}
+        </div>
+      </div>
 
       {/* Error display */}
       {error && (
@@ -246,44 +265,6 @@ export const AgentStatusMonitor: React.FC<AgentStatusMonitorProps> = ({
           {error}
         </div>
       )}
-
-      {/* Logs toggle + viewer */}
-      <div className="mt-4 border-t border-gray-100 pt-3">
-        <button
-          type="button"
-          data-testid="toggle-logs-button"
-          onClick={() => setLogsExpanded((prev) => !prev)}
-          className="text-xs text-blue-600 hover:text-blue-700 underline focus:outline-none focus:ring-1 focus:ring-blue-400 rounded"
-          aria-expanded={logsExpanded}
-          aria-controls="agent-log-viewer"
-        >
-          {logsExpanded ? 'Hide Logs ▲' : 'View Logs ▼'}
-        </button>
-
-        {logsExpanded && (
-          <div
-            id="agent-log-viewer"
-            data-testid="log-viewer"
-            className="mt-2 p-3 bg-gray-900 rounded-lg text-xs text-green-400 font-mono max-h-48 overflow-y-auto space-y-1"
-            aria-label="Agent activity logs"
-            role="log"
-            aria-live="polite"
-          >
-            {logEntries.length === 0 ? (
-              <p className="text-gray-500">No log entries yet.</p>
-            ) : (
-              logEntries.map((entry, i) => (
-                <div key={i} data-testid={`log-entry-${entry.agent}`}>
-                  <span className="text-gray-400 uppercase mr-1">[{entry.agent}]</span>
-                  <span className={entry.status === 'failed' ? 'text-red-400' : ''}>
-                    {entry.message}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-      </div>
     </div>
   );
 };
