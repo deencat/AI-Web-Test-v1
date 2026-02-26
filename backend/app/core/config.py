@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     MAX_CONCURRENT_EXECUTIONS: int = 5  # Maximum concurrent test executions
     QUEUE_CHECK_INTERVAL: int = 2  # How often to check queue (seconds)
     EXECUTION_TIMEOUT: int = 300  # Execution timeout (seconds)
+
+    # API v2: AnalysisAgent real-time test execution (Phase3 Architecture)
+    # When True, POST /generate-tests and POST /analysis run critical scenarios for scoring.
+    ENABLE_ANALYSIS_REALTIME_EXECUTION: bool = True
+
+    # Server: when True, start_server.py writes logs to backend/logs/ (in addition to console).
+    ENABLE_SERVER_FILE_LOGGING: bool = False
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,
