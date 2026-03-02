@@ -24,16 +24,35 @@ if sys.platform == 'win32':
 
 # Optional: send server logs to backend/logs/ when ENABLE_SERVER_FILE_LOGGING is set in .env
 if _ENABLE_FILE_LOGGING:
+    from datetime import datetime
     _log_dir = Path(__file__).resolve().parent / "logs"
     _log_dir.mkdir(parents=True, exist_ok=True)
-    from datetime import datetime
     _log_file = _log_dir / f"server_{datetime.now().strftime('%Y%m%d')}.log"
     _file_handler = logging.FileHandler(_log_file, encoding="utf-8")
     _file_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
     _file_handler.setLevel(logging.DEBUG)
     logging.getLogger().addHandler(_file_handler)
     logging.getLogger().setLevel(logging.INFO)
-    print(f"[INFO] Server log file: {_log_file}")
+    # Tee stdout/stderr to log file from the very start (so start_server prints and all later print() go to file)
+    class _Tee:
+        def __init__(self, stream, fpath):
+            self._stream = stream
+            self._file = open(fpath, "a", encoding="utf-8")
+        def write(self, data):
+            try: self._stream.write(data); self._stream.flush()
+            except Exception: pass
+            try: self._file.write(data); self._file.flush()
+            except Exception: pass
+        def flush(self):
+            try: self._stream.flush(); self._file.flush()
+            except Exception: pass
+        def isatty(self): return getattr(self._stream, "isatty", lambda: False)()
+    try:
+        sys.stdout = _Tee(sys.__stdout__, _log_file)
+        sys.stderr = _Tee(sys.__stderr__, _log_file)
+    except Exception:
+        pass
+    print(f"[INFO] Server log file: {_log_file} (stdout/stderr teed to file)")
 
 import uvicorn  # noqa: E402
 

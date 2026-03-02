@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Callable
 from dotenv import load_dotenv
+import logging
 
 from stagehand import Stagehand, StagehandConfig
 from sqlalchemy.orm import Session
@@ -21,6 +22,9 @@ from app.crud import test_execution as crud_execution
 
 # Load environment variables
 load_dotenv()
+
+# Logger for execution traces (captured by server file logging)
+logger = logging.getLogger(__name__)
 
 # Fix for Windows: Ensure ProactorEventLoop is used
 if sys.platform == 'win32':
@@ -74,7 +78,7 @@ class StagehandExecutionService:
                     except:
                         pass
             
-            print(f"[DEBUG] Initializing Stagehand in thread {threading.current_thread().name}")
+            logger.debug(f"StagehandExecutionService: Initializing Stagehand in thread {threading.current_thread().name}")
             
             # Get browser configuration
             browser_slowmo = int(os.getenv("BROWSER_SLOWMO", "0"))
@@ -93,7 +97,7 @@ class StagehandExecutionService:
             if user_config:
                 # Use user's settings from database
                 model_provider = user_config.get("provider", "openrouter").lower()
-                print(f"[DEBUG] 🎯 Using user's configured provider: {model_provider}")
+                logger.info(f"StagehandExecutionService: Using user's configured provider: {model_provider}")
             else:
                 # Fall back to .env configuration
                 model_provider = os.getenv("MODEL_PROVIDER", "openrouter").lower()
@@ -105,7 +109,7 @@ class StagehandExecutionService:
                     model_provider = "cerebras"
                 elif use_google_direct:
                     model_provider = "google"
-                print(f"[DEBUG] Using .env default provider: {model_provider}")
+                logger.info(f"StagehandExecutionService: Using .env default provider: {model_provider}")
             
             # Configure model based on provider
             if model_provider == "cerebras":
@@ -133,9 +137,13 @@ class StagehandExecutionService:
                     model_api_key=cerebras_api_key,
                     local_browser_launch_options=launch_options
                 )
-                print(f"[DEBUG] ✅ Using Cerebras API with model: {cerebras_model}")
+                logger.info(f"StagehandExecutionService: Using Cerebras API with model: {cerebras_model}")
                 if user_config:
-                    print(f"[DEBUG] 🎯 User configured: temp={user_config.get('temperature', 0.7)}, max_tokens={user_config.get('max_tokens', 4096)}")
+                    logger.debug(
+                        "StagehandExecutionService: User config temp=%s max_tokens=%s",
+                        user_config.get("temperature", 0.7),
+                        user_config.get("max_tokens", 4096),
+                    )
                 
             elif model_provider == "google":
                 # Use Google API directly (FREE with Google AI Studio)
@@ -162,9 +170,13 @@ class StagehandExecutionService:
                     model_api_key=google_api_key,
                     local_browser_launch_options=launch_options
                 )
-                print(f"[DEBUG] ✅ Using Google API directly with model: {google_model}")
+                logger.info(f"StagehandExecutionService: Using Google API directly with model: {google_model}")
                 if user_config:
-                    print(f"[DEBUG] 🎯 User configured: temp={user_config.get('temperature', 0.7)}, max_tokens={user_config.get('max_tokens', 4096)}")
+                    logger.debug(
+                        "StagehandExecutionService: User config temp=%s max_tokens=%s",
+                        user_config.get("temperature", 0.7),
+                        user_config.get("max_tokens", 4096),
+                    )
                 
             elif model_provider == "azure":
                 # Use Azure OpenAI API (OpenAI-compatible gateway)
@@ -196,9 +208,16 @@ class StagehandExecutionService:
                     model_api_key=azure_api_key,
                     local_browser_launch_options=launch_options
                 )
-                print(f"[DEBUG] ✅ Using Azure OpenAI (OpenAI-compatible gateway) with deployment: {azure_model}")
+                logger.info(
+                    "StagehandExecutionService: Using Azure OpenAI (OpenAI-compatible gateway) with deployment: %s",
+                    azure_model,
+                )
                 if user_config:
-                    print(f"[DEBUG] 🎯 User configured: temp={user_config.get('temperature', 0.7)}, max_tokens={user_config.get('max_tokens', 4096)}")
+                    logger.debug(
+                        "StagehandExecutionService: User config temp=%s max_tokens=%s",
+                        user_config.get("temperature", 0.7),
+                        user_config.get("max_tokens", 4096),
+                    )
                 
             else:  # default to openrouter
                 # Use OpenRouter (original behavior)
@@ -220,12 +239,20 @@ class StagehandExecutionService:
                     model_api_key=openrouter_key,
                     local_browser_launch_options=launch_options
                 )
-                print(f"[DEBUG] ✅ Using OpenRouter with model: {openrouter_model}")
+                logger.info(f"StagehandExecutionService: Using OpenRouter with model: {openrouter_model}")
                 if user_config:
-                    print(f"[DEBUG] 🎯 User configured: temp={user_config.get('temperature', 0.7)}, max_tokens={user_config.get('max_tokens', 4096)}")
+                    logger.debug(
+                        "StagehandExecutionService: User config temp=%s max_tokens=%s",
+                        user_config.get("temperature", 0.7),
+                        user_config.get("max_tokens", 4096),
+                    )
 
             
-            print(f"[DEBUG] Browser settings: headless={self.headless}, slow_mo={browser_slowmo}ms")
+            logger.info(
+                "StagehandExecutionService: Browser settings headless=%s slow_mo=%sms",
+                self.headless,
+                browser_slowmo,
+            )
             
             self.stagehand = Stagehand(config)
             await self.stagehand.init()
@@ -238,7 +265,7 @@ class StagehandExecutionService:
             if hasattr(self.page, '_page'):
                 self.page._page.set_default_timeout(120000)  # 120 seconds
             
-            print(f"[DEBUG] Stagehand initialized successfully, page={self.page}")
+            logger.info("StagehandExecutionService: Stagehand initialized successfully")
     
     async def initialize_with_cdp(self, cdp_endpoint: str, user_config: Optional[Dict[str, Any]] = None):
         """
@@ -249,7 +276,10 @@ class StagehandExecutionService:
             user_config: Optional user configuration dict with provider, model, temperature, max_tokens
         """
         if not self.stagehand:
-            print(f"[DEBUG] Connecting Stagehand to existing browser via CDP: {cdp_endpoint}")
+            logger.info(
+                "StagehandExecutionService: Connecting Stagehand to existing browser via CDP: %s",
+                cdp_endpoint,
+            )
             
             # Configure model based on provider (same logic as initialize())
             if user_config:

@@ -111,6 +111,14 @@ class RequirementsAgent(BaseAgent):
             page_context = task.payload.get("page_context", {})
             user_instruction = task.payload.get("user_instruction", "")  # NEW: User's specific test requirement
             test_requirement = task.payload.get("test_requirement", "")  # Alternative field name
+            scenario_types_filter = task.payload.get("scenario_types") or []
+            max_scenarios = task.payload.get("max_scenarios")
+            focus_goal_only = bool(task.payload.get("focus_goal_only"))
+
+            if isinstance(scenario_types_filter, list):
+                scenario_types_filter = {s.lower() for s in scenario_types_filter}
+            else:
+                scenario_types_filter = set()
             
             # Use test_requirement if user_instruction is empty
             if not user_instruction and test_requirement:
@@ -121,6 +129,12 @@ class RequirementsAgent(BaseAgent):
                 logger.info(f"RequirementsAgent: Will prioritize scenarios matching user intent")
             
             logger.info(f"RequirementsAgent: Processing {len(ui_elements)} UI elements for {page_structure.get('url', 'unknown')}")
+            if scenario_types_filter:
+                logger.info(f"RequirementsAgent: scenario_types filter applied: {sorted(scenario_types_filter)}")
+            if max_scenarios:
+                logger.info(f"RequirementsAgent: max_scenarios={max_scenarios}")
+            if focus_goal_only and user_instruction:
+                logger.info("RequirementsAgent: focus_goal_only enabled (goal-focused mode)")
             
             # Stage 1: Group elements by page/component (Page Object Model)
             logger.debug("RequirementsAgent: Stage 1 - Grouping elements by page/component...")
@@ -136,32 +150,54 @@ class RequirementsAgent(BaseAgent):
             logger.debug("RequirementsAgent: Stage 3 - Generating functional test scenarios...")
             execution_feedback = task.payload.get("execution_feedback", {})
             if execution_feedback:
-                logger.info(f"RequirementsAgent: Using execution feedback to improve scenario generation")
-            functional_scenarios = await self._generate_functional_scenarios(
-                user_journeys, element_groups, page_context, page_structure, user_instruction, execution_feedback
-            )
-            logger.info(f"RequirementsAgent: Generated {len(functional_scenarios)} functional scenarios")
+                logger.info("RequirementsAgent: Using execution feedback to improve scenario generation")
+
+            include_functional = not scenario_types_filter or "functional" in scenario_types_filter
+            include_accessibility = not scenario_types_filter or "accessibility" in scenario_types_filter
+            include_security = not scenario_types_filter or "security" in scenario_types_filter
+            include_edge = not scenario_types_filter or "edge_case" in scenario_types_filter
+
+            functional_scenarios: List[Scenario] = []
+            if include_functional:
+                functional_scenarios = await self._generate_functional_scenarios(
+                    user_journeys, element_groups, page_context, page_structure, user_instruction, execution_feedback
+                )
+                logger.info(f"RequirementsAgent: Generated {len(functional_scenarios)} functional scenarios")
+            else:
+                logger.info("RequirementsAgent: Functional scenarios disabled by scenario_types filter")
             
             # Stage 4: Generate accessibility scenarios (WCAG 2.1)
-            logger.debug("RequirementsAgent: Stage 4 - Generating accessibility scenarios...")
-            accessibility_scenarios = self._generate_accessibility_scenarios(ui_elements)
-            logger.info(f"RequirementsAgent: Generated {len(accessibility_scenarios)} accessibility scenarios")
+            accessibility_scenarios: List[Scenario] = []
+            if include_accessibility:
+                logger.debug("RequirementsAgent: Stage 4 - Generating accessibility scenarios...")
+                accessibility_scenarios = self._generate_accessibility_scenarios(ui_elements)
+                logger.info(f"RequirementsAgent: Generated {len(accessibility_scenarios)} accessibility scenarios")
+            else:
+                logger.info("RequirementsAgent: Accessibility scenarios disabled by scenario_types filter")
             
             # Stage 5: Generate security scenarios (OWASP)
-            logger.debug("RequirementsAgent: Stage 5 - Generating security scenarios...")
-            security_scenarios = self._generate_security_scenarios(ui_elements, page_context)
-            logger.info(f"RequirementsAgent: Generated {len(security_scenarios)} security scenarios")
+            security_scenarios: List[Scenario] = []
+            if include_security:
+                logger.debug("RequirementsAgent: Stage 5 - Generating security scenarios...")
+                security_scenarios = self._generate_security_scenarios(ui_elements, page_context)
+                logger.info(f"RequirementsAgent: Generated {len(security_scenarios)} security scenarios")
+            else:
+                logger.info("RequirementsAgent: Security scenarios disabled by scenario_types filter")
             
             # Stage 6: Generate edge case scenarios
-            logger.debug("RequirementsAgent: Stage 6 - Generating edge case scenarios...")
-            edge_case_scenarios = self._generate_edge_case_scenarios(ui_elements)
-            logger.info(f"RequirementsAgent: Generated {len(edge_case_scenarios)} edge case scenarios")
+            edge_case_scenarios: List[Scenario] = []
+            if include_edge:
+                logger.debug("RequirementsAgent: Stage 6 - Generating edge case scenarios...")
+                edge_case_scenarios = self._generate_edge_case_scenarios(ui_elements)
+                logger.info(f"RequirementsAgent: Generated {len(edge_case_scenarios)} edge case scenarios")
+            else:
+                logger.info("RequirementsAgent: Edge case scenarios disabled by scenario_types filter")
             
             # Combine all scenarios
             all_scenarios = (
-                functional_scenarios + 
-                accessibility_scenarios + 
-                security_scenarios + 
+                functional_scenarios +
+                accessibility_scenarios +
+                security_scenarios +
                 edge_case_scenarios
             )
             
@@ -188,6 +224,49 @@ class RequirementsAgent(BaseAgent):
                     logger.debug(f"RequirementsAgent: Renumbered duplicate scenario_id {old_id} -> {scenario.scenario_id}")
                 seen_ids.add(scenario.scenario_id)
             
+            # Optional goal-focused reordering and limiting
+            if all_scenarios:
+                # First, sort by priority (critical/high first)
+                priority_order = {
+                    ScenarioPriority.CRITICAL: 0,
+                    ScenarioPriority.HIGH: 1,
+                    ScenarioPriority.MEDIUM: 2,
+                    ScenarioPriority.LOW: 3,
+                }
+
+                def _base_order(s: Scenario) -> int:
+                    return priority_order.get(s.priority, 2)
+
+                if focus_goal_only and user_instruction:
+                    scored = [
+                        (self._score_scenario_relevance(s, user_instruction), s)
+                        for s in all_scenarios
+                    ]
+                    # Filter out very low relevance, but keep a fallback if everything is low.
+                    filtered = [s for score, s in scored if score >= 0.15]
+                    if not filtered:
+                        filtered = [s for _, s in scored]
+
+                    # Rebuild scores for filtered scenarios
+                    scored_filtered = [
+                        (self._score_scenario_relevance(s, user_instruction), s)
+                        for s in filtered
+                    ]
+
+                    def _sort_key(item: Tuple[float, Scenario]) -> Tuple[float, int]:
+                        score, scen = item
+                        return (-score, _base_order(scen))
+
+                    scored_filtered.sort(key=_sort_key)
+                    all_scenarios = [s for score, s in scored_filtered]
+                else:
+                    all_scenarios.sort(key=_base_order)
+
+                # Apply max_scenarios limit if provided
+                if isinstance(max_scenarios, int) and max_scenarios > 0:
+                    all_scenarios = all_scenarios[:max_scenarios]
+                    logger.info(f"RequirementsAgent: Trimmed scenarios to max_scenarios={max_scenarios}")
+
             # Stage 7: Extract test data
             test_data = self._extract_test_data(ui_elements)
             logger.debug(f"Extracted {len(test_data)} test data fields")
@@ -308,6 +387,36 @@ class RequirementsAgent(BaseAgent):
             })
         
         return journeys
+
+    def _score_scenario_relevance(self, scenario: "Scenario", user_instruction: str) -> float:
+        """Heuristic relevance score between scenario text and user instruction (0.0–1.0)."""
+        if not user_instruction:
+            return 0.5
+
+        import re
+
+        def _tokenize(text: str) -> List[str]:
+            tokens = re.split(r"[^a-zA-Z0-9\u4e00-\u9fff]+", text.lower())
+            return [t for t in tokens if t]
+
+        user_tokens = set(_tokenize(user_instruction))
+        if not user_tokens:
+            return 0.5
+
+        scenario_text = " ".join([
+            scenario.title or "",
+            scenario.given or "",
+            scenario.when or "",
+            scenario.then or "",
+        ])
+        scenario_tokens = set(_tokenize(scenario_text))
+        if not scenario_tokens:
+            return 0.0
+
+        overlap = user_tokens & scenario_tokens
+        score = len(overlap) / len(user_tokens)
+        # Clamp to [0, 1]
+        return max(0.0, min(1.0, score))
     
     async def _generate_functional_scenarios(self, user_journeys: List[Dict],
                                              element_groups: Dict,

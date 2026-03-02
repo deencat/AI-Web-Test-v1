@@ -421,16 +421,20 @@ user_feedback (generation_id, rating, comments, created_at)
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ Stage 2: RequirementsAgent (INDUSTRY BEST PRACTICES) ✅ VERIFIED E2E    │
 │ Input:   ObservationAgent output                                        │
-│          Optional: user_instruction (user's specific test requirement)   │
+│          Optional: user_instruction (user's specific test requirement)  │
+│          Optional: scenario_types, max_scenarios, focus_goal_only       │
 │ Process: - Group elements by page/component (Page Object Model)        │
 │          - Map user journeys (login flow, checkout flow)                │
 │          - Generate functional scenarios (LLM + patterns)               │
 │            • If user_instruction provided: Prioritize matching scenarios│
-│            • Use semantic matching to find relevant UI elements          │
-│            • Assign high/critical priority to matching scenarios         │
+│            • Use semantic matching + heuristic relevance scoring        │
+│              so goal-aligned scenarios are ranked first                 │
 │          - Generate accessibility scenarios (WCAG 2.1)                  │
 │          - Generate security scenarios (OWASP Top 10)                   │
 │          - Generate edge case scenarios (boundary tests)                │
+│          - Respect scenario_types filter                                │
+│            • Example: [\"functional\",\"accessibility\"] only           │
+│          - Apply max_scenarios cap after goal-focused ranking           │
 │          - Extract test data with validation rules                      │
 │          - Calculate coverage metrics                                   │
 │          - Azure GPT-4o scenario generation (~12,500 tokens)            │

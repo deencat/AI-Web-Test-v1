@@ -56,6 +56,9 @@ async def run_requirements(
         "workflow_id": request.workflow_id,
         "observation_result": request.observation_result,
         "user_instruction": request.user_instruction,
+        "scenario_types": request.scenario_types,
+        "max_scenarios": request.max_scenarios,
+        "focus_goal_only": request.focus_goal_only,
     }
     set_state(workflow_id, {
         "workflow_id": workflow_id,

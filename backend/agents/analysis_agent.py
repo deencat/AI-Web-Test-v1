@@ -1244,6 +1244,32 @@ Respond with valid JSON only."""
                     passed_steps = execution_result.passed_steps or 0
                     success_rate = (passed_steps / total_steps) if total_steps > 0 else 0.0
                     final_result = execution_result.result.value if execution_result.result else "unknown"
+
+                    # Log per-step details from database for richer traces
+                    try:
+                        from app.crud import test_execution as crud_exec_steps
+                        db_steps = crud_exec_steps.get_execution_steps(self.db, execution_id)
+                        logger.info(
+                            "AnalysisAgent: Execution %s has %s recorded steps (from database)",
+                            execution_id,
+                            len(db_steps),
+                        )
+                        for step in db_steps:
+                            logger.info(
+                                "Execution %s step %s: result=%s selector=%s action_method=%s desc=%s",
+                                execution_id,
+                                step.step_number,
+                                getattr(step.result, "value", str(step.result)),
+                                (step.selector_used or "")[:200],
+                                (step.action_method or ""),
+                                (step.step_description or "")[:200],
+                            )
+                    except Exception as step_log_error:
+                        logger.warning(
+                            "AnalysisAgent: Unable to log execution steps for execution_id=%s: %s",
+                            execution_id,
+                            step_log_error,
+                        )
                 else:
                     # Real execution without database (still executes, just doesn't save records)
                     logger.info(f"Real execution for scenario {scenario.get('scenario_id')} (no database tracking)")

@@ -94,6 +94,9 @@ class OrchestrationService:
         depth = request.get("depth", 1)
         login_credentials = request.get("login_credentials") or {}
         gmail_credentials = request.get("gmail_credentials") or {}
+        scenario_types = request.get("scenario_types")
+        max_scenarios = request.get("max_scenarios")
+        focus_goal_only = bool(request.get("focus_goal_only"))
 
         db = None
         try:
@@ -198,6 +201,12 @@ class OrchestrationService:
             req_payload = {**observation_data}
             if user_instruction:
                 req_payload["user_instruction"] = user_instruction
+            if scenario_types is not None:
+                req_payload["scenario_types"] = scenario_types
+            if max_scenarios is not None:
+                req_payload["max_scenarios"] = max_scenarios
+            if focus_goal_only:
+                req_payload["focus_goal_only"] = focus_goal_only
             req_task = TaskContext(
                 conversation_id=workflow_id,
                 task_id=f"{workflow_id}-req",
@@ -438,6 +447,9 @@ class OrchestrationService:
         from agents.base_agent import TaskContext
 
         user_instruction = request.get("user_instruction") or ""
+        scenario_types = request.get("scenario_types")
+        max_scenarios = request.get("max_scenarios")
+        focus_goal_only = bool(request.get("focus_goal_only"))
         obs_from_store = None
         source_wid = request.get("workflow_id") or workflow_id
         state = get_state(source_wid)
@@ -466,6 +478,12 @@ class OrchestrationService:
         }
         if user_instruction:
             observation_data["user_instruction"] = user_instruction
+        if scenario_types is not None:
+            observation_data["scenario_types"] = scenario_types
+        if max_scenarios is not None:
+            observation_data["max_scenarios"] = max_scenarios
+        if focus_goal_only:
+            observation_data["focus_goal_only"] = focus_goal_only
         req_task = TaskContext(
             conversation_id=workflow_id,
             task_id=f"{workflow_id}-req",

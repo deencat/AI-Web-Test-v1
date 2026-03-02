@@ -1859,9 +1859,9 @@ Focus on:
         
         return scenarios
     
-    #### User Instruction Support
+    #### User Instruction & Goal-Focused Scope Control
     
-    **NEW FEATURE:** RequirementsAgent now accepts user instructions to generate specific test scenarios matching user intent.
+    **NEW FEATURE:** RequirementsAgent now accepts user instructions to generate specific test scenarios matching user intent, **and** supports goal-focused scope controls to avoid unrelated scenarios and token waste.
     
     **Usage Example:**
     
@@ -1869,7 +1869,7 @@ Focus on:
     # User provides URL and specific test requirement
     user_instruction = "Test purchase flow for '5G寬頻數據無限任用' plan"
     
-    # Pass user_instruction in task payload
+    # Pass user_instruction and optional scope controls in task payload
     requirements_task = TaskContext(
         conversation_id="test-001",
         task_id="req-task-001",
@@ -1878,15 +1878,20 @@ Focus on:
             "ui_elements": observation_result.result.get("ui_elements", []),
             "page_structure": observation_result.result.get("page_structure", {}),
             "page_context": observation_result.result.get("page_context", {}),
-            "user_instruction": user_instruction  # NEW: User's specific requirement
+            "user_instruction": user_instruction,  # User's specific requirement
+            "scenario_types": ["functional", "accessibility"],  # Optional: limit categories
+            "max_scenarios": 12,               # Optional: hard cap
+            "focus_goal_only": True            # Optional: goal-focused mode
         }
     )
     
     # RequirementsAgent will:
-    # 1. Prioritize scenarios matching the user instruction
+    # 1. Prioritize scenarios matching the user instruction (heuristic relevance scoring)
     # 2. Use semantic matching to find relevant UI elements
     # 3. Assign high/critical priority to matching scenarios
-    # 4. Generate at least one scenario specifically for the user requirement
+    # 4. Respect scenario_types filter (here: functional + accessibility only)
+    # 5. Trim total scenarios to max_scenarios after goal-focused ranking
+    # 6. Generate at least one scenario specifically for the user requirement
     
     requirements_result = await requirements_agent.execute_task(requirements_task)
     scenarios = requirements_result.result.get("scenarios", [])

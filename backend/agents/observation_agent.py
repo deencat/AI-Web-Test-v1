@@ -513,8 +513,18 @@ class ObservationAgent(BaseAgent):
                         logger.info(f"ObservationAgent: Email contains '+', using '{gmail_email}' for Gmail login (full '{email}' for target website)")
                     gmail_password = password  # Use same password if not explicitly provided
                 
-                task_description += f"\n\nLogin credentials:\n- Target website email: {email}\n- Target website password: [provided]"
-                task_description += f"\n- Gmail login email: {gmail_email}\n- Gmail login password: [provided]"
+                # NOTE: These credentials are embedded directly into the browser-use task description
+                # so the agent can actually type the correct values during login flows.
+                # Be careful not to expose these logs outside secure/local environments.
+                task_description += (
+                    f"\n\nLogin credentials (SENSITIVE - use exactly as provided):"
+                    f"\n- Target website email: {email}"
+                    f"\n- Target website password: {password}"
+                )
+                task_description += (
+                    f"\n- Gmail login email: {gmail_email}"
+                    f"\n- Gmail login password: {gmail_password}"
+                )
                 task_description += f"\n\nIMPORTANT EMAIL ADDRESS USAGE:\n"
                 task_description += f"1. For the target website login: Use email '{email}' with the provided password\n"
                 task_description += f"2. For Gmail login (to retrieve OTP): Use email '{gmail_email}' with the provided Gmail password\n"

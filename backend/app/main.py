@@ -1,5 +1,7 @@
 import sys
 import asyncio
+import logging
+from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -115,9 +117,32 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 app.include_router(api_v2_router, prefix=settings.API_V2_STR)  # Sprint 10: Agent Workflow API
 
 
+def _setup_server_file_logging():
+    """When ENABLE_SERVER_FILE_LOGGING is True, attach a file handler to root and uvicorn loggers. Stdout/stderr are already teed to the log file from start_server.py."""
+    if not getattr(settings, "ENABLE_SERVER_FILE_LOGGING", False):
+        return
+    log_dir = Path(__file__).resolve().parent.parent / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / f"server_{datetime.now().strftime('%Y%m%d')}.log"
+    handler = logging.FileHandler(log_file, encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+    handler.setLevel(logging.DEBUG)
+    root = logging.getLogger()
+    root.addHandler(handler)
+    if root.level > logging.INFO:
+        root.setLevel(logging.INFO)
+    for name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
+        log = logging.getLogger(name)
+        log.addHandler(handler)
+        if log.level > logging.INFO:
+            log.setLevel(logging.INFO)
+    print(f"[INFO] Server log file: {log_file}")
+
+
 @app.on_event("startup")
 async def startup_event():
     """Startup event to ensure Windows event loop policy is set and to log loop type."""
+    _setup_server_file_logging()
     if sys.platform == 'win32':
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
         loop = asyncio.get_event_loop()

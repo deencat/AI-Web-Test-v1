@@ -59,6 +59,9 @@ async def generate_tests(
         "depth": request.depth,
         "login_credentials": request.login_credentials,
         "gmail_credentials": request.gmail_credentials,
+        "scenario_types": request.scenario_types,
+        "max_scenarios": request.max_scenarios,
+        "focus_goal_only": request.focus_goal_only,
     }
 
     set_state(workflow_id, {
