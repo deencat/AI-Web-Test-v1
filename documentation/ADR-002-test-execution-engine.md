@@ -12,7 +12,10 @@
 - `backend/app/services/tier3_stagehand.py`
 - `backend/app/services/xpath_extractor.py`
 - `backend/app/services/xpath_cache_service.py`
+- `backend/app/services/stagehand_service.py`
 - `backend/tests/test_tier2_payment_helpers.py`
+- `backend/tests/test_stagehand_service_azure_cdp.py`
+- `backend/tests/unit/test_universal_llm_azure.py`
 
 ---
 
@@ -26,6 +29,9 @@
 6. [ADR-002-6: option XPath Normalization for select Actions](#adr-002-6-option-xpath-normalization-for-select-actions)
 7. [ADR-002-7: Bounded Post-Click Wait — Remove Unconditional sleep and networkidle](#adr-002-7-bounded-post-click-wait--remove-unconditional-sleep-and-networkidle)
 8. [ADR-002-8: Iframe Container Click Fallback](#adr-002-8-iframe-container-click-fallback)
+9. [ADR-002-9: Semantic Field-Type XPath Cache Validation](#adr-002-9-semantic-field-type-xpath-cache-validation)
+10. [ADR-002-10: Pre-Click Enabled State Polling](#adr-002-10-pre-click-enabled-state-polling)
+11. [ADR-002-11: Azure LiteLLM Native Provider Routing for Stagehand Initialization](#adr-002-11-azure-litellm-native-provider-routing-for-stagehand-initialization)
 
 ---
 
@@ -396,6 +402,166 @@ For each candidate: `wait_for(state="visible", timeout=1200)` then `click()`. Re
 
 ---
 
+## ADR-002-9: Semantic Field-Type XPath Cache Validation
+
+### Context
+
+The XPath cache key is `SHA256(page_url + "::" + instruction)`. On login flows that use a modal or popup, the URL does not change between the email-entry step and the password-entry step. This means the password fill step can hit the cached XPath from the email fill step, typing the password into the email field. The form validation engine keeps the Login button `disabled` because email and password fields now contain mismatched values.
+
+### Decision
+
+Before accepting a cache hit for `fill`/`type`/`input` actions, call `_validate_cached_xpath_for_step()` to semantically verify that the cached element's DOM attributes match the step's intent.
+
+**Implementation in `execute_step()` — replaces bare `wait_for(state="attached")`:**
+```python
+is_valid_cache = await self._validate_cached_xpath_for_step(
+    page=page, xpath=xpath, action=action,
+    instruction=instruction, value=value,
+)
+if not is_valid_cache:
+    raise ValueError("Cached XPath does not match current step intent")
+```
+
+**`_validate_cached_xpath_for_step()` logic:**
+1. Early-exit `True` for non-fill actions (click, select, etc.).
+2. Classify step intent: `expected_password` if `"password"` in instruction; `expected_email` if `"email"` in instruction or `"@"` in value.
+3. If neither email nor password intent, return `True` (no semantic check needed).
+4. Read element attributes via Playwright: `type`, `name`, `id`, `placeholder`, `aria-label`, `autocomplete`.
+5. If expected_password: reject if any attribute contains `email`; require at least one attribute to signal a password field (`password` in type/name/id/placeholder/autocomplete).
+6. If expected_email: reject if any attribute signals a password field without email signals.
+7. On mismatch: return `False` → cache entry is bypassed, Tier 2 falls through to `observe()` re-extraction.
+
+**Cache invalidation:** The existing self-healing path (ADR-002-3) handles invalidation when the step ultimately fails with a cache hit. Semantic rejection does not immediately invalidate; it only bypasses for this execution.
+
+### Consequences
+
+**Positive**
+- Eliminates false cache hits on same-URL multi-field login flows.
+- No change to cache key required — validation is a read-time check, not a write-time change.
+- Transparent to test step definitions.
+
+**Negative**
+- Adds one Playwright attribute-read round-trip per cache hit on fill steps.
+- Heuristic: only covers email/password field disambiguation. Other field-type conflicts (e.g., first-name vs. last-name) are not detected.
+- Non-standard field markup (no `type`/`name`/`id`/`placeholder`/`aria-label`/`autocomplete`) may defeat the check.
+
+**Alternatives Considered**
+- **Include field-type context in cache key**: Would require test-step schema changes and break existing cached entries.
+- **Always invalidate on same-URL sequential fill steps**: Eliminates all caching benefit for multi-field forms.
+- **LLM-based semantic comparison**: Accurate but adds latency and LLM cost to every cache hit check.
+
+---
+
+## ADR-002-10: Pre-Click Enabled State Polling
+
+### Context
+
+After filling form fields, submit/login buttons often remain `disabled` for a brief period while client-side form validation runs (React controlled components, Angular validators, custom JS). If Tier 2 clicks the button before it transitions to `enabled`, the click has no effect but returns no error — the test step appears to succeed while the form was never submitted.
+
+This was observed when a password was typed into the email field (ADR-002-9 root cause): re-typing the password into the email field left the Login button permanently disabled, and the Tier 2 click retry loop exhausted without ever triggering navigation.
+
+### Decision
+
+Before dispatching a click action, poll `is_enabled()` in `_wait_for_element_enabled_before_click()` for up to `min(timeout_ms, 8000)` ms.
+
+**Implementation in `_execute_action_with_xpath()` for click actions:**
+```python
+await element.wait_for(state="visible", timeout=self.timeout_ms)
+await self._wait_for_element_enabled_before_click(element, instruction)  # NEW
+await element.click(timeout=self.timeout_ms)
+```
+
+**`_wait_for_element_enabled_before_click()` logic:**
+```python
+if await element.is_enabled(): return          # fast path
+wait_deadline = time.time() + (min(self.timeout_ms, 8000) / 1000.0)
+while time.time() < wait_deadline:
+    await asyncio.sleep(0.2)
+    if await element.is_enabled(): return
+logger.warning("[Tier 2] ⚠️ Click target still disabled after wait")
+# Proceed anyway — let click() surface the real error
+```
+
+The 8-second cap prevents runaway waits on permanently disabled controls. Logging at WARNING level keeps the disabled-button condition visible in execution logs.
+
+### Consequences
+
+**Positive**
+- Prevents clicking disabled buttons after fill steps on reactive form frameworks.
+- 200ms polling interval is low-overhead and does not block the event loop.
+- Fast path returns immediately if button is already enabled (zero overhead for most clicks).
+
+**Negative**
+- 8s upper bound adds latency if a button is permanently disabled (test step should fail, not wait).
+- Does not distinguish between "disabled while validating" (transient) and "disabled by design" (permanent). Both poll to timeout.
+- Only applies to Tier 2 click execution; Tier 1 (Playwright direct) and Tier 3 (Stagehand act) are unaffected.
+
+**Alternatives Considered**
+- **`wait_for(state="enabled")`**: Not a valid Playwright wait state — only `attached`, `detached`, `visible`, `hidden` are supported.
+- **Fixed sleep before click**: Unpredictable; too short misses slow validators, too long wastes time on fast validators.
+- **Check form validity via JS**: Fragile across frameworks; requires eval access.
+
+---
+
+## ADR-002-11: Azure LiteLLM Native Provider Routing for Stagehand Initialization
+
+### Context
+
+All cached-miss steps in Tier 2 call Stagehand `observe()`, which routes through LiteLLM. When the configured LLM provider is Azure OpenAI, the model string and environment variables must match LiteLLM's native Azure provider path exactly. Two incorrect configurations were observed:
+
+1. **Missing Azure branch in `initialize_with_cdp()`**: Only Cerebras/Google/OpenRouter branches existed, so Azure fell through to the OpenRouter path, producing model string `openrouter/ChatGPT-UAT` — an invalid model ID. Error: `OpenrouterException: ChatGPT-UAT is not a valid model ID`.
+
+2. **`openai/` prefix with `OPENAI_API_BASE`**: Switching to `openai/ChatGPT-UAT` + `OPENAI_API_BASE=https://chatgpt-uat.openai.azure.com` is routed through the OpenAI (non-Azure) LiteLLM path, which sends requests to `https://api.openai.com`. Error: `NotFoundError: OpenAIException - Resource not found`.
+
+### Decision
+
+All three Stagehand initialization paths (`initialize()`, `initialize_with_cdp()`, `initialize_persistent()`) use LiteLLM's native Azure provider for `model_provider == "azure"`:
+
+```python
+elif model_provider == "azure":
+    azure_api_key   = os.getenv("AZURE_OPENAI_API_KEY")
+    azure_endpoint  = os.getenv("AZURE_OPENAI_ENDPOINT",
+                         "https://chatgpt-uat.openai.azure.com/openai/v1")
+    azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01")
+    azure_model     = user_config.get("model") or os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT")
+    if azure_model.lower().startswith("azure/"):
+        azure_model = azure_model.split("/", 1)[1]    # strip prefix if already qualified
+    clean_endpoint  = azure_endpoint.replace("/openai/v1", "").replace("/openai", "").rstrip("/")
+    os.environ["AZURE_API_BASE"]    = clean_endpoint  # e.g. https://chatgpt-uat.openai.azure.com
+    os.environ["AZURE_API_KEY"]     = azure_api_key
+    os.environ["AZURE_API_VERSION"] = azure_api_version
+    os.environ.pop("OPENAI_API_BASE", None)           # clear stale OpenAI base URL
+    config = StagehandConfig(
+        env="LOCAL", ...,
+        model_name=f"azure/{azure_model}",            # e.g. "azure/ChatGPT-UAT"
+        model_api_key=azure_api_key,
+    )
+```
+
+**Key rules:**
+- Model string: `azure/<deployment>` (not `openai/<deployment>`, not `openrouter/<deployment>`).
+- Base URL env var: `AZURE_API_BASE` (clean hostname, no `/openai/v1` suffix) — used by LiteLLM Azure path.
+- `OPENAI_API_BASE` explicitly cleared to prevent LiteLLM from routing Azure calls through the OpenAI path.
+- `AZURE_API_VERSION` set to the deployment's API version (default `2024-02-01`).
+
+### Consequences
+
+**Positive**
+- All three init modes (headless, CDP, persistent/debug) now produce valid Azure `observe()` calls.
+- No `/openai/v1` suffix confusion — LiteLLM appends the correct path internally.
+- Explicit `OPENAI_API_BASE` clearing prevents cross-contamination when switching providers across runs.
+
+**Negative**
+- `os.environ` mutation is process-global — if multiple concurrent test executions with different providers run in the same process, they can overwrite each other's env vars. Acceptable for current single-worker architecture; must be revisited if parallelism is added.
+- Clean-endpoint stripping is string-based heuristic (strips `/openai/v1`, `/openai`). An unusual endpoint format could be stripped incorrectly.
+
+**Alternatives Considered**
+- **Pass Azure config as LiteLLM kwargs directly**: LiteLLM does not expose per-call `api_base` override through the Stagehand `StagehandConfig` interface.
+- **Keep `openai/` prefix with `OPENAI_API_BASE`**: Routes through non-Azure LiteLLM path; ignores deployment-level auth and API version. Fails for Azure-only deployments.
+- **Separate Stagehand instance per provider**: Would require major refactor of `ThreeTierExecutionService` initialization.
+
+---
+
 ## Summary Table
 
 | ADR | Decision | Status | Risk |
@@ -408,5 +574,8 @@ For each candidate: `wait_for(state="visible", timeout=1200)` then `click()`. Re
 | 002-6 | `<option>` XPath normalization for select actions | Accepted | Low |
 | 002-7 | Bounded post-click wait, remove unconditional 3s sleep | Accepted | Medium |
 | 002-8 | Iframe container click fallback | Accepted | Medium |
+| 002-9 | Semantic field-type XPath cache validation | Accepted | Low |
+| 002-10 | Pre-click enabled state polling | Accepted | Low |
+| 002-11 | Azure LiteLLM native provider routing for Stagehand init | Accepted | Medium |
 
-ADR-002-7 and ADR-002-8 carry medium risk because their heuristics (navigation-button keyword list, iframe frame enumeration) depend on real-world page structure diversity. Both should be monitored via tier-level execution metrics across test runs.
+ADR-002-7 and ADR-002-8 carry medium risk because their heuristics (navigation-button keyword list, iframe frame enumeration) depend on real-world page structure diversity. ADR-002-11 carries medium risk due to process-global `os.environ` mutation — safe for single-worker deployments but must be revisited when parallel test execution is introduced. All three should be monitored via tier-level execution metrics and LLM provider error rates across test runs.
