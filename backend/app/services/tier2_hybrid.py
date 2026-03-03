@@ -7,6 +7,7 @@ import asyncio
 import os
 import time
 from typing import Dict, Any, Optional
+from urllib.parse import urlparse
 from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
 from sqlalchemy.orm import Session
 import logging
@@ -91,6 +92,7 @@ class Tier2HybridExecutor:
             instruction = step.get("instruction", "")
             value = step.get("value", "")
             file_path = step.get("file_path", "")
+            selector = step.get("selector")
             page_url = page.url
             
             logger.info(f"[Tier 2] Executing step: {action} - {instruction}")
@@ -118,7 +120,17 @@ class Tier2HybridExecutor:
 
             # Payment gateway readiness and direct field handling
             if self._is_payment_instruction(instruction, action):
-                await self._maybe_wait_for_payment_gateway(page)
+                selector = step.get("selector")
+                if selector:
+                    try:
+                        await page.locator(selector).first.wait_for(state="visible", timeout=1500)
+                        self.payment_gateway_ready = True
+                        self.payment_gateway_url = page.url
+                    except Exception:
+                        await self._maybe_wait_for_payment_gateway(page)
+                else:
+                    await self._maybe_wait_for_payment_gateway(page)
+
                 if self.payment_direct_enabled:
                     direct_result = await self._try_payment_field_action(
                         page,
@@ -161,6 +173,19 @@ class Tier2HybridExecutor:
                     page=page,
                     instruction=instruction
                 )
+
+                if self._should_retry_observe_extraction(
+                    extraction_result=extraction_result,
+                    action=action,
+                    selector=selector,
+                    instruction=instruction,
+                ):
+                    logger.info("[Tier 2] 🔄 observe() returned no results. Waiting for page to become interactable, then retrying once...")
+                    await self._wait_for_page_interactable_for_observe(page)
+                    extraction_result = await self.xpath_extractor.extract_xpath_with_page(
+                        page=page,
+                        instruction=instruction
+                    )
                 
                 extraction_time_ms = (time.time() - extraction_start) * 1000
                 
@@ -168,6 +193,24 @@ class Tier2HybridExecutor:
                     raise Exception(f"XPath extraction failed: {extraction_result.get('error')}")
                 
                 xpath = extraction_result["xpath"]
+
+                if action == "click" and self._xpath_targets_iframe(xpath):
+                    logger.info("[Tier 2] 🧭 XPath points to iframe container. Trying in-frame click fallback...")
+                    clicked_inside_iframe = await self._try_click_inside_iframe(page, instruction)
+                    if clicked_inside_iframe:
+                        playwright_time_ms = 0
+                        total_time_ms = (time.time() - start_time) * 1000
+                        return {
+                            "success": True,
+                            "tier": 2,
+                            "execution_time_ms": total_time_ms,
+                            "extraction_time_ms": extraction_time_ms,
+                            "playwright_time_ms": playwright_time_ms,
+                            "cache_hit": cache_hit,
+                            "xpath": xpath,
+                            "error": None
+                        }
+
                 logger.info(f"[Tier 2] ✅ Extracted XPath in {extraction_time_ms:.2f}ms: {xpath}")
                 
                 # Step 4: Cache the XPath for future use
@@ -250,6 +293,139 @@ class Tier2HybridExecutor:
                 "error": error_msg,
                 "error_type": type(e).__name__
             }
+
+    def _should_retry_observe_extraction(
+        self,
+        extraction_result: Dict[str, Any],
+        action: str,
+        selector: Optional[str],
+        instruction: str = "",
+    ) -> bool:
+        """Retry observe() once when click step has no selector and page may still be loading."""
+        if selector:
+            return False
+
+        if extraction_result.get("success") is True:
+            return False
+
+        error_text = (extraction_result.get("error") or "").lower()
+
+        if "execution context was destroyed" in error_text or "because of a navigation" in error_text:
+            return True
+
+        if "observe() returned no results" not in error_text:
+            return False
+
+        if action == "click":
+            return True
+
+        return self._is_payment_instruction(instruction, action)
+
+    def _looks_like_option_xpath(self, xpath: str) -> bool:
+        """Return True when XPath points to an <option> instead of a <select>."""
+        normalized_xpath = (xpath or "").lower()
+        return "/option[" in normalized_xpath or normalized_xpath.endswith("/option")
+
+    def _xpath_targets_iframe(self, xpath: str) -> bool:
+        """Return True when XPath points to an iframe container element."""
+        normalized_xpath = (xpath or "").lower()
+        return "/iframe[" in normalized_xpath or normalized_xpath.endswith("/iframe")
+
+    def _select_xpath_from_option_xpath(self, xpath: str) -> str:
+        """Convert option XPath to parent select XPath for Playwright select_option()."""
+        if not xpath:
+            return xpath
+
+        if "/option[" in xpath:
+            return xpath.split("/option[", 1)[0]
+        if xpath.endswith("/option"):
+            return xpath[: -len("/option")]
+        return xpath
+
+    async def _wait_for_page_interactable_for_observe(self, page: Page) -> None:
+        """Wait for common loading/skeleton blockers to clear before running observe()."""
+        try:
+            await page.wait_for_load_state("domcontentloaded", timeout=5000)
+        except Exception:
+            logger.debug("[Tier 2] DOMContentLoaded wait timed out before observe retry")
+
+        try:
+            await page.wait_for_load_state("load", timeout=5000)
+        except Exception:
+            logger.debug("[Tier 2] Load-state wait timed out before observe retry")
+
+        loading_selectors = [
+            "[class*='loading']",
+            "[class*='spinner']",
+            "[class*='skeleton']",
+            "[class*='shimmer']",
+            "[class*='overlay']",
+            "[aria-busy='true']",
+            ".loading",
+            ".spinner",
+            ".skeleton",
+            ".shimmer",
+            ".overlay",
+            "[id*='loading']",
+            "[id*='spinner']",
+            "[id*='skeleton']",
+        ]
+
+        for loading_selector in loading_selectors:
+            try:
+                loading_element = page.locator(loading_selector).first
+                if await loading_element.count() > 0:
+                    logger.info(f"[Tier 2] ⏳ Waiting for loading blocker to hide: {loading_selector}")
+                    await loading_element.wait_for(state="hidden", timeout=5000)
+            except Exception:
+                continue
+
+        await asyncio.sleep(0.4)
+
+    async def _try_click_inside_iframe(self, page: Page, instruction: str) -> bool:
+        """Try clicking actionable controls inside page iframes for generic click instructions."""
+        instruction_lower = (instruction or "").lower()
+
+        selector_candidates = [
+            "button[type='submit']",
+            "input[type='submit']",
+            "button[name*='submit' i]",
+            "button[id*='submit' i]",
+            "[role='button'][name*='submit' i]",
+        ]
+
+        if any(keyword in instruction_lower for keyword in ["pay", "payment"]):
+            selector_candidates = selector_candidates + [
+                "button[id*='pay' i]",
+                "button[name*='pay' i]",
+                "input[type='button'][value*='pay' i]",
+            ]
+
+        for frame in page.frames:
+            if frame == page.main_frame:
+                continue
+
+            for selector in selector_candidates:
+                try:
+                    locator = frame.locator(selector).first
+                    await locator.wait_for(state="visible", timeout=1200)
+                    await locator.click(timeout=self.timeout_ms)
+                    logger.info(f"[Tier 2] ✅ Clicked iframe element using selector: {selector}")
+                    return True
+                except Exception:
+                    continue
+
+            try:
+                button = frame.get_by_role("button", name="submit", exact=False).first
+                await button.wait_for(state="visible", timeout=1200)
+                await button.click(timeout=self.timeout_ms)
+                logger.info("[Tier 2] ✅ Clicked iframe button by role name 'submit'")
+                return True
+            except Exception:
+                pass
+
+        logger.warning("[Tier 2] ⚠️ Could not find clickable submit/pay control inside iframe")
+        return False
     
     async def _execute_action_with_xpath(
         self,
@@ -278,11 +454,9 @@ class Tier2HybridExecutor:
         # Use XPath locator
         element = page.locator(f"xpath={xpath}").first
         
-        # Wait for element to be visible
-        await element.wait_for(state="visible", timeout=self.timeout_ms)
-        
         # Execute action
         if action == "click":
+            await element.wait_for(state="visible", timeout=self.timeout_ms)
             # Check for navigation buttons that might trigger page changes
             # Check for navigation buttons that might trigger page changes
             element_text = await element.text_content() or ""
@@ -303,11 +477,11 @@ class Tier2HybridExecutor:
                 logger.info(f"[Tier 2] 🔄 Navigation button detected: '{element_text}' - using extended wait")
             
             try:
-                # For navigation buttons, use longer timeout
-                wait_timeout = self.timeout_ms if is_navigation_button else 10000
+                # Keep post-click waits bounded to avoid long stalls on checkout transitions
+                wait_timeout = min(self.timeout_ms, 10000)
                 
                 # Wait a bit for any redirect/navigation to start
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.2)
                 
                 # Check if URL changed (indicates navigation/redirect)
                 url_changed = page.url != current_url
@@ -320,9 +494,10 @@ class Tier2HybridExecutor:
                     except PlaywrightTimeout:
                         logger.warning(f"[Tier 2] ⚠️ New page load timeout")
                 
-                # Wait for network to be idle after click (handles AJAX, SPA updates)
-                await page.wait_for_load_state("networkidle", timeout=wait_timeout)
-                logger.debug(f"[Tier 2] ✅ Page state stabilized after click")
+                # For non-navigation clicks, networkidle helps stabilize dynamic UI
+                if not is_navigation_button:
+                    await page.wait_for_load_state("networkidle", timeout=wait_timeout)
+                    logger.debug(f"[Tier 2] ✅ Page state stabilized after click")
             except PlaywrightTimeout:
                 # If network doesn't idle within timeout, wait at least for DOM to be ready
                 try:
@@ -367,71 +542,72 @@ class Tier2HybridExecutor:
                 except Exception as e:
                     logger.debug(f"[Tier 2] No loading indicators found or error checking: {str(e)}")
                 
-                # Additional fixed delay to ensure content is fully rendered (especially for payment gateways)
-                await asyncio.sleep(3.0)  # Increased from 2.0s to 3.0s for payment gateway loading
-                logger.debug(f"[Tier 2] ⏱️ Additional 3.0s wait after navigation button")
+                # Small bounded delay to allow rendering without over-waiting
+                await asyncio.sleep(0.4)
+                logger.debug(f"[Tier 2] ⏱️ Additional 0.4s wait after navigation button")
                 
                 # CRITICAL FIX: For checkout/payment buttons, wait for payment gateway input fields to appear
                 if "checkout" in element_text_lower or "payment" in element_text_lower or "pay" in element_text_lower:
                     logger.info(f"[Tier 2] 💳 Checkout/payment button detected - waiting for payment gateway input fields...")
-                    # Wait for common payment gateway input fields to appear
-                    payment_input_selectors = [
-                        "input[name*='card']",  # Card number input
-                        "input[placeholder*='card']",
-                        "input[id*='card']",
-                        "input[type='tel'][maxlength='19']",  # Common for card number fields
-                        "input[autocomplete='cc-number']",
-                        "input[name*='cardnumber']",
-                        "iframe[name*='card']",  # Payment gateway iframes
-                        "iframe[src*='payment']",
-                    ]
-                    
                     input_found = False
-                    for selector in payment_input_selectors:
-                        try:
-                            payment_input = page.locator(selector).first
-                            await payment_input.wait_for(state="visible", timeout=10000)
-                            logger.info(f"[Tier 2] ✅ Payment input field found: {selector}")
-                            input_found = True
-                            break
-                        except Exception:
-                            continue
+                    gateway_timeout = 12000 if self._is_external_payment_gateway_url(page.url) else 2500
+                    try:
+                        await page.wait_for_selector(
+                            self._payment_input_css_selector(),
+                            state="visible",
+                            timeout=gateway_timeout,
+                        )
+                        logger.info("[Tier 2] ✅ Payment input field detected")
+                        input_found = True
+                    except Exception:
+                        input_found = False
                     
                     if input_found:
                         # Additional small delay to ensure field is fully interactive
-                        await asyncio.sleep(1.0)
+                        await asyncio.sleep(0.3)
                         logger.info(f"[Tier 2] ✅ Payment gateway ready")
                     else:
                         logger.warning(f"[Tier 2] ⚠️ No payment input fields detected (may be non-standard gateway)")
                     
         elif action in ["fill", "type", "input"]:
+            await element.wait_for(state="visible", timeout=self.timeout_ms)
             await element.fill(value, timeout=self.timeout_ms)
             # Small delay to allow any input event handlers to complete
             await asyncio.sleep(0.3)
             
         elif action == "select":
+            select_xpath = xpath
+            if self._looks_like_option_xpath(xpath):
+                select_xpath = self._select_xpath_from_option_xpath(xpath)
+
+            select_element = page.locator(f"xpath={select_xpath}").first
+            await select_element.wait_for(state="attached", timeout=self.timeout_ms)
             try:
-                await element.select_option(value, timeout=self.timeout_ms)
+                await select_element.select_option(value, timeout=self.timeout_ms)
             except Exception:
-                await element.select_option(label=value, timeout=self.timeout_ms)
+                await select_element.select_option(label=value, timeout=self.timeout_ms)
             # Wait for any onChange handlers
             await asyncio.sleep(0.3)
             
         elif action == "check":
+            await element.wait_for(state="visible", timeout=self.timeout_ms)
             if not await element.is_checked():
                 await element.check(timeout=self.timeout_ms)
                 await asyncio.sleep(0.3)
                 
         elif action == "uncheck":
+            await element.wait_for(state="visible", timeout=self.timeout_ms)
             if await element.is_checked():
                 await element.uncheck(timeout=self.timeout_ms)
                 await asyncio.sleep(0.3)
                 
         elif action == "hover":
+            await element.wait_for(state="visible", timeout=self.timeout_ms)
             await element.hover(timeout=self.timeout_ms)
             await asyncio.sleep(0.2)
             
         elif action in ["assert", "verify"]:
+            await element.wait_for(state="visible", timeout=self.timeout_ms)
             actual_value = await element.text_content()
             if value not in (actual_value or ""):
                 raise AssertionError(
@@ -441,6 +617,7 @@ class Tier2HybridExecutor:
             # Element already waited for above
             pass
         elif action == "upload_file":
+            await element.wait_for(state="visible", timeout=self.timeout_ms)
             # value contains the file_path for upload_file actions
             file_path = value
             if not file_path:
@@ -498,12 +675,9 @@ class Tier2HybridExecutor:
         ]
         return any(keyword in instruction_lower for keyword in keywords)
 
-    async def _maybe_wait_for_payment_gateway(self, page: Page) -> None:
-        """Wait once per page for payment gateway fields to appear."""
-        if self.payment_gateway_ready and self.payment_gateway_url == page.url:
-            return
-
-        payment_input_selectors = [
+    def _payment_input_css_selector(self) -> str:
+        """Combined CSS selector used to detect payment inputs quickly."""
+        selectors = [
             "input[name*='card']",
             "input[placeholder*='card']",
             "input[id*='card']",
@@ -519,19 +693,46 @@ class Tier2HybridExecutor:
             "iframe[title*='payment']",
             "iframe[src*='payment']",
         ]
+        return ", ".join(selectors)
 
-        for selector in payment_input_selectors:
-            try:
-                locator = page.locator(selector).first
-                await locator.wait_for(state="visible", timeout=8000)
-                logger.info(f"[Tier 2] ✅ Payment gateway ready (selector: {selector})")
-                self.payment_gateway_ready = True
-                self.payment_gateway_url = page.url
-                return
-            except Exception:
-                continue
+    def _is_external_payment_gateway_url(self, url: str) -> bool:
+        """Detect external payment gateway pages requiring longer readiness waits."""
+        if not url:
+            return False
 
-        logger.warning("[Tier 2] ⚠️ Payment gateway readiness not confirmed")
+        hostname = (urlparse(url).hostname or "").lower()
+        gateway_keywords = [
+            "gateway",
+            "mastercard",
+            "checkout",
+            "pay",
+            "payment",
+            "3dsecure",
+            "adyen",
+            "stripe",
+            "paypal",
+            "cybersource",
+        ]
+        return any(keyword in hostname for keyword in gateway_keywords)
+
+    async def _maybe_wait_for_payment_gateway(self, page: Page) -> None:
+        """Wait once per page for payment gateway fields to appear."""
+        if self.payment_gateway_ready and self.payment_gateway_url == page.url:
+            return
+
+        timeout_ms = 8000 if self._is_external_payment_gateway_url(page.url) else 1500
+        try:
+            await page.wait_for_selector(
+                self._payment_input_css_selector(),
+                state="visible",
+                timeout=timeout_ms,
+            )
+            logger.info(f"[Tier 2] ✅ Payment gateway ready (timeout={timeout_ms}ms)")
+            self.payment_gateway_ready = True
+            self.payment_gateway_url = page.url
+            return
+        except Exception:
+            logger.warning("[Tier 2] ⚠️ Payment gateway readiness not confirmed")
 
     async def _try_payment_field_action(
         self,
