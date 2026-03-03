@@ -25,6 +25,13 @@
   - Persistent browser sessions with CSRF/session preservation
   - 7 debug API endpoints + 2 database tables
   - Real-time DevTools integration
+- **3-Tier Execution Engine Hardening** (March 2026)
+  - Context-aware payment gateway readiness waits (1.5s vs 8s by URL)
+  - observe() retry on loading-page and navigation-race conditions
+  - `<option>` XPath normalization for `<select>` actions
+  - Bounded post-click wait (removed unconditional 3s sleep + networkidle for nav buttons)
+  - Iframe container click fallback for embedded payment widgets
+  - See [ADR-002-test-execution-engine.md](ADR-002-test-execution-engine.md) for full decision records
 
 **Future Phases (📋 PLANNED):**
 - **Phase 2 (Weeks 9-14) - Learning Foundations:**
