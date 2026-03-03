@@ -179,9 +179,10 @@ class StagehandExecutionService:
                     )
                 
             elif model_provider == "azure":
-                # Use Azure OpenAI API (OpenAI-compatible gateway)
+                # Use Azure OpenAI API via LiteLLM native Azure provider
                 azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
                 azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "https://chatgpt-uat.openai.azure.com/openai/v1")
+                azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01")
                 # Use user's model selection (deployment name) if available, otherwise use .env default
                 azure_model = user_config.get("model") if user_config else os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT")
                 
@@ -194,22 +195,23 @@ class StagehandExecutionService:
                         "AZURE_OPENAI_API_KEY not set in .env file. "
                         "Please add your Azure OpenAI API key."
                     )
-                
-                # Company is using OpenAI-compatible gateway, not standard Azure
-                # Use openai/ prefix with custom base URL instead of azure/ prefix
-                os.environ["OPENAI_API_BASE"] = azure_endpoint
+
+                clean_endpoint = azure_endpoint.replace("/openai/v1", "").replace("/openai", "").rstrip("/")
+                os.environ["AZURE_API_BASE"] = clean_endpoint
+                os.environ["AZURE_API_KEY"] = azure_api_key
+                os.environ["AZURE_API_VERSION"] = azure_api_version
+                os.environ.pop("OPENAI_API_BASE", None)
                 
                 config = StagehandConfig(
                     env="LOCAL",
                     headless=self.headless,
                     verbose=1,
-                    # Use OpenAI-compatible format for Azure gateway
-                    model_name=f"openai/{azure_model}",
+                    model_name=f"azure/{azure_model}",
                     model_api_key=azure_api_key,
                     local_browser_launch_options=launch_options
                 )
                 logger.info(
-                    "StagehandExecutionService: Using Azure OpenAI (OpenAI-compatible gateway) with deployment: %s",
+                    "StagehandExecutionService: Using Azure OpenAI with deployment: %s",
                     azure_model,
                 )
                 if user_config:
@@ -325,6 +327,33 @@ class StagehandExecutionService:
                     local_browser_launch_options=launch_options
                 )
                 print(f"[DEBUG] ✅ CDP connection with Google: {google_model}")
+
+            elif model_provider == "azure":
+                azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
+                azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "https://chatgpt-uat.openai.azure.com/openai/v1")
+                azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01")
+                azure_model = user_config.get("model") if user_config else os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT")
+                if azure_model and azure_model.lower().startswith("azure/"):
+                    azure_model = azure_model.split("/", 1)[1]
+
+                if not azure_api_key:
+                    raise ValueError("AZURE_OPENAI_API_KEY not set in .env file")
+
+                clean_endpoint = azure_endpoint.replace("/openai/v1", "").replace("/openai", "").rstrip("/")
+                os.environ["AZURE_API_BASE"] = clean_endpoint
+                os.environ["AZURE_API_KEY"] = azure_api_key
+                os.environ["AZURE_API_VERSION"] = azure_api_version
+                os.environ.pop("OPENAI_API_BASE", None)
+
+                config = StagehandConfig(
+                    env="LOCAL",
+                    headless=False,
+                    verbose=1,
+                    model_name=f"azure/{azure_model}",
+                    model_api_key=azure_api_key,
+                    local_browser_launch_options=launch_options
+                )
+                print(f"[DEBUG] ✅ CDP connection with Azure OpenAI deployment: {azure_model}")
                 
             else:  # openrouter
                 openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
@@ -480,6 +509,34 @@ class StagehandExecutionService:
                     local_browser_launch_options=launch_options
                 )
                 print(f"[DEBUG] ✅ Using Google API directly with model: {google_model} (Debug Mode)")
+
+            elif model_provider == "azure":
+                azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
+                azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "https://chatgpt-uat.openai.azure.com/openai/v1")
+                azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01")
+                azure_model = user_config.get("model") if user_config else os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT")
+
+                if azure_model and azure_model.lower().startswith("azure/"):
+                    azure_model = azure_model.split("/", 1)[1]
+
+                if not azure_api_key:
+                    raise ValueError("AZURE_OPENAI_API_KEY not set in .env file")
+
+                clean_endpoint = azure_endpoint.replace("/openai/v1", "").replace("/openai", "").rstrip("/")
+                os.environ["AZURE_API_BASE"] = clean_endpoint
+                os.environ["AZURE_API_KEY"] = azure_api_key
+                os.environ["AZURE_API_VERSION"] = azure_api_version
+                os.environ.pop("OPENAI_API_BASE", None)
+
+                config = StagehandConfig(
+                    env="LOCAL",
+                    headless=False,
+                    verbose=1,
+                    model_name=f"azure/{azure_model}",
+                    model_api_key=azure_api_key,
+                    local_browser_launch_options=launch_options
+                )
+                print(f"[DEBUG] ✅ Using Azure OpenAI with deployment: {azure_model} (Debug Mode)")
                 
             else:  # OpenRouter
                 openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")

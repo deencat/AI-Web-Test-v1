@@ -150,11 +150,18 @@ class Tier2HybridExecutor:
                 cache_hit = True
                 logger.info(f"[Tier 2] 🎯 Cache hit! Validating cached XPath: {xpath}")
                 
-                # Validate cached xpath - check if element exists on current page
+                # Validate cached xpath - ensure element exists and matches step intent
                 try:
-                    # Quick check with 2 second timeout
-                    locator = page.locator(f"xpath={xpath}").first
-                    await locator.wait_for(state="attached", timeout=2000)
+                    is_valid_cache = await self._validate_cached_xpath_for_step(
+                        page=page,
+                        xpath=xpath,
+                        action=action,
+                        instruction=instruction,
+                        value=value,
+                    )
+                    if not is_valid_cache:
+                        raise ValueError("Cached XPath does not match current step intent")
+
                     logger.info(f"[Tier 2] ✅ Cached XPath validated successfully")
                 except Exception as e:
                     # Element doesn't exist - cache is stale, invalidate and re-extract
@@ -226,7 +233,7 @@ class Tier2HybridExecutor:
             # Step 3: Execute using Playwright with the XPath
             execution_start = time.time()
             
-            await self._execute_action_with_xpath(page, action, xpath, value)
+            await self._execute_action_with_xpath(page, action, xpath, value, instruction)
             
             playwright_time_ms = (time.time() - execution_start) * 1000
             total_time_ms = (time.time() - start_time) * 1000
@@ -432,7 +439,8 @@ class Tier2HybridExecutor:
         page: Page,
         action: str,
         xpath: str,
-        value: str = ""
+        value: str = "",
+        instruction: str = ""
     ):
         """
         Execute action using XPath selector with Playwright.
@@ -457,6 +465,7 @@ class Tier2HybridExecutor:
         # Execute action
         if action == "click":
             await element.wait_for(state="visible", timeout=self.timeout_ms)
+            await self._wait_for_element_enabled_before_click(element, instruction)
             # Check for navigation buttons that might trigger page changes
             # Check for navigation buttons that might trigger page changes
             element_text = await element.text_content() or ""
@@ -651,6 +660,87 @@ class Tier2HybridExecutor:
             logger.info(f"[Tier 2] ✅ Signature drawing completed")
         else:
             raise ValueError(f"Unsupported action type: {action}")
+
+    async def _wait_for_element_enabled_before_click(self, element, instruction: str) -> None:
+        """Wait briefly for element to become enabled before clicking."""
+        try:
+            if await element.is_enabled():
+                return
+
+            wait_deadline = time.time() + (min(self.timeout_ms, 8000) / 1000.0)
+            while time.time() < wait_deadline:
+                await asyncio.sleep(0.2)
+                if await element.is_enabled():
+                    return
+
+            logger.warning(
+                "[Tier 2] ⚠️ Click target still disabled after wait (instruction=%s)",
+                instruction,
+            )
+        except Exception:
+            # Ignore pre-check issues and let Playwright click handling raise if needed.
+            return
+
+    async def _validate_cached_xpath_for_step(
+        self,
+        page: Page,
+        xpath: str,
+        action: str,
+        instruction: str,
+        value: Optional[str],
+    ) -> bool:
+        """Validate cache entry against both DOM presence and step semantics."""
+        locator = page.locator(f"xpath={xpath}").first
+        await locator.wait_for(state="attached", timeout=2000)
+
+        if action not in ["fill", "type", "input"]:
+            return True
+
+        instruction_lower = (instruction or "").lower()
+        value_text = (value or "").strip().lower()
+
+        expected_password = "password" in instruction_lower
+        expected_email = ("email" in instruction_lower) or ("@" in value_text)
+
+        if not expected_password and not expected_email:
+            return True
+
+        field_type = (await locator.get_attribute("type") or "").lower()
+        field_name = (await locator.get_attribute("name") or "").lower()
+        field_id = (await locator.get_attribute("id") or "").lower()
+        field_placeholder = (await locator.get_attribute("placeholder") or "").lower()
+        field_label = (await locator.get_attribute("aria-label") or "").lower()
+        field_autocomplete = (await locator.get_attribute("autocomplete") or "").lower()
+
+        field_hints = " ".join([
+            field_type,
+            field_name,
+            field_id,
+            field_placeholder,
+            field_label,
+            field_autocomplete,
+        ])
+
+        looks_like_password = (
+            field_type == "password"
+            or "password" in field_hints
+            or "pwd" in field_hints
+        )
+        looks_like_email = (
+            field_type == "email"
+            or "email" in field_hints
+            or "e-mail" in field_hints
+        )
+
+        if expected_password and not looks_like_password:
+            logger.info("[Tier 2] 🔍 Cached field semantic mismatch: expected password field")
+            return False
+
+        if expected_email and looks_like_password:
+            logger.info("[Tier 2] 🔍 Cached field semantic mismatch: expected email/non-password field")
+            return False
+
+        return True
 
     def _is_payment_instruction(self, instruction: str, action: str) -> bool:
         """Check if the instruction relates to payment fields."""

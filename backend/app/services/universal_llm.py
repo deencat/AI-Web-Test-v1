@@ -22,6 +22,7 @@ class UniversalLLMService:
         self.openrouter_api_key = settings.OPENROUTER_API_KEY or os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
         self.azure_api_key = settings.AZURE_OPENAI_API_KEY or os.getenv("AZURE_OPENAI_API_KEY")
         self.azure_endpoint = settings.AZURE_OPENAI_ENDPOINT or os.getenv("AZURE_OPENAI_ENDPOINT")
+        self.azure_api_version = settings.AZURE_OPENAI_API_VERSION or os.getenv("AZURE_OPENAI_API_VERSION") or "2024-02-01"
         
         # OPT-1: HTTP Session Reuse - Create shared httpx client for connection pooling
         # This reduces connection overhead by 20-30% for multiple LLM calls
@@ -222,40 +223,84 @@ class UniversalLLMService:
         if not model:
             model = "ChatGPT-UAT"
         
-        # Azure OpenAI API endpoint (OpenAI-compatible)
-        base_url = self.azure_endpoint
-        
-        # Prepare request payload (OpenAI format)
-        payload = {
+        # OPT-1: Reuse HTTP client for connection pooling (20-30% faster)
+        client = await self._get_http_client()
+        request_candidates = self._build_azure_request_candidates(
+            messages=messages,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+        for index, request_candidate in enumerate(request_candidates):
+            try:
+                response = await client.post(
+                    request_candidate["url"],
+                    headers={
+                        "api-key": self.azure_api_key,
+                        "Content-Type": "application/json"
+                    },
+                    json=request_candidate["payload"]
+                )
+                response.raise_for_status()
+                return response.json()
+
+            except httpx.TimeoutException:
+                raise Exception("Azure OpenAI API request timed out (90s)")
+            except httpx.HTTPStatusError as e:
+                can_retry_with_fallback = (
+                    index < len(request_candidates) - 1
+                    and e.response is not None
+                    and e.response.status_code == 404
+                )
+                if can_retry_with_fallback:
+                    continue
+
+                error_detail = e.response.text if e.response else "Unknown error"
+                raise Exception(f"Azure OpenAI API error ({e.response.status_code}): {error_detail}")
+            except httpx.HTTPError as e:
+                raise Exception(f"Azure OpenAI API connection error: {str(e)}")
+
+        raise Exception("Azure OpenAI API error: all endpoint strategies failed")
+
+    def _build_azure_request_candidates(
+        self,
+        messages: List[Dict[str, str]],
+        model: str,
+        temperature: float,
+        max_tokens: Optional[int],
+    ) -> List[Dict[str, object]]:
+        """Build Azure request candidates for v1 and deployment API formats."""
+        endpoint = (self.azure_endpoint or "").rstrip("/")
+        resource_base = endpoint.split("/openai")[0] if "/openai" in endpoint else endpoint
+
+        v1_base = endpoint if "/openai/v1" in endpoint else f"{resource_base}/openai/v1"
+        v1_url = f"{v1_base.rstrip('/')}/chat/completions"
+
+        v1_payload: Dict[str, object] = {
             "model": model,
             "messages": messages,
             "temperature": temperature,
         }
-        
         if max_tokens:
-            payload["max_tokens"] = max_tokens
-        
-        # OPT-1: Reuse HTTP client for connection pooling (20-30% faster)
-        client = await self._get_http_client()
-        try:
-            response = await client.post(
-                f"{base_url}/chat/completions",
-                headers={
-                    "api-key": self.azure_api_key,  # Azure uses 'api-key' header
-                    "Content-Type": "application/json"
-                },
-                json=payload
-            )
-            response.raise_for_status()
-            return response.json()
-            
-        except httpx.TimeoutException:
-            raise Exception("Azure OpenAI API request timed out (90s)")
-        except httpx.HTTPStatusError as e:
-            error_detail = e.response.text if e.response else "Unknown error"
-            raise Exception(f"Azure OpenAI API error ({e.response.status_code}): {error_detail}")
-        except httpx.HTTPError as e:
-            raise Exception(f"Azure OpenAI API connection error: {str(e)}")
+            v1_payload["max_tokens"] = max_tokens
+
+        deployment_url = (
+            f"{resource_base}/openai/deployments/{model}/chat/completions"
+            f"?api-version={self.azure_api_version}"
+        )
+        deployment_payload: Dict[str, object] = {
+            "messages": messages,
+            "temperature": temperature,
+        }
+        if max_tokens:
+            deployment_payload["max_tokens"] = max_tokens
+
+        request_candidates: List[Dict[str, object]] = [
+            {"url": v1_url, "payload": v1_payload},
+            {"url": deployment_url, "payload": deployment_payload},
+        ]
+        return request_candidates
     
     async def _call_openrouter(
         self,

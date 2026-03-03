@@ -198,3 +198,69 @@ class TestTier2PaymentHelpers:
         assert result["success"] is True
         self.executor._try_click_inside_iframe.assert_awaited_once_with(page, "click submit button")
         self.executor._execute_action_with_xpath.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_validate_cached_xpath_for_step_rejects_email_field_for_password_instruction(self):
+        page = MagicMock()
+        element = AsyncMock()
+        element.wait_for = AsyncMock()
+
+        attrs = {
+            "type": "email",
+            "name": "email",
+            "id": "loginEmail",
+            "placeholder": "Email address",
+            "aria-label": "Email",
+            "autocomplete": "email",
+        }
+
+        async def _get_attr(name):
+            return attrs.get(name)
+
+        element.get_attribute = AsyncMock(side_effect=_get_attr)
+        locator = MagicMock()
+        locator.first = element
+        page.locator.return_value = locator
+
+        is_valid = await self.executor._validate_cached_xpath_for_step(
+            page=page,
+            xpath="/html/body/input[1]",
+            action="fill",
+            instruction="Step 5: Input password in the password field",
+            value="DEE57vTo!",
+        )
+
+        assert is_valid is False
+
+    @pytest.mark.asyncio
+    async def test_execute_step_reextracts_when_cached_xpath_semantically_mismatched(self):
+        page = MagicMock()
+        page.url = "https://example.com/login"
+
+        self.executor.cache_service.get_cached_xpath = MagicMock(return_value={"xpath": "/html/body/input[1]"})
+        self.executor.cache_service.invalidate_cache = MagicMock()
+        self.executor.cache_service.cache_xpath = MagicMock()
+        self.executor.cache_service.validate_and_update = MagicMock()
+
+        self.executor._validate_cached_xpath_for_step = AsyncMock(return_value=False)
+        self.executor._execute_action_with_xpath = AsyncMock(return_value=None)
+        self.executor.xpath_extractor.extract_xpath_with_page = AsyncMock(return_value={
+            "success": True,
+            "xpath": "/html/body/form/input[2]",
+            "page_title": "Login",
+            "element_text": "Password",
+        })
+
+        result = await self.executor.execute_step(
+            page,
+            {
+                "action": "fill",
+                "instruction": "Step 5: Input password in the password field",
+                "value": "DEE57vTo!",
+            },
+        )
+
+        assert result["success"] is True
+        self.executor.cache_service.invalidate_cache.assert_called_once()
+        self.executor.xpath_extractor.extract_xpath_with_page.assert_awaited_once()
+        self.executor._execute_action_with_xpath.assert_awaited_once()
