@@ -1,9 +1,9 @@
 # Developer A: Next Steps & Action Plan
-**Date:** February 23, 2026  
-**Status:** ✅ **SPRINT 10 API COMPLETE — MERGED TO MAIN & PUBLISHED**  
+**Date:** March 6, 2026  
+**Status:** ✅ **SPRINT 10 BACKEND COMPLETE — ALL TASKS DONE (10A.1-10A.11)**  
 **Sprint 9 Status:** ✅ **100% COMPLETE** (30/30 points)  
-**Sprint 10 Start:** March 6, 2026  
-**Last doc update:** Feb 2026 — API v2 complete; feature branch merged to `main` and pushed to `origin/main`. Developer B can pull `main` for API spec and running backend.
+**Sprint 10 Status:** ✅ **BACKEND 100% COMPLETE** — Waiting for Developer B frontend integration  
+**Last doc update:** Mar 2026 — 10A.7-10A.11 (iterative workflow enhancements) complete and pushed to `origin/main`.
 
 ---
 
@@ -47,12 +47,15 @@ The following are **already implemented** in the codebase (no need to redo):
 
 **Recent (Feb 2026):** Observation working (Windows ProactorEventLoop); SSE (10A.3) implemented; workflow cancel (10A.5) and unit tests (10A.6) implemented.
 
-**Still stub / not implemented:**
+**All Sprint 10 Backend Tasks Complete:**
 
-| Item | Status | What to do |
-|------|--------|------------|
+| Item | Status | What was done |
+|------|--------|---------------|
 | **10A.8** Iterative improvement | ✅ Done (Feb 2026) | `run_iterative_workflow` implemented: load test cases by ID → evolution → analysis loop with cancel and convergence |
-| **10A.7, 10A.9, 10A.10, 10A.11** | ⏳ Pending | Multi-page crawl, dynamic URL, goal-oriented nav, integration tests |
+| **10A.7** Multi-page flow crawling | ✅ Done (Mar 2026) | `ObservationAgent._execute_multi_page_flow_crawling()` using browser-use for LLM-guided navigation |
+| **10A.9** Dynamic URL crawling | ✅ Done (Mar 2026) | `EvolutionAgent._crawl_missing_urls()` - on-demand ObservationAgent calls for URLs in scenarios |
+| **10A.10** Goal-oriented navigation | ✅ Done (Mar 2026) | `ObservationAgent._get_goal_indicators()` - configurable indicators per flow type (purchase, registration, login) |
+| **10A.11** Integration tests | ✅ Done (Mar 2026) | `test_iterative_workflow.py` - 17 tests covering goal detection, URL crawling, flow crawling |
 
 ---
 
@@ -80,13 +83,13 @@ The following are **already implemented** in the codebase (no need to redo):
   - [ ] OpenAPI: `GET /api/v2/openapi.json` and Swagger UI at `/api/v2/docs` (when backend is running)
   - [ ] Spec document: [API_SPECIFICATION.md](../backend/app/api/v2/API_SPECIFICATION.md) — endpoints, request/response, SSE (§6)
 
-### 5. **Later (Sprint 10 backlog)**
+### 5. **Sprint 10 Backlog — ✅ ALL COMPLETE** (Mar 2026)
 
 - ~~**10A.8** Iterative improvement~~ — ✅ **DONE** (Feb 2026): `run_iterative_workflow` and POST `/api/v2/improve-tests` implemented.
-- **10A.7** Multi-page flow crawling (ObservationAgent).
-- **10A.9** Dynamic URL crawling (EvolutionAgent).
-- **10A.10** Goal-oriented navigation (ObservationAgent).
-- **10A.11** Integration tests for iterative workflow.
+- ~~**10A.7** Multi-page flow crawling~~ — ✅ **DONE** (Mar 2026): `ObservationAgent._execute_multi_page_flow_crawling()` with browser-use.
+- ~~**10A.9** Dynamic URL crawling~~ — ✅ **DONE** (Mar 2026): `EvolutionAgent._crawl_missing_urls()` for on-demand observation.
+- ~~**10A.10** Goal-oriented navigation~~ — ✅ **DONE** (Mar 2026): `ObservationAgent._get_goal_indicators()` with flow-specific indicators.
+- ~~**10A.11** Integration tests~~ — ✅ **DONE** (Mar 2026): 17 tests in `test_iterative_workflow.py`.
 
 ---
 

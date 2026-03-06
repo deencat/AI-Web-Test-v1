@@ -1227,6 +1227,21 @@ Return JSON: {{"steps": ["step1", "step2", ...]}}"""
         
         This enables EvolutionAgent to generate more accurate test steps
         by having complete page context for all URLs in the test flow.
+        
+        Args:
+            scenarios: List of BDD scenarios that may reference URLs
+            page_context: Current page context with observed pages/elements
+            observation_agent: ObservationAgent instance to call for crawling
+            user_instruction: User's instruction for context
+            login_credentials: Login credentials if needed for crawling
+        
+        Returns:
+            Updated page_context with newly crawled pages and elements merged in
+        
+        Example:
+            If scenarios mention "https://example.com/checkout" but page_context
+            only has "https://example.com", this method will request ObservationAgent
+            to crawl /checkout and merge the results into page_context.
         """
         # Identify missing URLs
         missing_urls = self._identify_missing_urls(scenarios, page_context)
@@ -1300,6 +1315,17 @@ Return JSON: {{"steps": ["step1", "step2", ...]}}"""
         - Scenario Given/When/Then clauses
         - Scenario metadata (target_url, redirect_url, etc.)
         - Navigation steps mentioned in scenarios
+        
+        Args:
+            scenarios: List of BDD scenarios to scan for URLs
+            page_context: Current page context with already-observed URLs
+        
+        Returns:
+            List of URLs found in scenarios but not in page_context (max 5)
+        
+        Note:
+            Filters out non-crawlable URLs (APIs, static assets, etc.)
+            and limits results to 5 URLs to avoid excessive crawling.
         """
         # Get already observed URLs
         observed_urls = set()
@@ -1349,7 +1375,15 @@ Return JSON: {{"steps": ["step1", "step2", ...]}}"""
         return valid_missing[:5]
     
     def _extract_urls_from_text(self, text: str) -> List[str]:
-        """Extract URLs from text using regex"""
+        """
+        Extract URLs from text using regex.
+        
+        Args:
+            text: Text to scan for URLs (e.g., scenario Given/When/Then)
+        
+        Returns:
+            List of http/https URLs found in the text
+        """
         if not text:
             return []
         
@@ -1360,7 +1394,21 @@ Return JSON: {{"steps": ["step1", "step2", ...]}}"""
         return urls
     
     def _is_valid_crawlable_url(self, url: str) -> bool:
-        """Check if URL is valid and crawlable"""
+        """
+        Check if URL is valid and suitable for crawling.
+        
+        Args:
+            url: URL to validate
+        
+        Returns:
+            True if URL is crawlable (not an API, static asset, etc.)
+        
+        Filters out:
+            - Non-http(s) URLs (javascript:, mailto:, tel:, etc.)
+            - API endpoints (/api/)
+            - Static assets (.js, .css, .png, .jpg, etc.)
+            - Fragment-only URLs (#)
+        """
         if not url:
             return False
         

@@ -1543,9 +1543,14 @@ Store Best Test Cases
 - **Pass Rate:** ~70% → ~90% (after iterations)
 
 **Implementation Status:**
-- ⏳ **Planned for Sprint 10:** Multi-page flow crawling, iterative loop, dynamic URL crawling
-- **Effort:** 10 days (core enhancements)
-- **Priority:** HIGH - Solves current limitations
+- ✅ **COMPLETE (Mar 2026):** All iterative workflow enhancements implemented
+  - 10A.7: Multi-page flow crawling (`ObservationAgent._execute_multi_page_flow_crawling()`)
+  - 10A.8: Iterative improvement loop (`OrchestrationService.run_iterative_workflow()`)
+  - 10A.9: Dynamic URL crawling (`EvolutionAgent._crawl_missing_urls()`)
+  - 10A.10: Goal-oriented navigation (`ObservationAgent._get_goal_indicators()`)
+  - 10A.11: Integration tests (17 tests in `test_iterative_workflow.py`)
+- **Effort:** 10 days (completed)
+- **Priority:** HIGH - Solved current limitations
 
 ---
 

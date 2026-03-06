@@ -352,7 +352,7 @@ class ObservationAgent(BaseAgent):
                         basic_elements=all_elements[:20],  # Send sample to LLM
                         url=url,
                         page_title=page_title,
-                        learned_patterns=None  # TODO: Integrate learning system in Sprint 10
+                        learned_patterns=None  # Learning system planned for Sprint 11-12
                     )
                     
                     llm_enhanced_elements = llm_analysis.get("enhanced_elements", [])
@@ -912,6 +912,25 @@ class ObservationAgent(BaseAgent):
         10A.10: Get goal indicators based on user instruction and goal type.
         
         Returns a list of keywords/phrases that indicate the goal has been reached.
+        Supports multiple flow types with localized indicators (English + Chinese).
+        
+        Args:
+            user_instruction: User's instruction describing the goal
+            custom_indicators: Optional list of custom indicators to include
+        
+        Returns:
+            List of goal indicators (keywords/phrases) to look for in page content
+        
+        Supported flow types:
+            - Purchase/checkout: "confirmation", "order confirmed", "payment successful", etc.
+            - Registration: "account created", "welcome", "verify your email", etc.
+            - Login: "dashboard", "welcome back", "logged in", etc.
+            - Form submission: "submitted", "sent", "thank you", etc.
+            - Search: "results", "found", "showing", etc.
+        
+        Example:
+            >>> agent._get_goal_indicators("Complete the purchase flow")
+            ['confirmation', 'order confirmed', 'payment successful', ...]
         """
         # Start with custom indicators if provided
         indicators = list(custom_indicators) if custom_indicators else []
