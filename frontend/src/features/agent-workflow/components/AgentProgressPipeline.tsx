@@ -6,6 +6,7 @@
  */
 import React from 'react';
 import type { DisplayProgress, WorkflowStatus } from '../../../types/agentWorkflow.types';
+import { StopAgentButton } from './StopAgentButton';
 
 // ---------------------------------------------------------------------------
 // Stage Configuration — maps to real agent names
@@ -86,6 +87,8 @@ export interface AgentProgressPipelineProps {
   /** DisplayProgress derived from useWorkflowProgress; null while loading */
   progress: DisplayProgress | null;
   error?: string | null;
+  /** If provided, renders a ⏹ Stop Agent button in the header (10B.12) */
+  onStop?: () => void;
   className?: string;
 }
 
@@ -97,6 +100,7 @@ export const AgentProgressPipeline: React.FC<AgentProgressPipelineProps> = ({
   workflowStatus,
   progress,
   error,
+  onStop,
   className = '',
 }) => {
   const currentAgent = progress?.currentAgent ?? null;
@@ -116,17 +120,25 @@ export const AgentProgressPipeline: React.FC<AgentProgressPipelineProps> = ({
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-base font-semibold text-gray-900">Workflow Progress</h3>
-        <span
-          className={`px-2.5 py-0.5 rounded-full text-xs font-medium capitalize
-            ${workflowStatus === 'running'    ? 'bg-blue-100 text-blue-700'
-            : workflowStatus === 'completed'  ? 'bg-green-100 text-green-700'
-            : workflowStatus === 'failed'     ? 'bg-red-100 text-red-600'
-            : workflowStatus === 'pending'    ? 'bg-yellow-100 text-yellow-700'
-            : 'bg-gray-100 text-gray-500'}`}
-          data-testid="workflow-status-badge"
-        >
-          {workflowStatus ?? 'idle'}
-        </span>
+        <div className="flex items-center gap-2">
+          {onStop && (
+            <StopAgentButton
+              workflowStatus={workflowStatus}
+              onStop={onStop}
+            />
+          )}
+          <span
+            className={`px-2.5 py-0.5 rounded-full text-xs font-medium capitalize
+              ${workflowStatus === 'running'    ? 'bg-blue-100 text-blue-700'
+              : workflowStatus === 'completed'  ? 'bg-green-100 text-green-700'
+              : workflowStatus === 'failed'     ? 'bg-red-100 text-red-600'
+              : workflowStatus === 'pending'    ? 'bg-yellow-100 text-yellow-700'
+              : 'bg-gray-100 text-gray-500'}`}
+            data-testid="workflow-status-badge"
+          >
+            {workflowStatus ?? 'idle'}
+          </span>
+        </div>
       </div>
 
       {/* Global progress bar */}

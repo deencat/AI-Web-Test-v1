@@ -183,14 +183,26 @@ describe('useWorkflowProgress', () => {
     expect(result.current.isConnected).toBe(false);
   });
 
-  it('sets status to cancelled when cancel() is called', async () => {
+  it('requests backend cancellation without forcing local cancelled state', async () => {
     const { result } = renderHook(() => useWorkflowProgress('wf-001'));
     await act(async () => { await Promise.resolve(); });
 
     await act(async () => { await result.current.cancel(); });
 
-    expect(result.current.status).toBe('cancelled');
+    expect(result.current.status).toBe('running');
     expect(mockCancelWorkflow).toHaveBeenCalledWith('wf-001');
+  });
+
+  it('shows error when cancel request fails', async () => {
+    mockCancelWorkflow.mockRejectedValueOnce(new Error('Cancel failed'));
+
+    const { result } = renderHook(() => useWorkflowProgress('wf-001'));
+    await act(async () => { await Promise.resolve(); });
+
+    await act(async () => { await result.current.cancel(); });
+
+    expect(result.current.status).toBe('running');
+    expect(result.current.error).toBe('Cancel failed');
   });
 
   it('exposes error from failed poll', async () => {

@@ -9,6 +9,12 @@ export type { AgentWorkflowTriggerProps } from './components/AgentWorkflowTrigge
 export { AgentProgressPipeline } from './components/AgentProgressPipeline';
 export type { AgentProgressPipelineProps } from './components/AgentProgressPipeline';
 
+export { AgentStatusMonitor } from './components/AgentStatusMonitor';
+export type { AgentStatusMonitorProps } from './components/AgentStatusMonitor';
+
+export { StopAgentButton } from './components/StopAgentButton';
+export type { StopAgentButtonProps } from './components/StopAgentButton';
+
 export { WorkflowResults } from './components/WorkflowResults';
 export type { WorkflowResultsProps } from './components/WorkflowResults';
 

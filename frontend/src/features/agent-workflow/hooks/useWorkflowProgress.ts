@@ -182,13 +182,21 @@ export function useWorkflowProgress(
   // ---- cancel (public) ----
   const cancel = useCallback(async () => {
     const id = workflowIdRef.current;
-    stopPolling();
-    stopSSE();
-    setState((prev) => ({ ...prev, status: 'cancelled', isConnected: false }));
-    if (id) {
-      try { await agentWorkflowService.cancelWorkflow(id); } catch { /* best-effort */ }
+    if (!id) return;
+
+    // Keep SSE + polling active so UI reflects real backend state transition.
+    // Cancellation is cooperative on the backend (checked between stages).
+    setState((prev) => ({ ...prev, error: null }));
+    try {
+      await agentWorkflowService.cancelWorkflow(id);
+      await pollOnce();
+    } catch (err) {
+      setState((prev) => ({
+        ...prev,
+        error: err instanceof Error ? err.message : 'Failed to cancel workflow',
+      }));
     }
-  }, [stopPolling, stopSSE]);
+  }, [pollOnce]);
 
   // ---- main effect ----
   useEffect(() => {

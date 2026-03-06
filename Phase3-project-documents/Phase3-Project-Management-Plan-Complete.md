@@ -3,7 +3,7 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 2 COMPLETE  
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26)  
 **Last Updated:** February 10, 2026 (Alignment corrections applied)  
 **Version:** 3.0
 
@@ -814,8 +814,8 @@ After successful Phase 2 + Phase 3 merge and integration testing, comprehensive 
 
 ### Sprint 10: Frontend Integration & Real-time Agent Progress (Mar 6 - Mar 19, 2026)
 
-**Status:** 🔄 **IN PROGRESS** — Developer B Phase 2 ✅ COMPLETE (Feb 23, 2026) · Developer A backend in progress  
-**Focus:** Frontend-Agent integration with real-time progress UI  
+**Status:** 🔄 **IN PROGRESS** — Developer B Phase 2 ✅ COMPLETE (Feb 23, 2026) · Developer B Phase 3 (10B.11/10B.12) ✅ COMPLETE (Feb 26, 2026) · Developer A backend monitoring COMPLETE  
+**Focus:** Frontend-Agent integration with real-time progress UI + agent control  
 **Reference:** [Sprint 10 Gap Analysis](SPRINT_10_GAP_ANALYSIS_AND_PLAN.md)
 
 **Developer B Phase 2 Results (Feb 23, 2026):**
@@ -883,10 +883,49 @@ class ProgressTracker:
 | **10B.8** | Load testing | 1 day | 10A.5 | 12 load tests passing (5/20/50 concurrent users, p95 < 1.0s, min 10 rps) | ✅ **DONE** |
 | **10B.9** | GitHub Actions CI/CD | 1 day | 10B.7 | `.github/workflows/sprint10-tests.yml` — 4 jobs (frontend, integration, load, PR summary) | ✅ **DONE** |
 | **10B.10** | System integration tests | 1 day | 10B.7 | API contract + schema tests, 7 test classes covering all v2 endpoints | ✅ **DONE** |
-| **10B.11** | **Agent Status Progress Tracking (Structured SSE)** | 1.5 days | 10B.4 | Display structured agent progress (not raw logs): agent timeline, progress bar, status message, expandable "View Logs" section with backend log details (DEBUG/INFO levels) | 🔄 **NEW** |
-| **10B.12** | **Stop Agent Button Implementation** | 1 day | 10B.3, 10A.5 | Add "⏹ Stop Agent" button to pipeline UI, disable when workflow complete/failed, show confirmation toast, call DELETE /workflows/{id}, handle cancellation response | 🔄 **NEW** |
+| **10B.11** | **Agent Status Progress Tracking (Structured SSE)** | 1.5 days | 10B.4 | Display structured agent progress (not raw logs): agent timeline, progress bar, status message, expandable "View Logs" section with backend log details (DEBUG/INFO levels) | ✅ **COMPLETE** |
+| **10B.12** | **Stop Agent Button Implementation** | 1 day | 10B.3, 10A.5 | Add "⏹ Stop Agent" button to pipeline UI, disable when workflow complete/failed, show confirmation toast, call DELETE /workflows/{id}, handle cancellation response | ✅ **COMPLETE** |
 
 **Total: 37 points, 14.5 days** (includes 0.5 day API contract definition + 4 days testing + 2.5 days agent monitoring features)
+
+**Developer B Phase 3 Completion Summary (Feb 26, 2026):**
+
+✅ **10B.11 Agent Status Progress Tracking (Structured SSE) - COMPLETE**
+- Created `AgentStatusMonitor.tsx` component with simplified, clean architecture
+- Displays structured progress timeline with per-agent metrics (elements found, scenarios generated, tests generated, execution time)
+- Optional expandable "View Logs" section for backend DEBUG/INFO logs (toggleable, not default)
+- Real-time updates via SSE events (agent_started, agent_progress, agent_completed, workflow_completed)
+- Integrated into `AgentProgressPipeline` as sibling panel, not duplicative
+- Tests: 100% passing (new test file: AgentStatusMonitor.test.tsx)
+- Key benefit: Clean, scannable 1-page progress vs. verbose 100+ line raw logs; follows GitHub Actions/Vercel UI patterns
+
+✅ **10B.12 Stop Agent Button - COMPLETE**
+- Created `StopAgentButton.tsx` standalone component with state awareness and error handling
+- Shows "⏹ Stop Agent" button in pipeline header; disabled when workflow completed/failed/cancelled
+- Confirmation dialog before stop to prevent accidental cancellation
+- Calls DELETE /workflows/{id} and waits for backend-confirmed status change
+- No optimistic state forcing; SSE stream stays alive during cancellation for clean shutdown
+- Integrated into `AgentProgressPipeline` and wired in `AgentWorkflowPage`
+- Tests: 100% passing (StopAgentButton.test.tsx + page-level regression test)
+- User-facing flow: click stop → confirm → "Stopping..." → wait for SSE "cancelled" event → UI updates
+
+**Backend A Enhancements (Beyond Original Plan - Mid-Stage Cancellation):**
+- ✅ Extended `orchestration_service.py`: wired `progress_callback` and `cancel_check` to ALL 4 agent payloads
+  - Observation: 2 callback emissions (0.25 progress on initial crawl, 0.75 progress on extraction)
+  - Requirements: 8-stage execution with callback after each stage + cooperative cancel checks between stages
+  - Analysis: 10-stage execution with real-time batch loop polling cancel check every batch
+  - Evolution: per-scenario progress (already wired in earlier sprints)
+- ✅ Updated `requirements_agent.py`: Added cooperative `cancel_check()` polling between 8 internal stages
+  - Stages: grouping → journeys → functional → accessibility → security → edge-case → test-data → coverage
+  - Each stage emits progress callback (0.05 to 1.0 range normalized) and checks cancel flag
+  - On cancel: returns early with empty scenarios and `metadata={"cancelled": True}`
+- ✅ Updated `analysis_agent.py`: Added cooperative cancel polling during stage execution and real-time batch loop
+  - Stages: historical data → risk scoring → business values → ROI → execution time → dependencies → coverage → regression → real-time execution → success analysis → prioritization
+  - Real-time batch loop: checks cancel flag before each batch, emits per-batch progress (0.68 to 0.78 range)
+  - On cancel: returns early with empty risk_scores and `metadata={"cancelled": True}`
+- Result: Stop now works **mid-stage** (not just between agents), enabling fast response to user cancellation requests
+- Tests: 5 backend unit tests passing (test_orchestration_stage_progress.py: 2 tests; test_evolution_agent_progress_cancel.py: 1 test; test_orchestration_cancel.py: 2 tests)
+- No regression: AnalysisAgent baseline tests passing (execute_task_basic, can_handle)
 
 **File Ownership (Zero Conflicts):**
 - `frontend/src/features/agent-workflow/` - Developer B owns entire directory
@@ -1246,158 +1285,101 @@ export const useWorkflowProgress = (workflowId: string) => {
 }
 ```
 
----
+#### 10B.12: Stop Agent Button Implementation — ✅ COMPLETE (Feb 26, 2026)
 
-#### 10B.12: Stop Agent Button Implementation
+**Problem:** Long-running workflows (5+ minutes) need a way to stop early for testing, with user confirmation and clear response feedback.
 
-**Problem:** Long-running workflows (5+ minutes) need a way to stop early for testing.
+**Solution:** Add **"⏹ Stop Agent" button** with confirmation dialog, state-aware UI, and backend-confirmed cancellation semantics.
 
-**Solution:** Add **"⏹ Stop Agent" button** that calls `DELETE /api/v2/workflows/{workflowId}`, with UI feedback and confirmation.
+**Actual Implementation (Completed):**
 
-**Implementation:**
-
+Created `frontend/src/features/agent-workflow/components/StopAgentButton.tsx`:
 ```typescript
-// In AgentStatusMonitor.tsx
-const handleStopAgent = async () => {
-  if (!confirm('Stop running agent? Any partial results will be discarded.')) {
-    return;
-  }
+export const StopAgentButton: React.FC<{
+  workflowId: string;
+  workflowStatus: WorkflowStatus;
+  onStop?: () => void;
+}> = ({ workflowId, workflowStatus, onStop }) => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  try {
-    const response = await fetch(`/api/v2/workflows/${workflowId}`, {
-      method: 'DELETE'
-    });
+  const handleClick = async () => {
+    if (!confirm('Stop running agent? This action cannot be undone.')) return;
 
-    if (!response.ok) {
-      toast.error('Failed to stop agent');
-      return;
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await agentWorkflowService.cancelWorkflow(workflowId);
+      if (response.ok) {
+        setError(null);
+        if (onStop) onStop();
+      } else {
+        setError('Failed to stop agent; workflow may already be complete');
+      }
+    } catch (err) {
+      setError(`Error stopping agent: ${(err as Error).message}`);
+    } finally {
+      setIsLoading(false);
     }
+  };
 
-    // Close SSE connection
-    eventSource?.close();
+  const isDisabled = 
+    workflowStatus === 'completed' || 
+    workflowStatus === 'failed' || 
+    workflowStatus === 'cancelled' || 
+    isLoading;
 
-    // Update UI
-    setProgress(prev => ({
-      ...prev,
-      status: 'cancelled'
-    }));
-
-    toast.success('Agent process stopped');
-    
-    // Navigate back to main page after 2 seconds
-    setTimeout(() => {
-      navigate('/tests');
-    }, 2000);
-
-  } catch (error) {
-    toast.error('Error stopping agent: ' + error.message);
-  }
-};
-
-return (
-  <>
-    <button
-      onClick={handleStopAgent}
-      disabled={
-        progress.status === 'completed' || 
-        progress.status === 'failed' || 
-        progress.status === 'cancelled'
-      }
-      className="btn-stop-agent"
-      title={
-        progress.status === 'completed' 
-          ? 'Workflow already completed' 
-          : 'Stop running agent'
-      }
-    >
-      ⏹ Stop Agent
-    </button>
-    
-    {progress.status === 'cancelled' && (
-      <div className="alert alert-info mt-2">
-        ✓ Workflow cancelled. Partial results discarded.
-      </div>
-    )}
-  </>
-);
-```
-
-**Backend Implementation (Developer A - Sprint 10):**
-
-The backend `DELETE /api/v2/workflows/{workflow_id}` endpoint (currently a 501 stub) needs implementation:
-
-```python
-# backend/app/api/v2/endpoints/workflows.py
-@router.delete("/workflows/{workflow_id}", status_code=200)
-async def cancel_workflow(workflow_id: str) -> WorkflowStatusResponse:
-    """
-    Cancel a running workflow.
-    
-    - Sets workflow status to 'cancelled'
-    - Signals running agent to stop (via cancellation flag)
-    - Closes SSE stream gracefully
-    - Returns updated workflow status
-    """
-    workflow = await WorkflowService.get_workflow(workflow_id)
-    
-    if workflow.status in ('completed', 'failed', 'cancelled'):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot cancel workflow in {workflow.status} state"
-        )
-    
-    # Set cancellation flag
-    await WorkflowService.set_cancelled_flag(workflow_id)
-    
-    # Update status
-    workflow.status = 'cancelled'
-    await WorkflowService.update_workflow(workflow)
-    
-    # Signal orchestration service to clean up
-    await OrchestrationService.cancel_workflow(workflow_id)
-    
-    return WorkflowStatusResponse.from_workflow(workflow)
-```
-
-**UI State Management:**
-
-```typescript
-// frontend/src/features/agent-workflow/types/agentWorkflow.types.ts
-export type WorkflowStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
-
-export interface WorkflowProgress {
-  workflow_id: string;
-  status: WorkflowStatus;
-  agents: AgentProgress[];
-  total_progress: number;
-  started_at?: string;
-  estimated_completion?: string;
-  error?: string;
-}
-```
-
-**Confirmation Dialog:**
-
-```typescript
-// Show confirmation when user clicks stop
-const handleStopAgent = async () => {
-  const confirmed = await showDialog({
-    title: 'Stop Agent Workflow?',
-    message: 'This will stop the running agent process. Any partial results will be discarded.',
-    buttons: ['Cancel', 'Stop'],
-    defaultButton: 'Cancel'
-  });
-
-  if (confirmed === 'Stop') {
-    // Make DELETE request and update UI
-    ...
-  }
+  return (
+    <>
+      <button onClick={handleClick} disabled={isDisabled} className="btn-stop-agent">
+        {isLoading ? '⏳ Stopping...' : '⏹ Stop Agent'}
+      </button>
+      {error && <div className="alert alert-error mt-2">{error}</div>}
+    </>
+  );
 };
 ```
 
-**Toast Notifications:**
+**Integration Points:**
+- `AgentProgressPipeline.tsx` - renders `StopAgentButton` in header when `onStop` prop provided
+- `AgentWorkflowPage.tsx` - mounts `StopAgentButton` and passes `useWorkflowProgress().cancel` callback
+- `useWorkflowProgress.ts` hook - handles SSE cancellation event and backend-confirmed state transition
 
-```typescript
+**Backend Cancel Flow (Already Implemented in 10A.5b):**
+1. Frontend calls `DELETE /api/v2/workflows/{id}`
+2. Backend sets `cancel_requested` flag in workflow store
+3. All 4 agents poll `cancel_check()` during execution (observation, requirements, analysis, evolution)
+4. First agent to check cancellation flag returns early with partial results + `metadata={"cancelled": true}`
+5. Orchestration service emits `workflow_failed` SSE event with cancellation marker
+6. Frontend `useWorkflowProgress` receives event and updates workflow status to "cancelled"
+7. User sees "Workflow cancelled" and SSE connection closes gracefully
+
+**Key Implementation Details:**
+- ✅ **Cooperative cancellation**: agents are not forcefully killed; they poll and return early
+- ✅ **Mid-stage cancellation**: cancel works during agent execution, not just between stages (thanks to callback pattern)
+- ✅ **No optimistic state**: frontend waits for backend-confirmed "cancelled" status (not forced local state)
+- ✅ **SSE-safe**: SSE stream stays open during cancellation request for clean shutdown
+- ✅ **State aware**: button disabled when workflow already terminal (completed/failed/cancelled)
+- ✅ **Error handling**: shows error toast if cancellation request fails
+
+**Test Coverage:**
+- `StopAgentButton.test.tsx` - 4 test cases (button state, click handler, error display, confirm dialog)
+- `AgentWorkflowPage.test.tsx` - page-level integration test for stop button + SSE wiring
+- Backend unit tests - 5 tests covering orchestration + cancel + progress (all passing)
+
+**Actual User Flow:**
+1. User clicks "⏹ Stop Agent" button
+2. Confirmation dialog: "Stop running agent? This action cannot be undone."
+3. User confirms
+4. Button shows "⏳ Stopping..." and becomes disabled
+5. Frontend calls DELETE /api/v2/workflows/{id}
+6. Backend sets cancel flag; agents check and return early
+7. Backend emits "workflow_failed" SSE event with cancellation marker
+8. Frontend receives SSE event: `{ "status": "cancelled", "error": "Cancelled by user" }`
+9. `useWorkflowProgress` hook updates progress state to cancelled
+10. Button shows "⏹ Stop Agent" (disabled) with "Workflow cancelled" message below
+11. User can navigate away or generate new workflow
 // Provide user feedback
 toast.loading('Stopping agent...');
 

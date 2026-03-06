@@ -14,6 +14,7 @@ import { Layout } from '../components/layout/Layout';
 import {
   AgentWorkflowTrigger,
   AgentProgressPipeline,
+  AgentStatusMonitor,
   WorkflowResults,
   useWorkflowProgress,
 } from '../features/agent-workflow';
@@ -21,7 +22,16 @@ import {
 export function AgentWorkflowPage() {
   const [workflowId, setWorkflowId] = useState<string | null>(null);
 
-  const { status, progress, error } = useWorkflowProgress(workflowId);
+  const {
+    status,
+    progress,
+    error,
+    agentProgress,
+    currentAgent,
+    totalProgress,
+    isLoading,
+    cancel,
+  } = useWorkflowProgress(workflowId);
 
   const handleReset = () => {
     setWorkflowId(null);
@@ -47,11 +57,23 @@ export function AgentWorkflowPage() {
 
         {/* Step 2 — Progress (visible while a workflow is running or has just finished/failed) */}
         {workflowId && !isComplete && (
-          <AgentProgressPipeline
-            workflowStatus={status}
-            progress={progress}
-            error={error}
-          />
+          <div className="space-y-4">
+            <AgentProgressPipeline
+              workflowStatus={status}
+              progress={progress}
+              error={error}
+              onStop={cancel}
+            />
+
+            <AgentStatusMonitor
+              workflowStatus={status}
+              agentProgress={agentProgress}
+              currentAgent={currentAgent}
+              totalProgress={totalProgress}
+              isLoading={isLoading}
+              error={error}
+            />
+          </div>
         )}
 
         {/* Step 3 — Results (visible once the workflow completes successfully) */}
