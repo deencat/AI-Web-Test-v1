@@ -441,7 +441,11 @@ class ObservationAgent(BaseAgent):
         2. Extracts UI elements from all pages visited
         3. Stops when goal is reached (e.g., purchase confirmation)
         4. Returns elements from all pages in the flow
+        
+        10A.10 Enhancement: Supports configurable goal indicators via task payload.
         """
+        # 10A.10: Get custom goal indicators from task payload if provided
+        custom_goal_indicators = task.payload.get("goal_indicators", None)
         try:
             # Try to import browser-use
             try:
@@ -696,8 +700,8 @@ class ObservationAgent(BaseAgent):
             
             logger.info(f"Extracted {len(pages_data)} unique pages, {len(all_elements)} elements from browser-use history")
             
-            # Check if goal was reached
-            goal_reached = self._check_goal_reached(history, user_instruction)
+            # 10A.10: Check if goal was reached with enhanced indicators
+            goal_reached = self._check_goal_reached(history, user_instruction, custom_goal_indicators)
             
             # Build navigation flow
             navigation_flow = {
@@ -836,40 +840,136 @@ class ObservationAgent(BaseAgent):
             logger.error(f"Error creating browser-use LLM adapter: {e}", exc_info=True)
             return None
     
-    def _check_goal_reached(self, history, user_instruction: str) -> bool:
-        """Check if the goal from user_instruction was reached"""
-        # Simple heuristic: check if confirmation/success keywords appear
-        goal_keywords = ["confirmation", "success", "complete", "order", "thank you", "確認", "成功"]
-        instruction_lower = user_instruction.lower()
+    def _check_goal_reached(self, history, user_instruction: str, custom_indicators: List[str] = None) -> bool:
+        """
+        10A.10: Enhanced goal-oriented navigation with configurable indicators.
         
-        # Check if instruction mentions a specific goal
-        if any(keyword in instruction_lower for keyword in ["purchase", "buy", "訂購", "購買"]):
-            # Look for confirmation page - iterate directly over history (AgentHistoryList is iterable)
-            for history_item in history:
-                try:
-                    # Try different ways to access URL/title
-                    url_lower = ""
-                    title_lower = ""
-                    
-                    if hasattr(history_item, 'url'):
-                        url_lower = history_item.url.lower()
-                    elif hasattr(history_item, 'page_url'):
-                        url_lower = history_item.page_url.lower()
-                    elif isinstance(history_item, dict):
-                        url_lower = (history_item.get('url') or history_item.get('page_url') or '').lower()
-                    
-                    if hasattr(history_item, 'title'):
-                        title_lower = history_item.title.lower()
-                    elif isinstance(history_item, dict):
-                        title_lower = (history_item.get('title') or '').lower()
-                    
-                    if any(keyword in url_lower or keyword in title_lower for keyword in goal_keywords):
+        Check if the goal from user_instruction was reached by looking for
+        goal indicators in the page URL, title, or content.
+        
+        Args:
+            history: Browser-use history containing visited pages
+            user_instruction: User's instruction describing the goal
+            custom_indicators: Optional custom goal indicators to look for
+        
+        Returns:
+            True if goal appears to be reached, False otherwise
+        """
+        # Get goal indicators based on user instruction
+        goal_indicators = self._get_goal_indicators(user_instruction, custom_indicators)
+        
+        logger.debug(f"Checking goal with indicators: {goal_indicators}")
+        
+        # Check each history item for goal indicators
+        for history_item in history:
+            try:
+                # Extract URL and title from history item
+                url_lower = ""
+                title_lower = ""
+                content_lower = ""
+                
+                # Try different ways to access URL
+                if hasattr(history_item, 'url'):
+                    url_lower = history_item.url.lower()
+                elif hasattr(history_item, 'page_url'):
+                    url_lower = history_item.page_url.lower()
+                elif hasattr(history_item, 'state') and hasattr(history_item.state, 'url'):
+                    url_lower = history_item.state.url.lower()
+                elif isinstance(history_item, dict):
+                    url_lower = (history_item.get('url') or history_item.get('page_url') or '').lower()
+                
+                # Try different ways to access title
+                if hasattr(history_item, 'title'):
+                    title_lower = history_item.title.lower()
+                elif hasattr(history_item, 'state') and hasattr(history_item.state, 'title'):
+                    title_lower = history_item.state.title.lower()
+                elif isinstance(history_item, dict):
+                    title_lower = (history_item.get('title') or '').lower()
+                
+                # Try to access extracted content (from browser-use results)
+                if hasattr(history_item, 'result'):
+                    results = history_item.result if isinstance(history_item.result, list) else [history_item.result]
+                    for result in results:
+                        if hasattr(result, 'extracted_content') and result.extracted_content:
+                            content_lower += str(result.extracted_content).lower() + " "
+                
+                # Check if any goal indicator is found
+                combined_text = f"{url_lower} {title_lower} {content_lower}"
+                
+                for indicator in goal_indicators:
+                    if indicator.lower() in combined_text:
+                        logger.info(f"Goal indicator '{indicator}' found in: {url_lower[:50] or title_lower[:50]}")
                         return True
-                except Exception as e:
-                    logger.debug(f"Error checking goal in history item: {e}")
-                    continue
+                        
+            except Exception as e:
+                logger.debug(f"Error checking goal in history item: {e}")
+                continue
         
         return False
+    
+    def _get_goal_indicators(self, user_instruction: str, custom_indicators: List[str] = None) -> List[str]:
+        """
+        10A.10: Get goal indicators based on user instruction and goal type.
+        
+        Returns a list of keywords/phrases that indicate the goal has been reached.
+        """
+        # Start with custom indicators if provided
+        indicators = list(custom_indicators) if custom_indicators else []
+        
+        instruction_lower = user_instruction.lower()
+        
+        # Purchase/checkout flow indicators
+        if any(keyword in instruction_lower for keyword in ["purchase", "buy", "checkout", "order", "訂購", "購買"]):
+            indicators.extend([
+                "confirmation", "order confirmed", "order complete", "thank you for your order",
+                "order number", "order id", "order #", "payment successful", "payment confirmed",
+                "purchase complete", "checkout complete", "receipt", "invoice",
+                "確認", "成功", "訂單編號", "訂單確認", "付款成功"
+            ])
+        
+        # Registration/signup flow indicators
+        if any(keyword in instruction_lower for keyword in ["register", "signup", "sign up", "create account", "註冊"]):
+            indicators.extend([
+                "registration complete", "account created", "welcome", "verify your email",
+                "registration successful", "signup complete", "account activated",
+                "註冊成功", "帳戶已建立", "歡迎"
+            ])
+        
+        # Login flow indicators
+        if any(keyword in instruction_lower for keyword in ["login", "sign in", "log in", "登入"]):
+            indicators.extend([
+                "dashboard", "welcome back", "logged in", "my account", "profile",
+                "home", "登入成功", "歡迎回來"
+            ])
+        
+        # Form submission indicators
+        if any(keyword in instruction_lower for keyword in ["submit", "send", "contact", "inquiry", "提交"]):
+            indicators.extend([
+                "submitted", "sent", "received", "thank you", "we will contact you",
+                "message sent", "form submitted", "已提交", "已發送"
+            ])
+        
+        # Search flow indicators
+        if any(keyword in instruction_lower for keyword in ["search", "find", "搜尋", "查找"]):
+            indicators.extend([
+                "results", "found", "showing", "matches", "搜尋結果", "找到"
+            ])
+        
+        # Generic success indicators (always include)
+        indicators.extend([
+            "success", "complete", "done", "finished", "confirmed",
+            "成功", "完成", "確認"
+        ])
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_indicators = []
+        for indicator in indicators:
+            if indicator.lower() not in seen:
+                seen.add(indicator.lower())
+                unique_indicators.append(indicator)
+        
+        return unique_indicators
     
     async def _execute_stub_mode(self, task: TaskContext) -> TaskResult:
         """

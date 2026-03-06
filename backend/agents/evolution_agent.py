@@ -118,10 +118,20 @@ class EvolutionAgent(BaseAgent):
             user_instruction = task.payload.get("user_instruction", "")  # Get user instruction for goal-aware generation
             login_credentials = task.payload.get("login_credentials", {})  # Get login credentials if provided
             
+            # 10A.9: Dynamic URL crawling - get ObservationAgent reference if provided
+            observation_agent = task.payload.get("observation_agent")
+            enable_dynamic_crawling = task.payload.get("enable_dynamic_crawling", True)
+            
             # Get database session from config or task payload
             db_session = self.db or task.payload.get("db")
             
             logger.info(f"EvolutionAgent processing {len(scenarios)} scenarios (generation_id: {generation_id})")
+            
+            # 10A.9: Dynamic URL crawling - identify and crawl missing URLs
+            if enable_dynamic_crawling and observation_agent:
+                page_context = await self._crawl_missing_urls(
+                    scenarios, page_context, observation_agent, user_instruction, login_credentials
+                )
             
             if not scenarios:
                 return TaskResult(
@@ -1198,4 +1208,177 @@ Return JSON: {{"steps": ["step1", "step2", ...]}}"""
             recommendations.append("Performance is good - continue monitoring")
         
         return recommendations
+    
+    # =========================================================================
+    # 10A.9: Dynamic URL Crawling
+    # =========================================================================
+    
+    async def _crawl_missing_urls(
+        self,
+        scenarios: List[Dict],
+        page_context: Dict,
+        observation_agent,
+        user_instruction: str,
+        login_credentials: Dict
+    ) -> Dict:
+        """
+        10A.9: Dynamic URL crawling - identify URLs referenced in scenarios
+        but not yet observed, and request ObservationAgent to crawl them.
+        
+        This enables EvolutionAgent to generate more accurate test steps
+        by having complete page context for all URLs in the test flow.
+        """
+        # Identify missing URLs
+        missing_urls = self._identify_missing_urls(scenarios, page_context)
+        
+        if not missing_urls:
+            logger.debug("EvolutionAgent: No missing URLs to crawl")
+            return page_context
+        
+        logger.info(f"EvolutionAgent: Found {len(missing_urls)} missing URLs to crawl: {missing_urls}")
+        
+        # Import TaskContext for creating observation tasks
+        from agents.base_agent import TaskContext as AgentTaskContext
+        
+        # Crawl each missing URL
+        for url in missing_urls:
+            try:
+                logger.info(f"EvolutionAgent: Requesting ObservationAgent to crawl: {url}")
+                
+                observation_task = AgentTaskContext(
+                    task_id=f"dynamic-crawl-{uuid.uuid4()}",
+                    task_type="ui_element_extraction",
+                    payload={
+                        "url": url,
+                        "max_depth": 0,  # Only crawl this specific URL
+                        "user_instruction": user_instruction,
+                        "login_credentials": login_credentials
+                    },
+                    conversation_id=f"dynamic-crawl-conv-{uuid.uuid4()}"
+                )
+                
+                observation_result = await observation_agent.execute_task(observation_task)
+                
+                if observation_result.success:
+                    # Merge observed elements into page_context
+                    new_elements = observation_result.result.get("ui_elements", [])
+                    new_pages = observation_result.result.get("pages", [])
+                    
+                    # Add to existing page_context
+                    if "pages" not in page_context:
+                        page_context["pages"] = []
+                    if "ui_elements" not in page_context:
+                        page_context["ui_elements"] = []
+                    
+                    # Add new page data
+                    for page in new_pages:
+                        if page.get("url") not in [p.get("url") for p in page_context["pages"]]:
+                            page_context["pages"].append(page)
+                    
+                    # Add new elements
+                    page_context["ui_elements"].extend(new_elements)
+                    
+                    logger.info(f"EvolutionAgent: Added {len(new_elements)} elements from {url}")
+                else:
+                    logger.warning(f"EvolutionAgent: Failed to crawl {url}: {observation_result.error}")
+                    
+            except Exception as e:
+                logger.warning(f"EvolutionAgent: Error crawling {url}: {e}")
+                continue
+        
+        return page_context
+    
+    def _identify_missing_urls(
+        self,
+        scenarios: List[Dict],
+        page_context: Dict
+    ) -> List[str]:
+        """
+        Identify URLs referenced in scenarios but not yet observed.
+        
+        Extracts URLs from:
+        - Scenario Given/When/Then clauses
+        - Scenario metadata (target_url, redirect_url, etc.)
+        - Navigation steps mentioned in scenarios
+        """
+        # Get already observed URLs
+        observed_urls = set()
+        
+        # From page_context.pages
+        for page in page_context.get("pages", []):
+            if page.get("url"):
+                observed_urls.add(page["url"])
+        
+        # From page_context.url (primary URL)
+        if page_context.get("url"):
+            observed_urls.add(page_context["url"])
+        
+        # Extract URLs from scenarios
+        scenario_urls = set()
+        
+        for scenario in scenarios:
+            # Extract from Given/When/Then
+            for field in ["given", "when", "then"]:
+                text = scenario.get(field, "")
+                urls = self._extract_urls_from_text(text)
+                scenario_urls.update(urls)
+            
+            # Extract from metadata
+            metadata = scenario.get("metadata", {})
+            for key in ["target_url", "redirect_url", "navigation_url", "page_url"]:
+                if metadata.get(key):
+                    scenario_urls.add(metadata[key])
+            
+            # Extract from steps if present
+            steps = scenario.get("steps", [])
+            for step in steps:
+                if isinstance(step, str):
+                    urls = self._extract_urls_from_text(step)
+                    scenario_urls.update(urls)
+        
+        # Find missing URLs (in scenarios but not observed)
+        missing_urls = scenario_urls - observed_urls
+        
+        # Filter out invalid URLs and limit to reasonable number
+        valid_missing = []
+        for url in missing_urls:
+            if self._is_valid_crawlable_url(url):
+                valid_missing.append(url)
+        
+        # Limit to 5 URLs to avoid excessive crawling
+        return valid_missing[:5]
+    
+    def _extract_urls_from_text(self, text: str) -> List[str]:
+        """Extract URLs from text using regex"""
+        if not text:
+            return []
+        
+        # Match http/https URLs
+        url_pattern = r'https?://[^\s<>"\')\]]+[^\s<>"\')\].,;:!?]'
+        urls = re.findall(url_pattern, text)
+        
+        return urls
+    
+    def _is_valid_crawlable_url(self, url: str) -> bool:
+        """Check if URL is valid and crawlable"""
+        if not url:
+            return False
+        
+        # Must start with http/https
+        if not url.startswith(("http://", "https://")):
+            return False
+        
+        # Skip common non-crawlable patterns
+        skip_patterns = [
+            "/api/", "/static/", "/assets/", "/images/",
+            ".js", ".css", ".png", ".jpg", ".gif", ".svg",
+            "javascript:", "mailto:", "tel:", "#"
+        ]
+        
+        url_lower = url.lower()
+        for pattern in skip_patterns:
+            if pattern in url_lower:
+                return False
+        
+        return True
 
