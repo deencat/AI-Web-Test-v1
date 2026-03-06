@@ -1,11 +1,11 @@
 # Software Requirements Specification (SRS)  
 ## AI Web Test v1.0  
 
-**Version:** 2.1  
-**Date:** December 18, 2025  
-**Development Environment:** Python-based, On-Premises (Windows 11)  
-**Current Status:** Phase 1 MVP + Sprint 3 Enhancement - Integration Testing Complete  
-**Deployment:** Docker (planned), Native Windows (current)
+**Version:** 2.2  
+**Date:** March 3, 2026  
+**Development Environment:** Python-based, On-Premises (Linux/Windows 11)  
+**Current Status:** Phase 1 MVP + Sprint 3 Enhancement + 3-Tier Execution Engine Hardening - Complete  
+**Deployment:** Docker (planned), Native (current)
 
 ***
 
@@ -25,6 +25,19 @@
   - Persistent browser sessions with CSRF/session preservation
   - 7 debug API endpoints + 2 database tables
   - Real-time DevTools integration
+- **3-Tier Execution Engine Hardening** (March 2026)
+  - 3-tier execution architecture with configurable fallback strategies (A: T1→T2, B: T1→T3, C: T1→T2→T3) — ADR-002-1
+  - Stagehand `observe()` for XPath extraction in Tier 2, shared CDP browser context with Playwright — ADR-002-2
+  - PostgreSQL-backed XPath cache with self-healing (7-day TTL, SHA-256 keyed, automatic staleness invalidation) — ADR-002-3
+  - Context-aware payment gateway readiness waits (1.5s vs 8s by URL classification) — ADR-002-4
+  - `observe()` retry on loading-page and navigation-race conditions — ADR-002-5
+  - `<option>` XPath normalization for `<select>` actions — ADR-002-6
+  - Bounded post-click wait (removed unconditional 3s sleep + `networkidle` for nav buttons) — ADR-002-7
+  - Iframe container click fallback for embedded payment widgets — ADR-002-8
+  - Semantic field-type XPath cache validation (rejects email XPath for password steps, prevents same-URL cache collisions) — ADR-002-9
+  - Pre-click enabled state polling up to 8s (prevents clicking disabled buttons after fill steps) — ADR-002-10
+  - Azure LiteLLM native provider routing for all Stagehand init paths (`azure/<deployment>` + `AZURE_API_BASE`, clears `OPENAI_API_BASE`) — ADR-002-11
+  - See [ADR-002-test-execution-engine.md](ADR-002-test-execution-engine.md) for full decision records
 
 **Future Phases (📋 PLANNED):**
 - **Phase 2 (Weeks 9-14) - Learning Foundations:**

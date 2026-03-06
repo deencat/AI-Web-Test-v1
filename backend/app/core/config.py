@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     # Azure OpenAI (Company-provided)
     AZURE_OPENAI_API_KEY: str | None = None  # Company Azure OpenAI API key
     AZURE_OPENAI_ENDPOINT: str = "https://chatgpt-uat.openai.azure.com/openai/v1"
+    AZURE_OPENAI_API_VERSION: str = "2024-02-01"
     AZURE_OPENAI_MODEL: str = "ChatGPT-UAT"  # Deployment name
     
     # Model Provider Selection (new unified approach)
