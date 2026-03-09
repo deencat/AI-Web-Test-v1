@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from app.models.user_settings import UserSetting
-from app.schemas.user_settings import UserSettingCreate, UserSettingUpdate, AvailableProvider
+from app.schemas.user_settings import UserSettingCreate, UserSettingUpdate, AvailableProvider, ModelOption
 from app.core.config import settings
 
 
@@ -40,21 +40,29 @@ class UserSettingsService:
         },
         "openrouter": {
             "display_name": "OpenRouter",
+            # Sprint 10.5: verified $0/$0 free models from openrouter.ai/models
+            # ordered recommended-first; all paid/stale models removed.
             "models": [
-                "google/gemini-2.0-flash-exp:free",
-                "google/gemini-flash-1.5:free",
-                "meta-llama/llama-3.3-70b-instruct:free",
+                "qwen/qwen3-coder-480b-a35b:free",          # ⭐ recommended coder model
+                "meta-llama/llama-3.3-70b-instruct:free",   # 1.69B weekly tokens
+                "openai/gpt-oss-120b:free",
+                "openai/gpt-oss-20b:free",
+                "qwen/qwen3-next-80b-a3b-instruct:free",    # 262K ctx
+                "nvidia/nemotron-3-nano-30b-a3b:free",      # 256K ctx MoE
+                "google/gemma-3-27b:free",
+                "mistralai/mistral-small-3.1-24b-instruct:free",
+                "z-ai/glm-4.5-air:free",
+                "arcee-ai/trinity-mini:free",
+                "nvidia/nemotron-nano-9b-v2:free",          # lightweight 128K
+                "google/gemma-3-12b:free",
+                "google/gemma-3-4b:free",
+                "qwen/qwen3-4b:free",
                 "meta-llama/llama-3.2-3b-instruct:free",
-                "meta-llama/llama-3.2-1b-instruct:free",
-                "microsoft/phi-3-mini-128k-instruct:free",
-                "qwen/qwen-2-7b-instruct:free",
-                "mistralai/mixtral-8x7b-instruct",
-                "nousresearch/hermes-3-llama-3.1-405b:free",
-                "gpt-4o",
-                "claude-3-opus-20240229",
-                "claude-3-sonnet-20240229"
+                "nousresearch/hermes-3-llama-3.1-405b:free", # largest free model
+                "google/gemini-2.0-flash-exp:free",         # retain: existing recommended
+                "google/gemini-flash-1.5:free",             # retain: stable fallback
             ],
-            "recommended": "google/gemini-2.0-flash-exp:free",
+            "recommended": "qwen/qwen3-coder-480b-a35b:free",
             "api_key_env": "OPENROUTER_API_KEY"
         },
         "azure": {
@@ -80,13 +88,24 @@ class UserSettingsService:
             # Check if API key is configured
             api_key_env = config["api_key_env"]
             is_configured = bool(getattr(settings, api_key_env, None))
-            
+
+            # Build rich model_options list; free models detected by :free suffix
+            model_options = [
+                ModelOption(
+                    id=model_id,
+                    display_name=model_id,
+                    is_free=model_id.endswith(":free"),
+                )
+                for model_id in config["models"]
+            ]
+
             providers.append(AvailableProvider(
                 name=name,
                 display_name=config["display_name"],
                 is_configured=is_configured,
                 models=config["models"],
-                recommended_model=config["recommended"]
+                recommended_model=config["recommended"],
+                model_options=model_options,
             ))
         
         return providers

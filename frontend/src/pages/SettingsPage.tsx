@@ -7,7 +7,7 @@ import { FeedbackDataSync } from '../components/FeedbackDataSync';
 import { ExecutionSettingsPanel } from '../components/ExecutionSettingsPanel';
 import { TierAnalyticsPanel } from '../components/TierAnalyticsPanel';
 import settingsService from '../services/settingsService';
-import type { AvailableProvider, UserSettings, ExecutionSettingsUpdate } from '../types/api';
+import type { AvailableProvider, ModelOption, UserSettings, ExecutionSettingsUpdate } from '../types/api';
 
 export const SettingsPage: React.FC = () => {
   const [projectName, setProjectName] = useState('Agentic QA v1.0');
@@ -221,10 +221,29 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
-  // Get models for selected provider
+  // Get models for selected provider (legacy flat list)
   const getModelsForProvider = (providerName: string): string[] => {
     const provider = availableProviders.find(p => p.name === providerName);
     return provider?.models || [];
+  };
+
+  /**
+   * Sprint 10.5: Return rich ModelOption list for a provider.
+   * Prefers model_options from the API; falls back to constructing entries from
+   * the plain models list, using the :free suffix to detect free models.
+   */
+  const getModelOptionsForProvider = (providerName: string): ModelOption[] => {
+    const provider = availableProviders.find(p => p.name === providerName);
+    if (!provider) return [];
+    if (provider.model_options && provider.model_options.length > 0) {
+      return provider.model_options;
+    }
+    // Fallback: build from plain string list
+    return provider.models.map((id) => ({
+      id,
+      display_name: id,
+      is_free: id.endsWith(':free'),
+    }));
   };
 
   // Check if provider is configured
@@ -405,9 +424,29 @@ export const SettingsPage: React.FC = () => {
                 onChange={(e) => setGenerationModel(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
               >
-                {getModelsForProvider(generationProvider).map((model) => (
-                  <option key={model} value={model}>{model}</option>
-                ))}
+                {(() => {
+                  const opts = getModelOptionsForProvider(generationProvider);
+                  const free = opts.filter(m => m.is_free);
+                  const paid = opts.filter(m => !m.is_free);
+                  return (
+                    <>
+                      {free.length > 0 && (
+                        <optgroup label="🆓 Free Models ($0/M tokens)">
+                          {free.map(m => (
+                            <option key={m.id} value={m.id}>{m.display_name} (Free)</option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {paid.length > 0 && (
+                        <optgroup label="💰 Paid Models">
+                          {paid.map(m => (
+                            <option key={m.id} value={m.id}>{m.display_name}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </>
+                  );
+                })()}
               </select>
             </div>
 
@@ -505,9 +544,29 @@ export const SettingsPage: React.FC = () => {
                 onChange={(e) => setExecutionModel(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
               >
-                {getModelsForProvider(executionProvider).map((model) => (
-                  <option key={model} value={model}>{model}</option>
-                ))}
+                {(() => {
+                  const opts = getModelOptionsForProvider(executionProvider);
+                  const free = opts.filter(m => m.is_free);
+                  const paid = opts.filter(m => !m.is_free);
+                  return (
+                    <>
+                      {free.length > 0 && (
+                        <optgroup label="🆓 Free Models ($0/M tokens)">
+                          {free.map(m => (
+                            <option key={m.id} value={m.id}>{m.display_name} (Free)</option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {paid.length > 0 && (
+                        <optgroup label="💰 Paid Models">
+                          {paid.map(m => (
+                            <option key={m.id} value={m.id}>{m.display_name}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </>
+                  );
+                })()}
               </select>
             </div>
 

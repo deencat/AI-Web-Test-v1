@@ -4,6 +4,14 @@ from datetime import datetime
 from pydantic import BaseModel, Field, validator
 
 
+class ModelOption(BaseModel):
+    """A single model entry with metadata for free/paid grouping in the UI."""
+
+    id: str = Field(..., description="Model identifier (e.g. 'google/gemini-2.0-flash-exp:free')")
+    display_name: str = Field(..., description="Human-readable label shown in dropdowns")
+    is_free: bool = Field(..., description="True if the model is $0/M input and $0/M output")
+
+
 class UserSettingBase(BaseModel):
     """Base schema for user settings."""
     # Test Generation Configuration
@@ -85,11 +93,18 @@ class UserSettingInDB(UserSettingBase):
 
 class AvailableProvider(BaseModel):
     """Schema for available provider information."""
+
     name: str = Field(..., description="Provider name (google, cerebras, openrouter, azure)")
     display_name: str = Field(..., description="Display name for UI")
     is_configured: bool = Field(..., description="Whether API key is configured in backend")
-    models: list[str] = Field(..., description="Available models for this provider")
+    models: list[str] = Field(..., description="Available model IDs for this provider (legacy flat list)")
     recommended_model: Optional[str] = Field(None, description="Recommended model for this provider")
+    # Sprint 10.5: rich model list with free/paid metadata; ordered recommended-first.
+    # Backwards-compatible addition — old clients still read `models`.
+    model_options: list[ModelOption] = Field(
+        default_factory=list,
+        description="Rich model list with is_free flag and display names (Sprint 10.5+)",
+    )
 
 
 class AvailableProvidersResponse(BaseModel):

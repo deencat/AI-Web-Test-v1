@@ -265,12 +265,22 @@ export interface UpdateSettingsRequest {
 }
 
 // AI Provider Settings Types (Sprint 3 - Settings Page Dynamic Configuration)
+
+/** Sprint 10.5: Rich model metadata with free/paid flag for grouped dropdown UI. */
+export interface ModelOption {
+  id: string;
+  display_name: string;
+  is_free: boolean;
+}
+
 export interface AvailableProvider {
   name: string;
   display_name: string;
   is_configured: boolean;
   models: string[];
   recommended_model: string | null;
+  /** Sprint 10.5: present when backend >= 10.5; falls back to `models` otherwise. */
+  model_options?: ModelOption[];
 }
 
 export interface AvailableProvidersResponse {
