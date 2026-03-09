@@ -3,7 +3,7 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26)  
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · 📋 Sprint 10.5 Developer B PLANNED (OpenRouter Free Models + Batch Delete Tests, Mar 9-19)  
 **Last Updated:** February 10, 2026 (Alignment corrections applied)  
 **Version:** 3.0
 
@@ -1492,6 +1492,219 @@ frontend/src/features/agent-workflow/
 
 ---
 
+### Developer B Sprint 10.5: OpenRouter Free Models + Batch Delete Tests (Mar 9 - Mar 19, 2026)
+
+**Owner:** Developer B  
+**Status:** 📋 **PLANNED** — Fills Developer B gap between Sprint 10 completion (Feb 26) and Sprint 11 start (Mar 20)  
+**Branch:** `feature/sprint10-5-openrouter-models-batch-delete`  
+**Story Points:** 13 points / ~6 days
+
+**Background:**  
+Developer B's Sprint 10 tasks (10B.11 + 10B.12) are fully complete as of Feb 26. Before Sprint 11 begins March 20, these two product improvements are high-value, low-risk enhancements that improve usability for both settings management (free-tier users can now access 15+ $0 models) and test management (users with large test libraries can delete multiple tests in one action).
+
+---
+
+#### Feature 1: OpenRouter Free Models in Settings (7 points)
+
+**Goal:** Expand the OpenRouter model list in Settings → Test Case Generation and Settings → Test Execution to include all current models with $0/M input and $0/M output tokens from [openrouter.ai/models?order=pricing-low-to-high](https://openrouter.ai/models?order=pricing-low-to-high), and visually distinguish free models from paid ones in the dropdown.
+
+**Why:** Free-tier users need workable models without configuring paid API keys. Current free model list is stale (8 models, some inactive). Expanding to 19 verified $0/$0 models is a quick win that improves the new-user experience and enables zero-cost test generation out of the box.
+
+##### Phase 1: Backend — Expand Free Model List
+
+**Step 1: Update `PROVIDER_CONFIGS` in `user_settings_service.py`** *(File: `backend/app/services/user_settings_service.py`)*
+
+- **Action:** Replace the stale OpenRouter model list in `PROVIDER_CONFIGS["openrouter"]["models"]` with the verified list below (confirmed `$0/M input` and `$0/M output` on OpenRouter as of Mar 9 2026). Image-generation models (FLUX, Seedream, Riverflow) are excluded — only text/instruct/chat models are included. Move all paid models (no `:free` suffix, e.g. `gpt-4o`, `claude-3-*`) to the bottom of the list or remove them.
+- **Full verified free model list (`$0/$0`):**
+
+  | Model ID | Context | Notes |
+  |----------|---------|-------|
+  | `qwen/qwen3-coder-480b-a35b:free` | 262K | ⭐ **Recommended** — coder model, best for test generation |
+  | `meta-llama/llama-3.3-70b-instruct:free` | 128K | High weekly usage (1.69B tokens), very capable instruct |
+  | `openai/gpt-oss-120b:free` | 131K | Large OpenAI OSS model, strong reasoning |
+  | `openai/gpt-oss-20b:free` | 131K | Lighter OpenAI OSS model, fast |
+  | `qwen/qwen3-next-80b-a3b-instruct:free` | 262K | Large context, strong for long-form generation |
+  | `nvidia/nemotron-3-nano-30b-a3b:free` | 256K | 256K context, MoE architecture, fast |
+  | `google/gemma-3-27b:free` | 131K | Stable, widely available, 550M weekly tokens |
+  | `mistralai/mistral-small-3.1-24b-instruct:free` | 128K | Stable Mistral, 128K context |
+  | `z-ai/glm-4.5-air:free` | 131K | 57B weekly tokens — highly active |
+  | `arcee-ai/trinity-mini:free` | 131K | Compact frontier model from Arcee AI |
+  | `nvidia/nemotron-3-nano-30b-a3b:free` | 256K | 30B params, 3B active (MoE) |
+  | `nvidia/nemotron-nano-9b-v2:free` | 128K | Lightweight Nemotron, 128K context |
+  | `google/gemma-3-12b:free` | 32K | Smaller Gemma, fast inference |
+  | `google/gemma-3-4b:free` | 32K | Smallest Gemma, low latency |
+  | `qwen/qwen3-4b:free` | 40K | Compact Qwen3 for execution agent |
+  | `meta-llama/llama-3.2-3b-instruct:free` | 131K | Lightweight Llama for fast execution |
+  | `nousresearch/hermes-3-llama-3.1-405b:free` | 131K | Largest free model, best quality ceiling |
+  | `google/gemini-2.0-flash-exp:free` | — | Existing recommended model (retain) |
+  | `google/gemini-flash-1.5:free` | — | Existing stable fallback (retain) |
+
+- **Remove from list** (no longer free or stale): `qwen/qwen-2-7b-instruct:free`, all paid models (`gpt-4o`, `claude-3-*`)
+- **Update recommended model** to `qwen/qwen3-coder-480b-a35b:free` — purpose-built coder model, ideal for generating Playwright/Stagehand test code
+- **Dependencies:** None
+- **Risk:** Low — only adds entries to a static config dict
+
+**Step 2: Add `is_free` flag to `AvailableProvider` schema** *(File: `backend/app/schemas/user_settings.py`)*
+
+- **Action:** Add optional `is_free: bool` field to each model entry so the frontend can render a "(Free)" badge. Extend the model list from `List[str]` to `List[ModelOption]` where `ModelOption` has `id: str`, `display_name: str`, `is_free: bool`.
+- **Why:** Enables frontend to visually group and label free vs paid models without string parsing hacks.
+- **Risk:** Medium — schema change must be backwards-compatible; frontend must handle both old and new shape (use union type or keep `List[str]` as a computed property alongside `model_options`)
+- **Mitigation:** Add `model_options` as a **new** field alongside existing `models: List[str]`. Frontend reads `model_options` if present, falls back to `models`. Old callers unaffected.
+
+**Step 3: Unit tests** *(File: `backend/tests/unit/test_user_settings_service.py`)*
+
+- **Action:** Add test asserting all `:free` models have `is_free=True` in `model_options`; assert `get_available_providers()` returns at least 19 free OpenRouter models; assert `qwen/qwen3-coder-480b-a35b:free` is present as recommended
+- **Risk:** Low
+
+##### Phase 2: Frontend — Free Model UI
+
+**Step 4: Update model dropdown in `SettingsPage.tsx`** *(File: `frontend/src/pages/SettingsPage.tsx`)*
+
+- **Action:** Replace flat `<option>` list with grouped `<optgroup>` elements: **"Free Models ($0)"** group first, **"Paid Models"** group second. Each free model option shows `model-id (Free)` label. For paid models, show `model-id` only.
+- **Implementation pattern:**
+  ```tsx
+  <select>
+    <optgroup label="🆓 Free Models ($0/M tokens)">
+      {freeModels.map(m => <option key={m}>{m} (Free)</option>)}
+    </optgroup>
+    <optgroup label="💰 Paid Models">
+      {paidModels.map(m => <option key={m}>{m}</option>)}
+    </optgroup>
+  </select>
+  ```
+- **Logic:** Detect free models using `model_options[].is_free` from API, or fall back to `.endsWith(':free')` string check if new schema not yet deployed.
+- **Apply to:** Both Generation Provider model dropdown (line ~408) and Execution Provider model dropdown (line ~508).
+- **Dependencies:** Step 2 (schema), Step 1 (more models in list)
+- **Risk:** Low
+
+**Step 5: Frontend unit tests** *(File: `frontend/src/pages/SettingsPage.test.tsx` or existing test file)*
+
+- **Action:** Add test asserting free models are rendered under `"Free Models"` optgroup, paid models under `"Paid Models"` optgroup; assert `(Free)` label on free models
+- **Risk:** Low
+
+##### Implementation Order & File Map
+
+| Step | File | Owner | Effort |
+|------|------|-------|--------|
+| 1 | `backend/app/services/user_settings_service.py` | Dev B | 1 day |
+| 2 | `backend/app/schemas/user_settings.py` | Dev B | 0.5 day |
+| 3 | `backend/tests/unit/test_user_settings_service.py` | Dev B | 0.5 day |
+| 4 | `frontend/src/pages/SettingsPage.tsx` | Dev B | 0.5 day |
+| 5 | `frontend/src/pages/SettingsPage.test.tsx` | Dev B | 0.5 day |
+
+**Total Feature 1: 7 points / ~3 days**
+
+---
+
+#### Feature 2: Batch Delete Saved Tests UI (6 points)
+
+**Goal:** Allow users to select multiple saved tests on `SavedTestsPage` and delete them all in one action, instead of individually clicking delete per test.
+
+**Why:** Power users accumulate dozens of generated tests quickly. Individual deletion is tedious. A select-all + batch delete reduces a 5-minute cleanup to 10 seconds.
+
+**Current state:** `SavedTestsPage.tsx` has a single-item `deleteTest(id)` call with a `confirm()` dialog. No multi-select exists. The backend `testsService.deleteTest(id)` deletes one test by ID.
+
+##### Phase 1: Backend — Batch Delete Endpoint
+
+**Step 6: Add `DELETE /api/v1/test-cases/batch` endpoint** *(File: `backend/app/api/...` — whichever router handles test-case CRUD)*
+
+- **Action:** Accept `{ "ids": [1, 2, 3, ...] }` in request body. Delete all matching test cases that belong to the authenticated user. Return `{ "deleted": N, "failed": [] }`.
+- **Guardrails:** Validate ownership — only delete tests belonging to the requesting user. Cap batch size at 100 IDs per request to prevent abuse. Return 400 if `ids` is empty.
+- **Risk:** Medium — bulk delete is irreversible. Ownership check is critical to prevent cross-user deletion.
+- **Mitigation:** Filter by `WHERE id IN (:ids) AND user_id = :current_user_id` at DB level; log deletion audit trail.
+
+**Step 7: Add `batchDeleteTests(ids: number[])` to `testsService`** *(File: `frontend/src/services/testsService.ts` or equivalent)*
+
+- **Action:** Call `DELETE /api/v1/test-cases/batch` with the array of IDs. Handle partial-success response.
+- **Dependencies:** Step 6
+- **Risk:** Low
+
+**Step 8: Unit/integration tests for batch delete** *(File: `backend/tests/...`)*
+
+- **Action:** Test: deletes multiple IDs; rejects empty array; ownership guard prevents cross-user delete; respects 100-ID cap
+- **Risk:** Low
+
+##### Phase 2: Frontend — Multi-Select UI
+
+**Step 9: Add checkbox column and selection state to `SavedTestsPage.tsx`** *(File: `frontend/src/pages/SavedTestsPage.tsx`)*
+
+- **Action:**
+  1. Add `selectedIds: Set<number>` state
+  2. Add a checkbox column as the first column in the tests table header and each row
+  3. "Select All" / "Deselect All" toggle in the header checkbox
+  4. Individual row checkbox toggles membership in `selectedIds`
+  5. Add **"Delete Selected (N)"** button in the toolbar, only enabled when `selectedIds.size > 0`
+  6. Confirmation modal: `Are you sure you want to delete N tests? This cannot be undone.` with Cancel / Delete buttons (replace `confirm()` with a proper modal for consistency)
+  7. On confirm: call `batchDeleteTests([...selectedIds])`, show success toast `"N tests deleted"`, refresh list, clear selection
+
+- **UI placement:** Toolbar row above the test table, left-aligned next to existing filter/sort controls.
+- **Interaction rules:**
+  - Checking "Select All" selects all tests matching the current filter (not just visible page)
+  - Selecting 0 items: "Delete Selected" button is disabled and greyed out
+  - During delete: button shows spinner, checkboxes disabled
+  - After delete: refresh list, clear `selectedIds`
+
+- **Dependencies:** Step 7 (service method)
+- **Risk:** Low — additive UI change, does not modify existing single-delete flow
+
+**Step 10: Frontend tests for batch delete** *(File: `frontend/src/pages/SavedTestsPage.test.tsx` or new test file)*
+
+- **Action:** Test: checkbox selects individual item; Select All selects all; Delete Selected button disabled with 0 selection; calls `batchDeleteTests` with correct IDs on confirm; clears selection after success; shows error toast on partial failure
+- **Risk:** Low
+
+##### Implementation Order & File Map
+
+| Step | File | Owner | Effort |
+|------|------|-------|--------|
+| 6 | `backend/app/api/.../test_cases.py` | Dev B | 1 day |
+| 7 | `frontend/src/services/testsService.ts` | Dev B | 0.25 day |
+| 8 | `backend/tests/.../test_batch_delete.py` | Dev B | 0.5 day |
+| 9 | `frontend/src/pages/SavedTestsPage.tsx` | Dev B | 1 day |
+| 10 | `frontend/src/pages/SavedTestsPage.test.tsx` | Dev B | 0.25 day |
+
+**Total Feature 2: 6 points / ~3 days**
+
+---
+
+#### Sprint 10.5 Combined Task Table
+
+| Task | Description | Duration | Dependencies | Risk |
+|------|-------------|----------|--------------|------|
+| **10.5-B1** | Add 11 new free OpenRouter models to `PROVIDER_CONFIGS` | 1 day | None | Low |
+| **10.5-B2** | Add `ModelOption` schema with `is_free` field | 0.5 day | 10.5-B1 | Low |
+| **10.5-B3** | Backend unit tests (free models count assertion) | 0.5 day | 10.5-B2 | Low |
+| **10.5-B4** | Frontend: grouped `<optgroup>` model dropdowns with Free badge | 0.5 day | 10.5-B2 | Low |
+| **10.5-B5** | Frontend unit tests for model dropdown grouping | 0.5 day | 10.5-B4 | Low |
+| **10.5-B6** | Backend: `DELETE /api/v1/test-cases/batch` endpoint | 1 day | None | Medium |
+| **10.5-B7** | Frontend: `batchDeleteTests()` service method | 0.25 day | 10.5-B6 | Low |
+| **10.5-B8** | Backend integration tests for batch delete | 0.5 day | 10.5-B6 | Low |
+| **10.5-B9** | Frontend: checkbox multi-select + Delete Selected button in `SavedTestsPage` | 1 day | 10.5-B7 | Low |
+| **10.5-B10** | Frontend tests for batch delete UI | 0.25 day | 10.5-B9 | Low |
+
+**Total: 13 points / ~6 days**
+
+#### Sprint 10.5 Success Criteria
+
+- [ ] OpenRouter provider shows 19 free models in Settings dropdown for both Generation and Execution
+- [ ] Free models are visually grouped and labeled `(Free)` in the dropdown
+- [ ] Default recommended model is a working free model (no API key charges)
+- [ ] `DELETE /api/v1/test-cases/batch` accepts up to 100 IDs, validates ownership, returns count deleted
+- [ ] `SavedTestsPage` shows per-row checkboxes + Select All toggle + Delete Selected button
+- [ ] Batch delete shows confirmation modal before executing
+- [ ] Success toast confirms `"N tests deleted"` and refreshes the list
+- [ ] All new tests pass in CI (backend pytest + frontend Vitest)
+- [ ] No regression in existing single-delete or settings save flows
+
+#### Risks & Mitigations
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|-----------|--------|-----------|
+| Free OpenRouter models become unavailable/rate-limited | Medium | Low | Keep 3+ alternatives in list; existing fallback logic in `_build_openrouter_model_candidates()` already handles model unavailability |
+| Batch delete accidentally deletes wrong user's tests | Low | High | DB-level `WHERE user_id = current_user` filter on every delete |
+| Schema change (`ModelOption`) breaks existing frontend | Low | Medium | Additive-only change: keep `models: List[str]` alongside new `model_options` field |
+
+---
+
 ### Sprint 11: Autonomous Learning System Activation (Mar 20 - Apr 2, 2026)
 
 **Focus:** Achieve true autonomous self-improvement through automated learning mechanisms  
@@ -2331,13 +2544,14 @@ Blockers Requiring CTO Decision:
 
 ## 📚 Document Control
 
-**Document Version:** 2.8  
-**Last Updated:** February 9, 2026  
-**Next Review:** Sprint 10 start (Mar 6, 2026)  
+**Document Version:** 3.1  
+**Last Updated:** March 9, 2026  
+**Next Review:** Sprint 10.5 start (Mar 9, 2026)  
 **Document Owner:** Developer A (Project Manager)  
 **Approval:** CTO (Sponsor)
 
 **Change Log:**
+- v3.1 (Mar 9, 2026): Added Sprint 10.5 Developer B plan — OpenRouter Free Models (19 verified $0/$0 models from openrouter.ai/models, grouped dropdown UI, `qwen/qwen3-coder-480b-a35b:free` recommended) + Batch Delete Saved Tests (checkbox multi-select, batch endpoint, confirmation modal). 13 points / 6 days. Updated v3.1 (Mar 9, 2026 revision 2): Replaced stale model list with user-confirmed list from OpenRouter pricing page.
 - v2.6 (Feb 9, 2026): Sprint 9 completion - Feedback loop tested and verified, 4-agent E2E test passed, all 17 test cases generated successfully, feedback loop generating insights (70% pass rate, 2 insights). Updated test results and Sprint 9 status.
 - v2.5 (Feb 2, 2026): Sprint 8 completion - EvolutionAgent fully implemented, caching layer operational (100% hit rate), feedback loop infrastructure complete
 - v2.4 (Jan 29, 2026): Sprint 7 completion - AnalysisAgent fully implemented (46 points), real-time execution integrated, E2E testing validated, Agent Performance Scoring Framework designed
