@@ -199,6 +199,12 @@ class RequirementsAgent(BaseAgent):
             if execution_feedback:
                 logger.info("RequirementsAgent: Using execution feedback to improve scenario generation")
 
+            flow_steps = task.payload.get("flow_steps", [])
+            pages = task.payload.get("pages", [])
+            navigation_flow = task.payload.get("navigation_flow") or {}
+            if flow_steps:
+                logger.info(f"RequirementsAgent: Using observed flow from crawl ({len(flow_steps)} steps) for end-to-end scenario")
+
             include_functional = not scenario_types_filter or "functional" in scenario_types_filter
             include_accessibility = not scenario_types_filter or "accessibility" in scenario_types_filter
             include_security = not scenario_types_filter or "security" in scenario_types_filter
@@ -207,7 +213,8 @@ class RequirementsAgent(BaseAgent):
             functional_scenarios: List[Scenario] = []
             if include_functional:
                 functional_scenarios = await self._generate_functional_scenarios(
-                    user_journeys, element_groups, page_context, page_structure, user_instruction, execution_feedback
+                    user_journeys, element_groups, page_context, page_structure, user_instruction, execution_feedback,
+                    flow_steps=flow_steps, pages=pages, navigation_flow=navigation_flow
                 )
                 logger.info(f"RequirementsAgent: Generated {len(functional_scenarios)} functional scenarios")
             else:
@@ -497,9 +504,20 @@ class RequirementsAgent(BaseAgent):
                                              page_context: Dict,
                                              page_structure: Dict,
                                              user_instruction: str = "",
-                                             execution_feedback: Dict = {}) -> List[Scenario]:
-        """Generate functional test scenarios using LLM or patterns"""
+                                             execution_feedback: Dict = {},
+                                             flow_steps: Optional[List[Dict]] = None,
+                                             pages: Optional[List[Dict]] = None,
+                                             navigation_flow: Optional[Dict] = None) -> List[Scenario]:
+        """Generate functional test scenarios using LLM or patterns.
+        
+        When flow_steps/pages from ObservationAgent (browser-use crawl) are provided,
+        the LLM is instructed to generate at least one end-to-end scenario that follows
+        the observed flow to the user's goal (e.g. complete subscription to success page).
+        """
         scenarios = []
+        flow_steps = flow_steps or []
+        pages = pages or []
+        navigation_flow = navigation_flow or {}
         
         # Try LLM-based generation first if enabled
         if self.use_llm and self.llm_client:
@@ -510,7 +528,8 @@ class RequirementsAgent(BaseAgent):
                 ui_elements.extend(group_elements)
             
             llm_scenarios = await self._generate_scenarios_with_llm(
-                ui_elements, page_structure, page_context, user_instruction, execution_feedback
+                ui_elements, page_structure, page_context, user_instruction, execution_feedback,
+                flow_steps=flow_steps, pages=pages, navigation_flow=navigation_flow
             )
             
             if llm_scenarios:
@@ -872,16 +891,28 @@ class RequirementsAgent(BaseAgent):
                                            page_structure: Dict,
                                            page_context: Dict,
                                            user_instruction: str = "",
-                                           execution_feedback: Dict = {}) -> List[Scenario]:
-        """Generate high-quality test scenarios using LLM"""
+                                           execution_feedback: Dict = {},
+                                           flow_steps: Optional[List[Dict]] = None,
+                                           pages: Optional[List[Dict]] = None,
+                                           navigation_flow: Optional[Dict] = None) -> List[Scenario]:
+        """Generate high-quality test scenarios using LLM.
+        
+        When flow_steps from ObservationAgent crawl are provided, the prompt instructs
+        the LLM to generate at least one complete end-to-end scenario following that flow.
+        """
         if not self.llm_client or not self.llm_client.enabled:
             logger.warning("LLM not available, falling back to pattern-based generation")
             return []
         
+        flow_steps = flow_steps or []
+        pages = pages or []
+        navigation_flow = navigation_flow or {}
+        
         try:
             # Build prompt for LLM
             prompt = self._build_scenario_generation_prompt(
-                ui_elements, page_structure, page_context, user_instruction, execution_feedback
+                ui_elements, page_structure, page_context, user_instruction, execution_feedback,
+                flow_steps=flow_steps, pages=pages, navigation_flow=navigation_flow
             )
             
             # Call Azure OpenAI
@@ -993,8 +1024,19 @@ Always respond with valid JSON containing high-quality test scenarios."""
                                           page_structure: Dict,
                                           page_context: Dict,
                                           user_instruction: str = "",
-                                          execution_feedback: Dict = {}) -> str:
-        """Build prompt for LLM scenario generation"""
+                                          execution_feedback: Dict = {},
+                                          flow_steps: Optional[List[Dict]] = None,
+                                          pages: Optional[List[Dict]] = None,
+                                          navigation_flow: Optional[Dict] = None) -> str:
+        """Build prompt for LLM scenario generation.
+        
+        When flow_steps from ObservationAgent (browser-use) are provided, adds a section
+        so the LLM generates at least one end-to-end scenario following the observed flow.
+        """
+        flow_steps = flow_steps or []
+        pages = pages or []
+        navigation_flow = navigation_flow or {}
+        
         # Summarize UI elements
         element_summary = self._summarize_elements(ui_elements)
         
@@ -1018,6 +1060,32 @@ The user wants to test: "{user_instruction}"
    - Generate scenario: "Click on plan '5G寬頻數據無限任用', Select contract term, Verify price, Click subscribe button"
 4. **Include specific details** from the user requirement in the scenario
 5. **Mark matching scenarios** with tags like ["user-requirement", "priority-test"]
+6. **For login flows:** Describe in-page email/password login only (click Login → enter email → enter password → click Login). Do NOT describe Gmail, OAuth, or new-tab login unless the user explicitly asks for OTP or email verification.
+"""
+        
+        # Build observed crawl flow section when ObservationAgent passed flow_steps (browser-use)
+        observed_flow_section = ""
+        if flow_steps:
+            goal_reached = page_context.get("goal_reached", False)
+            steps_list = "\n".join(
+                f"  {s.get('order', i+1)}. [{s.get('action', '')}] {s.get('target', '')} (page: {s.get('page_title', '') or s.get('page_url', '')[:50]})"
+                for i, s in enumerate(flow_steps[:80])  # Cap at 80 steps
+            )
+            observed_flow_section = f"""
+**OBSERVED CRAWL FLOW (FROM BROWSER-USE – USE THIS FOR END-TO-END SCENARIO):**
+The ObservationAgent crawled the application and recorded the following flow. The user's goal is: "{user_instruction or 'complete the flow to success'}". Goal was reached: {goal_reached}.
+
+**Steps observed in order (follow this exact sequence for one complete scenario):**
+{steps_list}
+
+**CRITICAL:** Generate **at least one scenario** that describes this **full end-to-end flow** from start to finish:
+- **Given:** User is on the start page (or logged in if the flow includes login).
+- **When:** List ALL the key actions in order (navigate, click Login, input email, click Login, input password, click Login, select plan, click Next, acknowledge T&C, click Subscribe, confirm as many times as shown, upload document if in flow, fill HKID/personal details, fill payment, sign, checkout, pay) so that the test case can be executed by the 3-tier execution engine as one complete flow.
+- **Then:** User sees the success/subscription confirmation page (or the stated goal).
+
+**Login in the scenario:** Use only in-page email/password login (click Login → enter email → click Login → enter password → click Login). Do NOT include Gmail, OAuth, "Sign in with Google", or new-tab login unless the user instruction explicitly requires OTP or email verification.
+
+This scenario MUST be "critical" priority and tagged ["user-requirement", "end-to-end", "priority-test"]. Do not truncate the flow: include all confirmations, document upload, payment, and final pay step if they appear in the observed flow above.
 """
         
         # Build execution feedback section if provided
@@ -1054,22 +1122,24 @@ Previous test executions showed:
 **UI Elements Summary:**
 {element_summary}
 {user_instruction_section}
+{observed_flow_section}
 {feedback_section}
 **Requirements:**
 1. Generate 10-15 high-quality test scenarios
-2. **IF user requirement is provided above:** Generate at least one scenario that specifically matches it with "critical" priority
-3. Cover multiple scenario types:
+2. **IF "OBSERVED CRAWL FLOW" is present above:** Generate ONE scenario that is the complete end-to-end flow (all steps from start to success page) with "critical" priority. Then generate additional scenarios for other coverage.
+3. **IF user requirement is provided above:** Generate at least one scenario that specifically matches it with "critical" priority
+4. Cover multiple scenario types:
    - Functional: Core features and user workflows
    - Accessibility: WCAG 2.1 (keyboard navigation, screen readers, ARIA labels)
    - Security: OWASP Top 10 (input validation, XSS, CSRF)
    - Edge Cases: Boundary values, error handling
-4. Follow BDD Given/When/Then format
-5. **IMPORTANT**: The "when" clause should include MULTIPLE comma-separated actions for complex scenarios
+5. Follow BDD Given/When/Then format
+6. **IMPORTANT**: The "when" clause should include MULTIPLE comma-separated actions for complex scenarios
    - Example: "Click on plan 'Plan A', Select contract term '12 months', Verify price shows '$100', Click button 'Subscribe'"
    - Simple scenarios can have single actions, but complex workflows should have 3-5 actions
-6. Assign priorities: critical, high, medium, low
+7. Assign priorities: critical, high, medium, low
    - **Scenarios matching user requirement should be "critical" or "high"**
-7. Include confidence scores (0.0-1.0)
+8. Include confidence scores (0.0-1.0)
 
 **Required JSON Response Format:**
 {{

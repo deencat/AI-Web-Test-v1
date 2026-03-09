@@ -241,6 +241,9 @@ class OrchestrationService:
                 "ui_elements": ui_elements,
                 "page_structure": obs_data.get("page_structure", {}),
                 "page_context": obs_data.get("page_context", {}),
+                "pages": obs_data.get("pages", []),
+                "navigation_flow": obs_data.get("navigation_flow"),
+                "flow_steps": obs_data.get("flow_steps", []),
             }
             if "url" not in observation_data["page_context"]:
                 observation_data["page_context"]["url"] = url
@@ -333,6 +336,8 @@ class OrchestrationService:
                 "page_context": observation_data["page_context"],
                 "test_data": requirements_result.result.get("test_data", []),
                 "db": db,
+                "flow_steps": observation_data.get("flow_steps", []),
+                "pages": observation_data.get("pages", []),
             }
 
             def _evolution_progress(progress_data: Dict[str, Any]):
@@ -563,6 +568,9 @@ class OrchestrationService:
             "ui_elements": ui_elements,
             "page_structure": observation_result.get("page_structure", {}),
             "page_context": {**page_context, "url": url or page_context.get("url")},
+            "pages": observation_result.get("pages", []),
+            "navigation_flow": observation_result.get("navigation_flow"),
+            "flow_steps": observation_result.get("flow_steps", []),
         }
         if user_instruction:
             observation_data["user_instruction"] = user_instruction
@@ -787,6 +795,8 @@ class OrchestrationService:
             "page_context": page_context,
             "test_data": requirements_result.get("test_data", []),
             "db": db,
+            "flow_steps": observation_result.get("flow_steps", []),
+            "pages": observation_result.get("pages", []),
         }
         if user_instruction:
             evolution_payload["user_instruction"] = user_instruction

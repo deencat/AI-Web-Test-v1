@@ -527,14 +527,34 @@ class ObservationAgent(BaseAgent):
             logger.info(f"  URL: {url}")
             logger.info(f"  User Instruction: {user_instruction}")
             
+            # Prefer in-page login unless user explicitly needs OTP/Gmail (e.g. "OTP", "verify email", "gmail")
+            instruction_lower = (user_instruction or "").lower()
+            require_otp_handling = (
+                task.payload.get("require_otp", False)
+                or "otp" in instruction_lower
+                or "gmail" in instruction_lower
+                or "verify email" in instruction_lower
+                or "email verification" in instruction_lower
+            )
+            
             # Build task description for browser-use
             task_description = f"""
             Navigate to {url} and complete the following task:
             {user_instruction}
             
-            Extract UI elements from each page you visit during this flow.
-            Stop when you reach the confirmation/success page.
+            LOGIN METHOD (CRITICAL):
+            - Use ONLY the in-page login form: click Login, then enter email and password in the fields on the same page or in a popup on the same site.
+            - Do NOT click "Login with Gmail", "Sign in with Google", or any social/OAuth login button.
+            - Do NOT open new tabs or new windows for login. Stay on the same site.
+            - If the page shows both an email/password form and a Gmail/Google button, use ONLY the email/password form.
+            - Typical flow: Click "Login" → enter email in the email field → click Next/Login → enter password → click Login/Submit.
             
+            Extract UI elements from each page you visit during this flow.
+            Stop when you reach the confirmation/success page (or payment page if that is the end of the flow).
+            """
+            
+            if require_otp_handling:
+                task_description += """
             OTP VERIFICATION HANDLING:
             If you encounter OTP (One-Time Password) verification or email verification:
             1. Note the email address where the OTP will be sent (usually displayed on the OTP page)
@@ -557,45 +577,45 @@ class ObservationAgent(BaseAgent):
             - If you cannot find the OTP email, wait a few seconds and refresh Gmail, then try again.
             - The OTP code is usually valid for a limited time, so extract and enter it promptly.
             """
+            else:
+                logger.info("ObservationAgent: In-page login only (OTP/Gmail handling disabled for this run)")
             
             # Add login credentials if provided (API may send "username" or "email" for website login)
             if login_credentials:
                 email = login_credentials.get("email") or login_credentials.get("username", "")
                 password = login_credentials.get("password", "")
                 
-                # Determine Gmail credentials
-                # If gmail_credentials are explicitly provided, use those
-                # Otherwise, auto-strip "+" from email if present
-                if gmail_credentials and gmail_credentials.get("email") and gmail_credentials.get("password"):
-                    gmail_email = gmail_credentials.get("email", "")
-                    gmail_password = gmail_credentials.get("password", "")
-                    logger.info(f"ObservationAgent: Using explicit Gmail credentials: {gmail_email}")
-                else:
-                    # Fallback: Gmail ignores everything after "+" in email addresses
-                    # So if email is "user+tag@gmail.com", Gmail login uses "user@gmail.com"
-                    # But the target website uses the full email "user+tag@gmail.com"
-                    gmail_email = email
-                    if "+" in email:
-                        gmail_email = email.split("+")[0] + "@" + email.split("@")[1]
-                        logger.info(f"ObservationAgent: Email contains '+', using '{gmail_email}' for Gmail login (full '{email}' for target website)")
-                    gmail_password = password  # Use same password if not explicitly provided
-                
-                # NOTE: These credentials are embedded directly into the browser-use task description
-                # so the agent can actually type the correct values during login flows.
-                # Be careful not to expose these logs outside secure/local environments.
                 task_description += (
                     f"\n\nLogin credentials (SENSITIVE - use exactly as provided):"
                     f"\n- Target website email: {email}"
                     f"\n- Target website password: {password}"
                 )
                 task_description += (
-                    f"\n- Gmail login email: {gmail_email}"
-                    f"\n- Gmail login password: {gmail_password}"
+                    f"\n\nUse these credentials in the IN-PAGE login form only: enter the email in the email field, "
+                    f"then the password in the password field, then click Login/Submit. Do not use Gmail or open new tabs for login."
                 )
-                task_description += f"\n\nIMPORTANT EMAIL ADDRESS USAGE:\n"
-                task_description += f"1. For the target website login: Use email '{email}' with the provided password\n"
-                task_description += f"2. For Gmail login (to retrieve OTP): Use email '{gmail_email}' with the provided Gmail password\n"
-                task_description += f"3. These are SEPARATE credentials - use the correct email and password for each service"
+                
+                if require_otp_handling:
+                    # Determine Gmail credentials for OTP retrieval only when OTP handling is enabled
+                    if gmail_credentials and gmail_credentials.get("email") and gmail_credentials.get("password"):
+                        gmail_email = gmail_credentials.get("email", "")
+                        gmail_password = gmail_credentials.get("password", "")
+                        logger.info(f"ObservationAgent: Using explicit Gmail credentials for OTP: {gmail_email}")
+                    else:
+                        gmail_email = email
+                        if "+" in email:
+                            gmail_email = email.split("+")[0] + "@" + email.split("@")[1]
+                            logger.info(f"ObservationAgent: Email contains '+', using '{gmail_email}' for Gmail (OTP only)")
+                        gmail_password = password
+                    
+                    task_description += (
+                        f"\n- Gmail login email (for OTP only): {gmail_email}"
+                        f"\n- Gmail login password (for OTP only): {gmail_password}"
+                    )
+                    task_description += (
+                        f"\n\nIf the site requires OTP verification: open Gmail in a new tab, log in with the Gmail credentials above, "
+                        f"retrieve the OTP, then switch back and enter it. Otherwise do not use Gmail."
+                    )
             
             # Create LLM adapter for browser-use (use Azure OpenAI)
             # Note: browser-use expects a specific LLM interface, we'll need to adapt
@@ -610,7 +630,10 @@ class ObservationAgent(BaseAgent):
             # Default: 10 minutes (600 seconds) for full flow including OTP verification
             max_flow_timeout = self.config.get("max_flow_timeout_seconds", 600)
             logger.info(f"ObservationAgent: Running browser-use agent to navigate flow (max {max_flow_timeout}s, {self.max_browser_steps} steps)...")
-            logger.info(f"ObservationAgent: Agent will navigate to Gmail if OTP verification is required")
+            if require_otp_handling:
+                logger.info("ObservationAgent: Agent may navigate to Gmail if OTP verification is required")
+            else:
+                logger.info("ObservationAgent: In-page login only; Gmail/OTP steps disabled")
 
             if callable(progress_callback):
                 progress_callback({
@@ -720,6 +743,7 @@ class ObservationAgent(BaseAgent):
             history_items = history.history if hasattr(history, 'history') else list(history)
             logger.debug(f"History contains {len(history_items)} steps")
             
+            flow_steps = []  # Ordered list of actions taken during crawl for RequirementsAgent
             for idx, history_item in enumerate(history_items):
                 try:
                     # Extract URL and title from history_item.state (BrowserStateHistory)
@@ -752,6 +776,37 @@ class ObservationAgent(BaseAgent):
                         ax_name = getattr(elem, 'ax_name', '') or ''
                         node_value = getattr(elem, 'node_value', '') or ''
                         x_path = getattr(elem, 'x_path', '') or ''
+                        
+                        # Build one flow step for RequirementsAgent (ordered crawl actions)
+                        step_text = ax_name or node_value or attrs.get('aria-label', '') or attrs.get('title', '') or node_name
+                        if node_name == 'input':
+                            flow_steps.append({
+                                "order": len(flow_steps) + 1,
+                                "action": "input",
+                                "target": step_text[:200] if step_text else "input field",
+                                "page_url": page_url,
+                                "page_title": page_title or "",
+                                "element_type": node_name,
+                                "input_type": attrs.get("type", "text"),
+                            })
+                        elif node_name in ('button', 'a') or attrs.get('role') in ('button', 'link'):
+                            flow_steps.append({
+                                "order": len(flow_steps) + 1,
+                                "action": "click",
+                                "target": step_text[:200] if step_text else node_name,
+                                "page_url": page_url,
+                                "page_title": page_title or "",
+                                "element_type": node_name,
+                            })
+                        else:
+                            flow_steps.append({
+                                "order": len(flow_steps) + 1,
+                                "action": "click",
+                                "target": step_text[:200] if step_text else node_name,
+                                "page_url": page_url,
+                                "page_title": page_title or "",
+                                "element_type": node_name,
+                            })
                         
                         # Determine element type from tag name and attributes
                         elem_type = 'custom'
@@ -831,6 +886,19 @@ class ObservationAgent(BaseAgent):
             
             logger.info(f"Extracted {len(pages_data)} unique pages, {len(all_elements)} elements from browser-use history")
             
+            # Prepend initial navigate step if we have a start URL
+            if url and not any(s.get("action") == "navigate" for s in flow_steps):
+                flow_steps.insert(0, {
+                    "order": 1,
+                    "action": "navigate",
+                    "target": url,
+                    "page_url": url,
+                    "page_title": pages_data[0]["title"] if pages_data else "",
+                    "element_type": "navigate",
+                })
+                for i in range(1, len(flow_steps)):
+                    flow_steps[i]["order"] = i + 1
+            
             # 10A.10: Check if goal was reached with enhanced indicators
             goal_reached = self._check_goal_reached(history, user_instruction, custom_goal_indicators)
             
@@ -862,6 +930,7 @@ class ObservationAgent(BaseAgent):
                 "ui_elements": all_elements,
                 "forms": all_forms,
                 "navigation_flow": navigation_flow,
+                "flow_steps": flow_steps,
                 "page_context": {
                     "url": url,
                     "title": pages_data[0]["title"] if pages_data else "",
@@ -869,7 +938,9 @@ class ObservationAgent(BaseAgent):
                         "total_pages": len(pages_data),
                         "total_elements": len(all_elements),
                         "total_forms": len(all_forms)
-                    }
+                    },
+                    "goal_reached": goal_reached,
+                    "flow_steps_count": len(flow_steps),
                 },
                 "llm_analysis": {
                     "used": True,

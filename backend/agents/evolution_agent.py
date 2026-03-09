@@ -117,6 +117,7 @@ class EvolutionAgent(BaseAgent):
             test_data = task.payload.get("test_data", [])
             user_instruction = task.payload.get("user_instruction", "")  # Get user instruction for goal-aware generation
             login_credentials = task.payload.get("login_credentials", {})  # Get login credentials if provided
+            flow_steps = task.payload.get("flow_steps", [])  # Observed crawl steps from ObservationAgent (browser-use)
             progress_callback = task.payload.get("progress_callback")
             cancel_check = task.payload.get("cancel_check")
             
@@ -147,6 +148,7 @@ class EvolutionAgent(BaseAgent):
             # Generate test steps for each scenario
             generated_test_cases = []
             total_tokens = 0
+            flow_steps_used_for_scenario = False  # Use flow_steps only for first end-to-end scenario
 
             def _emit_progress(progress: float, message: str, **extra: Any) -> None:
                 if not callable(progress_callback):
@@ -202,15 +204,26 @@ class EvolutionAgent(BaseAgent):
                     continue
                 
                 # Generate test steps using LLM or template
-                logger.debug(f"EvolutionAgent: Generating steps for scenario {scenario_id} using {'LLM' if (self.use_llm and self.llm_client) else 'template'}")
-                if self.use_llm and self.llm_client:
-                    steps_result = await self._generate_test_steps_with_llm(
-                        scenario, risk_scores, prioritization, page_context, test_data, user_instruction, login_credentials
-                    )
-                else:
-                    steps_result = self._generate_test_steps_from_template(
-                        scenario, page_context
-                    )
+                # When we have observed flow_steps and this scenario is the end-to-end one, use flow_steps so steps match the crawl (no Gmail/login hallucination)
+                scenario_tags = scenario.get("tags") or []
+                is_end_to_end = ("end-to-end" in scenario_tags or "user-requirement" in scenario_tags)
+                steps_result = None
+                if flow_steps and not flow_steps_used_for_scenario and is_end_to_end:
+                    steps_result = self._flow_steps_to_test_steps(flow_steps, page_context, login_credentials)
+                    if steps_result and steps_result.get("steps"):
+                        flow_steps_used_for_scenario = True
+                        logger.info(f"EvolutionAgent: Using observed flow_steps for end-to-end scenario {scenario_id} ({len(steps_result['steps'])} steps)")
+                
+                if not steps_result:
+                    logger.debug(f"EvolutionAgent: Generating steps for scenario {scenario_id} using {'LLM' if (self.use_llm and self.llm_client) else 'template'}")
+                    if self.use_llm and self.llm_client:
+                        steps_result = await self._generate_test_steps_with_llm(
+                            scenario, risk_scores, prioritization, page_context, test_data, user_instruction, login_credentials
+                        )
+                    else:
+                        steps_result = self._generate_test_steps_from_template(
+                            scenario, page_context
+                        )
                 
                 if steps_result:
                     steps_count = len(steps_result.get("steps", []))
@@ -512,29 +525,30 @@ class EvolutionAgent(BaseAgent):
         completion_criteria = self._get_completion_criteria_for_goal(goal)
         
         # Build login credentials section if provided
+        # Phase 2 / 3-tier test cases store credentials in the step text; agent does the same when credentials are provided.
         login_section = ""
         if login_credentials and login_credentials.get("email") and login_credentials.get("password"):
             login_email = login_credentials.get("email", "")
             login_password = login_credentials.get("password", "")
             login_section = f"""
-**LOGIN CREDENTIALS PROVIDED:**
-- **Email:** {login_email}
-- **Password:** {login_credentials.get("password", "")[:3]}*** (masked for security)
+**LOGIN CREDENTIALS (embed in steps exactly like Phase 2 test cases):**
+- **Email (use exactly in steps):** {login_email}
+- **Password (use exactly in steps):** {login_password}
 
 **CRITICAL: Login Requirements:**
-1. **If the flow requires login** (e.g., purchase flow, checkout, account access), include login steps BEFORE the main flow
-2. **Login steps should be:**
-   - Navigate to login page (if not already on it)
-   - Enter email: {login_email}
-   - Enter password: {login_password}
-   - Click Login/Submit button
-   - Verify successful login (e.g., URL changes, user menu appears, welcome message)
-3. **Place login steps BEFORE** the main flow steps (e.g., before plan selection in purchase flow)
-4. **If login is required for the goal**, ensure login is completed before proceeding with the main flow
+1. **If the flow requires login**, include login steps BEFORE the main flow and use the credentials above **literally in the step text** (e.g. "Input '{login_email}' into email field", "Input '<password>' into password field" with the actual password).
+2. **Use ONLY in-page email/password login:** Enter email in the email field, then password in the password field, then click Login/Submit. Do NOT generate steps for Gmail, "Sign in with Google", OAuth, new-tab login, or switching tabs.
+3. **Login steps must contain the actual values** so the test case is executable as-is (same as Phase 2 - 3 tier test execution). Example: "Input 'pmo.andrewchan+010@gmail.com' into email field", "Input 'cA8mn49&' into password field".
+4. **Place login steps BEFORE** the main flow steps (e.g., before plan selection in purchase flow).
 
 **Example for "Complete purchase flow" with login:**
-- Steps should be: Navigate to login page → Login with provided credentials → Verify login success → Navigate to plan page → Select plan → Continue with purchase flow
-
+- "Navigate to https://example.com/postpaid/en"
+- "Click 'Login'"
+- "Input '{login_email}' into email field"
+- "Click 'Login'"
+- "Input '{login_password}' into password field"
+- "Click 'Login'"
+- Then continue with plan selection, etc. (no Gmail, no new tabs)
 """
         
         # Build goal-aware section if goal is identified
@@ -587,18 +601,22 @@ Then: {then}
 5. Use natural language that can be executed by a test automation engine
 6. Be specific with selectors and values where applicable
 7. **IMPORTANT:** Generate steps until the goal is TRULY achieved (see Goal-Aware section above if provided)
+8. **LOGIN:** Use only in-page email and password fields. Do NOT generate steps for Gmail, OAuth, "Sign in with Google", new-tab login, or switching tabs for login.
 
 **Output Format:**
-Return a JSON object with a "steps" array:
+Return a JSON object with a "steps" array. Steps must include actual credential values when login is required (same as Phase 2 test cases):
 {{
   "steps": [
     "Navigate to {url}",
-    "Enter email: test@example.com",
-    "Enter password: password123",
-    "Click Login button",
+    "Click 'Login'",
+    "Input '<email>' into email field",
+    "Click 'Login'",
+    "Input '<password>' into password field",
+    "Click 'Login'",
     "Verify URL contains /dashboard"
   ]
 }}
+Use the actual email and password from the LOGIN CREDENTIALS section above in the steps (not placeholders).
 
 **Example Steps:**
 - Navigation: "Navigate to https://example.com/login"
@@ -736,6 +754,54 @@ Pattern: {pattern_hint}{goal_note}{login_note}
 Return JSON: {{"steps": ["step1", "step2", ...]}}"""
         
         return prompt
+    
+    def _flow_steps_to_test_steps(
+        self,
+        flow_steps: List[Dict],
+        page_context: Dict,
+        login_credentials: Dict,
+    ) -> Optional[Dict]:
+        """
+        Convert observed crawl flow_steps (from ObservationAgent browser-use) into Phase 2 test step strings.
+        Uses login_credentials for email/password inputs when provided; otherwise placeholders.
+        This ensures the generated test follows the exact path observed (e.g. in-page login, not Gmail).
+        """
+        if not flow_steps:
+            return None
+        steps = []
+        login_email = (login_credentials.get("email") or login_credentials.get("username") or "").strip()
+        login_password = (login_credentials.get("password") or "").strip()
+        # Sort by order
+        ordered = sorted(flow_steps, key=lambda s: s.get("order", 999))
+        for s in ordered:
+            action = (s.get("action") or "").lower()
+            target = (s.get("target") or "").strip()
+            element_type = (s.get("element_type") or "").lower()
+            input_type = (s.get("input_type") or "text").lower()
+            if action == "navigate":
+                steps.append(f"Navigate to {target}" if target else "Navigate to start URL")
+            elif action == "click":
+                steps.append(f"Click '{target}'" if target else "Click the button/link")
+            elif action == "input":
+                if "password" in target.lower() or input_type == "password" or element_type == "password":
+                    value = login_password if login_password else "[user's password]"
+                elif any(k in target.lower() for k in ("email", "username", "e-mail", "account")):
+                    value = login_email if login_email else "[user's email]"
+                else:
+                    value = "[value]"
+                steps.append(f"Input '{value}' into {target}" if target else f"Input '{value}' into input field")
+            else:
+                if target:
+                    steps.append(f"{action.capitalize()} '{target}'")
+                else:
+                    steps.append(action.capitalize())
+        if not steps:
+            return None
+        return {
+            "steps": steps,
+            "confidence": 0.92,
+            "tokens_used": 0,
+        }
     
     def _generate_test_steps_from_template(
         self,
