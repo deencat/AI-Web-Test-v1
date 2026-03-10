@@ -76,11 +76,49 @@ gmail_credentials?: {
 
 ## 4. Implementation Checklist
 
-- [ ] Add state: `loginEmail`, `loginPassword`, `gmailEmail`, `gmailPassword` in `AgentWorkflowTrigger.tsx`.
-- [ ] Add **Login credentials (website):** two inputs (email, password). On submit: if both non-empty → `request.login_credentials = { email: loginEmail.trim(), password: loginPassword }`; else omit.
-- [ ] Add **Gmail credentials (for OTP):** two inputs (Gmail email, Gmail password). On submit: if both non-empty → `request.gmail_credentials = { email: gmailEmail.trim(), password: gmailPassword }`; else omit.
-- [ ] Keep existing `url`, `depth`, `user_instruction` behavior.
-- [ ] Add/update unit tests: request includes `login_credentials` when website email+password filled; includes `gmail_credentials` when Gmail email+password filled; omits each when the corresponding fields are empty.
+- [x] Add state: `loginEmail`, `loginPassword`, `gmailEmail`, `gmailPassword` in `AgentWorkflowTrigger.tsx`.
+- [x] Add **Login credentials (website):** two inputs (email, password). On submit: if both non-empty → `request.login_credentials = { email: loginEmail.trim(), password: loginPassword }`; else omit.
+- [x] Add **Gmail credentials (for OTP):** two inputs (Gmail email, Gmail password). On submit: if both non-empty → `request.gmail_credentials = { email: gmailEmail.trim(), password: gmailPassword }`; else omit.
+- [x] Keep existing `url`, `depth`, `user_instruction` behavior.
+- [x] Add/update unit tests: request includes `login_credentials` when website email+password filled; includes `gmail_credentials` when Gmail email+password filled; omits each when the corresponding fields are empty.
+
+---
+
+## ✅ COMPLETED — Implementation Summary (Developer B)
+
+**Branch:** `feature/credentials-agent-workflow`  
+**Merged to:** `origin/main`  
+**Commit:** Fast-forward merge, 230 insertions (+91 lines component, +139 lines tests)
+
+### What was implemented:
+
+**Component** (`AgentWorkflowTrigger.tsx`):
+- Added 4 state variables: `loginEmail`, `loginPassword`, `gmailEmail`, `gmailPassword`
+- **Login credentials section** (fieldset after Instructions):
+  - Legend: "Login credentials (website, optional)"
+  - Hint: "Required for flows that need login. Used to generate steps with real email/password (same as Phase 2)."
+  - Two inputs: "Login email" (text, placeholder `e.g. user@example.com`) and "Password" (`type="password"`)
+  - Sends `login_credentials: { email, password }` only when both fields non-empty; email trimmed
+- **Gmail credentials section** (fieldset after Login credentials, before Crawl depth):
+  - Legend: "Gmail credentials (for OTP, optional)"
+  - Hint: "Only if the flow uses OTP or email verification and the agent should retrieve the code from Gmail."
+  - Two inputs: "Gmail email" (text, placeholder `e.g. user@gmail.com`) and "Gmail password" (`type="password"`)
+  - Sends `gmail_credentials: { email, password }` only when both fields non-empty; email trimmed
+- All password fields use `type="password"`
+- All inputs have `data-testid` attributes for testing
+
+**Tests** (`AgentWorkflowTrigger.test.tsx`):
+- 9 new test cases covering:
+  - Renders login credential fields
+  - Includes `login_credentials` when website email + password filled
+  - Omits `login_credentials` when email empty
+  - Omits `login_credentials` when password empty
+  - Renders Gmail credential fields
+  - Includes `gmail_credentials` when Gmail email + password filled
+  - Omits `gmail_credentials` when Gmail email empty
+  - Omits `gmail_credentials` when Gmail password empty
+  - Includes both credential blocks when all fields filled
+- **All 15 tests pass** (6 existing + 9 new)
 
 ---
 
@@ -151,7 +189,7 @@ Add two credential sections to the Agent Workflow form in frontend/src/features/
 
 ---
 
-**Document owner:** Developer A  
+**Document owner:** Developer A | **Implementation:** Developer B ✅  
 **Backend:** No changes required.  
-**Frontend:** AgentWorkflowTrigger + tests only.  
+**Frontend:** AgentWorkflowTrigger + tests — ✅ COMPLETE  
 **Summary:** Login credentials = must for workable test cases with real values; Gmail credentials = only when the flow uses OTP and the agent should read the code from Gmail.
