@@ -322,6 +322,16 @@ asyncio.sleep(0.4)                              # replaced: was 3.0s uncondition
 
 **`is_navigation_button`** classification: instruction contains any of: `next`, `continue`, `submit`, `proceed`, `confirm`, `checkout`, `payment`, `pay`.
 
+**Auth popup/page-transition extension:**
+- Click classification also inspects the step instruction and clicked element text for `login`, `log in`, `sign in`, `sign-in`, `signin`, `authenticate`.
+- For auth submission clicks, the executor performs a bounded popup/page readiness wait before advancing:
+    1. wait briefly for the clicked control to become hidden when the login modal is expected to close,
+    2. wait for a short `networkidle` window,
+    3. wait for common loading/spinner/overlay selectors to disappear,
+    4. apply a final 0.4s bounded settle.
+
+This covers same-URL popup login flows where the DOM updates asynchronously after authentication but the browser does not perform a full navigation.
+
 **Payment field wait after navigation button:**  
 Single `page.wait_for_selector(combined_css, state="visible")` call (from ADR-002-4) with bounded timeout, replacing the sequential 10-probe loop.
 
@@ -333,6 +343,7 @@ Single `page.wait_for_selector(combined_css, state="visible")` call (from ADR-00
 - Post-click time for navigation buttons reduced from 83s to ~1–3s typical.
 - `networkidle` is not waited for navigation buttons — eliminates the longest waits (SPA route changes never reach `networkidle`).
 - 0.4s sleep is bounded and explained; 3.0s was unconditional and unexplained.
+- Popup login/auth transitions no longer race the next step when the URL stays unchanged.
 
 **Negative**
 - 0.4s may be insufficient for very slow backend pages that trigger a cascade of XHR requests. Monitoring required.
