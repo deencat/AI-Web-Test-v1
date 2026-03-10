@@ -101,4 +101,143 @@ describe('AgentWorkflowTrigger', () => {
       expect(screen.getByTestId('submit-error')).toHaveTextContent('Server error');
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Login credentials (website)
+  // ---------------------------------------------------------------------------
+
+  it('renders login credential fields', () => {
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+    expect(screen.getByTestId('login-email-input')).toBeInTheDocument();
+    expect(screen.getByTestId('login-password-input')).toBeInTheDocument();
+    expect(screen.getByTestId('login-password-input')).toHaveAttribute('type', 'password');
+  });
+
+  it('includes login_credentials when website email and password are both filled', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await user.type(screen.getByTestId('url-input'), 'https://example.com');
+    await user.type(screen.getByTestId('login-email-input'), 'user@example.com');
+    await user.type(screen.getByTestId('login-password-input'), 'secret123');
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.objectContaining({
+          login_credentials: { email: 'user@example.com', password: 'secret123' },
+        })
+      );
+    });
+  });
+
+  it('omits login_credentials when login email is empty', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await user.type(screen.getByTestId('url-input'), 'https://example.com');
+    await user.type(screen.getByTestId('login-password-input'), 'secret123');
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.not.objectContaining({ login_credentials: expect.anything() })
+      );
+    });
+  });
+
+  it('omits login_credentials when login password is empty', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await user.type(screen.getByTestId('url-input'), 'https://example.com');
+    await user.type(screen.getByTestId('login-email-input'), 'user@example.com');
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.not.objectContaining({ login_credentials: expect.anything() })
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Gmail credentials (for OTP)
+  // ---------------------------------------------------------------------------
+
+  it('renders Gmail credential fields', () => {
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+    expect(screen.getByTestId('gmail-email-input')).toBeInTheDocument();
+    expect(screen.getByTestId('gmail-password-input')).toBeInTheDocument();
+    expect(screen.getByTestId('gmail-password-input')).toHaveAttribute('type', 'password');
+  });
+
+  it('includes gmail_credentials when Gmail email and password are both filled', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await user.type(screen.getByTestId('url-input'), 'https://example.com');
+    await user.type(screen.getByTestId('gmail-email-input'), 'user@gmail.com');
+    await user.type(screen.getByTestId('gmail-password-input'), 'gmailpass');
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.objectContaining({
+          gmail_credentials: { email: 'user@gmail.com', password: 'gmailpass' },
+        })
+      );
+    });
+  });
+
+  it('omits gmail_credentials when Gmail email is empty', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await user.type(screen.getByTestId('url-input'), 'https://example.com');
+    await user.type(screen.getByTestId('gmail-password-input'), 'gmailpass');
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.not.objectContaining({ gmail_credentials: expect.anything() })
+      );
+    });
+  });
+
+  it('omits gmail_credentials when Gmail password is empty', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await user.type(screen.getByTestId('url-input'), 'https://example.com');
+    await user.type(screen.getByTestId('gmail-email-input'), 'user@gmail.com');
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.not.objectContaining({ gmail_credentials: expect.anything() })
+      );
+    });
+  });
+
+  it('includes both login_credentials and gmail_credentials when all credential fields are filled', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await user.type(screen.getByTestId('url-input'), 'https://example.com');
+    await user.type(screen.getByTestId('login-email-input'), 'user@example.com');
+    await user.type(screen.getByTestId('login-password-input'), 'websitepass');
+    await user.type(screen.getByTestId('gmail-email-input'), 'user@gmail.com');
+    await user.type(screen.getByTestId('gmail-password-input'), 'gmailpass');
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.objectContaining({
+          login_credentials: { email: 'user@example.com', password: 'websitepass' },
+          gmail_credentials: { email: 'user@gmail.com', password: 'gmailpass' },
+        })
+      );
+    });
+  });
 });
