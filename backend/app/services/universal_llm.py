@@ -350,6 +350,17 @@ class UniversalLLMService:
             except httpx.TimeoutException:
                 raise Exception("OpenRouter API request timed out (90s)")
             except httpx.HTTPStatusError as e:
+                # Data-policy errors affect the entire account — retrying with
+                # another model will not help.  Raise immediately with a clear
+                # message that guides the user to the OpenRouter privacy settings.
+                if self._is_data_policy_error(e):
+                    raise Exception(
+                        "OpenRouter free models are blocked by your account's data policy. "
+                        "To fix this, go to https://openrouter.ai/settings/privacy and "
+                        "enable 'Allow AI training' (Free model publication). "
+                        "Alternatively, switch to a paid model that does not require this setting."
+                    )
+
                 can_retry_with_next_model = (
                     index < len(candidate_models) - 1
                     and self._is_model_unavailable_error(e)
@@ -361,6 +372,19 @@ class UniversalLLMService:
                 raise Exception(f"OpenRouter API error ({e.response.status_code}): {error_detail}")
             except httpx.HTTPError as e:
                 raise Exception(f"OpenRouter API connection error: {str(e)}")
+
+    @staticmethod
+    def _is_data_policy_error(error: httpx.HTTPStatusError) -> bool:
+        """Return True when OpenRouter rejects a request due to the account's
+        data/privacy policy (Free model publication setting).
+
+        This error looks like a model-unavailable 404 but affects ALL free models
+        regardless of which one is requested.  It must not trigger a retry loop.
+        """
+        response = error.response
+        if response is None or response.status_code != 404:
+            return False
+        return "data policy" in response.text.lower()
 
     @staticmethod
     def _is_model_unavailable_error(error: httpx.HTTPStatusError) -> bool:

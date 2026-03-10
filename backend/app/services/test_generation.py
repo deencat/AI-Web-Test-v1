@@ -8,10 +8,120 @@ from app.services.kb_context import KBContextService
 
 class TestGenerationService:
     """Service for generating test cases using LLM."""
-    
+
+    # Minimum token budget for generation requests.  User settings often have
+    # small values (e.g. 1200) that fit simple completions but cause mid-JSON
+    # truncation for multi-test-case responses.  We never honour a value below
+    # this floor for *generation* calls.
+    MIN_GENERATION_TOKENS: int = 4096
+
     def __init__(self):
         self.llm = UniversalLLMService()
         self.kb_context = KBContextService()
+
+    # ------------------------------------------------------------------
+    # Token helpers
+    # ------------------------------------------------------------------
+
+    def _effective_max_tokens(self, requested: int) -> int:
+        """Return max(requested, MIN_GENERATION_TOKENS).
+
+        Prevents user-saved values like 1200 from causing mid-JSON truncation
+        when generating multiple detailed test cases.
+        """
+        return max(requested, self.MIN_GENERATION_TOKENS)
+
+    # ------------------------------------------------------------------
+    # JSON recovery
+    # ------------------------------------------------------------------
+
+    def _try_recover_truncated_json(self, content: str) -> Optional[str]:
+        """Attempt to recover usable test cases from a truncated JSON response.
+
+        Strategy: extract every complete object inside the ``test_cases`` array
+        using a simple brace-counting scan, then re-assemble them into valid
+        JSON.  Returns *None* when nothing usable is found.
+
+        Args:
+            content: Raw LLM response text (may be truncated).
+
+        Returns:
+            A valid JSON string ``{"test_cases": [...]}`` containing only the
+            complete cases, or *None* if the content is not even partially
+            parseable.
+        """
+        import json
+        import re
+
+        # Fast path: already valid JSON
+        try:
+            parsed = json.loads(content)
+            return json.dumps(parsed)
+        except json.JSONDecodeError:
+            pass
+
+        # Find the start of the test_cases array
+        start_marker = '"test_cases"'
+        marker_idx = content.find(start_marker)
+        if marker_idx == -1:
+            return None
+
+        array_start = content.find('[', marker_idx)
+        if array_start == -1:
+            return None
+
+        # Walk through the array collecting complete {} objects
+        complete_cases: list = []
+        pos = array_start + 1
+        length = len(content)
+
+        while pos < length:
+            # Skip whitespace and commas between objects
+            while pos < length and content[pos] in ' \t\n\r,':
+                pos += 1
+
+            if pos >= length or content[pos] != '{':
+                break
+
+            # Count braces to find where this object ends
+            depth = 0
+            obj_start = pos
+            in_string = False
+            escape_next = False
+
+            while pos < length:
+                ch = content[pos]
+                if escape_next:
+                    escape_next = False
+                elif ch == '\\':
+                    escape_next = True
+                elif ch == '"' and not escape_next:
+                    in_string = not in_string
+                elif not in_string:
+                    if ch == '{':
+                        depth += 1
+                    elif ch == '}':
+                        depth -= 1
+                        if depth == 0:
+                            # Found end of this object
+                            obj_text = content[obj_start: pos + 1]
+                            try:
+                                obj = json.loads(obj_text)
+                                complete_cases.append(obj)
+                            except json.JSONDecodeError:
+                                pass  # Malformed object — skip
+                            pos += 1
+                            break
+                pos += 1
+            else:
+                # Reached end of string without closing brace → object is truncated
+                break
+
+        if not complete_cases:
+            # Return empty-but-valid JSON so callers can decide what to do
+            return json.dumps({"test_cases": []})
+
+        return json.dumps({"test_cases": complete_cases})
         
     def _build_system_prompt(self) -> str:
         """Build the system prompt for test generation."""
@@ -404,14 +514,15 @@ IMPORTANT: Return ONLY valid JSON, no additional text or explanation. Do NOT abb
                     generation_model = generation_model.split("/", 1)[1]
             
             temperature = user_config.get("temperature", 0.7)
-            max_tokens_val = user_config.get("max_tokens", 4096)  # INCREASED: 2000 → 4096 for detailed test cases
+            raw_max_tokens = user_config.get("max_tokens", 4096)
+            max_tokens_val = self._effective_max_tokens(raw_max_tokens)
             print(f"[DEBUG] 🎯 Using user's generation config: {provider}/{generation_model} (temp={temperature}, max_tokens={max_tokens_val})")
         else:
             # Fall back to .env defaults
             provider = "openrouter"
             generation_model = model  # Use explicit model param or None (will use settings default)
             temperature = 0.7
-            max_tokens_val = 4096  # INCREASED: 2000 → 4096 for detailed test cases with more steps
+            max_tokens_val = self._effective_max_tokens(4096)
             print(f"[DEBUG] 📋 Using .env defaults: {provider} (temp={temperature}, max_tokens={max_tokens_val})")
         
         # Call Universal LLM service (supports Google, Cerebras, OpenRouter)
@@ -443,13 +554,42 @@ IMPORTANT: Return ONLY valid JSON, no additional text or explanation. Do NOT abb
             try:
                 result = json.loads(content)
             except json.JSONDecodeError as e:
-                # If JSON parsing fails, return raw content for debugging
-                raise Exception(f"Failed to parse LLM response as JSON: {str(e)}\n\nRaw response:\n{content[:500]}")
+                # Attempt to salvage complete test cases from a truncated response
+                # (common when max_tokens is too low for the full JSON output)
+                recovered = self._try_recover_truncated_json(content)
+                if recovered is not None:
+                    try:
+                        result = json.loads(recovered)
+                        if result.get("test_cases"):  # at least one complete case
+                            print(
+                                f"[WARN] LLM response was truncated; recovered "
+                                f"{len(result['test_cases'])} complete test case(s). "
+                                f"Increase max_tokens to avoid this."
+                            )
+                            result["_truncation_recovered"] = True
+                        else:
+                            raise Exception(
+                                f"Failed to parse LLM response as JSON: {str(e)}"
+                                f"\n\nRaw response:\n{content[:500]}"
+                            )
+                    except json.JSONDecodeError:
+                        raise Exception(
+                            f"Failed to parse LLM response as JSON: {str(e)}"
+                            f"\n\nRaw response:\n{content[:500]}"
+                        )
+                else:
+                    raise Exception(
+                        f"Failed to parse LLM response as JSON: {str(e)}"
+                        f"\n\nRaw response:\n{content[:500]}"
+                    )
             
             # Validate structure
             if "test_cases" not in result:
                 raise Exception("Response missing 'test_cases' field")
-            
+
+            # Move internal flag into metadata before adding the full metadata block
+            truncation_recovered = result.pop("_truncation_recovered", False)
+
             # Add metadata
             result["metadata"] = {
                 "requirement": requirement,
@@ -460,7 +600,8 @@ IMPORTANT: Return ONLY valid JSON, no additional text or explanation. Do NOT abb
                 "tokens": response.get("usage", {}).get("total_tokens", 0),
                 "kb_context_used": bool(kb_context),
                 "kb_category_id": category_id,
-                "kb_documents_used": kb_docs_used
+                "kb_documents_used": kb_docs_used,
+                "truncation_recovered": truncation_recovered,
             }
             
             return result
