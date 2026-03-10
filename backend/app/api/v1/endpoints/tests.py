@@ -11,7 +11,9 @@ from app.schemas.test_case import (
     TestCaseUpdate,
     TestCaseResponse,
     TestCaseListResponse,
-    TestStatistics
+    TestStatistics,
+    BatchDeleteRequest,
+    BatchDeleteResponse,
 )
 from app.crud import test_case as crud
 
@@ -297,6 +299,65 @@ def update_test_case(
     )
     
     return updated_test_case
+
+
+@router.delete("/batch", response_model=BatchDeleteResponse)
+def batch_delete_test_cases(
+    body: BatchDeleteRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Batch delete test cases.
+
+    **Authentication Required**
+
+    **Request Body:**
+    - `ids`: List of test case IDs to delete (1–100 items)
+
+    **Response:**
+    - `deleted`: Number of successfully deleted test cases
+    - `failed`: List of IDs that could not be deleted (not found, not owned, or DB error)
+
+    **Errors:**
+    - 400: ids is empty or exceeds 100
+    """
+    ids = body.ids
+
+    if not ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="ids list must not be empty"
+        )
+
+    if len(ids) > 100:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete more than 100 test cases in a single request"
+        )
+
+    deleted_count = 0
+    failed_ids: list[int] = []
+
+    for test_id in ids:
+        db_test_case = crud.get_test_case(db=db, test_case_id=test_id)
+
+        if not db_test_case:
+            failed_ids.append(test_id)
+            continue
+
+        # Ownership check — admins can delete any test
+        if db_test_case.user_id != current_user.id and current_user.role != "admin":
+            failed_ids.append(test_id)
+            continue
+
+        success = crud.delete_test_case(db=db, test_case_id=test_id)
+        if success:
+            deleted_count += 1
+        else:
+            failed_ids.append(test_id)
+
+    return BatchDeleteResponse(deleted=deleted_count, failed=failed_ids)
 
 
 @router.delete("/{test_case_id}", status_code=status.HTTP_204_NO_CONTENT)

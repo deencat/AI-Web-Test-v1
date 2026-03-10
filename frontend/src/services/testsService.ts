@@ -320,6 +320,24 @@ class TestsService {
       throw new Error(apiHelpers.getErrorMessage(error));
     }
   }
+
+  /**
+   * Batch delete test cases.
+   *
+   * Sends DELETE /tests/batch with the list of IDs.
+   * Returns the number of tests actually deleted and any IDs that failed.
+   */
+  async batchDeleteTests(ids: number[]): Promise<{ deleted: number; failed: number[] }> {
+    try {
+      const response = await api.delete<{ deleted: number; failed: number[] }>(
+        '/tests/batch',
+        { data: { ids } }
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
 }
 
 export default new TestsService();
