@@ -1666,6 +1666,96 @@ Developer B's Sprint 10 tasks (10B.11 + 10B.12) are fully complete as of Feb 26.
 
 ---
 
+#### Feature 3: ObservationAgent HTTP Credentials for Preprod Browser Access (5 points)
+
+**Goal:** Allow the ObservationAgent's browser-use browser to authenticate against HTTP-Basic-protected preprod/UAT environments (e.g. `https://wwwuat.three.com.hk/`) by storing HTTP credentials in a `BrowserProfile`, so the crawler can access pages that sit behind a network-level username/password prompt.
+
+**Why:** Preprod and staging environments commonly require HTTP Basic authentication before any page content is served. Without this, browser-use opens a blank page or gets a 401 response, making ObservationAgent useless on those URLs. Supplying credentials via a `BrowserProfile` (with `Authorization: Basic <token>` header) enables full-page crawling on protected environments out of the box.
+
+**Current state:** `ObservationAgent` already supports `login_credentials` (form-based login) and `auth` (Playwright `httpCredentials`), but `browser-use` launches its own `Browser` instance that ignores those options. No `BrowserProfile` is created or passed to the browser-use `Agent` constructor, so HTTP Basic access is silently ignored.
+
+**TDD tests already written:** `backend/tests/agents/test_observation_agent_http_credentials.py` (586 lines, RED phase) — covers schema, `_build_browser_profile()`, `_build_authenticated_url()` fallback, `execute_task()` payload extraction, `_execute_multi_page_flow_crawling()` integration, endpoint pass-through and `run_observation_only()`.
+
+##### Phase 1: Backend — Agent & Schema Changes
+
+**Step 11: Add `http_credentials` to `ObservationRequest` and `GenerateTestsRequest` schemas** *(File: `backend/app/schemas/workflow.py`)*
+
+- **Action:** Add `http_credentials: Optional[Dict[str, str]] = None` to both `ObservationRequest` and `GenerateTestsRequest`. Field carries `{"username": str, "password": str}` for HTTP Basic auth only (not form login).
+- **Why:** Enables callers — frontend trigger form, direct API clients, and the observation-only endpoint — to pass credentials through to the agent without changing existing fields.
+- **Risk:** Low — additive-only schema change.
+
+**Step 12: Add `_build_browser_profile()` and `_build_authenticated_url()` to `ObservationAgent`** *(File: `backend/agents/observation_agent.py`)*
+
+- **Action:**
+  1. `_build_browser_profile(http_credentials: Optional[dict]) -> BrowserProfile`: creates a `browser_use.BrowserProfile` with `headless=False`, and when credentials are provided, injects `Authorization: Basic <base64(user:pass)>` into the profile headers.
+  2. `_build_authenticated_url(url: str, http_credentials: Optional[dict]) -> str`: URL-embedding fallback — prepends `user:pass@` to the URL netloc (with `urllib.parse.quote` for special chars). Used as a secondary approach if browser-use version does not respect `BrowserProfile.headers`.
+- **Why:** `BrowserProfile` is the correct extension point for browser-use to configure the underlying browser context. URL-embedded credentials serve as a compatible fallback (browser-use 0.11.x compatibility).
+- **Risk:** Low — new private methods, no existing code modified.
+
+**Step 13: Update `execute_task()` to read and forward `http_credentials`** *(File: `backend/agents/observation_agent.py`)*
+
+- **Action:** Add `http_credentials = task.payload.get("http_credentials")` alongside the existing `auth`, `login_credentials`, `gmail_credentials` extractions. Forward it as `http_credentials=http_credentials` in the `_execute_multi_page_flow_crawling(...)` call.
+- **Risk:** Low — one-line extraction, one new keyword argument.
+
+**Step 14: Update `_execute_multi_page_flow_crawling()` to build and use `BrowserProfile`** *(File: `backend/agents/observation_agent.py`)*
+
+- **Action:**
+  1. Add `http_credentials: Optional[dict] = None` parameter to the method signature.
+  2. Before constructing the browser-use `Agent`, call `profile = self._build_browser_profile(http_credentials)`.
+  3. Pass `browser_profile=profile` to the browser-use `Agent(...)` constructor.
+  4. As secondary fallback: if `http_credentials` provided, call `_build_authenticated_url(url, http_credentials)` and use the result as the navigation URL.
+- **Risk:** Medium — integrates with browser-use `Agent` API; must verify browser-use version supports `browser_profile` kwarg. Fallback URL embedding covers older versions.
+
+**Step 15: Thread `http_credentials` through API endpoint and `run_observation_only()`** *(Files: `backend/app/api/observation.py`, `backend/app/services/orchestration_service.py` or equivalent runner)*
+
+- **Action:**
+  - In `observation.py` POST handler: extract `request.http_credentials` and add it to the `request_dict` passed to the observation runner.
+  - In `run_observation_only()` (or `OrchestrationService._run_observation_stage()`): put `http_credentials` into `obs_payload` dict so `execute_task()` receives it.
+  - In `POST /api/v2/generate-tests` handler: forward `http_credentials` from `GenerateTestsRequest` into the orchestration payload consumed by `ObservationAgent`.
+- **Risk:** Low — pass-through only; no business logic change.
+
+**Step 16: Run TDD tests green — fix implementation until all 586-line test suite passes** *(File: `backend/tests/agents/test_observation_agent_http_credentials.py`)*
+
+- **Action:** Run `pytest backend/tests/agents/test_observation_agent_http_credentials.py -v` and iterate on implementation (Steps 12–15) until all tests pass.
+- **Why:** Tests are already written in RED phase; this step finalises the TDD cycle to GREEN.
+- **Risk:** Low — tests are comprehensive; any gap surfaces immediately.
+
+##### Phase 2: Frontend — HTTP Credentials Input in Workflow Trigger
+
+**Step 17: Add HTTP credentials fields to `AgentWorkflowTrigger.tsx`** *(File: `frontend/src/features/agent-workflow/components/AgentWorkflowTrigger.tsx`)*
+
+- **Action:**
+  1. Add optional **"HTTP Basic Auth (preprod)"** collapsible section below the existing URL field.
+  2. Two inputs: **Username** and **Password** (type=`password`), both optional.
+  3. When both are filled, include `http_credentials: { username, password }` in the workflow trigger payload sent to `POST /api/v2/generate-tests`.
+  4. Label the section clearly: *"Required if your target URL is behind a network-level login prompt (HTTP Basic Auth)"*.
+  5. Persist credentials in component state only; never store in `localStorage`.
+
+- **UI placement:** Collapsible `<details>` block between the URL field and the Submit button. Collapsed by default.
+- **Risk:** Low — additive UI; does not affect existing trigger form fields.
+
+**Step 18: Frontend unit tests for HTTP credentials input** *(File: `frontend/src/features/agent-workflow/components/AgentWorkflowTrigger.test.tsx`)*
+
+- **Action:** Test: credentials section collapsed by default; expanding shows username/password fields; with both filled, payload includes `http_credentials`; with only one filled, `http_credentials` omitted from payload; password field has `type="password"`.
+- **Risk:** Low.
+
+##### Implementation Order & File Map
+
+| Step | File | Owner | Effort |
+|------|------|-------|--------|
+| 11 | `backend/app/schemas/workflow.py` | Dev B | 0.25 day |
+| 12 | `backend/agents/observation_agent.py` (new methods) | Dev B | 0.5 day |
+| 13 | `backend/agents/observation_agent.py` (`execute_task`) | Dev B | 0.25 day |
+| 14 | `backend/agents/observation_agent.py` (`_execute_multi_page_flow_crawling`) | Dev B | 0.5 day |
+| 15 | `backend/app/api/observation.py` + orchestration | Dev B | 0.25 day |
+| 16 | `backend/tests/agents/test_observation_agent_http_credentials.py` (TDD GREEN) | Dev B | 0.5 day |
+| 17 | `frontend/src/features/agent-workflow/components/AgentWorkflowTrigger.tsx` | Dev B | 0.5 day |
+| 18 | `frontend/src/features/agent-workflow/components/AgentWorkflowTrigger.test.tsx` | Dev B | 0.25 day |
+
+**Total Feature 3: 5 points / ~3 days**
+
+---
+
 #### Sprint 10.5 Combined Task Table
 
 | Task | Description | Duration | Dependencies | Risk |
@@ -1680,8 +1770,15 @@ Developer B's Sprint 10 tasks (10B.11 + 10B.12) are fully complete as of Feb 26.
 | **10.5-B8** | Backend integration tests for batch delete | 0.5 day | 10.5-B6 | Low |
 | **10.5-B9** | Frontend: checkbox multi-select + Delete Selected button in `SavedTestsPage` | 1 day | 10.5-B7 | Low |
 | **10.5-B10** | Frontend tests for batch delete UI | 0.25 day | 10.5-B9 | Low |
+| **10.5-B11** | Add `http_credentials` to `ObservationRequest` + `GenerateTestsRequest` schemas | 0.25 day | None | Low |
+| **10.5-B12** | `ObservationAgent._build_browser_profile()` + `_build_authenticated_url()` | 0.5 day | 10.5-B11 | Low |
+| **10.5-B13** | `ObservationAgent.execute_task()` — extract and forward `http_credentials` | 0.25 day | 10.5-B12 | Low |
+| **10.5-B14** | `ObservationAgent._execute_multi_page_flow_crawling()` — use `BrowserProfile` | 0.5 day | 10.5-B12 | Medium |
+| **10.5-B15** | Thread `http_credentials` through `observation.py` endpoint + orchestration | 0.25 day | 10.5-B13 | Low |
+| **10.5-B16** | TDD GREEN: run `test_observation_agent_http_credentials.py` to full pass | 0.5 day | 10.5-B14, 10.5-B15 | Low |
+| **10.5-B17** | Frontend: HTTP Basic Auth fields in `AgentWorkflowTrigger.tsx` + tests | 0.75 day | 10.5-B11 | Low |
 
-**Total: 13 points / ~6 days**
+**Total: 18 points / ~9 days**
 
 #### Sprint 10.5 Success Criteria
 
@@ -1692,6 +1789,12 @@ Developer B's Sprint 10 tasks (10B.11 + 10B.12) are fully complete as of Feb 26.
 - [ ] `SavedTestsPage` shows per-row checkboxes + Select All toggle + Delete Selected button
 - [ ] Batch delete shows confirmation modal before executing
 - [ ] Success toast confirms `"N tests deleted"` and refreshes the list
+- [ ] `ObservationRequest` and `GenerateTestsRequest` schemas accept `http_credentials: Optional[Dict[str, str]]`
+- [ ] `ObservationAgent._build_browser_profile()` injects `Authorization: Basic <token>` header into `BrowserProfile` when credentials provided
+- [ ] `ObservationAgent._build_authenticated_url()` embeds credentials into URL as fallback (special characters URL-encoded)
+- [ ] browser-use `Agent` receives `BrowserProfile` with credentials; preprod pages load without 401
+- [ ] `AgentWorkflowTrigger` shows collapsible HTTP Basic Auth section; credentials included in trigger payload when provided
+- [ ] All 586 lines in `test_observation_agent_http_credentials.py` pass (TDD GREEN)
 - [ ] All new tests pass in CI (backend pytest + frontend Vitest)
 - [ ] No regression in existing single-delete or settings save flows
 
@@ -1702,6 +1805,8 @@ Developer B's Sprint 10 tasks (10B.11 + 10B.12) are fully complete as of Feb 26.
 | Free OpenRouter models become unavailable/rate-limited | Medium | Low | Keep 3+ alternatives in list; existing fallback logic in `_build_openrouter_model_candidates()` already handles model unavailability |
 | Batch delete accidentally deletes wrong user's tests | Low | High | DB-level `WHERE user_id = current_user` filter on every delete |
 | Schema change (`ModelOption`) breaks existing frontend | Low | Medium | Additive-only change: keep `models: List[str]` alongside new `model_options` field |
+| browser-use version does not support `browser_profile` kwarg in `Agent()` | Medium | Medium | `_build_authenticated_url()` URL-embedding fallback covers browser-use 0.11.x; version check at startup logs which path is taken |
+| Credentials accidentally leaked to logs or state | Low | High | `http_credentials` never logged at INFO level (DEBUG only, masked); never stored in frontend `localStorage` or Redux; password field uses `type="password"` |
 
 ---
 
