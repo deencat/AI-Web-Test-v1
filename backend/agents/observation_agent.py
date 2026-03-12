@@ -33,6 +33,7 @@ Usage:
 
 import asyncio
 import base64
+import inspect
 import logging
 from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass
@@ -656,6 +657,7 @@ class ObservationAgent(BaseAgent):
             
             # Initialize browser-use
             browser = Browser(browser_profile=browser_profile)
+            await self._apply_browser_session_http_auth(browser, http_credentials)
             agent = BrowserUseAgent(
                 task=task_description,
                 llm=llm_adapter,
@@ -1019,12 +1021,7 @@ class ObservationAgent(BaseAgent):
         """Create browser-use profile with reliable defaults and optional auth/session state."""
         from browser_use import BrowserProfile
 
-        headers: Dict[str, str] = {}
-        if http_credentials:
-            username = str(http_credentials.get("username", ""))
-            password = str(http_credentials.get("password", ""))
-            token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("utf-8")
-            headers["Authorization"] = f"Basic {token}"
+        headers = self._build_http_auth_headers(http_credentials)
 
         profile_kwargs: Dict[str, Any] = {
             "headless": False,
@@ -1042,6 +1039,47 @@ class ObservationAgent(BaseAgent):
         if storage_state:
             profile_kwargs["storage_state"] = storage_state
         return BrowserProfile(**profile_kwargs)
+
+    async def _apply_browser_session_http_auth(
+        self,
+        browser,
+        http_credentials: Optional[Dict[str, str]] = None,
+    ) -> None:
+        """Apply HTTP Basic auth directly to browser-use page requests."""
+        headers = self._build_http_auth_headers(http_credentials)
+        if not headers:
+            return
+
+        start_browser = getattr(browser, "start", None)
+        if callable(start_browser):
+            start_result = start_browser()
+            if inspect.isawaitable(start_result):
+                await start_result
+
+        set_extra_headers = getattr(browser, "set_extra_headers", None)
+        if callable(set_extra_headers):
+            header_result = set_extra_headers(headers)
+            if inspect.isawaitable(header_result):
+                await header_result
+            return
+
+        logger.warning(
+            "ObservationAgent: Browser session does not support set_extra_headers; "
+            "falling back to profile headers and authenticated URL"
+        )
+
+    def _build_http_auth_headers(
+        self,
+        http_credentials: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, str]:
+        """Build HTTP Basic auth headers for reuse across browser integrations."""
+        if not http_credentials:
+            return {}
+
+        username = str(http_credentials.get("username", ""))
+        password = str(http_credentials.get("password", ""))
+        token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("utf-8")
+        return {"Authorization": f"Basic {token}"}
 
     def _build_storage_state(
         self,

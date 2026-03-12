@@ -244,6 +244,51 @@ class TestExecuteTaskPassThrough:
         browser_task = mock_browser_agent_ctor.call_args.kwargs["task"]
         assert "https://uat_user:secret@wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/" in browser_task
 
+    @pytest.mark.asyncio
+    async def test_flow_crawling_applies_http_auth_headers_to_browser_session(self):
+        from agents.base_agent import TaskContext
+
+        agent = _make_agent()
+        fake_history = MagicMock(final_result=lambda: '{"ui_elements": []}')
+        fake_browser_agent = MagicMock()
+        fake_browser_agent.run = AsyncMock(return_value=fake_history)
+
+        fake_browser = MagicMock()
+        fake_browser.start = AsyncMock()
+        fake_browser.set_extra_headers = AsyncMock()
+
+        with (
+            patch.object(agent, "_build_browser_profile", return_value=MagicMock()),
+            patch.object(agent, "_create_browser_use_llm_adapter", return_value=MagicMock()),
+            patch("browser_use.Browser", return_value=fake_browser),
+            patch("browser_use.Agent", return_value=fake_browser_agent),
+        ):
+            task = TaskContext(
+                conversation_id="wf-3",
+                task_id="obs-3",
+                task_type="ui_element_extraction",
+                payload={},
+                priority=8,
+            )
+
+            try:
+                await agent._execute_multi_page_flow_crawling(
+                    task=task,
+                    url="https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/",
+                    user_instruction="Observe the purchase flow",
+                    login_credentials={},
+                    gmail_credentials={},
+                    auth=None,
+                    http_credentials={"username": "uat_user", "password": "secret"},
+                )
+            except Exception:
+                pass
+
+        fake_browser.start.assert_awaited_once()
+        fake_browser.set_extra_headers.assert_awaited_once()
+        sent_headers = fake_browser.set_extra_headers.await_args.args[0]
+        assert sent_headers["Authorization"].startswith("Basic ")
+
 
 class TestOrchestrationPassThrough:
     @pytest.mark.asyncio
