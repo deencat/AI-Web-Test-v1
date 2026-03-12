@@ -26,6 +26,9 @@ export const AgentWorkflowTrigger: React.FC<AgentWorkflowTriggerProps> = ({
 
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [isHttpAuthOpen, setIsHttpAuthOpen] = useState(false);
+  const [httpUsername, setHttpUsername] = useState('');
+  const [httpPassword, setHttpPassword] = useState('');
   const [gmailEmail, setGmailEmail] = useState('');
   const [gmailPassword, setGmailPassword] = useState('');
 
@@ -49,6 +52,9 @@ export const AgentWorkflowTrigger: React.FC<AgentWorkflowTriggerProps> = ({
       ...(userInstruction.trim() && { user_instruction: userInstruction.trim() }),
       ...(loginEmail.trim() && loginPassword
         ? { login_credentials: { email: loginEmail.trim(), password: loginPassword } }
+        : {}),
+      ...(httpUsername.trim() && httpPassword
+        ? { http_credentials: { username: httpUsername.trim(), password: httpPassword } }
         : {}),
       ...(gmailEmail.trim() && gmailPassword
         ? { gmail_credentials: { email: gmailEmail.trim(), password: gmailPassword } }
@@ -146,6 +152,55 @@ export const AgentWorkflowTrigger: React.FC<AgentWorkflowTriggerProps> = ({
             />
           </div>
         </fieldset>
+
+        <div className="border border-gray-200 rounded-lg p-4 space-y-3">
+          <button
+            type="button"
+            data-testid="http-auth-toggle"
+            className="text-sm font-medium text-gray-700"
+            onClick={() => setIsHttpAuthOpen((current) => !current)}
+            disabled={isSubmitting}
+          >
+            HTTP Basic Auth <span className="text-gray-400 font-normal">(preprod, optional)</span>
+          </button>
+          {isHttpAuthOpen && (
+            <>
+              <p className="text-xs text-gray-500 mt-3">
+                Required if your target URL is behind a network-level login prompt (HTTP Basic Auth).
+              </p>
+              <div>
+                <label htmlFor="http-username" className="block text-sm font-medium text-gray-700 mb-1">
+                  Username
+                </label>
+                <input
+                  id="http-username"
+                  data-testid="http-username-input"
+                  type="text"
+                  value={httpUsername}
+                  onChange={(e) => setHttpUsername(e.target.value)}
+                  placeholder="Preprod username"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isSubmitting}
+                />
+              </div>
+              <div>
+                <label htmlFor="http-password" className="block text-sm font-medium text-gray-700 mb-1">
+                  Password
+                </label>
+                <input
+                  id="http-password"
+                  data-testid="http-password-input"
+                  type="password"
+                  value={httpPassword}
+                  onChange={(e) => setHttpPassword(e.target.value)}
+                  placeholder="Preprod password"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isSubmitting}
+                />
+              </div>
+            </>
+          )}
+        </div>
 
         {/* Gmail credentials (for OTP) */}
         <fieldset className="border border-gray-200 rounded-lg p-4 space-y-3">

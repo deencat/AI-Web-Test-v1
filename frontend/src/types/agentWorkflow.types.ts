@@ -73,6 +73,8 @@ export interface GenerateTestsRequest {
   depth?: number;
   /** Optional login credentials */
   login_credentials?: { username?: string; email?: string; password: string };
+  /** Optional HTTP Basic credentials for preprod/UAT environments */
+  http_credentials?: { username: string; password: string };
   /** Optional Gmail credentials for OTP */
   gmail_credentials?: { email: string; password: string };
 }

@@ -32,10 +32,11 @@ Usage:
 """
 
 import asyncio
+import base64
 import logging
 from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass
-from urllib.parse import urljoin, urlparse
+from urllib.parse import quote, urljoin, urlparse, urlunparse
 import re
 
 from agents.base_agent import (
@@ -251,6 +252,7 @@ class ObservationAgent(BaseAgent):
             auth = task.payload.get("auth")  # Optional authentication
             user_instruction = task.payload.get("user_instruction", "")  # NEW: User instruction for flow navigation
             login_credentials = task.payload.get("login_credentials", {})  # NEW: Login credentials for target website
+            http_credentials = task.payload.get("http_credentials")  # NEW: HTTP Basic auth for preprod/UAT
             gmail_credentials = task.payload.get("gmail_credentials", {})  # NEW: Separate Gmail login credentials (optional)
             progress_callback = task.payload.get("progress_callback")
             cancel_check = task.payload.get("cancel_check")
@@ -264,6 +266,7 @@ class ObservationAgent(BaseAgent):
                 logger.info(f"ObservationAgent: Using LLM-guided flow navigation (user_instruction: '{user_instruction[:50]}...')")
                 return await self._execute_multi_page_flow_crawling(
                     task, url, user_instruction, login_credentials, gmail_credentials, auth,
+                    http_credentials=http_credentials,
                     progress_callback=progress_callback,
                     cancel_check=cancel_check,
                 )
@@ -493,6 +496,7 @@ class ObservationAgent(BaseAgent):
         gmail_credentials: Dict,
         auth: Optional[Dict]
         ,
+        http_credentials: Optional[Dict[str, str]] = None,
         progress_callback=None,
         cancel_check=None,
     ) -> TaskResult:
@@ -526,6 +530,9 @@ class ObservationAgent(BaseAgent):
             logger.info(f"ObservationAgent: Starting multi-page flow crawling with browser-use")
             logger.info(f"  URL: {url}")
             logger.info(f"  User Instruction: {user_instruction}")
+
+            browser_profile = self._build_browser_profile(http_credentials=http_credentials)
+            navigation_url = self._build_authenticated_url(url, http_credentials)
             
             # Prefer in-page login unless user explicitly needs OTP/Gmail (e.g. "OTP", "verify email", "gmail")
             instruction_lower = (user_instruction or "").lower()
@@ -539,7 +546,7 @@ class ObservationAgent(BaseAgent):
             
             # Build task description for browser-use
             task_description = f"""
-            Navigate to {url} and complete the following task:
+            Navigate to {navigation_url} and complete the following task:
             {user_instruction}
             
             LOGIN METHOD (CRITICAL):
@@ -622,8 +629,13 @@ class ObservationAgent(BaseAgent):
             llm_adapter = self._create_browser_use_llm_adapter()
             
             # Initialize browser-use
-            browser = Browser()
-            agent = BrowserUseAgent(task=task_description, llm=llm_adapter, browser=browser)
+            browser = Browser(browser_profile=browser_profile)
+            agent = BrowserUseAgent(
+                task=task_description,
+                llm=llm_adapter,
+                browser=browser,
+                browser_profile=browser_profile,
+            )
             
             # Run the agent to navigate through the flow with timeout
             # Increased timeout to allow for Gmail navigation and OTP extraction
@@ -971,6 +983,58 @@ class ObservationAgent(BaseAgent):
             logger.error(f"Error in multi-page flow crawling: {e}", exc_info=True)
             logger.info("Falling back to traditional crawling...")
             return await self._execute_traditional_crawling(task, url, self.max_depth, auth)
+
+    def _build_browser_profile(
+        self,
+        http_credentials: Optional[Dict[str, str]] = None,
+    ):
+        """Create browser-use profile with optional HTTP Basic auth header."""
+        from browser_use import BrowserProfile
+
+        headers: Dict[str, str] = {}
+        if http_credentials:
+            username = str(http_credentials.get("username", ""))
+            password = str(http_credentials.get("password", ""))
+            token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("utf-8")
+            headers["Authorization"] = f"Basic {token}"
+
+        profile_kwargs: Dict[str, Any] = {"headless": False}
+        if headers:
+            profile_kwargs["headers"] = headers
+        return BrowserProfile(**profile_kwargs)
+
+    def _build_authenticated_url(
+        self,
+        url: str,
+        http_credentials: Optional[Dict[str, str]] = None,
+    ) -> str:
+        """Embed HTTP Basic auth in the URL as a compatibility fallback."""
+        if not http_credentials:
+            return url
+
+        username = quote(str(http_credentials.get("username", "")), safe="")
+        password = quote(str(http_credentials.get("password", "")), safe="")
+        parsed = urlparse(url)
+
+        if not parsed.scheme or not parsed.netloc:
+            return url
+
+        host = parsed.hostname or ""
+        if not host:
+            return url
+
+        port = f":{parsed.port}" if parsed.port else ""
+        auth_netloc = f"{username}:{password}@{host}{port}"
+        return urlunparse(
+            (
+                parsed.scheme,
+                auth_netloc,
+                parsed.path,
+                parsed.params,
+                parsed.query,
+                parsed.fragment,
+            )
+        )
     
     def _create_browser_use_llm_adapter(self):
         """Create LLM adapter for browser-use from Azure OpenAI client.

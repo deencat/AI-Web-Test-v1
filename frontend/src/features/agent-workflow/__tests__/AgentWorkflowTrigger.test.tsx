@@ -240,4 +240,77 @@ describe('AgentWorkflowTrigger', () => {
       );
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // HTTP Basic auth credentials (preprod)
+  // ---------------------------------------------------------------------------
+
+  it('keeps HTTP Basic auth fields collapsed by default', () => {
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    expect(screen.queryByTestId('http-username-input')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('http-password-input')).not.toBeInTheDocument();
+  });
+
+  it('shows HTTP Basic auth fields when expanded', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await user.click(screen.getByTestId('http-auth-toggle'));
+
+    expect(screen.getByTestId('http-username-input')).toBeInTheDocument();
+    expect(screen.getByTestId('http-password-input')).toBeInTheDocument();
+    expect(screen.getByTestId('http-password-input')).toHaveAttribute('type', 'password');
+  });
+
+  it('includes http_credentials when both HTTP Basic auth fields are filled', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await user.type(screen.getByTestId('url-input'), 'https://wwwuat.three.com.hk');
+    await user.click(screen.getByTestId('http-auth-toggle'));
+    await user.type(screen.getByTestId('http-username-input'), 'uat_user');
+    await user.type(screen.getByTestId('http-password-input'), 'uat_pass');
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.objectContaining({
+          http_credentials: { username: 'uat_user', password: 'uat_pass' },
+        })
+      );
+    });
+  });
+
+  it('omits http_credentials when only HTTP username is filled', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await user.type(screen.getByTestId('url-input'), 'https://wwwuat.three.com.hk');
+    await user.click(screen.getByTestId('http-auth-toggle'));
+    await user.type(screen.getByTestId('http-username-input'), 'uat_user');
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.not.objectContaining({ http_credentials: expect.anything() })
+      );
+    });
+  });
+
+  it('omits http_credentials when only HTTP password is filled', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await user.type(screen.getByTestId('url-input'), 'https://wwwuat.three.com.hk');
+    await user.click(screen.getByTestId('http-auth-toggle'));
+    await user.type(screen.getByTestId('http-password-input'), 'uat_pass');
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.not.objectContaining({ http_credentials: expect.anything() })
+      );
+    });
+  });
 });

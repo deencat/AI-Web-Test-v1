@@ -58,6 +58,7 @@ async def generate_tests(
         "user_instruction": request.user_instruction,
         "depth": request.depth,
         "login_credentials": request.login_credentials,
+        "http_credentials": request.http_credentials,
         "gmail_credentials": request.gmail_credentials,
         "scenario_types": request.scenario_types,
         "max_scenarios": request.max_scenarios,
