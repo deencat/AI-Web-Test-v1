@@ -39,6 +39,19 @@ from dataclasses import dataclass
 from urllib.parse import quote, urljoin, urlparse, urlunparse
 import re
 
+DEFAULT_OBSERVATION_VIEWPORT = {"width": 1280, "height": 720}
+DEFAULT_OBSERVATION_USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+)
+DEFAULT_OBSERVATION_BROWSER_ARGS = [
+    "--disable-blink-features=AutomationControlled",
+    "--start-maximized",
+    "--disable-dev-shm-usage",
+    "--no-first-run",
+    "--no-default-browser-check",
+]
+
 from agents.base_agent import (
     BaseAgent,
     AgentCapability,
@@ -565,6 +578,12 @@ class ObservationAgent(BaseAgent):
             
             Extract UI elements from each page you visit during this flow.
             Stop when you reach the confirmation/success page (or payment page if that is the end of the flow).
+
+            FLOW CONTINUITY (CRITICAL):
+            - If a reminder, confirmation, or informational modal appears, click the close, confirm, or I understand button and continue from the current step without restarting the purchase flow.
+            - Stay in the current checkout/subscription journey whenever possible. Do not navigate back, reopen the start page, or intentionally restart the wizard unless the site forces it.
+            - If the site unexpectedly returns to an earlier plan-selection step, reselect the same plan or add-on choices you already made and resume progressing forward instead of starting over with a different plan.
+            - When the site keeps your current selections visible, preserve them and continue to the next incomplete step.
             """
             
             if require_otp_handling:
@@ -662,7 +681,7 @@ class ObservationAgent(BaseAgent):
             
             try:
                 # Run with heartbeat ticks so we can emit mid-stage progress and react to cancellation.
-                run_task = asyncio.create_task(agent.run())
+                run_task = asyncio.create_task(agent.run(max_steps=self.max_browser_steps))
                 started = asyncio.get_running_loop().time()
                 history = None
 
@@ -997,7 +1016,7 @@ class ObservationAgent(BaseAgent):
         url: Optional[str] = None,
         browser_profile_data: Optional[Dict[str, Any]] = None,
     ):
-        """Create browser-use profile with optional HTTP Basic auth header."""
+        """Create browser-use profile with reliable defaults and optional auth/session state."""
         from browser_use import BrowserProfile
 
         headers: Dict[str, str] = {}
@@ -1007,7 +1026,16 @@ class ObservationAgent(BaseAgent):
             token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("utf-8")
             headers["Authorization"] = f"Basic {token}"
 
-        profile_kwargs: Dict[str, Any] = {"headless": False}
+        profile_kwargs: Dict[str, Any] = {
+            "headless": False,
+            "viewport": dict(DEFAULT_OBSERVATION_VIEWPORT),
+            "window_size": dict(DEFAULT_OBSERVATION_VIEWPORT),
+            "user_agent": DEFAULT_OBSERVATION_USER_AGENT,
+            "args": list(DEFAULT_OBSERVATION_BROWSER_ARGS),
+            "minimum_wait_page_load_time": 0.5,
+            "wait_for_network_idle_page_load_time": 1.0,
+            "wait_between_actions": 0.2,
+        }
         if headers:
             profile_kwargs["headers"] = headers
         storage_state = self._build_storage_state(url, browser_profile_data)
@@ -1130,7 +1158,7 @@ class ObservationAgent(BaseAgent):
                 api_key=api_key,
                 azure_endpoint=clean_endpoint,
                 azure_deployment=deployment,
-                api_version="2024-08-01-preview",  # Supports json_schema structured output
+                api_version="2024-12-01-preview",  # Supports json_schema structured output
                 temperature=0.2,
                 max_completion_tokens=4096,
             )
