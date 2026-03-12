@@ -26,6 +26,9 @@ export const SavedTestsPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [filterPriority, setFilterPriority] = useState('all');
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [batchDeleting, setBatchDeleting] = useState(false);
 
   useEffect(() => {
     loadTests();
@@ -58,6 +61,43 @@ export const SavedTestsPage: React.FC = () => {
       alert('Test deleted successfully!');
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to delete test');
+    }
+  };
+
+  const toggleRowSelection = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === filteredTests.length && filteredTests.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredTests.map((t) => t.id)));
+    }
+  };
+
+  const handleBatchDeleteConfirm = async () => {
+    setBatchDeleting(true);
+    try {
+      const result = await testsService.batchDeleteTests([...selectedIds]);
+      if (result.failed.length > 0) {
+        alert(`${result.deleted} test(s) deleted. ${result.failed.length} could not be deleted.`);
+      }
+      setShowConfirmModal(false);
+      setSelectedIds(new Set());
+      await loadTests();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete tests');
+    } finally {
+      setBatchDeleting(false);
     }
   };
 
@@ -102,7 +142,7 @@ export const SavedTestsPage: React.FC = () => {
     }
   };
 
-  // Filter tests
+  // Filter tests — declared before handler functions that reference filteredTests
   const filteredTests = tests.filter((test) => {
     const matchesSearch =
       test.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -193,6 +233,31 @@ export const SavedTestsPage: React.FC = () => {
           </div>
         </Card>
 
+        {/* Batch Delete Toolbar — shown only when tests exist */}
+        {!error && tests.length > 0 && (
+          <div className="flex items-center gap-4 py-2">
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-600">
+              <input
+                type="checkbox"
+                data-testid="select-all-checkbox"
+                checked={filteredTests.length > 0 && selectedIds.size === filteredTests.length}
+                onChange={handleSelectAll}
+                className="w-4 h-4"
+              />
+              Select All
+            </label>
+            <Button
+              variant="danger"
+              disabled={selectedIds.size === 0 || batchDeleting}
+              onClick={() => setShowConfirmModal(true)}
+              data-testid="batch-delete-button"
+            >
+              <Trash2 className="w-4 h-4 mr-1" />
+              Delete Selected ({selectedIds.size})
+            </Button>
+          </div>
+        )}
+
         {/* Error Display */}
         {error && (
           <Card>
@@ -229,6 +294,17 @@ export const SavedTestsPage: React.FC = () => {
             {filteredTests.map((test) => (
               <Card key={test.id}>
                 <div className="flex justify-between items-start">
+                  {/* Row checkbox */}
+                  <div className="flex items-start pt-1 pr-3">
+                    <input
+                      type="checkbox"
+                      data-testid={`row-checkbox-${test.id}`}
+                      checked={selectedIds.has(test.id)}
+                      onChange={() => toggleRowSelection(test.id)}
+                      disabled={batchDeleting}
+                      className="w-4 h-4 cursor-pointer"
+                    />
+                  </div>
                   <div className="flex-1">
                     <div className="flex items-start gap-3 mb-2">
                       <h3 className="text-lg font-semibold text-gray-900">{test.title}</h3>
@@ -298,6 +374,41 @@ export const SavedTestsPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Batch Delete Confirmation Modal */}
+      {showConfirmModal && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          data-testid="batch-delete-modal"
+        >
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
+            <h2 className="text-xl font-bold text-gray-900 mb-3">Delete Tests</h2>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to delete {selectedIds.size} test
+              {selectedIds.size !== 1 ? 's' : ''}? This cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                data-testid="cancel-delete-button"
+                onClick={() => setShowConfirmModal(false)}
+                disabled={batchDeleting}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                data-testid="confirm-delete-button"
+                onClick={handleBatchDeleteConfirm}
+                disabled={batchDeleting}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {batchDeleting && <Loader2 className="w-4 h-4 animate-spin" />}
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 };

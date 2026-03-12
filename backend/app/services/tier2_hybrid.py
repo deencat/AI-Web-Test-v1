@@ -12,6 +12,7 @@ from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
 from sqlalchemy.orm import Session
 import logging
 
+from app.services.post_click_readiness import wait_for_post_click_readiness
 from app.services.xpath_cache_service import XPathCacheService
 from app.services.xpath_extractor import XPathExtractor
 
@@ -466,14 +467,7 @@ class Tier2HybridExecutor:
         if action == "click":
             await element.wait_for(state="visible", timeout=self.timeout_ms)
             await self._wait_for_element_enabled_before_click(element, instruction)
-            # Check for navigation buttons that might trigger page changes
-            # Check for navigation buttons that might trigger page changes
             element_text = await element.text_content() or ""
-            element_text_lower = element_text.lower()
-            is_navigation_button = any(
-                keyword in element_text_lower 
-                for keyword in ["next", "continue", "submit", "proceed", "upload", "confirm", "checkout", "payment", "pay"]
-            )
             
             # Capture current URL before click to detect navigation
             current_url = page.url
@@ -481,102 +475,36 @@ class Tier2HybridExecutor:
             # Perform the click action
             await element.click(timeout=self.timeout_ms)
             
-            # Wait for any post-click navigation/state changes
-            if is_navigation_button:
-                logger.info(f"[Tier 2] 🔄 Navigation button detected: '{element_text}' - using extended wait")
+            click_state = await wait_for_post_click_readiness(
+                page=page,
+                clicked_element=element,
+                instruction=instruction,
+                element_text=element_text,
+                current_url=current_url,
+                timeout_ms=self.timeout_ms,
+                logger=logger,
+            )
             
-            try:
-                # Keep post-click waits bounded to avoid long stalls on checkout transitions
-                wait_timeout = min(self.timeout_ms, 10000)
-                
-                # Wait a bit for any redirect/navigation to start
-                await asyncio.sleep(0.2)
-                
-                # Check if URL changed (indicates navigation/redirect)
-                url_changed = page.url != current_url
-                if url_changed:
-                    logger.info(f"[Tier 2] 🌐 URL changed from {current_url} to {page.url} - waiting for new page to load")
-                    # Wait for the new page to fully load
-                    try:
-                        await page.wait_for_load_state("load", timeout=wait_timeout)
-                        logger.debug(f"[Tier 2] ✅ New page loaded")
-                    except PlaywrightTimeout:
-                        logger.warning(f"[Tier 2] ⚠️ New page load timeout")
-                
-                # For non-navigation clicks, networkidle helps stabilize dynamic UI
-                if not is_navigation_button:
-                    await page.wait_for_load_state("networkidle", timeout=wait_timeout)
-                    logger.debug(f"[Tier 2] ✅ Page state stabilized after click")
-            except PlaywrightTimeout:
-                # If network doesn't idle within timeout, wait at least for DOM to be ready
+            if click_state["is_payment_click"]:
+                logger.info(f"[Tier 2] 💳 Checkout/payment button detected - waiting for payment gateway input fields...")
+                input_found = False
+                gateway_timeout = 12000 if self._is_external_payment_gateway_url(page.url) else 2500
                 try:
-                    await page.wait_for_load_state("domcontentloaded", timeout=5000)
-                    logger.debug(f"[Tier 2] ⚠️ DOM loaded after click (network still active)")
-                except PlaywrightTimeout:
-                    # Last resort: small fixed delay to allow content to update
-                    await asyncio.sleep(1)
-                    logger.warning(f"[Tier 2] ⚠️ Using fixed delay after click (no stable state detected)")
-            
-            # Additional wait for navigation buttons to ensure new page content is ready
-            if is_navigation_button:
-                # Wait for common loading indicators to disappear
-                try:
-                    # Check for loading overlays, spinners, or "loading" text
-                    loading_selectors = [
-                        "[class*='loading']",
-                        "[class*='spinner']",
-                        "[class*='overlay']",
-                        "[aria-busy='true']",
-                        ".loading",
-                        ".spinner",
-                        ".overlay",
-                        # Payment gateway specific loaders
-                        "iframe[class*='load']",
-                        "[id*='loading']",
-                        "[id*='spinner']"
-                    ]
-                    
-                    for selector in loading_selectors:
-                        try:
-                            loading_element = page.locator(selector).first
-                            # If loading element exists and is visible, wait for it to be hidden
-                            if await loading_element.count() > 0:
-                                logger.info(f"[Tier 2] ⏳ Detected loading indicator: {selector}")
-                                await loading_element.wait_for(state="hidden", timeout=15000)  # Increased to 15s for payment gateways
-                                logger.info(f"[Tier 2] ✅ Loading indicator disappeared")
-                                break
-                        except Exception:
-                            # This selector doesn't match any element, try next
-                            continue
-                except Exception as e:
-                    logger.debug(f"[Tier 2] No loading indicators found or error checking: {str(e)}")
-                
-                # Small bounded delay to allow rendering without over-waiting
-                await asyncio.sleep(0.4)
-                logger.debug(f"[Tier 2] ⏱️ Additional 0.4s wait after navigation button")
-                
-                # CRITICAL FIX: For checkout/payment buttons, wait for payment gateway input fields to appear
-                if "checkout" in element_text_lower or "payment" in element_text_lower or "pay" in element_text_lower:
-                    logger.info(f"[Tier 2] 💳 Checkout/payment button detected - waiting for payment gateway input fields...")
+                    await page.wait_for_selector(
+                        self._payment_input_css_selector(),
+                        state="visible",
+                        timeout=gateway_timeout,
+                    )
+                    logger.info("[Tier 2] ✅ Payment input field detected")
+                    input_found = True
+                except Exception:
                     input_found = False
-                    gateway_timeout = 12000 if self._is_external_payment_gateway_url(page.url) else 2500
-                    try:
-                        await page.wait_for_selector(
-                            self._payment_input_css_selector(),
-                            state="visible",
-                            timeout=gateway_timeout,
-                        )
-                        logger.info("[Tier 2] ✅ Payment input field detected")
-                        input_found = True
-                    except Exception:
-                        input_found = False
-                    
-                    if input_found:
-                        # Additional small delay to ensure field is fully interactive
-                        await asyncio.sleep(0.3)
-                        logger.info(f"[Tier 2] ✅ Payment gateway ready")
-                    else:
-                        logger.warning(f"[Tier 2] ⚠️ No payment input fields detected (may be non-standard gateway)")
+                
+                if input_found:
+                    await asyncio.sleep(0.3)
+                    logger.info(f"[Tier 2] ✅ Payment gateway ready")
+                else:
+                    logger.warning(f"[Tier 2] ⚠️ No payment input fields detected (may be non-standard gateway)")
                     
         elif action in ["fill", "type", "input"]:
             await element.wait_for(state="visible", timeout=self.timeout_ms)

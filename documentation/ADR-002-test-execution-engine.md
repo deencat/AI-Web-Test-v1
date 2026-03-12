@@ -322,6 +322,28 @@ asyncio.sleep(0.4)                              # replaced: was 3.0s uncondition
 
 **`is_navigation_button`** classification: instruction contains any of: `next`, `continue`, `submit`, `proceed`, `confirm`, `checkout`, `payment`, `pay`.
 
+**Auth popup/page-transition extension:**
+- Click classification also inspects the step instruction and clicked element text for `login`, `log in`, `sign in`, `sign-in`, `signin`, `authenticate`.
+- For auth submission clicks, the executor performs a bounded popup/page readiness wait before advancing:
+    1. wait briefly for the clicked control to become hidden when the login modal is expected to close,
+    2. wait for a short `networkidle` window,
+    3. wait for common loading/spinner/overlay selectors to disappear,
+    4. apply a final 0.4s bounded settle.
+
+This covers same-URL popup login flows where the DOM updates asynchronously after authentication but the browser does not perform a full navigation.
+
+**Application loading-indicator extension:**
+- The readiness wait now treats disappearance of known application loaders as the primary UI-ready signal when present, instead of relying only on action classification.
+- The shared loading-indicator set includes generic loading/spinner/skeleton selectors and the app-specific Bootstrap spinner markup:
+
+```html
+<div role="status" class="spinner-border text-primary"><span class="visually-hidden">Loading...</span></div>
+```
+
+- Practically, this means the executor waits for `div[role='status'].spinner-border` / `[role='status'].spinner-border` to become hidden before advancing to the next step, with a bounded timeout.
+
+This reduces the need to special-case individual actions because readiness is tied to the webapp's actual loading state, while still preserving bounded fallback waits for pages that do not render the spinner.
+
 **Payment field wait after navigation button:**  
 Single `page.wait_for_selector(combined_css, state="visible")` call (from ADR-002-4) with bounded timeout, replacing the sequential 10-probe loop.
 
@@ -333,10 +355,13 @@ Single `page.wait_for_selector(combined_css, state="visible")` call (from ADR-00
 - Post-click time for navigation buttons reduced from 83s to ~1–3s typical.
 - `networkidle` is not waited for navigation buttons — eliminates the longest waits (SPA route changes never reach `networkidle`).
 - 0.4s sleep is bounded and explained; 3.0s was unconditional and unexplained.
+- Popup login/auth transitions no longer race the next step when the URL stays unchanged.
+- Shared loader disappearance now works as a reusable readiness signal across popup, SPA, and same-URL transitions.
 
 **Negative**
 - 0.4s may be insufficient for very slow backend pages that trigger a cascade of XHR requests. Monitoring required.
 - `is_navigation_button` heuristic is keyword-based — custom button labels not in the list still get the full `networkidle` wait.
+- Loader-based readiness depends on the spinner being mounted and hidden consistently; flows that never render the loader still rely on the bounded fallback waits.
 
 **Alternatives Considered**
 - **Remove all fixed sleeps**: Risky — some pages require a brief settle after click before DOM is queryable.

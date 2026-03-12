@@ -264,3 +264,46 @@ class TestTier2PaymentHelpers:
         self.executor.cache_service.invalidate_cache.assert_called_once()
         self.executor.xpath_extractor.extract_xpath_with_page.assert_awaited_once()
         self.executor._execute_action_with_xpath.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_action_with_xpath_waits_for_popup_login_loading_to_clear(self):
+        page = MagicMock()
+        page.url = "https://example.com/account"
+        page.wait_for_load_state = AsyncMock(return_value=None)
+
+        clicked_element = AsyncMock()
+        clicked_element.wait_for = AsyncMock(return_value=None)
+        clicked_element.is_enabled = AsyncMock(return_value=True)
+        clicked_element.text_content = AsyncMock(return_value="Login")
+        clicked_element.click = AsyncMock(return_value=None)
+
+        clicked_locator = MagicMock()
+        clicked_locator.first = clicked_element
+
+        loading_element = AsyncMock()
+        loading_element.count = AsyncMock(return_value=1)
+        loading_element.wait_for = AsyncMock(return_value=None)
+
+        loading_locator = MagicMock()
+        loading_locator.first = loading_element
+
+        def locator_side_effect(selector):
+            if selector == "xpath=/html/body/form/button[1]":
+                return clicked_locator
+            return loading_locator
+
+        page.locator = MagicMock(side_effect=locator_side_effect)
+
+        await self.executor._execute_action_with_xpath(
+            page=page,
+            action="click",
+            xpath="/html/body/form/button[1]",
+            value=None,
+            instruction="Step 6: Click the 'Login' button on popup to log in to the account",
+        )
+
+        assert loading_element.wait_for.await_count > 0
+        assert any(
+            call.kwargs == {"state": "hidden", "timeout": 8000}
+            for call in loading_element.wait_for.await_args_list
+        )

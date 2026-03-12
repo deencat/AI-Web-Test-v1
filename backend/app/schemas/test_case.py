@@ -220,3 +220,23 @@ class TestStatistics(BaseModel):
     by_priority: Dict[str, int]
     by_user: Optional[Dict[int, int]] = None  # user_id: count
 
+
+# ── Batch Delete ──────────────────────────────────────────────────────────────
+
+class BatchDeleteRequest(BaseModel):
+    """Request body for DELETE /tests/batch.
+
+    ids: list of test-case IDs to delete (1–100 items).
+    """
+    ids: List[int]
+
+
+class BatchDeleteResponse(BaseModel):
+    """Response body for DELETE /tests/batch.
+
+    deleted: number of test cases successfully deleted.
+    failed: IDs that could not be deleted (not found, not owned, or DB error).
+    """
+    deleted: int
+    failed: List[int]
+
