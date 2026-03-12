@@ -57,6 +57,10 @@ export interface BrowserProfileData {
     sameSite?: 'Strict' | 'Lax' | 'None';
     expires?: number;
   }>;
+  http_credentials?: {
+    username: string;
+    password: string;
+  };
   localStorage: Record<string, string>;
   sessionStorage: Record<string, string>;
   exported_at: string;

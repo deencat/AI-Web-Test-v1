@@ -94,6 +94,7 @@ class OrchestrationService:
         depth = request.get("depth", 1)
         login_credentials = request.get("login_credentials") or {}
         http_credentials = request.get("http_credentials") or {}
+        browser_profile_data = request.get("browser_profile_data") or None
         gmail_credentials = request.get("gmail_credentials") or {}
         scenario_types = request.get("scenario_types")
         max_scenarios = request.get("max_scenarios")
@@ -211,6 +212,8 @@ class OrchestrationService:
                 obs_payload["login_credentials"] = login_credentials
             if http_credentials:
                 obs_payload["http_credentials"] = http_credentials
+            if browser_profile_data:
+                obs_payload["browser_profile_data"] = browser_profile_data
             if gmail_credentials:
                 obs_payload["gmail_credentials"] = gmail_credentials
             obs_task = TaskContext(
@@ -461,6 +464,7 @@ class OrchestrationService:
         depth = request.get("depth", 1)
         login_credentials = request.get("login_credentials") or {}
         http_credentials = request.get("http_credentials") or {}
+        browser_profile_data = request.get("browser_profile_data") or None
         gmail_credentials = request.get("gmail_credentials") or {}
         started_at = datetime.now(timezone.utc)
         pt = self.progress_tracker
@@ -479,6 +483,8 @@ class OrchestrationService:
             obs_payload["login_credentials"] = login_credentials
         if http_credentials:
             obs_payload["http_credentials"] = http_credentials
+        if browser_profile_data:
+            obs_payload["browser_profile_data"] = browser_profile_data
         if gmail_credentials:
             obs_payload["gmail_credentials"] = gmail_credentials
         obs_task = TaskContext(

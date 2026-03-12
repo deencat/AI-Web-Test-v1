@@ -56,6 +56,21 @@ class TestWorkflowSchemas:
             "password": "secret",
         }
 
+    def test_observation_request_accepts_browser_profile_data(self):
+        from app.schemas.workflow import ObservationRequest
+
+        request = ObservationRequest(
+            url="https://wwwuat.three.com.hk/",
+            browser_profile_data={
+                "cookies": [],
+                "localStorage": {"journey": "active"},
+                "sessionStorage": {"selectedPlan": "world"},
+            },
+        )
+
+        assert request.browser_profile_data is not None
+        assert request.browser_profile_data["localStorage"]["journey"] == "active"
+
 
 class TestObservationAgentHelpers:
     def test_build_browser_profile_includes_basic_auth_header(self):
@@ -91,6 +106,27 @@ class TestObservationAgentHelpers:
         )
 
         assert result == "https://user%2B1:p%40ss%3Aword@example.com/path"
+
+    def test_build_browser_profile_includes_storage_state_from_browser_profile_data(self):
+        agent = _make_agent()
+
+        with patch("browser_use.BrowserProfile") as mock_profile:
+            mock_profile.return_value = MagicMock()
+            agent._build_browser_profile(
+                http_credentials=None,
+                url="https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/",
+                browser_profile_data={
+                    "cookies": [{"name": "sid", "value": "123", "domain": ".three.com.hk", "path": "/"}],
+                    "localStorage": {"journey": "active"},
+                    "sessionStorage": {"selectedPlan": "world"},
+                },
+            )
+
+        storage_state = mock_profile.call_args.kwargs["storage_state"]
+        assert storage_state["cookies"][0]["name"] == "sid"
+        assert storage_state["origins"][0]["origin"] == "https://wwwuat.three.com.hk"
+        assert storage_state["origins"][0]["localStorage"][0] == {"name": "journey", "value": "active"}
+        assert storage_state["origins"][0]["sessionStorage"][0] == {"name": "selectedPlan", "value": "world"}
 
 
 class TestExecuteTaskPassThrough:
@@ -130,6 +166,41 @@ class TestExecuteTaskPassThrough:
         }
 
     @pytest.mark.asyncio
+    async def test_execute_task_forwards_browser_profile_data_to_flow_crawling(self):
+        from agents.base_agent import TaskContext
+
+        agent = _make_agent()
+        result = MagicMock(success=True)
+
+        browser_profile_data = {
+            "cookies": [],
+            "localStorage": {"journey": "active"},
+            "sessionStorage": {"selectedPlan": "world"},
+        }
+
+        with patch.object(
+            agent,
+            "_execute_multi_page_flow_crawling",
+            new_callable=AsyncMock,
+            return_value=result,
+        ) as mock_flow:
+            task = TaskContext(
+                conversation_id="wf-1b",
+                task_id="obs-1b",
+                task_type="ui_element_extraction",
+                payload={
+                    "url": "https://wwwuat.three.com.hk/",
+                    "user_instruction": "Observe the purchase flow",
+                    "browser_profile_data": browser_profile_data,
+                },
+                priority=8,
+            )
+
+            await agent.execute_task(task)
+
+        assert mock_flow.call_args.kwargs["browser_profile_data"] == browser_profile_data
+
+    @pytest.mark.asyncio
     async def test_flow_crawling_builds_profile_and_uses_authenticated_url(self):
         from agents.base_agent import TaskContext
 
@@ -166,7 +237,9 @@ class TestExecuteTaskPassThrough:
                 pass
 
         mock_profile.assert_called_once_with(
-            http_credentials={"username": "uat_user", "password": "secret"}
+            http_credentials={"username": "uat_user", "password": "secret"},
+            url="https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/",
+            browser_profile_data=None,
         )
         browser_task = mock_browser_agent_ctor.call_args.kwargs["task"]
         assert "https://uat_user:secret@wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/" in browser_task
@@ -209,6 +282,43 @@ class TestOrchestrationPassThrough:
             "username": "uat_user",
             "password": "secret",
         }
+
+    @pytest.mark.asyncio
+    async def test_run_observation_only_passes_browser_profile_data(self):
+        from app.services.orchestration_service import OrchestrationService
+
+        service = OrchestrationService.__new__(OrchestrationService)
+        service.progress_tracker = None
+        mock_observation_agent = MagicMock()
+        mock_task_result = MagicMock(
+            success=True,
+            result={"ui_elements": [], "page_context": {"url": "https://example.com"}},
+            execution_time_seconds=1.0,
+        )
+        mock_observation_agent.execute_task = AsyncMock(return_value=mock_task_result)
+        service._create_agents = MagicMock(return_value=(mock_observation_agent, None, None, None))
+
+        browser_profile_data = {
+            "cookies": [],
+            "localStorage": {"journey": "active"},
+            "sessionStorage": {"selectedPlan": "world"},
+        }
+
+        with (
+            patch("app.services.workflow_store.update_state"),
+            patch("app.services.workflow_store.set_state"),
+        ):
+            await service.run_observation_only(
+                workflow_id="wf-obs-profile",
+                request={
+                    "url": "https://wwwuat.three.com.hk/",
+                    "user_instruction": "Observe the purchase flow",
+                    "browser_profile_data": browser_profile_data,
+                },
+            )
+
+        task_context = mock_observation_agent.execute_task.call_args.args[0]
+        assert task_context.payload["browser_profile_data"] == browser_profile_data
 
     @pytest.mark.asyncio
     async def test_observation_endpoint_forwards_http_credentials(self):

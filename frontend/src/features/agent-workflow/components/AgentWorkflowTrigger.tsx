@@ -8,7 +8,9 @@
 import React, { useState } from 'react';
 import { Button } from '../../../components/common/Button';
 import agentWorkflowService from '../../../services/agentWorkflowService';
+import browserProfileService from '../../../services/browserProfileService';
 import type { GenerateTestsRequest } from '../../../types/agentWorkflow.types';
+import type { BrowserProfile } from '../../../types/browserProfile';
 
 export interface AgentWorkflowTriggerProps {
   /** Invoked with the new workflow_id once the workflow is accepted by the backend */
@@ -23,6 +25,8 @@ export const AgentWorkflowTrigger: React.FC<AgentWorkflowTriggerProps> = ({
   const [url, setUrl] = useState('');
   const [userInstruction, setUserInstruction] = useState('');
   const [depth, setDepth] = useState<1 | 2 | 3>(1);
+  const [profiles, setProfiles] = useState<BrowserProfile[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState('');
 
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -35,6 +39,29 @@ export const AgentWorkflowTrigger: React.FC<AgentWorkflowTriggerProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  React.useEffect(() => {
+    let isMounted = true;
+
+    const loadProfiles = async () => {
+      try {
+        const response = await browserProfileService.getAllProfiles();
+        if (isMounted) {
+          setProfiles(response.profiles);
+        }
+      } catch {
+        if (isMounted) {
+          setProfiles([]);
+        }
+      }
+    };
+
+    loadProfiles();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -46,6 +73,20 @@ export const AgentWorkflowTrigger: React.FC<AgentWorkflowTriggerProps> = ({
     setIsSubmitting(true);
     setSubmitError(null);
 
+    let browserProfileData;
+    let resolvedHttpCredentials;
+
+    if (selectedProfileId) {
+      try {
+        browserProfileData = await browserProfileService.loadProfileSession(Number(selectedProfileId));
+        resolvedHttpCredentials = browserProfileData.http_credentials;
+      } catch (error) {
+        setSubmitError(error instanceof Error ? error.message : 'Failed to load browser profile session.');
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
     const request: GenerateTestsRequest = {
       url: url.trim(),
       depth,
@@ -53,9 +94,12 @@ export const AgentWorkflowTrigger: React.FC<AgentWorkflowTriggerProps> = ({
       ...(loginEmail.trim() && loginPassword
         ? { login_credentials: { email: loginEmail.trim(), password: loginPassword } }
         : {}),
-      ...(httpUsername.trim() && httpPassword
+      ...((httpUsername.trim() && httpPassword)
         ? { http_credentials: { username: httpUsername.trim(), password: httpPassword } }
+        : resolvedHttpCredentials
+          ? { http_credentials: resolvedHttpCredentials }
         : {}),
+      ...(browserProfileData ? { browser_profile_data: browserProfileData } : {}),
       ...(gmailEmail.trim() && gmailPassword
         ? { gmail_credentials: { email: gmailEmail.trim(), password: gmailPassword } }
         : {}),
@@ -94,6 +138,30 @@ export const AgentWorkflowTrigger: React.FC<AgentWorkflowTriggerProps> = ({
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             disabled={isSubmitting}
           />
+        </div>
+
+        <div>
+          <label htmlFor="browser-profile" className="block text-sm font-medium text-gray-700 mb-1">
+            Browser profile <span className="text-gray-400 font-normal">(optional)</span>
+          </label>
+          <select
+            id="browser-profile"
+            data-testid="browser-profile-select"
+            value={selectedProfileId}
+            onChange={(e) => setSelectedProfileId(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isSubmitting}
+          >
+            <option value="">No saved browser profile</option>
+            {profiles.map((profile) => (
+              <option key={profile.id} value={String(profile.id)}>
+                {profile.profile_name}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            Reuse saved cookies and storage from a synced browser profile to keep purchase-flow state.
+          </p>
         </div>
 
         {/* User instruction */}

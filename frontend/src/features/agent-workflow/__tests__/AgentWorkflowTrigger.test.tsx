@@ -6,12 +6,22 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AgentWorkflowTrigger } from '../components/AgentWorkflowTrigger';
 import type { WorkflowStatusResponse } from '../../../types/agentWorkflow.types';
+import type { BrowserProfileListResponse, BrowserProfileData } from '../../../types/browserProfile';
 
 const mockGenerateTests = vi.fn();
+const mockGetAllProfiles = vi.fn();
+const mockLoadProfileSession = vi.fn();
 
 vi.mock('../../../services/agentWorkflowService', () => ({
   default: {
     generateTests: (...args: unknown[]) => mockGenerateTests(...args),
+  },
+}));
+
+vi.mock('../../../services/browserProfileService', () => ({
+  default: {
+    getAllProfiles: (...args: unknown[]) => mockGetAllProfiles(...args),
+    loadProfileSession: (...args: unknown[]) => mockLoadProfileSession(...args),
   },
 }));
 
@@ -27,12 +37,40 @@ const MOCK_WORKFLOW_RESPONSE: WorkflowStatusResponse = {
   error: null,
 };
 
+const MOCK_PROFILE_RESPONSE: BrowserProfileListResponse = {
+  profiles: [
+    {
+      id: 7,
+      user_id: 1,
+      profile_name: 'Three HK Logged In',
+      os_type: 'linux',
+      browser_type: 'chromium',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      has_session_data: true,
+      has_http_credentials: true,
+      http_username: 'uat_user',
+    },
+  ],
+  total: 1,
+};
+
+const MOCK_PROFILE_DATA: BrowserProfileData = {
+  cookies: [],
+  localStorage: { journey: 'active' },
+  sessionStorage: { selectedPlan: 'world' },
+  http_credentials: { username: 'uat_user', password: 'secret' },
+  exported_at: new Date().toISOString(),
+};
+
 describe('AgentWorkflowTrigger', () => {
   const onWorkflowStarted = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockGenerateTests.mockResolvedValue(MOCK_WORKFLOW_RESPONSE);
+    mockGetAllProfiles.mockResolvedValue(MOCK_PROFILE_RESPONSE);
+    mockLoadProfileSession.mockResolvedValue(MOCK_PROFILE_DATA);
   });
 
   it('renders the form with expected fields', () => {
@@ -40,7 +78,18 @@ describe('AgentWorkflowTrigger', () => {
     expect(screen.getByTestId('url-input')).toBeInTheDocument();
     expect(screen.getByTestId('instruction-input')).toBeInTheDocument();
     expect(screen.getByTestId('depth-select')).toBeInTheDocument();
+    expect(screen.getByTestId('browser-profile-select')).toBeInTheDocument();
     expect(screen.getByTestId('generate-button')).toBeInTheDocument();
+  });
+
+  it('loads available browser profiles for selection', async () => {
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await waitFor(() => {
+      expect(mockGetAllProfiles).toHaveBeenCalled();
+    });
+
+    expect(screen.getByRole('option', { name: /Three HK Logged In/i })).toBeInTheDocument();
   });
 
   it('shows an error if the user submits without a URL', async () => {
@@ -310,6 +359,29 @@ describe('AgentWorkflowTrigger', () => {
     await waitFor(() => {
       expect(mockGenerateTests).toHaveBeenCalledWith(
         expect.not.objectContaining({ http_credentials: expect.anything() })
+      );
+    });
+  });
+
+  it('loads selected browser profile session data and includes it in the request', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await waitFor(() => {
+      expect(mockGetAllProfiles).toHaveBeenCalled();
+    });
+
+    await user.type(screen.getByTestId('url-input'), 'https://wwwuat.three.com.hk');
+    await user.selectOptions(screen.getByTestId('browser-profile-select'), '7');
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockLoadProfileSession).toHaveBeenCalledWith(7);
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.objectContaining({
+          browser_profile_data: MOCK_PROFILE_DATA,
+          http_credentials: { username: 'uat_user', password: 'secret' },
+        })
       );
     });
   });

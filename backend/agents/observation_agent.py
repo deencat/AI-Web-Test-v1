@@ -253,6 +253,7 @@ class ObservationAgent(BaseAgent):
             user_instruction = task.payload.get("user_instruction", "")  # NEW: User instruction for flow navigation
             login_credentials = task.payload.get("login_credentials", {})  # NEW: Login credentials for target website
             http_credentials = task.payload.get("http_credentials")  # NEW: HTTP Basic auth for preprod/UAT
+            browser_profile_data = task.payload.get("browser_profile_data")
             gmail_credentials = task.payload.get("gmail_credentials", {})  # NEW: Separate Gmail login credentials (optional)
             progress_callback = task.payload.get("progress_callback")
             cancel_check = task.payload.get("cancel_check")
@@ -267,6 +268,7 @@ class ObservationAgent(BaseAgent):
                 return await self._execute_multi_page_flow_crawling(
                     task, url, user_instruction, login_credentials, gmail_credentials, auth,
                     http_credentials=http_credentials,
+                    browser_profile_data=browser_profile_data,
                     progress_callback=progress_callback,
                     cancel_check=cancel_check,
                 )
@@ -497,6 +499,7 @@ class ObservationAgent(BaseAgent):
         auth: Optional[Dict]
         ,
         http_credentials: Optional[Dict[str, str]] = None,
+        browser_profile_data: Optional[Dict[str, Any]] = None,
         progress_callback=None,
         cancel_check=None,
     ) -> TaskResult:
@@ -531,7 +534,11 @@ class ObservationAgent(BaseAgent):
             logger.info(f"  URL: {url}")
             logger.info(f"  User Instruction: {user_instruction}")
 
-            browser_profile = self._build_browser_profile(http_credentials=http_credentials)
+            browser_profile = self._build_browser_profile(
+                http_credentials=http_credentials,
+                url=url,
+                browser_profile_data=browser_profile_data,
+            )
             navigation_url = self._build_authenticated_url(url, http_credentials)
             
             # Prefer in-page login unless user explicitly needs OTP/Gmail (e.g. "OTP", "verify email", "gmail")
@@ -987,6 +994,8 @@ class ObservationAgent(BaseAgent):
     def _build_browser_profile(
         self,
         http_credentials: Optional[Dict[str, str]] = None,
+        url: Optional[str] = None,
+        browser_profile_data: Optional[Dict[str, Any]] = None,
     ):
         """Create browser-use profile with optional HTTP Basic auth header."""
         from browser_use import BrowserProfile
@@ -1001,7 +1010,48 @@ class ObservationAgent(BaseAgent):
         profile_kwargs: Dict[str, Any] = {"headless": False}
         if headers:
             profile_kwargs["headers"] = headers
+        storage_state = self._build_storage_state(url, browser_profile_data)
+        if storage_state:
+            profile_kwargs["storage_state"] = storage_state
         return BrowserProfile(**profile_kwargs)
+
+    def _build_storage_state(
+        self,
+        url: Optional[str],
+        browser_profile_data: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Convert stored browser profile session data into browser-use storage_state."""
+        if not browser_profile_data:
+            return None
+
+        cookies = list(browser_profile_data.get("cookies") or [])
+        local_storage = browser_profile_data.get("localStorage") or {}
+        session_storage = browser_profile_data.get("sessionStorage") or {}
+
+        if not cookies and not local_storage and not session_storage:
+            return None
+
+        origins: List[Dict[str, Any]] = []
+        if url and (local_storage or session_storage):
+            parsed = urlparse(url)
+            if parsed.scheme and parsed.netloc:
+                origin_data: Dict[str, Any] = {"origin": f"{parsed.scheme}://{parsed.netloc}"}
+                if local_storage:
+                    origin_data["localStorage"] = [
+                        {"name": str(name), "value": str(value)}
+                        for name, value in local_storage.items()
+                    ]
+                if session_storage:
+                    origin_data["sessionStorage"] = [
+                        {"name": str(name), "value": str(value)}
+                        for name, value in session_storage.items()
+                    ]
+                origins.append(origin_data)
+
+        return {
+            "cookies": cookies,
+            "origins": origins,
+        }
 
     def _build_authenticated_url(
         self,
