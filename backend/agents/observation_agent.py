@@ -292,6 +292,7 @@ class ObservationAgent(BaseAgent):
                 try:
                     return await self._execute_traditional_crawling(
                         task, url, max_depth, auth,
+                        http_credentials=http_credentials,
                         progress_callback=progress_callback,
                         cancel_check=cancel_check,
                     )
@@ -319,6 +320,7 @@ class ObservationAgent(BaseAgent):
         max_depth: int,
         auth: Optional[Dict]
         ,
+        http_credentials: Optional[Dict[str, str]] = None,
         progress_callback=None,
         cancel_check=None,
     ) -> TaskResult:
@@ -340,9 +342,16 @@ class ObservationAgent(BaseAgent):
         
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=headless_mode)
+            context_options = {
+                "viewport": {"width": 1920, "height": 1080},
+                "user_agent": "AI-Web-Test ObservationAgent/1.0",
+            }
+            normalized_http_credentials = self._normalize_http_credentials(http_credentials)
+            if normalized_http_credentials:
+                context_options["http_credentials"] = normalized_http_credentials
+
             context = await browser.new_context(
-                viewport={"width": 1920, "height": 1080},
-                user_agent="AI-Web-Test ObservationAgent/1.0"
+                **context_options
             )
             
             # Add authentication if provided
@@ -553,7 +562,6 @@ class ObservationAgent(BaseAgent):
                 url=url,
                 browser_profile_data=browser_profile_data,
             )
-            navigation_url = self._build_authenticated_url(url, http_credentials)
             
             # Prefer in-page login unless user explicitly needs OTP/Gmail (e.g. "OTP", "verify email", "gmail")
             instruction_lower = (user_instruction or "").lower()
@@ -565,9 +573,23 @@ class ObservationAgent(BaseAgent):
                 or "email verification" in instruction_lower
             )
             
+            # Initialize browser-use
+            browser = Browser(browser_profile=browser_profile)
+            initial_page_primed = await self._prime_browser_session_http_auth(
+                browser,
+                url=url,
+                http_credentials=http_credentials,
+            )
+
+            start_instruction = (
+                f"You are already on {url}. Continue from the current page and complete the following task:"
+                if initial_page_primed
+                else f"Navigate to {url} and complete the following task:"
+            )
+
             # Build task description for browser-use
             task_description = f"""
-            Navigate to {navigation_url} and complete the following task:
+            {start_instruction}
             {user_instruction}
             
             LOGIN METHOD (CRITICAL):
@@ -654,10 +676,6 @@ class ObservationAgent(BaseAgent):
             # Create LLM adapter for browser-use (use Azure OpenAI)
             # Note: browser-use expects a specific LLM interface, we'll need to adapt
             llm_adapter = self._create_browser_use_llm_adapter()
-            
-            # Initialize browser-use
-            browser = Browser(browser_profile=browser_profile)
-            await self._apply_browser_session_http_auth(browser, http_credentials)
             agent = BrowserUseAgent(
                 task=task_description,
                 llm=llm_adapter,
@@ -1040,46 +1058,174 @@ class ObservationAgent(BaseAgent):
             profile_kwargs["storage_state"] = storage_state
         return BrowserProfile(**profile_kwargs)
 
-    async def _apply_browser_session_http_auth(
+    async def _setup_cdp_server_auth(
         self,
         browser,
         http_credentials: Optional[Dict[str, str]] = None,
-    ) -> None:
-        """Apply HTTP Basic auth directly to browser-use page requests."""
-        headers = self._build_http_auth_headers(http_credentials)
-        if not headers:
-            return
+    ) -> bool:
+        """
+        Register a CDP Fetch.authRequired handler so the browser automatically
+        responds to HTTP Basic Auth (401 WWW-Authenticate: Basic) challenges.
 
-        start_browser = getattr(browser, "start", None)
-        if callable(start_browser):
-            start_result = start_browser()
+        browser-use 0.12.x has BrowserProfile.http_credentials commented out and
+        does not intercept server auth challenges by default.  This method mirrors
+        the _setup_proxy_auth pattern inside BrowserSession but for server challenges.
+
+        Must be called AFTER browser.start() so _cdp_client_root is available.
+        Returns True if the handler was registered, False otherwise.
+        """
+        normalized = self._normalize_http_credentials(http_credentials)
+        if not normalized:
+            return False
+
+        cdp_client = getattr(browser, "_cdp_client_root", None)
+        if cdp_client is None:
+            logger.warning(
+                "ObservationAgent: CDP client root not available after start(); "
+                "cannot register server auth handler — preprod page may remain blocked"
+            )
+            return False
+
+        username = normalized["username"]
+        password = normalized["password"]
+
+        # Enable Fetch domain with auth challenge interception (mirrors _setup_proxy_auth)
+        try:
+            await cdp_client.send.Fetch.enable(params={"handleAuthRequests": True})
+            logger.info("ObservationAgent: Enabled CDP Fetch.enable(handleAuthRequests=True) for HTTP Basic Auth")
+        except Exception as e:
+            logger.warning(f"ObservationAgent: Fetch.enable failed: {e}")
+            return False
+
+        def _on_auth_required(event: Any, session_id: Any = None) -> None:
+            """Respond to any server auth challenge with ProvideCredentials."""
+            request_id = event.get("requestId") or event.get("request_id")
+            if not request_id:
+                return
+
+            async def _provide_creds() -> None:
+                try:
+                    await cdp_client.send.Fetch.continueWithAuth(
+                        params={
+                            "requestId": request_id,
+                            "authChallengeResponse": {
+                                "response": "ProvideCredentials",
+                                "username": username,
+                                "password": password,
+                            },
+                        },
+                        session_id=session_id,
+                    )
+                    logger.debug(
+                        f"ObservationAgent: Provided HTTP Basic credentials for auth challenge "
+                        f"(requestId={request_id})"
+                    )
+                except Exception as e:
+                    logger.debug(f"ObservationAgent: continueWithAuth failed: {e}")
+
+            asyncio.create_task(_provide_creds())
+
+        def _on_request_paused(event: Any, session_id: Any = None) -> None:
+            """Continue any paused request to avoid stalling the network."""
+            request_id = event.get("requestId") or event.get("request_id")
+            if not request_id:
+                return
+
+            async def _continue_request() -> None:
+                try:
+                    await cdp_client.send.Fetch.continueRequest(
+                        params={"requestId": request_id},
+                        session_id=session_id,
+                    )
+                except Exception:
+                    pass
+
+            asyncio.create_task(_continue_request())
+
+        try:
+            cdp_client.register.Fetch.authRequired(_on_auth_required)
+            cdp_client.register.Fetch.requestPaused(_on_request_paused)
+            logger.info("ObservationAgent: Registered CDP Fetch.authRequired handler for HTTP Basic Auth")
+        except Exception as e:
+            logger.warning(f"ObservationAgent: Failed to register Fetch handlers: {e}")
+            return False
+
+        return True
+
+    async def _prime_browser_session_http_auth(
+        self,
+        browser,
+        url: str,
+        http_credentials: Optional[Dict[str, str]] = None,
+    ) -> bool:
+        """
+        Start the browser session, register a CDP-level HTTP Basic Auth handler via
+        Fetch.authRequired, then navigate to the initial URL so the preprod gate is
+        cleared before the agent begins its main task.
+
+        The CDP handler persists for the session lifetime, so if the agent re-navigates
+        to the same page it will also succeed without needing separate header injection.
+
+        Returns True when auth was set up and the initial page was loaded.
+        """
+        normalized = self._normalize_http_credentials(http_credentials)
+        if not normalized:
+            return False
+
+        # Start the browser session (required before _cdp_client_root is available)
+        start_fn = getattr(browser, "start", None)
+        if callable(start_fn):
+            start_result = start_fn()
             if inspect.isawaitable(start_result):
                 await start_result
 
-        set_extra_headers = getattr(browser, "set_extra_headers", None)
-        if callable(set_extra_headers):
-            header_result = set_extra_headers(headers)
-            if inspect.isawaitable(header_result):
-                await header_result
-            return
+        # Register CDP auth handler — this is the only auth mechanism needed
+        await self._setup_cdp_server_auth(browser, normalized)
 
-        logger.warning(
-            "ObservationAgent: Browser session does not support set_extra_headers; "
-            "falling back to profile headers and authenticated URL"
-        )
+        # Navigate to the initial page; CDP handler responds to the 401 challenge
+        navigate_fn = getattr(browser, "navigate_to", None)
+        if callable(navigate_fn):
+            try:
+                nav_result = navigate_fn(url)
+                if inspect.isawaitable(nav_result):
+                    await nav_result
+                logger.info(f"ObservationAgent: Initial page primed via CDP HTTP Basic Auth: {url}")
+            except Exception as e:
+                logger.warning(
+                    f"ObservationAgent: Initial navigation failed: {e}; "
+                    "agent will retry and CDP auth handler is still active"
+                )
+        return True
 
     def _build_http_auth_headers(
         self,
         http_credentials: Optional[Dict[str, str]] = None,
     ) -> Dict[str, str]:
         """Build HTTP Basic auth headers for reuse across browser integrations."""
-        if not http_credentials:
+        normalized_credentials = self._normalize_http_credentials(http_credentials)
+        if not normalized_credentials:
             return {}
 
-        username = str(http_credentials.get("username", ""))
-        password = str(http_credentials.get("password", ""))
+        username = normalized_credentials["username"]
+        password = normalized_credentials["password"]
         token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("utf-8")
         return {"Authorization": f"Basic {token}"}
+
+    def _normalize_http_credentials(
+        self,
+        http_credentials: Optional[Dict[str, str]] = None,
+    ) -> Optional[Dict[str, str]]:
+        """Normalize credentials and drop unusable values to avoid invalid auth attempts."""
+        if not http_credentials:
+            return None
+
+        username = str(http_credentials.get("username", "")).strip()
+        password = str(http_credentials.get("password", "")).strip()
+
+        if not username or not password:
+            return None
+
+        return {"username": username, "password": password}
 
     def _build_storage_state(
         self,
@@ -1125,11 +1271,12 @@ class ObservationAgent(BaseAgent):
         http_credentials: Optional[Dict[str, str]] = None,
     ) -> str:
         """Embed HTTP Basic auth in the URL as a compatibility fallback."""
-        if not http_credentials:
+        normalized_credentials = self._normalize_http_credentials(http_credentials)
+        if not normalized_credentials:
             return url
 
-        username = quote(str(http_credentials.get("username", "")), safe="")
-        password = quote(str(http_credentials.get("password", "")), safe="")
+        username = quote(normalized_credentials["username"], safe="")
+        password = quote(normalized_credentials["password"], safe="")
         parsed = urlparse(url)
 
         if not parsed.scheme or not parsed.netloc:
