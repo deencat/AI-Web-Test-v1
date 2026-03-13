@@ -3,7 +3,7 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · 📋 Sprint 10.5 Developer B PLANNED (OpenRouter Free Models + Batch Delete Tests, Mar 9-19)  
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13)  
 **Last Updated:** February 10, 2026 (Alignment corrections applied)  
 **Version:** 3.0
 
@@ -1666,13 +1666,20 @@ Developer B's Sprint 10 tasks (10B.11 + 10B.12) are fully complete as of Feb 26.
 
 ---
 
-#### Feature 3: ObservationAgent HTTP Credentials for Preprod Browser Access (5 points)
+#### Feature 3: ObservationAgent HTTP Credentials for Preprod Browser Access (5 points) ✅ COMPLETE (Mar 13, 2026)
 
-**Goal:** Allow the ObservationAgent's browser-use browser to authenticate against HTTP-Basic-protected preprod/UAT environments (e.g. `https://wwwuat.three.com.hk/`) by storing HTTP credentials in a `BrowserProfile`, so the crawler can access pages that sit behind a network-level username/password prompt.
+**Goal:** Allow the ObservationAgent's browser-use browser to authenticate against HTTP-Basic-protected preprod/UAT environments (e.g. `https://wwwuat.three.com.hk/`) so the crawler can access pages that sit behind a network-level username/password prompt.
 
-**Why:** Preprod and staging environments commonly require HTTP Basic authentication before any page content is served. Without this, browser-use opens a blank page or gets a 401 response, making ObservationAgent useless on those URLs. Supplying credentials via a `BrowserProfile` (with `Authorization: Basic <token>` header) enables full-page crawling on protected environments out of the box.
+**Why:** Preprod and staging environments commonly require HTTP Basic authentication before any page content is served. Without this, browser-use opens a blank page or gets a `401`/`ERR_INVALID_AUTH_CREDENTIALS` error, making ObservationAgent useless on those URLs.
 
-**Current state:** `ObservationAgent` already supports `login_credentials` (form-based login) and `auth` (Playwright `httpCredentials`), but `browser-use` launches its own `Browser` instance that ignores those options. No `BrowserProfile` is created or passed to the browser-use `Agent` constructor, so HTTP Basic access is silently ignored.
+**Implemented state (Mar 13):**
+- `ObservationRequest` and `GenerateTestsRequest` schemas accept `http_credentials: Optional[Dict[str, str]]`.
+- `execute_task()` extracts and forwards `http_credentials` to both the browser-use flow path and the traditional Playwright crawling path.
+- **browser-use path:** `_setup_cdp_server_auth()` registers a CDP `Fetch.authRequired` handler directly on `BrowserSession._cdp_client_root`. This intercepts every `WWW-Authenticate: Basic` challenge and responds with `ProvideCredentials`, exactly as `_setup_proxy_auth` does for proxy challenges — bypassing the limitation that `BrowserProfile.http_credentials` is commented out in browser-use 0.12.x.
+- `_prime_browser_session_http_auth()` calls `browser.start()`, registers the CDP handler, then navigates to the initial URL so the preprod gate is cleared before the agent starts its task.
+- **Traditional Playwright path:** `_execute_traditional_crawling()` forwards `http_credentials` into `browser.new_context(http_credentials=...)` with credential normalisation (blank values dropped to avoid malformed auth).
+- Frontend `AgentWorkflowTrigger` sends `http_credentials` in the workflow payload.
+- 39 backend tests passing. ADR documented at `documentation/ADR-004-observation-agent-cdp-http-auth.md`.
 
 **TDD tests already written:** `backend/tests/agents/test_observation_agent_http_credentials.py` (586 lines, RED phase) — covers schema, `_build_browser_profile()`, `_build_authenticated_url()` fallback, `execute_task()` payload extraction, `_execute_multi_page_flow_crawling()` integration, endpoint pass-through and `run_observation_only()`.
 
@@ -1789,14 +1796,15 @@ Developer B's Sprint 10 tasks (10B.11 + 10B.12) are fully complete as of Feb 26.
 - [ ] `SavedTestsPage` shows per-row checkboxes + Select All toggle + Delete Selected button
 - [ ] Batch delete shows confirmation modal before executing
 - [ ] Success toast confirms `"N tests deleted"` and refreshes the list
-- [ ] `ObservationRequest` and `GenerateTestsRequest` schemas accept `http_credentials: Optional[Dict[str, str]]`
-- [ ] `ObservationAgent._build_browser_profile()` injects `Authorization: Basic <token>` header into `BrowserProfile` when credentials provided
-- [ ] `ObservationAgent._build_authenticated_url()` embeds credentials into URL as fallback (special characters URL-encoded)
-- [ ] browser-use `Agent` receives `BrowserProfile` with credentials; preprod pages load without 401
-- [ ] `AgentWorkflowTrigger` shows collapsible HTTP Basic Auth section; credentials included in trigger payload when provided
-- [ ] All 586 lines in `test_observation_agent_http_credentials.py` pass (TDD GREEN)
-- [ ] All new tests pass in CI (backend pytest + frontend Vitest)
-- [ ] No regression in existing single-delete or settings save flows
+- [x] `ObservationRequest` and `GenerateTestsRequest` schemas accept `http_credentials: Optional[Dict[str, str]]`
+- [x] `ObservationAgent._build_browser_profile()` builds `BrowserProfile` with correct defaults; credentials drive CDP handler, not profile headers
+- [x] `ObservationAgent._build_authenticated_url()` embeds credentials into URL with special-character URL-encoding (retained as utility)
+- [x] `ObservationAgent._setup_cdp_server_auth()` registers CDP `Fetch.authRequired` handler; preprod pages load without `ERR_INVALID_AUTH_CREDENTIALS`
+- [x] `ObservationAgent._execute_traditional_crawling()` forwards normalised `http_credentials` into Playwright `browser.new_context()`
+- [x] `AgentWorkflowTrigger` shows collapsible HTTP Basic Auth section; credentials included in trigger payload when provided
+- [x] 39 tests pass in `test_observation_agent_http_credentials.py` + `test_observation_agent_browser_use.py` (TDD GREEN)
+- [x] All new tests pass (backend pytest + frontend Vitest)
+- [x] No regression in existing single-delete or settings save flows
 
 #### Risks & Mitigations
 
