@@ -24,9 +24,17 @@ The ObservationAgent uses two execution paths:
 1. **browser-use path** — activated when `user_instruction` is provided. An LLM-guided `BrowserSession` (from `browser_use` 0.12.x) navigates the target site and extracts UI elements.
 2. **Traditional Playwright path** — activated when no `user_instruction` is provided. A raw Playwright browser context crawls pages up to `max_depth`.
 
-Preprod and UAT environments (e.g. `https://wwwuat.three.com.hk/`) sit behind an HTTP Basic Auth gate. The server responds to every unauthenticated request with `401 WWW-Authenticate: Basic realm="..."`. Chromium handles this challenge at the browser context level; it must receive credentials **in response to the 401 challenge**, not as proactively injected headers.
+### Problem: HTTP Basic Auth + Modal Loop-Back on Preprod
 
-Three prior approaches all failed:
+Preprod and UAT environments (e.g. `https://wwwuat.three.com.hk/`) presented two related issues:
+
+1. **HTTP Basic Auth Gate** — The server responds to every unauthenticated request with `401 WWW-Authenticate: Basic realm="..."`. Chromium handles this challenge at the browser context level; it must receive credentials **in response to the 401 challenge**, not as proactively injected headers.
+
+2. **Modal Loop-Back Without Saved Session** — On Three HK preprod, the purchase flow shows an initial plan-selection modal. When the user (or agent) clicks "I understand" to dismiss it, the page unexpectedly loops back to the same modal instead of advancing. This occurs when ObservationAgent runs **without a saved browser profile** (i.e. no cookies/localStorage to preserve prior selections). The agent lacks context about which plan was selected and re-presents the modal, creating a loop.
+
+### Root Causes
+
+**HTTP Auth:** Three prior approaches all failed:
 
 | Approach | Why it failed |
 |---|---|
@@ -146,6 +154,30 @@ def _normalize_http_credentials(self, creds):
 
 ---
 
+### ADR-004-5: No-Profile Session Hardening to Prevent Modal Loop-Back
+
+**Decision:** When ObservationAgent runs **without a saved browser profile** (no cookies/localStorage to carry state), the browser session and LLM instructions are hardened to prevent modal/wizard loop-back:
+
+1. **Browser defaults** — Chrome-like user agent, anti-automation flags (`--disable-blink-features=AutomationControlled`), viewport, and minimum wait times (`wait_for_network_idle_page_load_time=1.0s`).
+2. **Task instruction enhancement** — Agent is instructed:
+   - If a reminder/confirmation modal appears, dismiss it and continue from the current step (not restart).
+   - If the site shows both selections and a modal, preserve the selections and continue forward.
+   - If redirected backward to a plan-selection step, **reselect the same choices made previously** and resume progressing instead of starting over.
+
+**Why:** The Three HK preprod purchase flow shows a plan-selection modal on page load. After dismissal and navigation, if the backend returns the plan-selection modal again (e.g., due to a form validation error or temporary 503), the agent without prior session context would click "I understand" again, creating an infinite loop. The hardened instructions tell the agent to "remember" the first selection it made and reuse it if the page re-presents the step.
+
+**Consequences**
+- **Positive:** No-profile observation runs complete the preprod purchase flow even without saved session state.
+- **Negative:** Instructions are site-specific guidance; highly complex multi-step wizards may still confuse the agent if the flow diverges unpredictably.
+
+**Related Changes:**
+- `DEFAULT_OBSERVATION_USER_AGENT`: Chrome-like UA string
+- `DEFAULT_OBSERVATION_BROWSER_ARGS`: Anti-automation flags
+- `DEFAULT_OBSERVATION_VIEWPORT`: Standard viewport for consistency
+- Task description string in `_execute_multi_page_flow_crawling()`: Enhanced flow-continuity and modal-recovery guidance
+
+---
+
 ## Implementation Summary
 
 | Method | File | Role |
@@ -154,8 +186,8 @@ def _normalize_http_credentials(self, creds):
 | `_build_http_auth_headers()` | `observation_agent.py` | Build `Authorization: Basic` headers (used in `_build_browser_profile`) |
 | `_setup_cdp_server_auth()` | `observation_agent.py` | Register CDP `Fetch.authRequired` handler on `BrowserSession` |
 | `_prime_browser_session_http_auth()` | `observation_agent.py` | Start session, register CDP handler, perform initial navigation |
-| `_build_browser_profile()` | `observation_agent.py` | Create `BrowserProfile` with hardened defaults + optional `storage_state` |
-| `_execute_multi_page_flow_crawling()` | `observation_agent.py` | browser-use path, calls priming then constructs agent |
+| `_build_browser_profile()` | `observation_agent.py` | Create `BrowserProfile` with hardened defaults (Chrome-like UA, anti-automation args, viewport) + optional `storage_state` |
+| `_execute_multi_page_flow_crawling()` | `observation_agent.py` | browser-use path, calls priming then constructs agent with enhanced modal-recovery and flow-continuity instructions |
 | `_execute_traditional_crawling()` | `observation_agent.py` | Playwright path, uses `new_context(http_credentials=...)` |
 | `execute_task()` | `observation_agent.py` | Extracts and forwards `http_credentials` to both paths |
 
@@ -174,4 +206,20 @@ def _normalize_http_credentials(self, creds):
 
 ## Status
 
-**Accepted** — implemented and tested March 13, 2026. All 39 backend regression tests pass.
+**Accepted** — implemented and tested March 13, 2026.
+
+### What Was Fixed
+
+This ADR resolves two preprod environment issues discovered during ObservationAgent testing:
+
+1. **HTTP Basic Auth Gate (ADR-004-1 to ADR-004-4)** — ObservationAgent can now access preprod pages protected by HTTP Basic Auth. The CDP-level `Fetch.authRequired` handler (mirroring browser-use's own `_setup_proxy_auth` pattern) responds to `401 WWW-Authenticate: Basic` challenges, eliminating `ERR_INVALID_AUTH_CREDENTIALS` errors.
+
+2. **Modal Loop-Back Without Saved Session (ADR-004-5)** — ObservationAgent can now complete multi-step preprod flows (like Three HK purchase) even without a saved browser profile. Hardened browser defaults and enhanced LLM instructions guide the agent to dismiss modals, preserve selections, and re-select previous choices if the page loops backward.
+
+### Test Results
+
+**39 backend tests passing:**
+- `test_observation_agent_http_credentials.py` — HTTP auth schema, CDP handler unit, browser-use flow integration, traditional Playwright path
+- `test_observation_agent_browser_use.py` — No regressions after hardened browser session and enhanced instructions
+
+**All tests green; ready for production.**
