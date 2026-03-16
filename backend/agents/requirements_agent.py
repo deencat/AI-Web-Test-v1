@@ -10,7 +10,7 @@ import re
 import json
 import logging
 from enum import Enum
-from llm.azure_client import AzureClient, get_azure_client
+from llm.client_factory import get_llm_client
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,10 @@ class RequirementsAgent(BaseAgent):
         self.use_llm = config.get("use_llm", False) if config else False
         self.llm_client = None
         if self.use_llm:
-            self.llm_client = get_azure_client()
+            self.llm_client = get_llm_client(
+                config.get("llm_provider", "azure"),
+                config.get("llm_model", "ChatGPT-UAT"),
+            )
             if self.llm_client.enabled:
                 logger.info("RequirementsAgent initialized with LLM enhancement (Azure OpenAI)")
             else:

@@ -101,16 +101,37 @@ class AzureOpenAIAdapter:
 
     _verified_api_keys: bool = True  # Protocol field
 
-    def __init__(self, azure_client=None):
+    def __init__(self, azure_client=None, provider: Optional[str] = None, model: Optional[str] = None):
         if not BROWSER_USE_AVAILABLE:
             logger.warning("browser-use not available - adapter will not work")
 
-        self.azure_client = azure_client or get_azure_client()
+        if azure_client is not None:
+            # Backward-compatible: caller supplied a client directly
+            self.azure_client = azure_client
+        elif provider is not None:
+            # Sprint 10.6: factory-based construction from provider + model
+            from llm.client_factory import get_llm_client
+            self.azure_client = get_llm_client(
+                provider,
+                model or "ChatGPT-UAT",
+            )
+        else:
+            # Legacy fallback: default Azure client
+            self.azure_client = get_azure_client()
 
         if not self.azure_client or not self.azure_client.enabled:
-            logger.warning("Azure OpenAI client not enabled - adapter will fail")
+            logger.warning("LLM client not enabled - adapter will fail")
 
-        self._provider = 'azure-openai'
+        # Derive provider label from the client type (Sprint 10.6)
+        _client_type = type(self.azure_client).__name__.lower()
+        if "google" in _client_type:
+            self._provider = "google"
+        elif "openrouter" in _client_type:
+            self._provider = "openrouter"
+        elif "cerebras" in _client_type:
+            self._provider = "cerebras"
+        else:
+            self._provider = "azure-openai"
 
         model_name = self.azure_client.deployment if self.azure_client and self.azure_client.enabled else 'unknown'
         self.model = model_name

@@ -82,7 +82,7 @@ try:
     from pathlib import Path
     # Add parent directory to path for llm module
     sys.path.insert(0, str(Path(__file__).parent.parent))
-    from llm.azure_client import get_azure_client
+    from llm.client_factory import get_llm_client
     LLM_AVAILABLE = True
 except ImportError:
     LLM_AVAILABLE = False
@@ -177,10 +177,13 @@ class ObservationAgent(BaseAgent):
         # Key: (element_type, element_id, element_class) -> selector
         self._element_cache: Dict[Tuple[str, Optional[str], Optional[str]], str] = {}
         
-        # Initialize LLM client if available and enabled
+        # Initialize LLM client — provider/model driven by config (Sprint 10.6)
         self.llm_client = None
         if self.use_llm and LLM_AVAILABLE:
-            self.llm_client = get_azure_client()
+            self.llm_client = get_llm_client(
+                self.config.get("llm_provider", "azure"),
+                self.config.get("llm_model", "ChatGPT-UAT"),
+            )
             if self.llm_client.enabled:
                 logger.info("ObservationAgent initialized with LLM enhancement (Azure OpenAI)")
             else:

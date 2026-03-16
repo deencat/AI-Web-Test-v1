@@ -41,8 +41,24 @@ class OrchestrationService:
         """
         self.progress_tracker = progress_tracker
 
-    def _create_agents(self, db=None):
-        """Create agent instances with shared message queue and config. db used for Analysis + Evolution."""
+    def _create_agents(self, db=None, per_agent_llm_config: Optional[Dict] = None):
+        """
+        Create agent instances with shared message queue and config.
+
+        Args:
+            db: SQLAlchemy session — passed to Analysis + Evolution agents for DB writes.
+            per_agent_llm_config: Optional dict mapping agent name to LLM overrides, e.g.::
+
+                {
+                    "observation":  {"llm_provider": "google",  "llm_model": "gemini-2.0-flash-exp"},
+                    "requirements": {"llm_provider": "azure",   "llm_model": "ChatGPT-UAT"},
+                    "analysis":     {"llm_provider": "azure",   "llm_model": "ChatGPT-UAT"},
+                    "evolution":    {"llm_provider": "openrouter", "llm_model": "qwen/qwen3-coder-480b-a35b:free"},
+                }
+
+            When None or a key is absent, the agent defaults to azure/ChatGPT-UAT.
+            This is the Phase 0 wiring point; Phase 1 will populate this from user_settings.
+        """
         from agents.base_agent import TaskContext, TaskResult
         from agents.observation_agent import ObservationAgent
         from agents.requirements_agent import RequirementsAgent
@@ -50,15 +66,23 @@ class OrchestrationService:
         from agents.evolution_agent import EvolutionAgent
         from app.core.config import settings
 
+        _llm_cfg = per_agent_llm_config or {}
+        _default_llm = {"llm_provider": "azure", "llm_model": "ChatGPT-UAT"}
+
+        def _llm_for(agent_name: str) -> Dict:
+            """Return resolved LLM config for the given agent name."""
+            return _llm_cfg.get(agent_name, _default_llm)
+
         mq = _MockMessageQueue()
-        obs_config = {"use_llm": True, "max_depth": 1, "max_pages": 1}
-        req_config = {"use_llm": True}
+        obs_config = {"use_llm": True, "max_depth": 1, "max_pages": 1, **_llm_for("observation")}
+        req_config = {"use_llm": True, **_llm_for("requirements")}
         ana_config = {
             "use_llm": True,
             "db": db,
             "enable_realtime_execution": getattr(settings, "ENABLE_ANALYSIS_REALTIME_EXECUTION", True),
+            **_llm_for("analysis"),
         }
-        evo_config = {"use_llm": True, "db": db}
+        evo_config = {"use_llm": True, "db": db, **_llm_for("evolution")}
 
         observation_agent = ObservationAgent(
             message_queue=mq, agent_id="api_observation", priority=8, config=obs_config
