@@ -3,7 +3,7 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13)  
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · 📋 Sprint 10.6 Developer B Per-Agent Model Configuration PLANNED (Mar 16)  
 **Last Updated:** February 10, 2026 (Alignment corrections applied)  
 **Version:** 3.0
 
@@ -1815,6 +1815,188 @@ Developer B's Sprint 10 tasks (10B.11 + 10B.12) are fully complete as of Feb 26.
 | Schema change (`ModelOption`) breaks existing frontend | Low | Medium | Additive-only change: keep `models: List[str]` alongside new `model_options` field |
 | browser-use version does not support `browser_profile` kwarg in `Agent()` | Medium | Medium | `_build_authenticated_url()` URL-embedding fallback covers browser-use 0.11.x; version check at startup logs which path is taken |
 | Credentials accidentally leaked to logs or state | Low | High | `http_credentials` never logged at INFO level (DEBUG only, masked); never stored in frontend `localStorage` or Redux; password field uses `type="password"` |
+
+---
+
+### Developer B Sprint 10.6: Per-Agent Model Provider & Model Selection (Mar 16 - Mar 26, 2026)
+
+**Owner:** Developer B  
+**Status:** 📋 **PLANNED** — Extends to Mar 26 due to additional LLM factory layer required; addresses power-user demand for independent LLM control per agent  
+**Branch:** `feature/sprint10-6-per-agent-model-config`  
+**Story Points:** 16 points / ~8 days  
+
+---
+
+#### Architecture Clarification — Three Independent Model Contexts
+
+This feature operates entirely within a **third, separate model context**. The two existing slots remain completely untouched:
+
+| Slot | Where Used | Feature |
+|------|-----------|---------|
+| **Test Generation** (`generation_provider/model`) | `/tests` page | Standard test case generation |
+| **Test Execution** (`execution_provider/model`) | Saved Tests → Run | 3-tier execution engine |
+| **Agent Workflow** *(new — this sprint)* | `/agent-workflow` page | 4-agent pipeline (Observation → Requirements → Analysis → Evolution) |
+
+The three contexts are independent. The Agent Workflow section on the Settings page does **not** inherit from or affect the Generation or Execution slots.
+
+---
+
+#### Root Cause — Hardcoded Azure Client
+
+All four agents currently call `get_azure_client()` directly inside their `__init__`, which is unconditionally wired to `AZURE_OPENAI_MODEL=ChatGPT-UAT`. Zero connection to the `user_settings` table:
+
+```python
+# Current pattern in ALL 4 agents (hardcoded):
+from llm.azure_client import get_azure_client
+self.llm_client = get_azure_client()   # always ChatGPT-UAT
+```
+
+**Two layers of work are required** before the Settings UI can drive actual agent behaviour:
+1. **LLM Factory** (`llm/client_factory.py`) — returns the right client object for any `(provider, model)` pair
+2. **Agent parameterisation** — agents accept `llm_provider` + `llm_model` in their `config` dict and call the factory instead of hardcoding Azure
+
+---
+
+#### Fallback Resolution
+
+```
+get_agent_config(agent_name):
+  override = user_settings.<agent>_provider / <agent>_model
+  if override is set → use override
+  else → use Azure / ChatGPT-UAT  (existing env-var default, no change)
+
+# The generation_provider / execution_provider slots are NOT consulted.
+# They serve a completely different purpose.
+```
+
+Per-agent fields store `NULL` in the DB when unset. The UI uses `""` as the in-memory sentinel for "use default", which maps to `NULL` on save.
+
+---
+
+#### Phase 0: LLM Factory + Agent Parameterisation (Backend Infrastructure)
+
+**Goal:** Break the hardcoded `get_azure_client()` dependency in all 4 agents and the `browser_use_adapter`. Create a single factory function that maps `(provider, model)` → correct LLM client. Wire it through `orchestration_service.py`.
+
+##### Phase 0 Task Table
+
+| # | Task | File | Owner | Duration |
+|---|------|------|-------|----------|
+| 0.1 | **`llm/client_factory.py`** — `get_llm_client(provider: str, model: str) -> LLMClient`. Supports `azure` (existing), `google`, `cerebras`, `openrouter`. Falls back to Azure if `provider` is unrecognised or env key is missing. | `backend/llm/client_factory.py` | Dev B | 1 day |
+| 0.2 | **Parameterise agents** — replace `get_azure_client()` with `client_factory.get_llm_client(config.get("llm_provider", "azure"), config.get("llm_model", "ChatGPT-UAT"))` in `ObservationAgent`, `RequirementsAgent`, `AnalysisAgent`, `EvolutionAgent` | `backend/agents/*.py` (4 files) | Dev B | 0.5 day |
+| 0.3 | **Update `browser_use_adapter.py`** — accept `provider/model` constructor args so LLM-guided browser navigation can also be switched | `backend/llm/browser_use_adapter.py` | Dev B | 0.25 day |
+| 0.4 | **Update `orchestration_service.py`** — load `user_settings` for the current user; inject `llm_provider` + `llm_model` into each agent's `config` dict from the resolved per-agent override | `backend/app/services/orchestration_service.py` | Dev B | 0.5 day |
+| 0.5 | **Factory unit tests** — correct client returned per provider, Azure fallback on unknown provider, env-key-missing graceful degradation | `backend/tests/test_llm_client_factory.py` | Dev B | 0.5 day |
+
+**Total Phase 0: 5 points / ~2.75 days**
+
+---
+
+#### Phase 1: Database & Backend Schema
+
+**Goal:** Persist per-agent overrides in `user_settings`. All 8 new columns are nullable so existing rows continue to work without any data migration.
+
+##### Phase 1 Task Table
+
+| # | Task | File | Owner | Duration |
+|---|------|------|-------|----------|
+| 1.1 | **DB migration** — add `observation_provider`, `observation_model`, `requirements_provider`, `requirements_model`, `analysis_provider`, `analysis_model`, `evolution_provider`, `evolution_model` (all `VARCHAR(100) NULL`) | `backend/migrate_agent_model_settings.py` | Dev B | 0.25 day |
+| 1.2 | **Extend Pydantic schemas** — add 8 `Optional[str]` to `UserSettingBase`, `UserSettingUpdate`, `UserSettingInDB`; reuse existing `validate_provider` | `backend/app/schemas/user_settings.py` | Dev B | 0.5 day |
+| 1.3 | **`get_agent_config()` service helper** — `get_agent_config(db, user_id, agent_name) -> {provider, model}`. Reads per-agent override, falls back to Azure default | `backend/app/services/user_settings_service.py` | Dev B | 0.25 day |
+| 1.4 | **Backend unit tests** — no override → Azure default; override set → override returned; unknown provider rejected | `backend/tests/test_agent_model_settings.py` | Dev B | 0.5 day |
+
+**Total Phase 1: 3 points / ~1.5 days**
+
+---
+
+#### Phase 2: Frontend Types + Reusable Component
+
+**Goal:** Type the 8 new fields; build a self-contained `AgentModelConfig` row that shows the provider and model dropdowns with a "Default (Azure / ChatGPT-UAT)" option and a fallback badge.
+
+##### Phase 2 Task Table
+
+| # | Task | File | Owner | Duration |
+|---|------|------|-------|----------|
+| 2.1 | **Extend TypeScript types** — 8 optional fields on `UserSettings` + `UpdateUserSettingsRequest` | `frontend/src/types/api.ts` | Dev B | 0.25 day |
+| 2.2 | **`AgentModelConfig` component** — label, provider dropdown (first option = "Default (Azure / ChatGPT-UAT)"), model dropdown filtered by selected provider, badge showing active resolved value | `frontend/src/components/AgentModelConfig.tsx` | Dev B | 1 day |
+| 2.3 | **Component unit tests** — default option renders correct label; `onChange` fires correctly; unconfigured providers are disabled | `frontend/src/components/__tests__/AgentModelConfig.test.tsx` | Dev B | 0.5 day |
+
+**Total Phase 2: 3 points / ~1.75 days**
+
+---
+
+#### Phase 3: Settings Page Integration
+
+**Goal:** Add a new collapsible **"Agent Workflow Configuration"** section to `SettingsPage.tsx` that is visually separate from "Test Generation Settings" and "Test Execution Settings". Extract into `AgentWorkflowSettings.tsx` to keep `SettingsPage.tsx` under 300 lines.
+
+**Settings page layout (after this sprint):**
+
+```
+SettingsPage
+├── Test Generation Settings      ← EXISTING (unchanged)
+├── Test Execution Settings        ← EXISTING (unchanged)
+├── Agent Workflow Configuration  ← NEW (this sprint)
+│   ├── Observation Agent  [provider ▾] [model ▾]
+│   ├── Requirements Agent [provider ▾] [model ▾]
+│   ├── Analysis Agent     [provider ▾] [model ▾]
+│   └── Evolution Agent    [provider ▾] [model ▾]
+│   (each defaults to "Default (Azure / ChatGPT-UAT)" if unset)
+└── Other Settings (notifications, stagehand, etc.)
+```
+
+##### Phase 3 Task Table
+
+| # | Task | File | Owner | Duration |
+|---|------|------|-------|----------|
+| 3.1 | **`AgentWorkflowSettings.tsx`** — wraps 4 × `AgentModelConfig` rows; accepts `providers[]`, per-agent state + onChange | `frontend/src/components/AgentWorkflowSettings.tsx` | Dev B | 0.5 day |
+| 3.2 | **`SettingsPage.tsx` integration** — add 8 state vars; initialise from `userSettings` on load; include in save payload; render `<AgentWorkflowSettings>` in its own `<Card>` section | `frontend/src/pages/SettingsPage.tsx` | Dev B | 0.5 day |
+| 3.3 | **`settingsService.ts` update** — pass the 8 new fields through `updateProviderSettings()` | `frontend/src/services/settingsService.ts` | Dev B | 0.25 day |
+| 3.4 | **Frontend integration tests** — save + reload persists per-agent values; unset agent shows "Default" badge; existing generation/execution slots unaffected | `frontend/src/pages/__tests__/SettingsPage.test.tsx` | Dev B | 0.5 day |
+
+**Total Phase 3: 3 points / ~1.75 days**
+
+---
+
+#### Sprint 10.6 Combined Task Table
+
+| Task | Description | Duration | Dependencies | Risk |
+|------|-------------|----------|--------------|------|
+| **10.6-B1** | `llm/client_factory.py` — multi-provider factory | 1 day | None | Medium |
+| **10.6-B2** | Parameterise 4 agents — replace `get_azure_client()` with factory call | 0.5 day | 10.6-B1 | Low |
+| **10.6-B3** | Update `browser_use_adapter.py` to accept provider/model args | 0.25 day | 10.6-B1 | Low |
+| **10.6-B4** | `orchestration_service.py` — load & inject per-agent config from `user_settings` | 0.5 day | 10.6-B2, 10.6-B3 | Medium |
+| **10.6-B5** | Factory unit tests | 0.5 day | 10.6-B1 | Low |
+| **10.6-B6** | DB migration — 8 nullable VARCHAR columns | 0.25 day | None | Low |
+| **10.6-B7** | Extend Pydantic schemas + `get_agent_config()` helper | 0.75 day | 10.6-B6 | Low |
+| **10.6-B8** | Backend unit tests for fallback + validation | 0.5 day | 10.6-B7 | Low |
+| **10.6-B9** | TypeScript type extension | 0.25 day | 10.6-B7 | Low |
+| **10.6-B10** | `AgentModelConfig.tsx` component + unit tests | 1.5 day | 10.6-B9 | Low |
+| **10.6-B11** | `AgentWorkflowSettings.tsx` sub-component | 0.5 day | 10.6-B10 | Low |
+| **10.6-B12** | `SettingsPage.tsx` + `settingsService.ts` integration + integration tests | 1.25 day | 10.6-B9, 10.6-B11 | Medium |
+
+**Total: 16 points / ~7.75 days**
+
+#### Sprint 10.6 Success Criteria
+
+- [ ] `get_llm_client("google", "gemini-2.0-flash-exp")` returns a working Google client; Azure is the fallback
+- [ ] Agents receive `llm_provider` + `llm_model` from `orchestration_service` at workflow start
+- [ ] Migration runs cleanly; all existing `user_settings` rows remain valid (NULL = use Azure default)
+- [ ] Settings page shows a new **"Agent Workflow Configuration"** section independent of the two existing slots
+- [ ] Each of the 4 agents has its own provider + model dropdown; default shows "Default (Azure / ChatGPT-UAT)"
+- [ ] Selecting a non-default provider/model and saving persists across page reload
+- [ ] Actual workflow run uses the configured agent model (verifiable in backend logs)
+- [ ] `SettingsPage.tsx` stays under 300 lines (section extracted to `AgentWorkflowSettings.tsx`)
+- [ ] All new backend + frontend tests pass
+- [ ] No regression in existing Test Generation or Test Execution provider save flows
+
+#### Risks & Mitigations
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|-----------|--------|------------|
+| New LLM provider client has different async interface from `AzureClient` | Medium | High | Define a minimal `BaseLLMClient` protocol in `client_factory.py`; each client implements it before being used by agents |
+| `orchestration_service.py` called without a DB session (background task) | Low | Medium | `get_agent_config()` accepts `db=None` and returns Azure defaults when no session available |
+| `browser_use_adapter.py` has tight coupling to Azure response format | Medium | Medium | Keep Azure adapter as default; create separate adapters for Google/OpenRouter when needed — Phase 0.3 scoped to Azure + OpenRouter only |
+| SettingsPage.tsx grows past 300-line limit | Medium | Low | Extract `AgentWorkflowSettings.tsx` before integrating (10.6-B11 before 10.6-B12) |
+| Per-agent save overwrites previously-set configs on partial form submission | Low | Medium | Load all 8 per-agent fields from `userSettings` on mount; always write all 8 on save |
 
 ---
 
