@@ -93,6 +93,8 @@ class OrchestrationService:
         user_instruction = request.get("user_instruction") or ""
         depth = request.get("depth", 1)
         login_credentials = request.get("login_credentials") or {}
+        http_credentials = request.get("http_credentials") or {}
+        browser_profile_data = request.get("browser_profile_data") or None
         gmail_credentials = request.get("gmail_credentials") or {}
         scenario_types = request.get("scenario_types")
         max_scenarios = request.get("max_scenarios")
@@ -208,6 +210,10 @@ class OrchestrationService:
                 obs_payload["user_instruction"] = user_instruction
             if login_credentials:
                 obs_payload["login_credentials"] = login_credentials
+            if http_credentials:
+                obs_payload["http_credentials"] = http_credentials
+            if browser_profile_data:
+                obs_payload["browser_profile_data"] = browser_profile_data
             if gmail_credentials:
                 obs_payload["gmail_credentials"] = gmail_credentials
             obs_task = TaskContext(
@@ -451,11 +457,14 @@ class OrchestrationService:
         Use workflow_id to chain into requirements/analysis/evolution later.
         """
         from agents.base_agent import TaskContext
+        from app.services.workflow_store import update_state, set_state
 
         url = str(request.get("url", ""))
         user_instruction = request.get("user_instruction") or ""
         depth = request.get("depth", 1)
         login_credentials = request.get("login_credentials") or {}
+        http_credentials = request.get("http_credentials") or {}
+        browser_profile_data = request.get("browser_profile_data") or None
         gmail_credentials = request.get("gmail_credentials") or {}
         started_at = datetime.now(timezone.utc)
         pt = self.progress_tracker
@@ -472,6 +481,10 @@ class OrchestrationService:
             obs_payload["user_instruction"] = user_instruction
         if login_credentials:
             obs_payload["login_credentials"] = login_credentials
+        if http_credentials:
+            obs_payload["http_credentials"] = http_credentials
+        if browser_profile_data:
+            obs_payload["browser_profile_data"] = browser_profile_data
         if gmail_credentials:
             obs_payload["gmail_credentials"] = gmail_credentials
         obs_task = TaskContext(

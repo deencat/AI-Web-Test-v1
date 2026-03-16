@@ -28,6 +28,14 @@ class GenerateTestsRequest(BaseModel):
         None,
         description="Website login: {'username': '...', 'password': '...'} or {'email': '...', 'password': '...'}"
     )
+    http_credentials: Optional[Dict[str, str]] = Field(
+        None,
+        description="HTTP Basic auth for preprod/UAT access: {'username': '...', 'password': '...'}"
+    )
+    browser_profile_data: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional browser profile session data (cookies, localStorage, sessionStorage)"
+    )
     gmail_credentials: Optional[Dict[str, str]] = Field(
         None,
         description="Gmail login for OTP verification: {'email': '...', 'password': '...'}. Used when flow requires checking email for OTP."
@@ -84,6 +92,14 @@ class ObservationRequest(BaseModel):
     user_instruction: Optional[str] = Field(None, description="Optional instruction for observation")
     depth: int = Field(default=1, ge=1, le=3, description="Crawl depth")
     login_credentials: Optional[Dict[str, str]] = Field(None, description="Website login (username/email + password)")
+    http_credentials: Optional[Dict[str, str]] = Field(
+        None,
+        description="HTTP Basic auth for preprod/UAT access (username + password)"
+    )
+    browser_profile_data: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional browser profile session data (cookies, localStorage, sessionStorage)"
+    )
     gmail_credentials: Optional[Dict[str, str]] = Field(None, description="Gmail login for OTP verification (email + password)")
     model_config = ConfigDict(json_schema_extra={"example": {"url": "https://example.com/login", "depth": 1}})
 

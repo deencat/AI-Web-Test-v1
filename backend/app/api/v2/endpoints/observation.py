@@ -44,6 +44,8 @@ async def run_observation(
         "user_instruction": request.user_instruction,
         "depth": request.depth,
         "login_credentials": request.login_credentials,
+        "http_credentials": request.http_credentials,
+        "browser_profile_data": request.browser_profile_data,
         "gmail_credentials": request.gmail_credentials,
     }
     set_state(workflow_id, {

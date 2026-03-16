@@ -8,6 +8,8 @@
  * ⚠️  REAL API — No more mock data. VITE_USE_MOCK=false.
  */
 
+import type { BrowserProfileData } from './browserProfile';
+
 // ---------------------------------------------------------------------------
 // Primitive / Utility Types
 // ---------------------------------------------------------------------------
@@ -73,6 +75,10 @@ export interface GenerateTestsRequest {
   depth?: number;
   /** Optional login credentials */
   login_credentials?: { username?: string; email?: string; password: string };
+  /** Optional HTTP Basic credentials for preprod/UAT environments */
+  http_credentials?: { username: string; password: string };
+  /** Optional browser profile session data reused by ObservationAgent */
+  browser_profile_data?: BrowserProfileData;
   /** Optional Gmail credentials for OTP */
   gmail_credentials?: { email: string; password: string };
 }
