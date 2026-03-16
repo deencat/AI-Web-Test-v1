@@ -3,7 +3,7 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · 📋 Sprint 10.6 Developer B Per-Agent Model Configuration PLANNED (Mar 16)  
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · 📋 Sprint 10.6 Developer B Per-Agent Model Configuration PLANNED (Mar 16) · 📋 Sprint 10.7 Developer B Browser Profile HTTP Credentials Everywhere (auto-key, saved tests, 4-agent workflow, UI) PLANNED (Mar 16)  
 **Last Updated:** February 10, 2026 (Alignment corrections applied)  
 **Version:** 3.0
 
@@ -2000,6 +2000,162 @@ SettingsPage
 
 ---
 
+### Developer B Sprint 10.7: Browser Profile HTTP Credentials — Full End-to-End Unification (Mar 16 - Mar 21, 2026)
+
+**Owner:** Developer B  
+**Status:** 📋 **PLANNED** — Closes four gaps so a single browser profile with HTTP Basic Auth credentials works everywhere: saved tests, 4-agent workflow, and initial server setup — with no Python command required  
+**Branch:** `feature/sprint10-7-profile-http-creds-everywhere`  
+**Story Points:** 10 points / ~5 days  
+
+---
+
+#### Four Gaps Closed by This Sprint
+
+| # | Gap | Where it breaks today |
+|---|-----|-----------------------|
+| **G1** | `CREDENTIAL_ENCRYPTION_KEY` requires a manual Python command and manual `.env` edit before any credential storage works | Server startup crashes; users receive no guidance from the UI |
+| **G2** | `GET /browser-profiles/{id}/session` returns `404` for credential-only profiles | `AgentWorkflowTrigger` fails to load any profile that has HTTP credentials but no session cookies |
+| **G3** | `POST /v1/executions/{id}/run` rejects credential-only profiles (`has_session_data` only guard) | Saved-test "Run with Profile" returns HTTP 400 for any profile without cookies |
+| **G4** | `AgentWorkflowTrigger` shows persistent manual HTTP auth fields; no profile indicator; credential-only profiles show `⚠️` | Users must re-type credentials for every 4-agent workflow run; cannot tell which profiles carry HTTP auth |
+
+---
+
+#### Design: How the System Works After This Sprint
+
+```
+User opens Browser Profiles page
+  → Creates profile (name only) — encryption key auto-exists, no Python needed (G1)
+  → Types HTTP username + password in the profile edit form
+  → Saves → credentials encrypted and stored in DB
+
+User on Saved Tests page
+  → Clicks "Run with Profile"
+  → Selects profile (shows 🔐 if credentials only, ✓ if session data too)
+  → Backend accepts profile — credentials flow to Playwright new_context()  (G3)
+
+User on Agent Workflow page
+  → Selects profile from dropdown (shows 🔐 label for credential-only)
+  → No manual HTTP auth fields needed — credentials read from profile  (G2, G4)
+  → 4-agent run uses ObservationAgent CDP auth (existing, unchanged)
+```
+
+---
+
+#### Phase 1: Auto-Generate Encryption Key at Server Startup (G1)
+
+**Problem:** `encryption_service.py` raises `RuntimeError` if `CREDENTIAL_ENCRYPTION_KEY` is not set, printing "Generate with: python -c ...". This requires a developer to run a Python command, copy the output, edit `.env`, and restart the server — a multi-step process that breaks first-time setup.
+
+**Fix:** At startup, if the env var is absent or is the placeholder string `"your-credential-encryption-key"`, auto-generate a Fernet key, write it to `.env` (creating the file if needed), reload the env var into `os.environ`, and log a one-time `WARNING` so operators know it was generated automatically. This is safe for development environments; production operators who set the key explicitly are unaffected.
+
+| # | Task | File | Details | Risk |
+|---|------|------|---------|------|
+| 1.1 | **Auto-generate key in `EncryptionService.__init__`** — detect missing/placeholder `CREDENTIAL_ENCRYPTION_KEY`; call `Fernet.generate_key()`; append/replace line in `backend/.env`; set `os.environ["CREDENTIAL_ENCRYPTION_KEY"]`; log `WARNING: CREDENTIAL_ENCRYPTION_KEY was not set — auto-generated and written to .env` | `backend/app/services/encryption_service.py` | Only triggers when env var is absent or equals the placeholder. If `.env` does not exist, create it. | Low |
+| 1.2 | **Unit test — missing key triggers auto-generation** — `monkeypatch.delenv`; assert `EncryptionService()` succeeds; assert `.env` file contains the new key | `backend/tests/test_encryption_service_auto_key.py` | New file | Low |
+| 1.3 | **Unit test — placeholder key triggers auto-generation** — set env to `"your-credential-encryption-key"`; assert auto-generation fires | `backend/tests/test_encryption_service_auto_key.py` | Same file as 1.2 | Low |
+| 1.4 | **Unit test — valid key skips auto-generation** — set env to a real Fernet key; assert no `.env` write occurs | `backend/tests/test_encryption_service_auto_key.py` | Prevents spurious `.env` writes | Low |
+
+**Total Phase 1: 2 points / ~1 day**
+
+---
+
+#### Phase 2: Fix `GET /session` Endpoint and CRUD for Credential-Only Profiles (G2)
+
+**Problem:** `crud_profile.load_profile_session()` returns `None` when `profile.has_session_data` is `False`, even when `profile.has_http_credentials` is `True`. The `/session` endpoint then raises `404 "Profile has no synced session data"`. The `AgentWorkflowTrigger` calls `browserProfileService.loadProfileSession()`, catches this 404, and aborts — meaning credential-only profiles cannot be used for the 4-agent workflow at all.
+
+**Fix:** `load_profile_session()` should return a valid payload `{cookies: [], localStorage: {}, sessionStorage: {}, http_credentials: {...}}` whenever `has_http_credentials` is True, even without session data. The `/session` endpoint 404 guard is tightened to fire only when **both** `has_session_data` and `has_http_credentials` are `False`.
+
+| # | Task | File | Details | Risk |
+|---|------|------|---------|------|
+| 2.1 | **Fix `load_profile_session()`** — change guard from `if not profile.has_session_data: return None` to `if not profile.has_session_data and not profile.has_http_credentials: return None`; always include `"http_credentials"` key in the returned dict | `backend/app/crud/browser_profile.py` | The returned shape already includes `http_credentials`; only the early-return guard changes | Low |
+| 2.2 | **Fix `GET /session` 404 guard** — change `if not session_data` detail string to `"Profile has no session data and no HTTP credentials configured"` | `backend/app/api/v1/endpoints/browser_profiles.py` | Consistent error message with Phase 3 | Low |
+| 2.3 | **Backend unit test — credential-only profile returns valid payload** — `has_http_credentials=True`, `has_session_data=False`; assert `load_profile_session()` returns `{cookies: [], ..., http_credentials: {username, password}}` | `backend/tests/test_http_credentials_profile_storage.py` | Adds to existing test file | Low |
+| 2.4 | **Backend unit test — empty profile returns None** — `has_http_credentials=False`, `has_session_data=False`; assert returns `None` | `backend/tests/test_http_credentials_profile_storage.py` | Ensures empty profile still blocked | Low |
+
+**Total Phase 2: 2 points / ~1 day**
+
+---
+
+#### Phase 3: Fix Saved-Test Execution Guard (G3)
+
+**Problem:** `POST /v1/executions/{id}/run` in `executions.py` has a guard `if not profile.has_session_data` that raises HTTP 400. A profile that has only HTTP credentials (no cookies) is a valid input to `ExecutionService.create_context(http_credentials=...)` and should not be rejected.
+
+| # | Task | File | Details | Risk |
+|---|------|------|---------|------|
+| 3.1 | **Relax guard** — `if not profile.has_session_data and not profile.has_http_credentials` | `backend/app/api/v1/endpoints/executions.py` | One-line change | Low |
+| 3.2 | **Update error message** — `"Browser profile has no session data and no HTTP credentials configured"` | `backend/app/api/v1/endpoints/executions.py` | Consistent with Phase 2 | Low |
+| 3.3 | **Unit test — credential-only profile passes guard** — `has_http_credentials=True`, `has_session_data=False`; assert no HTTP 400; assert credentials forwarded to queue | `backend/tests/test_execution_service_profile_injection.py` | Adds to existing file | Low |
+| 3.4 | **Unit test — empty profile still rejected** — `has_http_credentials=False`, `has_session_data=False`; assert HTTP 400 with new message | `backend/tests/test_execution_service_profile_injection.py` | Regression guard | Low |
+
+**Total Phase 3: 2 points / ~0.75 day**
+
+---
+
+#### Phase 4: Frontend — Profile-Driven Auth in Both Pickers (G4)
+
+**Problem A — `AgentWorkflowTrigger`:** The profile dropdown shows all profiles but gives no indication of which ones carry HTTP credentials (`has_http_credentials`). A separate "HTTP Basic Auth" accordion with manual text fields is always visible; users must re-type credentials on every run. When a credential-only profile is loaded the component shows an error (because of the old G2 bug). Even after G2 is fixed, there is no linkage between "select profile" and "no need to type credentials".
+
+**Fix A:** When a profile is selected that has `has_http_credentials=True`, collapse/hide the manual HTTP auth accordion (or show it as read-only "Credentials from profile"). Update the profile dropdown `<option>` label to append `🔐` for any profile with `has_http_credentials`. When no profile is selected, the accordion remains user-editable (existing behaviour).
+
+**Problem B — `RunTestButton`:** The profile `<option>` label appends `⚠️` for any profile without session data, which misleads users — a credential-only profile is perfectly usable but looks broken.
+
+**Fix B:** Three-way icon: `✓` (has session data), `🔐` (credentials only), `⚠️` (has neither). The info box text changes to "HTTP credentials configured. No session data — test will use HTTP auth only." for a credential-only profile.
+
+| # | Task | File | Details | Risk |
+|---|------|------|---------|------|
+| 4.1 | **`AgentWorkflowTrigger.tsx` — label credential profiles** — append `🔐` to `<option>` text when `profile.has_http_credentials` is true | `frontend/src/features/agent-workflow/components/AgentWorkflowTrigger.tsx` | Read from `BrowserProfile.has_http_credentials` (already returned by `GET /browser-profiles`) | Low |
+| 4.2 | **`AgentWorkflowTrigger.tsx` — hide manual HTTP fields when profile covers auth** — after profile load: if `resolvedHttpCredentials` is set, set `isHttpAuthOpen = false` and replace the accordion toggle with a locked badge "🔐 HTTP auth from profile"; restore expandable state when profile is deselected | `frontend/src/features/agent-workflow/components/AgentWorkflowTrigger.tsx` | `isHttpAuthOpen` state already exists; add derived condition | Low |
+| 4.3 | **`RunTestButton.tsx` — three-way status icon** — `profile.has_session_data ? ' ✓' : profile.has_http_credentials ? ' 🔐' : ' ⚠️'` | `frontend/src/components/RunTestButton.tsx` | One ternary change | Low |
+| 4.4 | **`RunTestButton.tsx` — update info box message** — branch on `has_http_credentials` without `has_session_data` → "HTTP credentials configured. No session data — test will use HTTP auth only." | `frontend/src/components/RunTestButton.tsx` | Replaces hard-coded message | Low |
+| 4.5 | **Frontend unit tests** — `AgentWorkflowTrigger`: (a) credential profile selected → accordion hidden + badge shown; (b) no profile → accordion shown; (c) `🔐` label rendered for credential profile | `frontend/src/features/agent-workflow/__tests__/AgentWorkflowTrigger.test.tsx` | Extends existing test file | Low |
+| 4.6 | **Frontend unit tests** — `RunTestButton`: (a) credential-only profile shows `🔐`; (b) session-data profile shows `✓`; (c) empty profile shows `⚠️`; (d) info box text for credential-only profile | `frontend/src/components/__tests__/RunTestButton.test.tsx` | New or extends existing | Low |
+
+**Total Phase 4: 4 points / ~2 days**
+
+---
+
+#### Sprint 10.7 Combined Task Table
+
+| Task | Description | File | Duration | Dependencies | Risk |
+|------|-------------|------|----------|--------------|------|
+| **10.7-B1** | Auto-generate Fernet key at startup; write to `.env` | `encryption_service.py` | 0.5 day | None | Low |
+| **10.7-B2** | Unit tests — missing key, placeholder key, valid key | `test_encryption_service_auto_key.py` | 0.5 day | 10.7-B1 | Low |
+| **10.7-B3** | Fix `load_profile_session()` early-return guard | `crud/browser_profile.py` | 0.25 day | None | Low |
+| **10.7-B4** | Fix `/session` 404 message | `api/v1/endpoints/browser_profiles.py` | 0.1 day | 10.7-B3 | Low |
+| **10.7-B5** | Unit tests — credential-only profile returns payload; empty profile returns None | `test_http_credentials_profile_storage.py` | 0.5 day | 10.7-B3 | Low |
+| **10.7-B6** | Relax `has_session_data` guard in executions + update message | `api/v1/endpoints/executions.py` | 0.25 day | None | Low |
+| **10.7-B7** | Unit tests — credential-only accepted; empty rejected | `test_execution_service_profile_injection.py` | 0.5 day | 10.7-B6 | Low |
+| **10.7-B8** | `AgentWorkflowTrigger` — `🔐` label + hide accordion when profile covers auth | `AgentWorkflowTrigger.tsx` | 1 day | 10.7-B3 (G2 fix) | Low |
+| **10.7-B9** | `RunTestButton` — three-way icon + info box | `RunTestButton.tsx` | 0.25 day | 10.7-B6 | Low |
+| **10.7-B10** | Frontend unit tests for both pickers | `AgentWorkflowTrigger.test.tsx`, `RunTestButton.test.tsx` | 0.75 day | 10.7-B8, 10.7-B9 | Low |
+
+**Total: 10 points / ~4.6 days**
+
+---
+
+#### Sprint 10.7 Success Criteria
+
+**Encryption key setup (G1)**
+- [ ] Fresh `backend/` with no `CREDENTIAL_ENCRYPTION_KEY` in `.env`: server starts successfully, `.env` is updated, and `WARNING: CREDENTIAL_ENCRYPTION_KEY was not set — auto-generated and written to .env` appears in logs
+- [ ] Server with a valid pre-existing key: no write to `.env`, no warning
+
+**Credential-only profile in 4-agent workflow (G2)**
+- [ ] Browser profile with `has_http_credentials=True` and no cookies: `GET /browser-profiles/{id}/session` returns `{cookies: [], localStorage: {}, sessionStorage: {}, http_credentials: {username, password}}` (HTTP 200, not 404)
+- [ ] Browser profile with neither: `GET /session` returns HTTP 404 "Profile has no session data and no HTTP credentials configured"
+- [ ] Selecting a credential-only profile in `AgentWorkflowTrigger` and submitting the form succeeds — the 4-agent workflow run uses the profile's HTTP credentials without the user typing anything
+
+**Credential-only profile in saved tests (G3)**
+- [ ] Selecting a credential-only profile in `RunTestButton` and clicking "Run with Profile" no longer returns HTTP 400
+- [ ] Credentials flow through to `ExecutionService.create_context(http_credentials=...)` → Playwright `new_context(http_credentials=...)`
+
+**UI (G4)**
+- [ ] `AgentWorkflowTrigger`: profile dropdown shows `🔐 Profile Name` for credential-only profiles
+- [ ] `AgentWorkflowTrigger`: selecting a credential-only profile collapses the manual HTTP auth accordion and shows "🔐 HTTP auth from profile" badge; deselecting restores the accordion
+- [ ] `RunTestButton`: credential-only profile shows `🔐` (not `⚠️`) in dropdown
+- [ ] `RunTestButton`: info box reads "HTTP credentials configured. No session data — test will use HTTP auth only."
+- [ ] All new backend and frontend tests pass; no regression in existing profile, execution, or agent workflow tests
+
+---
+
 ### Sprint 11: Autonomous Learning System Activation (Mar 20 - Apr 2, 2026)
 
 **Focus:** Achieve true autonomous self-improvement through automated learning mechanisms  
@@ -2839,13 +2995,14 @@ Blockers Requiring CTO Decision:
 
 ## 📚 Document Control
 
-**Document Version:** 3.1  
-**Last Updated:** March 9, 2026  
-**Next Review:** Sprint 10.5 start (Mar 9, 2026)  
+**Document Version:** 3.2  
+**Last Updated:** March 16, 2026  
+**Next Review:** Sprint 10.7 start (Mar 16, 2026)  
 **Document Owner:** Developer A (Project Manager)  
 **Approval:** CTO (Sponsor)
 
 **Change Log:**
+- v3.2 (Mar 16, 2026): Expanded Sprint 10.7 scope from 4 → 10 points to close all four HTTP credentials gaps end-to-end: (G1) auto-generate `CREDENTIAL_ENCRYPTION_KEY` at startup if absent/placeholder — no Python command needed; (G2) fix `GET /session` 404 for credential-only profiles so 4-agent workflow can load them; (G3) relax `has_session_data`-only guard in `executions.py` for saved-test runs; (G4) `AgentWorkflowTrigger` collapses manual HTTP fields and shows badge when profile covers auth, `RunTestButton` gets three-way `✓`/`🔐`/`⚠️` icon and corrected info message. Branch: `feature/sprint10-7-profile-http-creds-everywhere`.
 - v3.1 (Mar 9, 2026): Added Sprint 10.5 Developer B plan — OpenRouter Free Models (19 verified $0/$0 models from openrouter.ai/models, grouped dropdown UI, `qwen/qwen3-coder-480b-a35b:free` recommended) + Batch Delete Saved Tests (checkbox multi-select, batch endpoint, confirmation modal). 13 points / 6 days. Updated v3.1 (Mar 9, 2026 revision 2): Replaced stale model list with user-confirmed list from OpenRouter pricing page.
 - v2.6 (Feb 9, 2026): Sprint 9 completion - Feedback loop tested and verified, 4-agent E2E test passed, all 17 test cases generated successfully, feedback loop generating insights (70% pass rate, 2 insights). Updated test results and Sprint 9 status.
 - v2.5 (Feb 2, 2026): Sprint 8 completion - EvolutionAgent fully implemented, caching layer operational (100% hit rate), feedback loop infrastructure complete
