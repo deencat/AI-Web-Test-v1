@@ -15,7 +15,11 @@ import uuid
 import logging
 import asyncio
 
+from app.services.user_settings_service import user_settings_service
+
 logger = logging.getLogger(__name__)
+
+_DEFAULT_USER_ID = 1  # Single-user system; v2 endpoints have no auth layer
 
 
 class _MockMessageQueue:
@@ -40,6 +44,51 @@ class OrchestrationService:
             progress_tracker: ProgressTracker instance for emitting progress events
         """
         self.progress_tracker = progress_tracker
+
+    def _resolve_per_agent_llm_config(self, db=None, user_id: int = _DEFAULT_USER_ID) -> Dict:
+        """
+        Read per-agent LLM overrides from user_settings for the given user.
+        Returns a per_agent_llm_config dict ready for _create_agents().
+
+        Resolution order (delegated to user_settings_service.get_agent_config):
+          1. Per-agent DB override (e.g. observation_provider / observation_model)
+          2. Azure / ChatGPT-UAT default when override is NULL or absent
+
+        Creates and closes its own short-lived DB session when db=None, so
+        callers don't need to worry about passing one in.
+        """
+        _agents = ("observation", "requirements", "analysis", "evolution")
+        _own_session = False
+        if db is None:
+            try:
+                from app.db.session import SessionLocal
+                db = SessionLocal()
+                _own_session = True
+            except Exception as e:
+                logger.warning(
+                    f"[orchestration] DB unavailable for per-agent config ({e}). "
+                    "Using Azure defaults."
+                )
+
+        result: Dict = {}
+        for agent_name in _agents:
+            cfg = user_settings_service.get_agent_config(db, user_id, agent_name)
+            result[agent_name] = {
+                "llm_provider": cfg["provider"],
+                "llm_model": cfg["model"],
+            }
+            logger.info(
+                f"[orchestration] {agent_name} LLM: "
+                f"{cfg['provider']}/{cfg['model']}"
+            )
+
+        if _own_session and db is not None:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+        return result
 
     def _create_agents(self, db=None, per_agent_llm_config: Optional[Dict] = None):
         """
@@ -131,7 +180,9 @@ class OrchestrationService:
         except Exception as e:
             logger.warning(f"DB session not available: {e}. Evolution storage will be skipped.")
 
-        observation_agent, requirements_agent, analysis_agent, evolution_agent = self._create_agents(db=db)
+        observation_agent, requirements_agent, analysis_agent, evolution_agent = self._create_agents(
+            db=db, per_agent_llm_config=self._resolve_per_agent_llm_config(user_id=request.get("user_id", _DEFAULT_USER_ID))
+        )
 
         started_at = datetime.now(timezone.utc)
         pt = self.progress_tracker
@@ -498,7 +549,9 @@ class OrchestrationService:
                 asyncio.create_task(pt.emit(workflow_id, evt, data))
             update_state(workflow_id, current_agent=data.get("agent"), status="running")
 
-        observation_agent, _, _, _ = self._create_agents(db=None)
+        observation_agent, _, _, _ = self._create_agents(
+            db=None, per_agent_llm_config=self._resolve_per_agent_llm_config(user_id=request.get("user_id", _DEFAULT_USER_ID))
+        )
         _emit("agent_started", {"agent": "observation", "timestamp": started_at.isoformat()})
         obs_payload = {"url": url, "max_depth": depth}
         if user_instruction:
@@ -599,7 +652,9 @@ class OrchestrationService:
                 asyncio.create_task(pt.emit(workflow_id, evt, data))
             update_state(workflow_id, current_agent=data.get("agent"), status="running")
 
-        _, requirements_agent, _, _ = self._create_agents(db=None)
+        _, requirements_agent, _, _ = self._create_agents(
+            db=None, per_agent_llm_config=self._resolve_per_agent_llm_config(user_id=request.get("user_id", _DEFAULT_USER_ID))
+        )
         _emit("agent_started", {"agent": "requirements"})
         observation_data = {
             "ui_elements": ui_elements,
@@ -712,7 +767,9 @@ class OrchestrationService:
             db = SessionLocal()
         except Exception as e:
             logger.warning(f"DB session not available for analysis: {e}")
-        _, _, analysis_agent, _ = self._create_agents(db=db)
+        _, _, analysis_agent, _ = self._create_agents(
+            db=db, per_agent_llm_config=self._resolve_per_agent_llm_config(user_id=request.get("user_id", _DEFAULT_USER_ID))
+        )
         _emit("agent_started", {"agent": "analysis"})
         try:
             analysis_task = TaskContext(
@@ -823,7 +880,9 @@ class OrchestrationService:
                 asyncio.create_task(pt.emit(workflow_id, evt, data))
             update_state(workflow_id, current_agent=data.get("agent"), status="running")
 
-        _, _, _, evolution_agent = self._create_agents(db=db)
+        _, _, _, evolution_agent = self._create_agents(
+            db=db, per_agent_llm_config=self._resolve_per_agent_llm_config(user_id=request.get("user_id", _DEFAULT_USER_ID))
+        )
         _emit("agent_started", {"agent": "evolution"})
         evolution_payload = {
             "scenarios": scenarios,
@@ -1024,7 +1083,9 @@ class OrchestrationService:
             return True
 
         update_state(workflow_id, status="running", workflow_type="improve")
-        _, _, analysis_agent, evolution_agent = self._create_agents(db=db)
+        _, _, analysis_agent, evolution_agent = self._create_agents(
+            db=db, per_agent_llm_config=self._resolve_per_agent_llm_config(user_id=request.get("user_id", _DEFAULT_USER_ID))
+        )
         try:
             for iteration in range(1, max_iterations + 1):
                 logger.info(f"[Iterative] Iteration {iteration}/{max_iterations}")
