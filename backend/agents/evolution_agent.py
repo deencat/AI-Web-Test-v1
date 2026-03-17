@@ -54,12 +54,18 @@ class EvolutionAgent(BaseAgent):
         self.llm_client = None
         if self.use_llm:
             from llm.client_factory import get_llm_client
+            llm_provider = config.get("llm_provider", "azure") if config else "azure"
+            llm_model = config.get("llm_model", "ChatGPT-UAT") if config else "ChatGPT-UAT"
             self.llm_client = get_llm_client(
-                config.get("llm_provider", "azure") if config else "azure",
-                config.get("llm_model", "ChatGPT-UAT") if config else "ChatGPT-UAT",
+                llm_provider,
+                llm_model,
             )
             if self.llm_client and self.llm_client.enabled:
-                logger.info("EvolutionAgent initialized with LLM enhancement (Azure OpenAI)")
+                logger.info(
+                    "EvolutionAgent initialized with LLM enhancement: %s/%s",
+                    llm_provider,
+                    llm_model,
+                )
             else:
                 logger.warning("LLM requested but not available, using template-based generation")
                 self.use_llm = False

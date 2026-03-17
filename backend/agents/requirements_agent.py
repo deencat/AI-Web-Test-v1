@@ -74,12 +74,18 @@ class RequirementsAgent(BaseAgent):
         self.use_llm = config.get("use_llm", False) if config else False
         self.llm_client = None
         if self.use_llm:
+            llm_provider = config.get("llm_provider", "azure")
+            llm_model = config.get("llm_model", "ChatGPT-UAT")
             self.llm_client = get_llm_client(
-                config.get("llm_provider", "azure"),
-                config.get("llm_model", "ChatGPT-UAT"),
+                llm_provider,
+                llm_model,
             )
             if self.llm_client.enabled:
-                logger.info("RequirementsAgent initialized with LLM enhancement (Azure OpenAI)")
+                logger.info(
+                    "RequirementsAgent initialized with LLM enhancement: %s/%s",
+                    llm_provider,
+                    llm_model,
+                )
             else:
                 logger.warning("LLM requested but not available, falling back to pattern-based generation")
                 self.use_llm = False

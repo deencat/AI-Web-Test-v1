@@ -180,12 +180,18 @@ class ObservationAgent(BaseAgent):
         # Initialize LLM client — provider/model driven by config (Sprint 10.6)
         self.llm_client = None
         if self.use_llm and LLM_AVAILABLE:
+            llm_provider = self.config.get("llm_provider", "azure")
+            llm_model = self.config.get("llm_model", "ChatGPT-UAT")
             self.llm_client = get_llm_client(
-                self.config.get("llm_provider", "azure"),
-                self.config.get("llm_model", "ChatGPT-UAT"),
+                llm_provider,
+                llm_model,
             )
             if self.llm_client.enabled:
-                logger.info("ObservationAgent initialized with LLM enhancement (Azure OpenAI)")
+                logger.info(
+                    "ObservationAgent initialized with LLM enhancement: %s/%s",
+                    llm_provider,
+                    llm_model,
+                )
             else:
                 logger.info("ObservationAgent initialized without LLM (API key not set)")
         else:
@@ -1303,15 +1309,36 @@ class ObservationAgent(BaseAgent):
         )
     
     def _create_browser_use_llm_adapter(self):
-        """Create LLM adapter for browser-use from Azure OpenAI client.
+        """Create LLM adapter for browser-use from the configured LLM client.
         
         Preferred: Use browser-use's built-in ChatAzureOpenAI which provides:
           - Proper JSON schema enforcement (ResponseFormatJSONSchema)
           - Full compatibility with browser-use's AgentOutput parsing
           - Async OpenAI client as expected by browser-use
         
-        Fallback: Custom AzureOpenAIAdapter (may have schema mismatch issues).
+        For non-Azure providers, skip ChatAzureOpenAI entirely and use the
+        provider-aware custom adapter.
         """
+        configured_provider = self.config.get("llm_provider", "azure")
+        configured_model = self.config.get("llm_model", "ChatGPT-UAT")
+
+        if configured_provider != "azure":
+            try:
+                from llm.browser_use_adapter import AzureOpenAIAdapter
+                adapter = AzureOpenAIAdapter(azure_client=self.llm_client)
+                logger.info(
+                    "Browser-use custom LLM adapter created: provider=%s model=%s",
+                    configured_provider,
+                    configured_model,
+                )
+                return adapter
+            except ImportError as e:
+                logger.warning(f"Browser-use adapter not available: {e}. Using default LLM.")
+                return None
+            except Exception as e:
+                logger.error(f"Error creating browser-use LLM adapter: {e}", exc_info=True)
+                return None
+
         # --- Attempt 1: Use browser-use's built-in ChatAzureOpenAI ---
         try:
             from browser_use.llm.azure.chat import ChatAzureOpenAI
@@ -1350,8 +1377,10 @@ class ObservationAgent(BaseAgent):
                 temperature=0.2,
                 max_completion_tokens=4096,
             )
-            logger.info(f"Browser-use ChatAzureOpenAI adapter created: model={adapter.model}, "
-                        f"endpoint={clean_endpoint}")
+            logger.info(
+                f"Browser-use ChatAzureOpenAI adapter created: model={adapter.model}, "
+                f"endpoint={clean_endpoint}"
+            )
             return adapter
             
         except ImportError as e:
@@ -1363,7 +1392,11 @@ class ObservationAgent(BaseAgent):
         try:
             from llm.browser_use_adapter import AzureOpenAIAdapter
             adapter = AzureOpenAIAdapter(azure_client=self.llm_client)
-            logger.info("Browser-use custom LLM adapter created (fallback)")
+            logger.info(
+                "Browser-use custom LLM adapter created (fallback): provider=%s model=%s",
+                configured_provider,
+                configured_model,
+            )
             return adapter
         except ImportError as e:
             logger.warning(f"Browser-use adapter not available: {e}. Using default LLM.")
