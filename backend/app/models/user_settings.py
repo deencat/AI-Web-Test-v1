@@ -27,7 +27,18 @@ class UserSetting(Base):
     # Stagehand Provider Selection (Sprint 5: Dual Stagehand Provider System)
     # Options: 'python' (default, current implementation) or 'typescript' (official library)
     stagehand_provider = Column(String(20), nullable=False, default="python")
-    
+
+    # Per-Agent Model Overrides (Sprint 10.6: Per-Agent Model Provider & Model Selection)
+    # NULL = use Azure default (ChatGPT-UAT) — no data migration required.
+    observation_provider = Column(String(100), nullable=True)
+    observation_model = Column(String(100), nullable=True)
+    requirements_provider = Column(String(100), nullable=True)
+    requirements_model = Column(String(100), nullable=True)
+    analysis_provider = Column(String(100), nullable=True)
+    analysis_model = Column(String(100), nullable=True)
+    evolution_provider = Column(String(100), nullable=True)
+    evolution_model = Column(String(100), nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
