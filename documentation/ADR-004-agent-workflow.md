@@ -4,15 +4,20 @@
 **Component:** ObservationAgent / browser-use Integration  
 **Status:** Accepted  
 **Date:** March 13, 2026  
+**Last Amended:** March 17, 2026 (Sprint 10.6 provider-aware LLM wiring)  
 **Author:** Developer B  
 **Related Files:**
 - `backend/agents/observation_agent.py`
+- `backend/llm/browser_use_adapter.py`
+- `backend/llm/client_factory.py`
 - `backend/app/schemas/workflow.py`
 - `backend/app/api/v2/endpoints/observation.py`
 - `backend/app/api/v2/endpoints/generate_tests.py`
 - `backend/app/services/orchestration_service.py`
 - `backend/tests/agents/test_observation_agent_http_credentials.py`
 - `backend/tests/agents/test_observation_agent_browser_use.py`
+- `backend/tests/unit/test_agent_runtime_model_wiring.py`
+- `backend/tests/unit/test_orchestration_agent_config_wiring.py`
 - `frontend/src/features/agent-workflow/components/AgentWorkflowTrigger.tsx`
 
 ---
@@ -23,6 +28,8 @@ The ObservationAgent uses two execution paths:
 
 1. **browser-use path** — activated when `user_instruction` is provided. An LLM-guided `BrowserSession` (from `browser_use` 0.12.x) navigates the target site and extracts UI elements.
 2. **Traditional Playwright path** — activated when no `user_instruction` is provided. A raw Playwright browser context crawls pages up to `max_depth`.
+
+As of Sprint 10.6, the ObservationAgent also participates in the new **per-agent model selection** architecture. Its LLM provider/model are resolved from `user_settings` by `OrchestrationService`, passed into the agent as `config["llm_provider"]` / `config["llm_model"]`, and must remain effective even in the browser-use path.
 
 ### Problem: HTTP Basic Auth + Modal Loop-Back on Preprod
 
@@ -43,6 +50,16 @@ Preprod and UAT environments (e.g. `https://wwwuat.three.com.hk/`) presented two
 | Embedded `user:pass@host` URL | Chromium in headless CDP mode rejects this format for `https` targets, producing `ERR_INVALID_AUTH_CREDENTIALS` |
 
 The core issue: **HTTP Basic Auth requires answering a `WWW-Authenticate` challenge**. Chrome DevTools Protocol (CDP) `Fetch.authRequired` is the correct interception point for this.
+
+### Additional Runtime Gap Identified in Sprint 10.6
+
+After ADR-004 shipped, Sprint 10.6 introduced independent provider/model selection for Observation, Requirements, Analysis, and Evolution. End-to-end testing exposed a runtime gap in the Observation browser-use path:
+
+1. The agent itself was parameterized correctly through `llm/client_factory.py`.
+2. But `_create_browser_use_llm_adapter()` still preferred Azure-specific browser-use wiring, even when ObservationAgent had been configured with `openrouter`, `google`, or `cerebras`.
+3. Result: the authenticated browser session from ADR-004 worked, but the guiding LLM could still fall back to Azure-specific behavior or misleading logs.
+
+This amendment records the decision that **HTTP-auth priming and provider/model selection are orthogonal concerns**: the same authenticated browser session must work regardless of which configured provider the ObservationAgent is using.
 
 ---
 
@@ -178,6 +195,37 @@ def _normalize_http_credentials(self, creds):
 
 ---
 
+### ADR-004-6: Provider-Aware LLM Selection for browser-use Path
+
+**Decision:** ObservationAgent's browser-use path must use the same configured provider/model that the orchestration layer resolved for the Observation agent, rather than implicitly preferring Azure.
+
+**Implementation:**
+
+1. `OrchestrationService._resolve_per_agent_llm_config()` reads per-agent overrides from `user_settings` and injects `llm_provider` / `llm_model` into ObservationAgent config.
+2. `ObservationAgent.__init__()` initializes `self.llm_client = get_llm_client(llm_provider, llm_model)`.
+3. `ObservationAgent._create_browser_use_llm_adapter()` branches by provider:
+    - **Azure** → prefer browser-use's built-in `ChatAzureOpenAI` when available.
+    - **Non-Azure** (`openrouter`, `google`, `cerebras`) → skip `ChatAzureOpenAI` entirely and wrap the already-configured client in the custom provider-aware adapter.
+4. `backend/llm/browser_use_adapter.py` derives adapter metadata from the supplied client (`deployment` or `model`) so browser-use logs and downstream calls reflect the configured provider/model.
+
+**Why:** The auth mechanism added by ADR-004 is independent from LLM selection. A user may need both at once: for example, authenticate into a preprod site via CDP `Fetch.authRequired`, then guide the crawl with a non-Azure model. Treating the browser-use path as Azure-only would violate Sprint 10.6's per-agent settings contract.
+
+**Consequences**
+- **Positive:** ObservationAgent now honors per-agent provider/model overrides in the same browser-use flow that already supports HTTP Basic Auth.
+- **Positive:** Authenticated preprod crawling works with Azure and non-Azure providers.
+- **Positive:** Runtime logs are clearer because adapter creation now reports the configured provider/model.
+- **Negative:** The custom adapter retains the legacy class name `AzureOpenAIAdapter` for backward compatibility even though it now supports multiple providers; this is a naming mismatch but not a runtime problem.
+
+**Alternatives Considered**
+
+| Alternative | Verdict |
+|---|---|
+| Keep browser-use path Azure-only and document it as a limitation | Rejected — conflicts with Sprint 10.6 architecture and user-facing settings |
+| Force all non-Azure providers through env-level Azure fallback | Rejected — hides misconfiguration and makes settings ineffective |
+| Create a separate adapter class per provider immediately | Deferred — current generic adapter is sufficient; provider-specific adapters can be introduced later if browser-use interfaces diverge |
+
+---
+
 ## Implementation Summary
 
 | Method | File | Role |
@@ -187,9 +235,13 @@ def _normalize_http_credentials(self, creds):
 | `_setup_cdp_server_auth()` | `observation_agent.py` | Register CDP `Fetch.authRequired` handler on `BrowserSession` |
 | `_prime_browser_session_http_auth()` | `observation_agent.py` | Start session, register CDP handler, perform initial navigation |
 | `_build_browser_profile()` | `observation_agent.py` | Create `BrowserProfile` with hardened defaults (Chrome-like UA, anti-automation args, viewport) + optional `storage_state` |
+| `__init__()` | `observation_agent.py` | Initialize provider/model-specific LLM client via `get_llm_client(...)` |
+| `_create_browser_use_llm_adapter()` | `observation_agent.py` | Select Azure built-in adapter only for Azure; use provider-aware custom adapter otherwise |
 | `_execute_multi_page_flow_crawling()` | `observation_agent.py` | browser-use path, calls priming then constructs agent with enhanced modal-recovery and flow-continuity instructions |
 | `_execute_traditional_crawling()` | `observation_agent.py` | Playwright path, uses `new_context(http_credentials=...)` |
 | `execute_task()` | `observation_agent.py` | Extracts and forwards `http_credentials` to both paths |
+| `_resolve_per_agent_llm_config()` | `orchestration_service.py` | Resolve ObservationAgent provider/model override from `user_settings` before workflow start |
+| `AzureOpenAIAdapter.__init__()` | `browser_use_adapter.py` | Wrap provider-specific clients for browser-use and expose provider/model metadata |
 
 ## Test Coverage
 
@@ -201,8 +253,10 @@ def _normalize_http_credentials(self, creds):
 | `TestExecuteTaskPassThrough` | `test_observation_agent_http_credentials.py` | `execute_task()` forwarding for both paths; CDP used, not `set_extra_headers` |
 | `TestOrchestrationPassThrough` | `test_observation_agent_http_credentials.py` | Endpoint and orchestration passthrough |
 | Browser-use regression | `test_observation_agent_browser_use.py` | No regressions after CDP changes |
+| Observation runtime wiring | `test_agent_runtime_model_wiring.py` | Non-Azure browser-use adapter path honors configured provider/model |
+| Orchestration config wiring | `test_orchestration_agent_config_wiring.py` | ObservationAgent receives provider/model override from `user_settings` |
 
-**Total: 39 tests passing.**
+**Total: 41 directly relevant tests passing** (39 ADR-004 auth/browser-use tests + 2 Sprint 10.6 Observation runtime/config wiring tests).
 
 ## Status
 
@@ -216,10 +270,14 @@ This ADR resolves two preprod environment issues discovered during ObservationAg
 
 2. **Modal Loop-Back Without Saved Session (ADR-004-5)** — ObservationAgent can now complete multi-step preprod flows (like Three HK purchase) even without a saved browser profile. Hardened browser defaults and enhanced LLM instructions guide the agent to dismiss modals, preserve selections, and re-select previous choices if the page loops backward.
 
+3. **Provider-Aware browser-use Runtime (ADR-004-6)** — ObservationAgent now preserves the configured per-agent provider/model in the browser-use execution path instead of implicitly favoring Azure-only adapter logic. This keeps Sprint 10.6 settings behavior consistent with ADR-004's authenticated crawling flow.
+
 ### Test Results
 
-**39 backend tests passing:**
+**41 directly relevant backend tests passing:**
 - `test_observation_agent_http_credentials.py` — HTTP auth schema, CDP handler unit, browser-use flow integration, traditional Playwright path
 - `test_observation_agent_browser_use.py` — No regressions after hardened browser session and enhanced instructions
+- `test_agent_runtime_model_wiring.py` — Observation runtime uses provider-aware adapter path for non-Azure models
+- `test_orchestration_agent_config_wiring.py` — Orchestration resolves and injects Observation provider/model overrides
 
 **All tests green; ready for production.**
