@@ -85,6 +85,12 @@ class TestCerebrasProvider:
         client = cf.get_llm_client("cerebras", "llama3.1-70b")
         assert client.model == "llama3.1-70b"
 
+    def test_cerebras_exposes_deployment_alias(self):
+        """CerebrasClient should expose .deployment for adapter compatibility."""
+        cf = _import_factory()
+        client = cf.get_llm_client("cerebras", "llama3.1-8b")
+        assert client.deployment == "llama3.1-8b"
+
     def test_cerebras_has_enabled_attribute(self):
         cf = _import_factory()
         client = cf.get_llm_client("cerebras", "llama3.1-8b")
@@ -380,6 +386,18 @@ class TestAzureOpenAIAdapterFactory:
         azure_c = get_azure_client()
         adapter = AzureOpenAIAdapter(azure_client=azure_c)
         assert adapter.azure_client is azure_c
+
+    def test_adapter_uses_model_attr_when_deployment_missing(self):
+        """Adapter should use .model if a client lacks .deployment."""
+        from llm.browser_use_adapter import AzureOpenAIAdapter
+
+        class _FakeNonAzureClient:
+            enabled = True
+            model = "llama3.1-8b"
+            client = object()
+
+        adapter = AzureOpenAIAdapter(azure_client=_FakeNonAzureClient())
+        assert adapter.model == "llama3.1-8b"
 
 
 # ---------------------------------------------------------------------------
