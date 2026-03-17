@@ -226,6 +226,11 @@ class EvolutionAgent(BaseAgent):
                 if not steps_result:
                     logger.debug(f"EvolutionAgent: Generating steps for scenario {scenario_id} using {'LLM' if (self.use_llm and self.llm_client) else 'template'}")
                     if self.use_llm and self.llm_client:
+                        logger.info(
+                            "EvolutionAgent: Using LLM provider/model for step generation: %s/%s",
+                            self.config.get("llm_provider", "azure"),
+                            self.config.get("llm_model", "ChatGPT-UAT"),
+                        )
                         steps_result = await self._generate_test_steps_with_llm(
                             scenario, risk_scores, prioritization, page_context, test_data, user_instruction, login_credentials
                         )
@@ -355,6 +360,8 @@ class EvolutionAgent(BaseAgent):
         login_credentials: Dict = {}
     ) -> Optional[Dict]:
         """Generate test steps using Azure OpenAI GPT-4o"""
+        llm_provider = self.config.get("llm_provider", "azure")
+        llm_model = self.config.get("llm_model", "ChatGPT-UAT")
         try:
             # Build prompt using current variant
             prompt_builder = self.prompt_variants.get(self.current_variant, self._build_prompt_variant_1)
@@ -404,7 +411,12 @@ class EvolutionAgent(BaseAgent):
             }
             
         except Exception as e:
-            logger.error(f"LLM steps generation failed: {e}")
+            logger.error(
+                "LLM steps generation failed (%s/%s): %s",
+                llm_provider,
+                llm_model,
+                e,
+            )
             # Fallback to template-based generation
             return self._generate_test_steps_from_template(scenario, page_context)
     

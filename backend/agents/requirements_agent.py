@@ -912,12 +912,20 @@ class RequirementsAgent(BaseAgent):
         if not self.llm_client or not self.llm_client.enabled:
             logger.warning("LLM not available, falling back to pattern-based generation")
             return []
+
+        llm_provider = self.config.get("llm_provider", "azure")
+        llm_model = self.config.get("llm_model", "ChatGPT-UAT")
         
         flow_steps = flow_steps or []
         pages = pages or []
         navigation_flow = navigation_flow or {}
         
         try:
+            logger.info(
+                "RequirementsAgent: Using LLM provider/model for scenario generation: %s/%s",
+                llm_provider,
+                llm_model,
+            )
             # Build prompt for LLM
             prompt = self._build_scenario_generation_prompt(
                 ui_elements, page_structure, page_context, user_instruction, execution_feedback,
@@ -1026,7 +1034,12 @@ Always respond with valid JSON containing high-quality test scenarios."""
             return scenarios
             
         except Exception as e:
-            logger.error(f"Error generating scenarios with LLM: {e}")
+            logger.error(
+                "Error generating scenarios with LLM (%s/%s): %s",
+                llm_provider,
+                llm_model,
+                e,
+            )
             return []
     
     def _build_scenario_generation_prompt(self, ui_elements: List[Dict], 
