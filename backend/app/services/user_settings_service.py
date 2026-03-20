@@ -270,6 +270,66 @@ class UserSettingsService:
             return True
         return False
     
+    # Per-agent Azure fallbacks (Sprint 10.6)
+    _AGENT_AZURE_DEFAULT = {"provider": "azure", "model": "ChatGPT-UAT"}
+    _VALID_AGENT_NAMES = frozenset({"observation", "requirements", "analysis", "evolution"})
+
+    def get_agent_config(
+        self,
+        db: Optional[Session],
+        user_id: int,
+        agent_name: str,
+    ) -> Dict[str, Any]:
+        """
+        Return the effective {provider, model} for the given agent.
+
+        Resolution order:
+          1. If db is None or no user-settings row exists → Azure default.
+          2. If the per-agent provider column is set → use override.
+             If provider is set but model is None → use the provider's recommended model.
+          3. Otherwise → Azure default.
+
+        Args:
+            db:         SQLAlchemy Session (may be None in background tasks).
+            user_id:    ID of the authenticated user.
+            agent_name: One of "observation", "requirements", "analysis", "evolution".
+
+        Returns:
+            Dict with "provider" (str) and "model" (str).
+
+        Raises:
+            ValueError: If agent_name is not recognised.
+        """
+        if agent_name not in self._VALID_AGENT_NAMES:
+            raise ValueError(
+                f"Unknown agent: {agent_name!r}. "
+                f"Must be one of: {sorted(self._VALID_AGENT_NAMES)}"
+            )
+
+        # Resolve provider fallback: use PROVIDER_CONFIGS recommended when available
+        def _default_model_for_provider(provider: str) -> str:
+            cfg = self.PROVIDER_CONFIGS.get(provider)
+            if cfg:
+                return cfg["recommended"]
+            return self._AGENT_AZURE_DEFAULT["model"]
+
+        if db is None:
+            return dict(self._AGENT_AZURE_DEFAULT)
+
+        user_settings = self.get_user_settings(db, user_id)
+        if user_settings is None:
+            return dict(self._AGENT_AZURE_DEFAULT)
+
+        provider_val = getattr(user_settings, f"{agent_name}_provider", None)
+        model_val = getattr(user_settings, f"{agent_name}_model", None)
+
+        if provider_val is None:
+            return dict(self._AGENT_AZURE_DEFAULT)
+
+        # Provider is set; resolve model
+        resolved_model = model_val if model_val else _default_model_for_provider(provider_val)
+        return {"provider": provider_val, "model": resolved_model}
+
     def _get_api_key_for_provider(self, provider: str) -> Optional[str]:
         """
         Get the appropriate API key from environment variables based on provider.

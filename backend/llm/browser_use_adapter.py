@@ -101,18 +101,45 @@ class AzureOpenAIAdapter:
 
     _verified_api_keys: bool = True  # Protocol field
 
-    def __init__(self, azure_client=None):
+    def __init__(self, azure_client=None, provider: Optional[str] = None, model: Optional[str] = None):
         if not BROWSER_USE_AVAILABLE:
             logger.warning("browser-use not available - adapter will not work")
 
-        self.azure_client = azure_client or get_azure_client()
+        if azure_client is not None:
+            # Backward-compatible: caller supplied a client directly
+            self.azure_client = azure_client
+        elif provider is not None:
+            # Sprint 10.6: factory-based construction from provider + model
+            from llm.client_factory import get_llm_client
+            self.azure_client = get_llm_client(
+                provider,
+                model or "ChatGPT-UAT",
+            )
+        else:
+            # Legacy fallback: default Azure client
+            self.azure_client = get_azure_client()
 
         if not self.azure_client or not self.azure_client.enabled:
-            logger.warning("Azure OpenAI client not enabled - adapter will fail")
+            logger.warning("LLM client not enabled - adapter will fail")
 
-        self._provider = 'azure-openai'
+        # Derive provider label from the client type (Sprint 10.6)
+        _client_type = type(self.azure_client).__name__.lower()
+        if "google" in _client_type:
+            self._provider = "google"
+        elif "openrouter" in _client_type:
+            self._provider = "openrouter"
+        elif "cerebras" in _client_type:
+            self._provider = "cerebras"
+        else:
+            self._provider = "azure-openai"
 
-        model_name = self.azure_client.deployment if self.azure_client and self.azure_client.enabled else 'unknown'
+        model_name = 'unknown'
+        if self.azure_client and self.azure_client.enabled:
+            model_name = getattr(
+                self.azure_client,
+                'deployment',
+                getattr(self.azure_client, 'model', 'unknown')
+            )
         self.model = model_name
 
     @property
@@ -142,11 +169,11 @@ class AzureOpenAIAdapter:
         Call Azure OpenAI chat completion and return the raw SDK response object.
         Runs the synchronous SDK call in a thread-pool executor.
         """
-        if not self.azure_client or not self.azure_client.client:
-            raise ValueError("Azure OpenAI client not initialized / enabled")
+        if not self.azure_client or not getattr(self.azure_client, 'client', None):
+            raise ValueError("LLM client not initialized / enabled")
 
         create_kwargs: dict = dict(
-            model=self.azure_client.deployment,
+            model=getattr(self.azure_client, 'deployment', getattr(self.azure_client, 'model', 'unknown')),
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -200,7 +227,7 @@ class AzureOpenAIAdapter:
             ChatInvokeCompletion with .completion, .usage, .stop_reason
         """
         if not self.azure_client or not self.azure_client.enabled:
-            raise ValueError("Azure OpenAI client not enabled")
+            raise ValueError("LLM client not enabled")
 
         # -- Also check kwargs as fallback for output_format --
         if output_format is None:
@@ -236,7 +263,7 @@ class AzureOpenAIAdapter:
 
         # -- Extract response text -----------------------------------------------
         if not (response.choices and len(response.choices) > 0):
-            raise ValueError("No response from Azure OpenAI")
+            raise ValueError("No response from LLM client")
         response_text: str = response.choices[0].message.content
         stop_reason = getattr(response.choices[0], 'finish_reason', None)
         logger.debug(f"LLM response length: {len(response_text)} chars, stop_reason: {stop_reason}")

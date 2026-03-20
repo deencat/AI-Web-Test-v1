@@ -53,10 +53,19 @@ class EvolutionAgent(BaseAgent):
         self.use_llm = config.get("use_llm", True) if config else True
         self.llm_client = None
         if self.use_llm:
-            from llm.azure_client import get_azure_client
-            self.llm_client = get_azure_client()
+            from llm.client_factory import get_llm_client
+            llm_provider = config.get("llm_provider", "azure") if config else "azure"
+            llm_model = config.get("llm_model", "ChatGPT-UAT") if config else "ChatGPT-UAT"
+            self.llm_client = get_llm_client(
+                llm_provider,
+                llm_model,
+            )
             if self.llm_client and self.llm_client.enabled:
-                logger.info("EvolutionAgent initialized with LLM enhancement (Azure OpenAI)")
+                logger.info(
+                    "EvolutionAgent initialized with LLM enhancement: %s/%s",
+                    llm_provider,
+                    llm_model,
+                )
             else:
                 logger.warning("LLM requested but not available, using template-based generation")
                 self.use_llm = False
@@ -217,6 +226,11 @@ class EvolutionAgent(BaseAgent):
                 if not steps_result:
                     logger.debug(f"EvolutionAgent: Generating steps for scenario {scenario_id} using {'LLM' if (self.use_llm and self.llm_client) else 'template'}")
                     if self.use_llm and self.llm_client:
+                        logger.info(
+                            "EvolutionAgent: Using LLM provider/model for step generation: %s/%s",
+                            self.config.get("llm_provider", "azure"),
+                            self.config.get("llm_model", "ChatGPT-UAT"),
+                        )
                         steps_result = await self._generate_test_steps_with_llm(
                             scenario, risk_scores, prioritization, page_context, test_data, user_instruction, login_credentials
                         )
@@ -346,6 +360,8 @@ class EvolutionAgent(BaseAgent):
         login_credentials: Dict = {}
     ) -> Optional[Dict]:
         """Generate test steps using Azure OpenAI GPT-4o"""
+        llm_provider = self.config.get("llm_provider", "azure")
+        llm_model = self.config.get("llm_model", "ChatGPT-UAT")
         try:
             # Build prompt using current variant
             prompt_builder = self.prompt_variants.get(self.current_variant, self._build_prompt_variant_1)
@@ -395,7 +411,12 @@ class EvolutionAgent(BaseAgent):
             }
             
         except Exception as e:
-            logger.error(f"LLM steps generation failed: {e}")
+            logger.error(
+                "LLM steps generation failed (%s/%s): %s",
+                llm_provider,
+                llm_model,
+                e,
+            )
             # Fallback to template-based generation
             return self._generate_test_steps_from_template(scenario, page_context)
     
@@ -1195,7 +1216,7 @@ Return JSON: {{"steps": ["step1", "step2", ...]}}"""
         overall_score = (
             syntax_accuracy * 0.40 +
             execution_success * 0.35 +
-            code_quality * 0.15 +
+            steps_quality * 0.15 +
             efficiency * 0.10
         )
         
@@ -1213,7 +1234,7 @@ Return JSON: {{"steps": ["step1", "step2", ...]}}"""
         
         # Recommendations
         recommendations = self._generate_recommendations(
-            syntax_accuracy, execution_success, code_quality, efficiency
+            syntax_accuracy, execution_success, steps_quality, efficiency
         )
         
         return {
@@ -1228,6 +1249,64 @@ Return JSON: {{"steps": ["step1", "step2", ...]}}"""
             "recommendations": recommendations
         }
     
+    async def run_ab_test(
+        self,
+        scenarios: List[Dict],
+        variant_names: Optional[List[str]] = None,
+        min_samples: int = 10,
+        db_session=None,
+        execution_results: Optional[Dict] = None,
+        auto_select_winner: bool = False,
+        store_in_db: bool = False,
+        user_id: Optional[int] = None,
+    ) -> Dict:
+        """
+        Convenience method: run a prompt-variant A/B test using this agent.
+
+        Creates a PromptVariantABTest internally and delegates to its run_test().
+        Returns a plain dict so callers don't need to import ABTestResult.
+
+        Args:
+            scenarios: BDD scenarios to test.
+            variant_names: Variants to compare (defaults to all registered variants).
+            min_samples: Minimum samples per variant.
+            db_session: Optional SQLAlchemy session for persistence.
+            execution_results: Pre-collected execution results.
+            auto_select_winner: Automatically switch this agent to the winning variant.
+            store_in_db: Persist A/B test results to database.
+            user_id: User ID for database storage.
+
+        Returns:
+            dict with keys: test_id, winner, variant_metrics, variants_tested,
+            recommendations, statistical_significance.
+        """
+        from agents.prompt_variant_ab_test import PromptVariantABTest
+        import uuid
+
+        test_id = str(uuid.uuid4())[:8]
+        if variant_names is None:
+            variant_names = list(self.prompt_variants.keys())
+
+        ab_test = PromptVariantABTest(test_id, variant_names, min_samples)
+        result = await ab_test.run_test(
+            evolution_agent=self,
+            scenarios=scenarios,
+            db_session=db_session,
+            execution_results=execution_results,
+            auto_select_winner=auto_select_winner,
+            store_in_db=store_in_db,
+            user_id=user_id,
+        )
+
+        return {
+            "test_id": result.test_id,
+            "winner": result.winner,
+            "variant_metrics": result.variant_metrics,
+            "variants_tested": result.variants_tested,
+            "recommendations": result.recommendations,
+            "statistical_significance": result.statistical_significance,
+        }
+
     def _validate_steps_syntax(self, steps: List[str]) -> float:
         """Validate test steps syntax (basic checks)"""
         score = 0.0
@@ -1307,7 +1386,7 @@ Return JSON: {{"steps": ["step1", "step2", ...]}}"""
         self,
         syntax_accuracy: float,
         execution_success: float,
-        code_quality: float,
+        steps_quality: float,
         efficiency: float
     ) -> List[str]:
         """Generate improvement recommendations"""

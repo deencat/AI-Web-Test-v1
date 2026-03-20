@@ -56,6 +56,7 @@ class CerebrasClient:
         """
         self.api_key = api_key or os.getenv("CEREBRAS_API_KEY", "")
         self.model = model
+        self.deployment = model  # Azure/OpenRouter/Google compatibility alias
         self.temperature = temperature
         self.max_tokens = max_tokens
         

@@ -461,8 +461,9 @@ async def test_llm_integration_mocked(analysis_agent):
     risk_scores = await analysis_agent._calculate_risk_scores(scenarios, historical_data, page_context)
     
     assert "REQ-001" in risk_scores
-    assert risk_scores["REQ-001"].severity == 4
-    assert risk_scores["REQ-001"].rpn == 48  # 4 * 3 * 4
+    # severity is boosted by +1 for "high" priority scenarios (min 5)
+    assert risk_scores["REQ-001"].severity == 5  # LLM returns 4, boosted to 5 for high priority
+    assert risk_scores["REQ-001"].rpn == 60  # 5 * 3 * 4
 
 
 @pytest.mark.asyncio

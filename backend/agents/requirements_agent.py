@@ -10,7 +10,7 @@ import re
 import json
 import logging
 from enum import Enum
-from llm.azure_client import AzureClient, get_azure_client
+from llm.client_factory import get_llm_client
 
 logger = logging.getLogger(__name__)
 
@@ -74,9 +74,18 @@ class RequirementsAgent(BaseAgent):
         self.use_llm = config.get("use_llm", False) if config else False
         self.llm_client = None
         if self.use_llm:
-            self.llm_client = get_azure_client()
+            llm_provider = config.get("llm_provider", "azure")
+            llm_model = config.get("llm_model", "ChatGPT-UAT")
+            self.llm_client = get_llm_client(
+                llm_provider,
+                llm_model,
+            )
             if self.llm_client.enabled:
-                logger.info("RequirementsAgent initialized with LLM enhancement (Azure OpenAI)")
+                logger.info(
+                    "RequirementsAgent initialized with LLM enhancement: %s/%s",
+                    llm_provider,
+                    llm_model,
+                )
             else:
                 logger.warning("LLM requested but not available, falling back to pattern-based generation")
                 self.use_llm = False
@@ -903,12 +912,20 @@ class RequirementsAgent(BaseAgent):
         if not self.llm_client or not self.llm_client.enabled:
             logger.warning("LLM not available, falling back to pattern-based generation")
             return []
+
+        llm_provider = self.config.get("llm_provider", "azure")
+        llm_model = self.config.get("llm_model", "ChatGPT-UAT")
         
         flow_steps = flow_steps or []
         pages = pages or []
         navigation_flow = navigation_flow or {}
         
         try:
+            logger.info(
+                "RequirementsAgent: Using LLM provider/model for scenario generation: %s/%s",
+                llm_provider,
+                llm_model,
+            )
             # Build prompt for LLM
             prompt = self._build_scenario_generation_prompt(
                 ui_elements, page_structure, page_context, user_instruction, execution_feedback,
@@ -1017,7 +1034,12 @@ Always respond with valid JSON containing high-quality test scenarios."""
             return scenarios
             
         except Exception as e:
-            logger.error(f"Error generating scenarios with LLM: {e}")
+            logger.error(
+                "Error generating scenarios with LLM (%s/%s): %s",
+                llm_provider,
+                llm_model,
+                e,
+            )
             return []
     
     def _build_scenario_generation_prompt(self, ui_elements: List[Dict], 

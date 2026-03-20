@@ -28,14 +28,38 @@ class UserSettingBase(BaseModel):
     
     # Stagehand Provider Configuration (Sprint 5: Dual Stagehand Provider System)
     stagehand_provider: str = Field(default="python", description="Stagehand implementation to use (python, typescript)")
-    
+
+    # Per-Agent Model Overrides (Sprint 10.6: Per-Agent Model Provider & Model Selection)
+    # Optional — None means "use Azure default (ChatGPT-UAT)"
+    observation_provider: Optional[str] = Field(default=None, description="LLM provider for ObservationAgent (overrides Azure default)")
+    observation_model: Optional[str] = Field(default=None, description="LLM model for ObservationAgent")
+    requirements_provider: Optional[str] = Field(default=None, description="LLM provider for RequirementsAgent")
+    requirements_model: Optional[str] = Field(default=None, description="LLM model for RequirementsAgent")
+    analysis_provider: Optional[str] = Field(default=None, description="LLM provider for AnalysisAgent")
+    analysis_model: Optional[str] = Field(default=None, description="LLM model for AnalysisAgent")
+    evolution_provider: Optional[str] = Field(default=None, description="LLM provider for EvolutionAgent")
+    evolution_model: Optional[str] = Field(default=None, description="LLM model for EvolutionAgent")
+
     @validator('generation_provider', 'execution_provider')
     def validate_provider(cls, v):
         allowed = ['google', 'cerebras', 'openrouter', 'azure']
         if v not in allowed:
             raise ValueError(f"Provider must be one of: {allowed}")
         return v
-    
+
+    @validator(
+        'observation_provider', 'requirements_provider',
+        'analysis_provider', 'evolution_provider',
+        pre=True, always=True,
+    )
+    def validate_agent_provider(cls, v):
+        """Validate per-agent provider; None is allowed (means use default)."""
+        if v is not None:
+            allowed = ['google', 'cerebras', 'openrouter', 'azure']
+            if v not in allowed:
+                raise ValueError(f"Provider must be one of: {allowed}")
+        return v
+
     @validator('stagehand_provider')
     def validate_stagehand_provider(cls, v):
         allowed = ['python', 'typescript']
@@ -60,9 +84,19 @@ class UserSettingUpdate(BaseModel):
     execution_model: Optional[str] = None
     execution_temperature: Optional[float] = Field(None, ge=0.0, le=2.0)
     execution_max_tokens: Optional[int] = Field(None, ge=100, le=32000)
-    
+
     stagehand_provider: Optional[str] = None
-    
+
+    # Per-Agent Model Overrides (Sprint 10.6)
+    observation_provider: Optional[str] = None
+    observation_model: Optional[str] = None
+    requirements_provider: Optional[str] = None
+    requirements_model: Optional[str] = None
+    analysis_provider: Optional[str] = None
+    analysis_model: Optional[str] = None
+    evolution_provider: Optional[str] = None
+    evolution_model: Optional[str] = None
+
     @validator('generation_provider', 'execution_provider')
     def validate_provider(cls, v):
         if v is not None:
@@ -70,7 +104,20 @@ class UserSettingUpdate(BaseModel):
             if v not in allowed:
                 raise ValueError(f"Provider must be one of: {allowed}")
         return v
-    
+
+    @validator(
+        'observation_provider', 'requirements_provider',
+        'analysis_provider', 'evolution_provider',
+        pre=True, always=True,
+    )
+    def validate_agent_provider(cls, v):
+        """Validate per-agent provider; None is allowed (means use default)."""
+        if v is not None:
+            allowed = ['google', 'cerebras', 'openrouter', 'azure']
+            if v not in allowed:
+                raise ValueError(f"Provider must be one of: {allowed}")
+        return v
+
     @validator('stagehand_provider')
     def validate_stagehand_provider(cls, v):
         if v is not None:

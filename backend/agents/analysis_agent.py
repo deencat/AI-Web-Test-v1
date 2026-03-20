@@ -70,10 +70,19 @@ class AnalysisAgent(BaseAgent):
         self.use_llm = config.get("use_llm", True) if config else True
         self.llm_client = None
         if self.use_llm:
-            from llm.azure_client import get_azure_client
-            self.llm_client = get_azure_client()
+            from llm.client_factory import get_llm_client
+            llm_provider = config.get("llm_provider", "azure") if config else "azure"
+            llm_model = config.get("llm_model", "ChatGPT-UAT") if config else "ChatGPT-UAT"
+            self.llm_client = get_llm_client(
+                llm_provider,
+                llm_model,
+            )
             if self.llm_client and self.llm_client.enabled:
-                logger.info("AnalysisAgent initialized with LLM enhancement (Azure OpenAI)")
+                logger.info(
+                    "AnalysisAgent initialized with LLM enhancement: %s/%s",
+                    llm_provider,
+                    llm_model,
+                )
             else:
                 logger.warning("LLM requested but not available, using heuristic-based scoring")
                 self.use_llm = False
@@ -1334,7 +1343,12 @@ Respond with valid JSON only."""
                 # Initialize execution service (browser + Stagehand)
                 # Navigation will be handled by the first \"navigate\" step in test_steps,
                 # which is interpreted by StagehandExecutionService._execute_step_simple
-                await execution_service.initialize()
+                await execution_service.initialize(
+                    user_config={
+                        "provider": self.config.get("llm_provider", "azure"),
+                        "model": self.config.get("llm_model", "ChatGPT-UAT"),
+                    }
+                )
 
                 # Execute using Phase 2 engine (3-tier strategy)
                 # Note: StagehandExecutionService uses hybrid execution (Tier 1 → Tier 3)

@@ -302,6 +302,15 @@ export interface UserSettings {
   execution_model: string;
   execution_temperature: number;
   execution_max_tokens: number;
+  // Sprint 10.6: Per-agent model overrides (null = use Azure default)
+  observation_provider?: string | null;
+  observation_model?: string | null;
+  requirements_provider?: string | null;
+  requirements_model?: string | null;
+  analysis_provider?: string | null;
+  analysis_model?: string | null;
+  evolution_provider?: string | null;
+  evolution_model?: string | null;
   created_at: string;
   updated_at: string | null;
 }
@@ -315,6 +324,15 @@ export interface UpdateUserSettingsRequest {
   execution_model?: string;
   execution_temperature?: number;
   execution_max_tokens?: number;
+  // Sprint 10.6: Per-agent model overrides (null clears the override → falls back to Azure default)
+  observation_provider?: string | null;
+  observation_model?: string | null;
+  requirements_provider?: string | null;
+  requirements_model?: string | null;
+  analysis_provider?: string | null;
+  analysis_model?: string | null;
+  evolution_provider?: string | null;
+  evolution_model?: string | null;
 }
 
 // Agent Activity types

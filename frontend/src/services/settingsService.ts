@@ -1,5 +1,5 @@
 import api, { apiHelpers } from './api';
-import { Settings, UpdateSettingsRequest } from '../types/api';
+import { Settings, UpdateSettingsRequest, UserSettings, UpdateUserSettingsRequest } from '../types/api';
 
 /**
  * Settings Service
@@ -173,9 +173,10 @@ class SettingsService {
   }
 
   /**
-   * Get user's AI provider settings (Sprint 3)
+   * Get user's AI provider settings (Sprint 3).
+   * Returns all provider settings including Sprint 10.6 per-agent overrides.
    */
-  async getUserProviderSettings(): Promise<any> {
+  async getUserProviderSettings(): Promise<UserSettings> {
     // Real API call (no mock for Sprint 3 feature)
     try {
       const response = await api.get('/settings/provider');
@@ -186,9 +187,11 @@ class SettingsService {
   }
 
   /**
-   * Update user's AI provider settings (Sprint 3)
+   * Update user's AI provider settings (Sprint 3).
+   * Accepts Sprint 10.6 per-agent overrides (observation/requirements/analysis/evolution).
+   * Pass null for an agent field to clear its override and revert to Azure default.
    */
-  async updateUserProviderSettings(data: any): Promise<any> {
+  async updateUserProviderSettings(data: UpdateUserSettingsRequest): Promise<UserSettings> {
     // Real API call (no mock for Sprint 3 feature)
     try {
       const response = await api.put('/settings/provider', data);

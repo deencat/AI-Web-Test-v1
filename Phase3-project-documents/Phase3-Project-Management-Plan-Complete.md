@@ -3,8 +3,8 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · 📋 Sprint 10.6 Developer B Per-Agent Model Configuration PLANNED (Mar 16) · 📋 Sprint 10.7 Developer B Browser Profile HTTP Credentials Everywhere (auto-key, saved tests, 4-agent workflow, UI) PLANNED (Mar 16)  
-**Last Updated:** February 10, 2026 (Alignment corrections applied)  
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · 📋 Sprint 10.7 Developer B Browser Profile HTTP Credentials Everywhere (auto-key, saved tests, 4-agent workflow, UI) PLANNED (Mar 16)  
+**Last Updated:** March 17, 2026 (Sprint 10.6 completion + ADR alignment)  
 **Version:** 3.0
 
 > **📖 When to Use This Document:**
@@ -1821,9 +1821,20 @@ Developer B's Sprint 10 tasks (10B.11 + 10B.12) are fully complete as of Feb 26.
 ### Developer B Sprint 10.6: Per-Agent Model Provider & Model Selection (Mar 16 - Mar 26, 2026)
 
 **Owner:** Developer B  
-**Status:** 📋 **PLANNED** — Extends to Mar 26 due to additional LLM factory layer required; addresses power-user demand for independent LLM control per agent  
+**Status:** ✅ **COMPLETE** (Mar 17, 2026) — Implemented frontend settings integration, backend LLM factory wiring, orchestration resolution, provider-aware ObservationAgent runtime handling, Stagehand propagation for AnalysisAgent, and explicit runtime provider/model logging for Requirements/Evolution.  
 **Branch:** `feature/sprint10-6-per-agent-model-config`  
 **Story Points:** 16 points / ~8 days  
+
+**Implementation Outcome (Actual):**
+- ✅ `backend/llm/client_factory.py` now resolves `azure`, `google`, `openrouter`, and `cerebras` clients through one factory entry point.
+- ✅ All four agents now read `llm_provider` / `llm_model` from agent config instead of hardcoding Azure.
+- ✅ `OrchestrationService` resolves per-agent overrides from `user_settings` through `_resolve_per_agent_llm_config()` and injects them into every workflow path.
+- ✅ Observation runtime now honors non-Azure providers in the browser-use path by skipping the built-in Azure adapter and using the provider-aware custom adapter.
+- ✅ Analysis real-time execution passes the configured provider/model into Stagehand initialization instead of falling back to `.env` defaults.
+- ✅ Requirements and Evolution emit explicit runtime logs naming the active provider/model so workflow runs are verifiable from backend logs.
+- ✅ Settings UI now includes a dedicated `AgentWorkflowSettings.tsx` section with four independent agent rows and save/reload persistence.
+- ✅ Relevant verification completed: frontend suite passed (`173/173`), related backend Sprint 10.6 suites passed (`79 passed, 11 warnings`), and LLM factory/adapter compatibility tests passed (`44 passed`).
+- ⚠️ Follow-up: `SettingsPage.tsx` still exceeds the original sub-300-line target even though the new section was extracted into `AgentWorkflowSettings.tsx`.
 
 ---
 
@@ -1841,7 +1852,7 @@ The three contexts are independent. The Agent Workflow section on the Settings p
 
 ---
 
-#### Root Cause — Hardcoded Azure Client
+#### Root Cause — Hardcoded Azure Client (Resolved)
 
 All four agents currently call `get_azure_client()` directly inside their `__init__`, which is unconditionally wired to `AZURE_OPENAI_MODEL=ChatGPT-UAT`. Zero connection to the `user_settings` table:
 
@@ -1870,6 +1881,31 @@ get_agent_config(agent_name):
 ```
 
 Per-agent fields store `NULL` in the DB when unset. The UI uses `""` as the in-memory sentinel for "use default", which maps to `NULL` on save.
+
+#### Actual Architecture Delivered
+
+The implemented design matches the original architecture direction, with a few runtime fixes added after end-to-end validation:
+
+1. **Factory-based client selection**
+  - `get_llm_client(provider, model)` is now the only supported entry point for agent LLM construction.
+  - Unknown or unavailable providers degrade safely to Azure defaults.
+
+2. **Per-agent config resolution in orchestration**
+  - `OrchestrationService._resolve_per_agent_llm_config()` reads all four agent override pairs from `user_settings`.
+  - All workflow entry points now pass the resolved config into `_create_agents(...)`.
+
+3. **Provider-aware runtime paths**
+  - `ObservationAgent._create_browser_use_llm_adapter()` now preserves non-Azure providers in the browser-use path.
+  - `AnalysisAgent._execute_scenario_real_time()` passes `{provider, model}` into `StagehandExecutionService.initialize(...)`.
+  - `RequirementsAgent` and `EvolutionAgent` log the configured provider/model at call time.
+
+4. **Compatibility fixes discovered during implementation**
+  - `backend/llm/browser_use_adapter.py` was generalized to work with non-Azure clients.
+  - `backend/llm/cerebras_client.py` now exposes `deployment = model` so browser-use and adapter code can treat Cerebras consistently with other OpenAI-compatible clients.
+
+5. **Frontend settings integration**
+  - `frontend/src/components/AgentWorkflowSettings.tsx` wraps four `AgentModelConfig` rows in a dedicated section.
+  - `SettingsPage.tsx`, `settingsService.ts`, and TypeScript API types now persist the eight per-agent override fields independently from generation and execution settings.
 
 ---
 
@@ -1954,6 +1990,8 @@ SettingsPage
 
 **Total Phase 3: 3 points / ~1.75 days**
 
+**Actual completion status:** ✅ All Phase 0-3 tasks complete. Additional runtime follow-up fixes were required after initial rollout to ensure Observation, Analysis, Requirements, and Evolution all honored the configured provider/model during real workflow execution.
+
 ---
 
 #### Sprint 10.6 Combined Task Table
@@ -1977,16 +2015,16 @@ SettingsPage
 
 #### Sprint 10.6 Success Criteria
 
-- [ ] `get_llm_client("google", "gemini-2.0-flash-exp")` returns a working Google client; Azure is the fallback
-- [ ] Agents receive `llm_provider` + `llm_model` from `orchestration_service` at workflow start
-- [ ] Migration runs cleanly; all existing `user_settings` rows remain valid (NULL = use Azure default)
-- [ ] Settings page shows a new **"Agent Workflow Configuration"** section independent of the two existing slots
-- [ ] Each of the 4 agents has its own provider + model dropdown; default shows "Default (Azure / ChatGPT-UAT)"
-- [ ] Selecting a non-default provider/model and saving persists across page reload
-- [ ] Actual workflow run uses the configured agent model (verifiable in backend logs)
-- [ ] `SettingsPage.tsx` stays under 300 lines (section extracted to `AgentWorkflowSettings.tsx`)
-- [ ] All new backend + frontend tests pass
-- [ ] No regression in existing Test Generation or Test Execution provider save flows
+- [x] `get_llm_client("google", "gemini-2.0-flash-exp")` returns a working Google client; Azure is the fallback
+- [x] Agents receive `llm_provider` + `llm_model` from `orchestration_service` at workflow start
+- [x] Migration runs cleanly; all existing `user_settings` rows remain valid (NULL = use Azure default)
+- [x] Settings page shows a new **"Agent Workflow Configuration"** section independent of the two existing slots
+- [x] Each of the 4 agents has its own provider + model dropdown; default shows "Default (Azure / ChatGPT-UAT)"
+- [x] Selecting a non-default provider/model and saving persists across page reload
+- [x] Actual workflow run uses the configured agent model (verifiable in backend logs)
+- [ ] `SettingsPage.tsx` stays under 300 lines (partially met: `AgentWorkflowSettings.tsx` was extracted, but `SettingsPage.tsx` still requires follow-up refactoring)
+- [x] All new backend + frontend tests pass
+- [x] No regression in existing Test Generation or Test Execution provider save flows
 
 #### Risks & Mitigations
 

@@ -6,6 +6,7 @@ import { Button } from '../components/common/Button';
 import { FeedbackDataSync } from '../components/FeedbackDataSync';
 import { ExecutionSettingsPanel } from '../components/ExecutionSettingsPanel';
 import { TierAnalyticsPanel } from '../components/TierAnalyticsPanel';
+import { AgentWorkflowSettings } from '../components/AgentWorkflowSettings';
 import settingsService from '../services/settingsService';
 import type { AvailableProvider, ModelOption, UserSettings, ExecutionSettingsUpdate } from '../types/api';
 
@@ -37,6 +38,16 @@ export const SettingsPage: React.FC = () => {
 
   // Sprint 5.5: 3-Tier Execution Settings (from child component)
   const [executionSettingsFormState, setExecutionSettingsFormState] = useState<ExecutionSettingsUpdate | null>(null);
+
+  // Sprint 10.6: Per-agent model overrides (null = use Azure default)
+  const [observationProvider, setObservationProvider] = useState<string | null>(null);
+  const [observationModel, setObservationModel] = useState<string | null>(null);
+  const [requirementsProvider, setRequirementsProvider] = useState<string | null>(null);
+  const [requirementsModel, setRequirementsModel] = useState<string | null>(null);
+  const [analysisProvider, setAnalysisProvider] = useState<string | null>(null);
+  const [analysisModel, setAnalysisModel] = useState<string | null>(null);
+  const [evolutionProvider, setEvolutionProvider] = useState<string | null>(null);
+  const [evolutionModel, setEvolutionModel] = useState<string | null>(null);
 
   // Sprint 5: Stagehand Provider settings
   const [stagehandProvider, setStagehandProvider] = useState<'python' | 'typescript'>('python');
@@ -137,6 +148,16 @@ export const SettingsPage: React.FC = () => {
       setExecutionModel(settings.execution_model);
       setExecutionTemperature(settings.execution_temperature);
       setExecutionMaxTokens(settings.execution_max_tokens);
+
+      // Sprint 10.6: initialise per-agent overrides (null when unset in DB)
+      setObservationProvider(settings.observation_provider ?? null);
+      setObservationModel(settings.observation_model ?? null);
+      setRequirementsProvider(settings.requirements_provider ?? null);
+      setRequirementsModel(settings.requirements_model ?? null);
+      setAnalysisProvider(settings.analysis_provider ?? null);
+      setAnalysisModel(settings.analysis_model ?? null);
+      setEvolutionProvider(settings.evolution_provider ?? null);
+      setEvolutionModel(settings.evolution_model ?? null);
     } catch (error: any) {
       console.error('Failed to load settings:', error);
       setSaveMessage({ type: 'error', text: 'Failed to load settings' });
@@ -159,7 +180,16 @@ export const SettingsPage: React.FC = () => {
         execution_provider: executionProvider,
         execution_model: executionModel,
         execution_temperature: executionTemperature,
-        execution_max_tokens: executionMaxTokens
+        execution_max_tokens: executionMaxTokens,
+        // Sprint 10.6: per-agent overrides (null clears override → Azure default)
+        observation_provider: observationProvider,
+        observation_model: observationModel,
+        requirements_provider: requirementsProvider,
+        requirements_model: requirementsModel,
+        analysis_provider: analysisProvider,
+        analysis_model: analysisModel,
+        evolution_provider: evolutionProvider,
+        evolution_model: evolutionModel,
       };
       
       const updated = await settingsService.updateUserProviderSettings(updateData);
@@ -607,6 +637,21 @@ export const SettingsPage: React.FC = () => {
           </div>
         </Card>
 
+        {/* Sprint 10.6: Agent Workflow Configuration */}
+        <Card>
+          <AgentWorkflowSettings
+            providers={availableProviders}
+            observation={{ provider: observationProvider, model: observationModel }}
+            requirements={{ provider: requirementsProvider, model: requirementsModel }}
+            analysis={{ provider: analysisProvider, model: analysisModel }}
+            evolution={{ provider: evolutionProvider, model: evolutionModel }}
+            onObservationChange={(p, m) => { setObservationProvider(p); setObservationModel(m); }}
+            onRequirementsChange={(p, m) => { setRequirementsProvider(p); setRequirementsModel(m); }}
+            onAnalysisChange={(p, m) => { setAnalysisProvider(p); setAnalysisModel(m); }}
+            onEvolutionChange={(p, m) => { setEvolutionProvider(p); setEvolutionModel(m); }}
+          />
+        </Card>
+
         {/* Sprint 5: Stagehand Provider Selection */}
         <Card>
           <div className="flex items-start justify-between mb-4">
@@ -885,6 +930,7 @@ export const SettingsPage: React.FC = () => {
                 <li>• General Settings (Project Name, Timeout)</li>
                 <li>• Notification Settings (Email, Slack, Alerts)</li>
                 <li>• AI Provider Settings (Generation & Execution)</li>
+                <li>• Agent Workflow Configuration (per-agent model overrides)</li>
                 <li>• 3-Tier Execution Settings (Strategy, Timeout, Analytics)</li>
               </ul>
             </div>

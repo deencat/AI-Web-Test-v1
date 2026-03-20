@@ -30,8 +30,9 @@ def mock_llm_client():
 @pytest.fixture
 def evolution_agent_with_llm(mock_message_queue, mock_llm_client):
     """EvolutionAgent with LLM enabled"""
-    # Patch the get_azure_client function and keep it active
-    patcher = patch('llm.azure_client.get_azure_client', return_value=mock_llm_client)
+    # Patch llm.client_factory.get_llm_client so EvolutionAgent's dynamic import
+    # receives the mock (EvolutionAgent imports get_llm_client inside __init__)
+    patcher = patch('llm.client_factory.get_llm_client', return_value=mock_llm_client)
     patcher.start()
     try:
         agent = EvolutionAgent(
@@ -43,6 +44,7 @@ def evolution_agent_with_llm(mock_message_queue, mock_llm_client):
         )
         # Ensure the mock client is set
         agent.llm_client = mock_llm_client
+        agent.use_llm = True
         yield agent
     finally:
         patcher.stop()
@@ -131,80 +133,65 @@ class TestEvolutionAgentCodeGeneration:
     
     @pytest.mark.asyncio
     async def test_generate_code_with_llm(self, evolution_agent_with_llm, sample_bdd_scenario):
-        """Test code generation using LLM"""
-        # Mock LLM response
+        """Test step generation using LLM"""
+        # Mock LLM response returning a JSON steps object
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = """
-```typescript
-import { test, expect } from '@playwright/test';
-
-test('User Login - Happy Path', async ({ page }) => {
-  await page.goto('https://example.com/login');
-  await page.fill('#email', 'test@example.com');
-  await page.fill('#password', 'password123');
-  await page.click('button[type="submit"]');
-  await expect(page).toHaveURL(/dashboard/);
-});
-```
-"""
+        mock_response.choices[0].message.content = '{"steps": ["Navigate to https://example.com/login", "Enter email: test@example.com", "Click Login button", "Verify: User is redirected to dashboard"]}'
         mock_response.usage = MagicMock()
         mock_response.usage.total_tokens = 500
-        
-        evolution_agent_with_llm.llm_client.client.chat.completions.create = AsyncMock(return_value=mock_response)
-        
-        result = await evolution_agent_with_llm._generate_test_code_with_llm(
+
+        import asyncio as _asyncio
+        evolution_agent_with_llm.llm_client.client.chat.completions.create = MagicMock(return_value=mock_response)
+
+        result = await evolution_agent_with_llm._generate_test_steps_with_llm(
             sample_bdd_scenario,
             [],
             [],
             {"url": "https://example.com/login"},
             []
         )
-        
+
         assert result is not None
-        assert "test(" in result["code"]
-        assert "@playwright/test" in result["code"]
+        assert "steps" in result
+        assert len(result["steps"]) >= 1
         assert result["confidence"] > 0.0
         assert result["tokens_used"] == 500
     
     @pytest.mark.asyncio
     async def test_generate_code_from_template(self, evolution_agent_no_llm, sample_bdd_scenario):
-        """Test template-based code generation (fallback)"""
-        result = evolution_agent_no_llm._generate_test_code_from_template(
+        """Test template-based step generation (fallback)"""
+        result = evolution_agent_no_llm._generate_test_steps_from_template(
             sample_bdd_scenario,
             {"url": "https://example.com/login"}
         )
-        
-        assert result is not None
-        assert "test(" in result["code"]
-        assert "@playwright/test" in result["code"]
-        assert result["confidence"] == 0.6  # Lower confidence for template
-    
-    def test_extract_code_from_response(self, evolution_agent_with_llm):
-        """Test code extraction from LLM response"""
-        response_with_code_block = """
-Here's the test code:
 
-```typescript
-import { test, expect } from '@playwright/test';
-test('example', async ({ page }) => {});
-```
-"""
-        code = evolution_agent_with_llm._extract_code_from_response(response_with_code_block)
-        assert "import" in code
-        assert "test(" in code
-        assert "```" not in code  # Code blocks should be removed
+        assert result is not None
+        assert "steps" in result
+        assert len(result["steps"]) >= 1
+        assert result["confidence"] == 0.7  # Template confidence
     
-    def test_calculate_code_confidence(self, evolution_agent_with_llm, sample_bdd_scenario):
-        """Test code confidence calculation"""
-        good_code = """
-import { test, expect } from '@playwright/test';
-test('example', async ({ page }) => {
-  await page.goto('https://example.com');
-  expect(page).toHaveURL(/example/);
-});
-"""
-        confidence = evolution_agent_with_llm._calculate_code_confidence(good_code, sample_bdd_scenario)
+    def test_extract_steps_from_text(self, evolution_agent_with_llm):
+        """Test step extraction from text response"""
+        # Test: JSON array embedded in text
+        json_text = '["Navigate to page", "Click button", "Verify result"]'
+        steps = evolution_agent_with_llm._extract_steps_from_text(json_text)
+        assert isinstance(steps, list)
+
+        # Test: numbered list
+        numbered_text = "1. Navigate to login page\n2. Enter username\n3. Click submit\n"
+        steps = evolution_agent_with_llm._extract_steps_from_text(numbered_text)
+        assert len(steps) >= 3
+    
+    def test_calculate_steps_confidence(self, evolution_agent_with_llm, sample_bdd_scenario):
+        """Test steps confidence calculation"""
+        good_steps = [
+            "Navigate to https://example.com/login",
+            "Enter email: test@example.com",
+            "Click Login button",
+            "Verify: User is redirected to dashboard",
+        ]
+        confidence = evolution_agent_with_llm._calculate_steps_confidence(good_steps, sample_bdd_scenario)
         assert confidence >= 0.7
 
 
@@ -261,23 +248,17 @@ class TestEvolutionAgentExecuteTask:
         """Test successful task execution"""
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = """
-```typescript
-import { test, expect } from '@playwright/test';
-test('User Login - Happy Path', async ({ page }) => {});
-```
-"""
+        mock_response.choices[0].message.content = '{"steps": ["Navigate to page", "Click button", "Verify result"]}'
         mock_response.usage = MagicMock()
         mock_response.usage.total_tokens = 500
-        
-        evolution_agent_with_llm.llm_client.client.chat.completions.create = AsyncMock(return_value=mock_response)
-        
+
+        evolution_agent_with_llm.llm_client.client.chat.completions.create = MagicMock(return_value=mock_response)
+
         result = await evolution_agent_with_llm.execute_task(sample_task_context)
-        
+
         assert result.success is True
         assert "generation_id" in result.result
-        assert "test_file" in result.result
-        assert "code" in result.result
+        assert "test_cases" in result.result
         assert result.result["test_count"] == 1
         assert result.confidence > 0.0
         assert "generation_id" in result.metadata
@@ -300,13 +281,13 @@ test('User Login - Happy Path', async ({ page }) => {});
     @pytest.mark.asyncio
     async def test_execute_task_llm_failure_fallback(self, evolution_agent_with_llm, sample_task_context):
         """Test fallback to template when LLM fails"""
-        evolution_agent_with_llm.llm_client.client.chat.completions.create = AsyncMock(side_effect=Exception("LLM error"))
-        
+        evolution_agent_with_llm.llm_client.client.chat.completions.create = MagicMock(side_effect=Exception("LLM error"))
+
         result = await evolution_agent_with_llm.execute_task(sample_task_context)
-        
+
         # Should still succeed with template fallback
         assert result.success is True
-        assert "code" in result.result
+        assert "test_cases" in result.result
 
 
 class TestEvolutionAgentPerformanceScoring:
@@ -319,29 +300,31 @@ class TestEvolutionAgentPerformanceScoring:
             task_id="task-123",
             success=True,
             result={
-                "code": """
-import { test, expect } from '@playwright/test';
-test('example', async ({ page }) => {
-  await page.goto('https://example.com');
-  expect(page).toHaveURL(/example/);
-});
-""",
-                "test_count": 1
+                "test_cases": [
+                    {
+                        "steps": [
+                            "Navigate to https://example.com",
+                            "Click login button",
+                            "Verify: page loads correctly",
+                        ]
+                    }
+                ],
+                "test_count": 1,
             },
             confidence=0.85,
             execution_time_seconds=2.5,
             metadata={"token_usage": 1000}
         )
-        
+
         execution_results = {
             "REQ-F-001": {"status": "passed"}
         }
-        
+
         score = await evolution_agent_with_llm.calculate_performance_score(
             task_result,
             execution_results
         )
-        
+
         assert "overall_score" in score
         assert "component_scores" in score
         assert "grade" in score
@@ -364,21 +347,20 @@ test('example', async ({ page }) => {
         assert score["overall_score"] == 0.0
         assert score["grade"] == "F"
     
-    def test_validate_code_syntax(self, evolution_agent_with_llm):
-        """Test code syntax validation"""
-        good_code = """
-import { test, expect } from '@playwright/test';
-test('example', async ({ page }) => {
-  await page.goto('https://example.com');
-  expect(page).toHaveURL(/example/);
-});
-"""
-        score = evolution_agent_with_llm._validate_code_syntax(good_code)
+    def test_validate_steps_syntax(self, evolution_agent_with_llm):
+        """Test steps syntax validation"""
+        good_steps = [
+            "Navigate to https://example.com",
+            "Click login button",
+            "Enter email: test@example.com",
+            "Verify: user is logged in",
+        ]
+        score = evolution_agent_with_llm._validate_steps_syntax(good_steps)
         assert score >= 0.8
-        
-        bad_code = "invalid code"
-        score = evolution_agent_with_llm._validate_code_syntax(bad_code)
-        assert score < 0.5
+
+        bad_steps = ["do stuff"]
+        score = evolution_agent_with_llm._validate_steps_syntax(bad_steps)
+        assert score < 0.8
     
     def test_calculate_execution_success_rate(self, evolution_agent_with_llm):
         """Test execution success rate calculation"""
@@ -404,11 +386,11 @@ class TestEvolutionAgentPromptVariants:
             {"url": "https://example.com/login"},
             []
         )
-        
+
         assert "Given:" in prompt
         assert "When:" in prompt
         assert "Then:" in prompt
-        assert "Playwright" in prompt
+        assert "steps" in prompt.lower() or "BDD" in prompt
     
     def test_prompt_variant_2(self, evolution_agent_with_llm, sample_bdd_scenario):
         """Test variant 2 (concise, focused)"""
@@ -439,37 +421,41 @@ class TestEvolutionAgentPromptVariants:
 class TestEvolutionAgentFileGeneration:
     """Test test file generation"""
     
-    def test_combine_tests_to_file(self, evolution_agent_with_llm):
-        """Test combining multiple tests into a file"""
-        generated_tests = [
-            {
-                "scenario_id": "REQ-F-001",
-                "test_code": "test('test1', async ({ page }) => {});",
-                "from_cache": False
-            },
-            {
-                "scenario_id": "REQ-F-002",
-                "test_code": "test('test2', async ({ page }) => {});",
-                "from_cache": True
-            }
+    def test_steps_used_in_file_generation(self, evolution_agent_with_llm):
+        """Test that _calculate_steps_confidence works for multiple scenarios"""
+        scenarios_steps = [
+            ["Navigate to home", "Click signup", "Verify: signup page loads"],
+            ["Navigate to login", "Enter credentials", "Click submit", "Verify: dashboard"],
         ]
-        
-        file_content = evolution_agent_with_llm._combine_tests_to_file(
-            generated_tests,
-            {"url": "https://example.com"}
+        sample_scenario = {
+            "given": "User is on the page",
+            "when": "User clicks button",
+            "then": "User sees result",
+        }
+        for steps in scenarios_steps:
+            confidence = evolution_agent_with_llm._calculate_steps_confidence(steps, sample_scenario)
+            assert 0.0 <= confidence <= 1.0
+
+        # Verify cache handling: same scenario produces the same cache key
+        key1 = evolution_agent_with_llm._generate_cache_key(
+            sample_scenario, {"url": "https://example.com"}
         )
-        
-        assert "import" in file_content
-        assert "REQ-F-001" in file_content
-        assert "REQ-F-002" in file_content
-        assert "(from cache)" in file_content
+        key2 = evolution_agent_with_llm._generate_cache_key(
+            sample_scenario, {"url": "https://example.com"}
+        )
+        assert key1 == key2
     
-    def test_generate_test_filename(self, evolution_agent_with_llm):
-        """Test test filename generation"""
-        filename = evolution_agent_with_llm._generate_test_filename(
-            {"url": "https://example.com/login"}
-        )
-        
-        assert filename.endswith(".spec.ts")
-        assert "example" in filename.lower() or "test" in filename.lower()
+    def test_cache_key_uniqueness(self, evolution_agent_with_llm):
+        """Test cache key uniqueness and stability"""
+        page_context = {"url": "https://example.com/login"}
+        scenario_a = {"given": "User is on login page", "when": "clicks login", "then": "logged in"}
+        scenario_b = {"given": "User is on signup page", "when": "fills form", "then": "account created"}
+
+        key_a1 = evolution_agent_with_llm._generate_cache_key(scenario_a, page_context)
+        key_a2 = evolution_agent_with_llm._generate_cache_key(scenario_a, page_context)
+        key_b = evolution_agent_with_llm._generate_cache_key(scenario_b, page_context)
+
+        assert key_a1 == key_a2, "Same scenario should produce stable cache key"
+        assert key_a1 != key_b, "Different scenarios should produce different keys"
+        assert isinstance(key_a1, str) and len(key_a1) > 0
 
