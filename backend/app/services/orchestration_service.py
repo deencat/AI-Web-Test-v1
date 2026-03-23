@@ -15,6 +15,8 @@ import uuid
 import logging
 import asyncio
 
+from app.utils.http_auth_credentials import http_credentials_for_url
+
 logger = logging.getLogger(__name__)
 
 
@@ -96,9 +98,12 @@ class OrchestrationService:
         http_credentials = request.get("http_credentials") or {}
         browser_profile_data = request.get("browser_profile_data") or None
         gmail_credentials = request.get("gmail_credentials") or {}
+        available_file_paths = request.get("available_file_paths")
+        enable_signature_pad_tool = request.get("enable_signature_pad_tool")
         scenario_types = request.get("scenario_types")
         max_scenarios = request.get("max_scenarios")
         focus_goal_only = bool(request.get("focus_goal_only"))
+        max_browser_steps = request.get("max_browser_steps")
 
         db = None
         try:
@@ -210,12 +215,19 @@ class OrchestrationService:
                 obs_payload["user_instruction"] = user_instruction
             if login_credentials:
                 obs_payload["login_credentials"] = login_credentials
-            if http_credentials:
-                obs_payload["http_credentials"] = http_credentials
+            _creds = http_credentials_for_url(url, http_credentials)
+            if _creds:
+                obs_payload["http_credentials"] = _creds
             if browser_profile_data:
                 obs_payload["browser_profile_data"] = browser_profile_data
             if gmail_credentials:
                 obs_payload["gmail_credentials"] = gmail_credentials
+            if available_file_paths:
+                obs_payload["available_file_paths"] = available_file_paths
+            if enable_signature_pad_tool is not None:
+                obs_payload["enable_signature_pad_tool"] = bool(enable_signature_pad_tool)
+            if max_browser_steps is not None:
+                obs_payload["max_browser_steps"] = int(max_browser_steps)
             obs_task = TaskContext(
                 conversation_id=workflow_id,
                 task_id=f"{workflow_id}-obs",
@@ -313,6 +325,7 @@ class OrchestrationService:
                     "test_data": requirements_result.result.get("test_data", []),
                     "coverage_metrics": requirements_result.result.get("coverage_metrics", {}),
                     "page_context": observation_data["page_context"],
+                    "http_credentials": _creds,
                     "progress_callback": _analysis_progress,
                     "cancel_check": lambda: is_cancel_requested(workflow_id),
                 },
@@ -466,6 +479,9 @@ class OrchestrationService:
         http_credentials = request.get("http_credentials") or {}
         browser_profile_data = request.get("browser_profile_data") or None
         gmail_credentials = request.get("gmail_credentials") or {}
+        available_file_paths = request.get("available_file_paths")
+        enable_signature_pad_tool = request.get("enable_signature_pad_tool")
+        max_browser_steps_only = request.get("max_browser_steps")
         started_at = datetime.now(timezone.utc)
         pt = self.progress_tracker
 
@@ -481,12 +497,19 @@ class OrchestrationService:
             obs_payload["user_instruction"] = user_instruction
         if login_credentials:
             obs_payload["login_credentials"] = login_credentials
-        if http_credentials:
-            obs_payload["http_credentials"] = http_credentials
+        _creds = http_credentials_for_url(url, http_credentials)
+        if _creds:
+            obs_payload["http_credentials"] = _creds
         if browser_profile_data:
             obs_payload["browser_profile_data"] = browser_profile_data
         if gmail_credentials:
             obs_payload["gmail_credentials"] = gmail_credentials
+        if available_file_paths:
+            obs_payload["available_file_paths"] = available_file_paths
+        if enable_signature_pad_tool is not None:
+            obs_payload["enable_signature_pad_tool"] = bool(enable_signature_pad_tool)
+        if max_browser_steps_only is not None:
+            obs_payload["max_browser_steps"] = int(max_browser_steps_only)
         obs_task = TaskContext(
             conversation_id=workflow_id,
             task_id=f"{workflow_id}-obs",
@@ -674,6 +697,9 @@ class OrchestrationService:
             raise ValueError("Missing requirements/observation: provide workflow_id or inline requirements_result and observation_result")
         scenarios = requirements_result.get("scenarios", [])
         page_context = observation_result.get("page_context", {})
+        ctx_url = str(page_context.get("url") or "")
+        req_http = request.get("http_credentials") or {}
+        _analysis_http_creds = http_credentials_for_url(ctx_url, req_http if isinstance(req_http, dict) else {})
         started_at = datetime.now(timezone.utc)
         pt = self.progress_tracker
 
@@ -700,6 +726,7 @@ class OrchestrationService:
                     "test_data": requirements_result.get("test_data", []),
                     "coverage_metrics": requirements_result.get("coverage_metrics", {}),
                     "page_context": page_context,
+                    "http_credentials": _analysis_http_creds,
                 },
                 priority=5,
             )
@@ -959,6 +986,10 @@ class OrchestrationService:
 
         current_scenarios = _test_cases_to_scenarios(test_cases)
         page_context: Dict[str, Any] = {}
+        _iter_ctx_url = str(
+            page_context.get("url") or request.get("url") or request.get("base_url") or ""
+        )
+        _iter_http_creds = http_credentials_for_url(_iter_ctx_url, request.get("http_credentials") or {})
         requirements_result = {
             "scenarios": current_scenarios,
             "test_data": [],
@@ -1067,6 +1098,7 @@ class OrchestrationService:
                         "test_data": requirements_result.get("test_data", []),
                         "coverage_metrics": requirements_result.get("coverage_metrics", {}),
                         "page_context": page_context,
+                        "http_credentials": _iter_http_creds,
                     },
                     priority=5,
                 )

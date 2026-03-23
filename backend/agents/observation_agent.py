@@ -171,7 +171,9 @@ class ObservationAgent(BaseAgent):
         self.timeout_ms = self.config.get("timeout_ms", 30000)
         self.take_screenshots = self.config.get("take_screenshots", True)
         self.use_llm = self.config.get("use_llm", True)  # Enable LLM by default
-        self.max_browser_steps = self.config.get("max_browser_steps", 50)  # Allow more steps for full flow including Gmail OTP extraction
+        # UAT checkout (login, upload, signature, payment, post-payment) often needs many steps; override via
+        # config["max_browser_steps"] or task payload["max_browser_steps"] (capped 1–500).
+        self.max_browser_steps = self.config.get("max_browser_steps", 120)
         
         # OPT-3: Element Finding Cache - Cache selectors for repeated scenarios (30-40% faster)
         # Key: (element_type, element_id, element_class) -> selector
@@ -269,6 +271,7 @@ class ObservationAgent(BaseAgent):
             http_credentials = task.payload.get("http_credentials")  # NEW: HTTP Basic auth for preprod/UAT
             browser_profile_data = task.payload.get("browser_profile_data")
             gmail_credentials = task.payload.get("gmail_credentials", {})  # NEW: Separate Gmail login credentials (optional)
+            available_file_paths = task.payload.get("available_file_paths")  # File paths for uploads (e.g. HKID)
             progress_callback = task.payload.get("progress_callback")
             cancel_check = task.payload.get("cancel_check")
             
@@ -283,6 +286,7 @@ class ObservationAgent(BaseAgent):
                     task, url, user_instruction, login_credentials, gmail_credentials, auth,
                     http_credentials=http_credentials,
                     browser_profile_data=browser_profile_data,
+                    available_file_paths=available_file_paths,
                     progress_callback=progress_callback,
                     cancel_check=cancel_check,
                 )
@@ -523,6 +527,7 @@ class ObservationAgent(BaseAgent):
         ,
         http_credentials: Optional[Dict[str, str]] = None,
         browser_profile_data: Optional[Dict[str, Any]] = None,
+        available_file_paths: Optional[List[str]] = None,
         progress_callback=None,
         cancel_check=None,
     ) -> TaskResult:
@@ -598,15 +603,54 @@ class ObservationAgent(BaseAgent):
             - Do NOT open new tabs or new windows for login. Stay on the same site.
             - If the page shows both an email/password form and a Gmail/Google button, use ONLY the email/password form.
             - Typical flow: Click "Login" → enter email in the email field → click Next/Login → enter password → click Login/Submit.
+
+            ELEMENT SELECTION / CLICK ACCURACY (CRITICAL):
+            - When choosing an index to click, prefer a real control (button, link, or span inside a button) whose visible text or role matches the task:
+              e.g. for "Login" choose the control labeled "Login", NOT a promo tile, price banner, or unrelated text like "Buy" or a dollar amount.
+            - If the listed "index" for your intended action points at a large card, carousel, or price (e.g. "$338") while the task says Login/Next/Checkbox,
+              pick a different index that matches the requirement or scroll until the correct control is in view.
+            - Scroll the target control into the center of the viewport before clicking. For checkboxes/terms, click the checkbox or its label, not a nearby price div.
+            - After a file upload completes, wait briefly (1–3s) for validation/UI to update before clicking "Next" or "Continue".
+            - If you click "Next" twice in a row and the page URL and main content do not change, STOP repeating: dismiss any overlay, scroll, fix a validation error,
+              or click a different element that matches the step (e.g. checkbox, I understand).
             
             Extract UI elements from each page you visit during this flow.
             Stop when you reach the confirmation/success page (or payment page if that is the end of the flow).
 
             FLOW CONTINUITY (CRITICAL):
             - If a reminder, confirmation, or informational modal appears, click the close, confirm, or I understand button and continue from the current step without restarting the purchase flow.
+            - MODAL PRIORITY (CRITICAL): When a modal/dialog is visible (e.g. "Reminder" about HKID card, "I understand" button), ONLY click elements INSIDE the modal. Do NOT click "Next" or other buttons in the background—they are blocked by the modal. The modal is on top; click "I understand", "Close", or the modal's confirm button first. Ignore background elements until the modal is dismissed.
             - Stay in the current checkout/subscription journey whenever possible. Do not navigate back, reopen the start page, or intentionally restart the wizard unless the site forces it.
             - If the site unexpectedly returns to an earlier plan-selection step, reselect the same plan or add-on choices you already made and resume progressing forward instead of starting over with a different plan.
             - When the site keeps your current selections visible, preserve them and continue to the next incomplete step.
+
+            SIGNATURE PAD / E-SIGNATURE (CRITICAL):
+            - If you see "Subscriber's signature", "Sales and Service Contract", or a large empty signature area with a canvas, a single click will NOT work.
+            - Use the **draw_signature_pad** action to draw a stroke on the signature canvas (optional: pass canvas_css_selector if you know it from find_elements).
+            - After drawing, use **Preview** if the page offers it, confirm checkboxes if needed, then **Next** or **Submit** to continue.
+            """
+            try:
+                from app.utils.three_uat_test_credentials import (
+                    is_three_hk_uat_url,
+                    three_uat_payment_test_instruction_block,
+                )
+
+                if is_three_hk_uat_url(url):
+                    task_description += three_uat_payment_test_instruction_block()
+                    logger.info(
+                        "ObservationAgent: Appended Three HK UAT test payment card instructions for browser-use task"
+                    )
+            except Exception as e:
+                logger.warning("ObservationAgent: Could not append UAT payment instructions: %s", e)
+
+            if available_file_paths:
+                first_path = available_file_paths[0]
+                task_description += f"""
+
+            FILE UPLOAD (when flow requires identity document / HKID upload):
+            - Use this EXACT file path for upload: {first_path}
+            - Do NOT use /path/to/sample_id_document.jpg or placeholder paths.
+            - The file is available at the path above; use it when the upload step appears.
             """
             
             if require_otp_handling:
@@ -676,18 +720,62 @@ class ObservationAgent(BaseAgent):
             # Create LLM adapter for browser-use (use Azure OpenAI)
             # Note: browser-use expects a specific LLM interface, we'll need to adapt
             llm_adapter = self._create_browser_use_llm_adapter()
-            agent = BrowserUseAgent(
-                task=task_description,
-                llm=llm_adapter,
-                browser=browser,
-                browser_profile=browser_profile,
+            agent_kwargs: Dict[str, Any] = {
+                "task": task_description,
+                "llm": llm_adapter,
+                "browser": browser,
+                "browser_profile": browser_profile,
+            }
+            if available_file_paths:
+                agent_kwargs["available_file_paths"] = available_file_paths
+                logger.info(f"ObservationAgent: Providing available_file_paths for uploads: {available_file_paths}")
+
+            # Custom tool: canvas signature stroke (same BrowserSession/CDP as browser-use)
+            enable_sig = task.payload.get(
+                "enable_signature_pad_tool",
+                self.config.get("enable_signature_pad_tool", True),
             )
+            if enable_sig:
+                try:
+                    from browser_use.tools.service import Tools as BrowserUseTools
+
+                    from agents.browser_use_signature_tool import register_draw_signature_pad_tool
+
+                    _tools = BrowserUseTools()
+                    register_draw_signature_pad_tool(_tools)
+                    agent_kwargs["tools"] = _tools
+                    logger.info(
+                        "ObservationAgent: Registered draw_signature_pad tool for e-signature canvases"
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "ObservationAgent: Could not register signature pad tool (%s); using default tools",
+                        e,
+                    )
+
+            agent = BrowserUseAgent(**agent_kwargs)
+
+            # Per-run step cap (browser-use Agent.run(max_steps=...)); request can override via task payload.
+            _raw_steps = task.payload.get("max_browser_steps", self.max_browser_steps)
+            try:
+                effective_max_steps = max(1, min(500, int(_raw_steps)))
+            except (TypeError, ValueError):
+                effective_max_steps = self.max_browser_steps
+            if "max_browser_steps" in task.payload:
+                logger.info(
+                    "ObservationAgent: max_browser_steps=%s (from task payload; agent config default %s)",
+                    effective_max_steps,
+                    self.max_browser_steps,
+                )
             
             # Run the agent to navigate through the flow with timeout
             # Increased timeout to allow for Gmail navigation and OTP extraction
             # Default: 10 minutes (600 seconds) for full flow including OTP verification
             max_flow_timeout = self.config.get("max_flow_timeout_seconds", 600)
-            logger.info(f"ObservationAgent: Running browser-use agent to navigate flow (max {max_flow_timeout}s, {self.max_browser_steps} steps)...")
+            logger.info(
+                f"ObservationAgent: Running browser-use agent to navigate flow "
+                f"(max {max_flow_timeout}s, {effective_max_steps} steps)..."
+            )
             if require_otp_handling:
                 logger.info("ObservationAgent: Agent may navigate to Gmail if OTP verification is required")
             else:
@@ -701,7 +789,7 @@ class ObservationAgent(BaseAgent):
             
             try:
                 # Run with heartbeat ticks so we can emit mid-stage progress and react to cancellation.
-                run_task = asyncio.create_task(agent.run(max_steps=self.max_browser_steps))
+                run_task = asyncio.create_task(agent.run(max_steps=effective_max_steps))
                 started = asyncio.get_running_loop().time()
                 history = None
 
@@ -755,10 +843,10 @@ class ObservationAgent(BaseAgent):
                             history_obj = getattr(agent, "history", None)
                             steps_done = len(getattr(history_obj, "history", []) or [])
                             progress_callback({
-                                "progress": min(0.85, max(0.10, steps_done / max(1, self.max_browser_steps))),
-                                "message": f"Navigating flow... ({steps_done}/{self.max_browser_steps} steps)",
+                                "progress": min(0.85, max(0.10, steps_done / max(1, effective_max_steps))),
+                                "message": f"Navigating flow... ({steps_done}/{effective_max_steps} steps)",
                                 "steps_completed": steps_done,
-                                "steps_total": self.max_browser_steps,
+                                "steps_total": effective_max_steps,
                             })
 
                         if elapsed >= max_flow_timeout:
@@ -801,7 +889,26 @@ class ObservationAgent(BaseAgent):
             history_items = history.history if hasattr(history, 'history') else list(history)
             logger.debug(f"History contains {len(history_items)} steps")
             
-            flow_steps = []  # Ordered list of actions taken during crawl for RequirementsAgent
+            flow_steps = []  # Ordered list of actions taken during crawl for RequirementsAgent / Playwright codegen
+            from app.utils.playwright_flow_recording import (
+                build_locator_bundle,
+                wrap_playwright_flow_recording,
+            )
+
+            def _locator_for_elem(elem) -> Optional[Dict[str, Any]]:
+                if elem is None:
+                    return None
+                return build_locator_bundle(
+                    xpath=getattr(elem, "x_path", "") or "",
+                    backend_node_id=getattr(elem, "backend_node_id", None),
+                    frame_id=getattr(elem, "frame_id", None),
+                    attributes=getattr(elem, "attributes", None) or {},
+                    ax_name=getattr(elem, "ax_name", None),
+                    node_name=(getattr(elem, "node_name", "") or ""),
+                    stable_hash=getattr(elem, "stable_hash", None),
+                    element_hash=getattr(elem, "element_hash", None),
+                )
+
             for idx, history_item in enumerate(history_items):
                 try:
                     # Extract URL and title from history_item.state (BrowserStateHistory)
@@ -846,6 +953,7 @@ class ObservationAgent(BaseAgent):
                                 "page_title": page_title or "",
                                 "element_type": node_name,
                                 "input_type": attrs.get("type", "text"),
+                                "locator": _locator_for_elem(elem),
                             })
                         elif node_name in ('button', 'a') or attrs.get('role') in ('button', 'link'):
                             flow_steps.append({
@@ -855,6 +963,7 @@ class ObservationAgent(BaseAgent):
                                 "page_url": page_url,
                                 "page_title": page_title or "",
                                 "element_type": node_name,
+                                "locator": _locator_for_elem(elem),
                             })
                         else:
                             flow_steps.append({
@@ -864,6 +973,7 @@ class ObservationAgent(BaseAgent):
                                 "page_url": page_url,
                                 "page_title": page_title or "",
                                 "element_type": node_name,
+                                "locator": _locator_for_elem(elem),
                             })
                         
                         # Determine element type from tag name and attributes
@@ -953,6 +1063,7 @@ class ObservationAgent(BaseAgent):
                     "page_url": url,
                     "page_title": pages_data[0]["title"] if pages_data else "",
                     "element_type": "navigate",
+                    "locator": None,
                 })
                 for i in range(1, len(flow_steps)):
                     flow_steps[i]["order"] = i + 1
@@ -989,6 +1100,11 @@ class ObservationAgent(BaseAgent):
                 "forms": all_forms,
                 "navigation_flow": navigation_flow,
                 "flow_steps": flow_steps,
+                "playwright_flow_recording": wrap_playwright_flow_recording(
+                    start_url=url or "",
+                    steps=flow_steps,
+                    goal_reached=goal_reached,
+                ),
                 "page_context": {
                     "url": url,
                     "title": pages_data[0]["title"] if pages_data else "",
@@ -999,6 +1115,7 @@ class ObservationAgent(BaseAgent):
                     },
                     "goal_reached": goal_reached,
                     "flow_steps_count": len(flow_steps),
+                    "playwright_flow_recording_version": 1,
                 },
                 "llm_analysis": {
                     "used": True,

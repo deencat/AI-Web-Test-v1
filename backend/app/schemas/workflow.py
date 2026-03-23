@@ -5,6 +5,10 @@ These schemas define the request/response models for the agent workflow API.
 Used for triggering workflows, tracking progress, and retrieving results.
 
 Reference: Sprint 10 - Frontend Integration & Real-time Agent Progress
+
+PowerShell note: in Windows PowerShell, ``"$368"`` inside a double-quoted JSON body may be expanded
+by the shell and remove dollar amounts from ``user_instruction``. Prefer single-quoted JSON,
+``--data '@body.json'``, or escape (e.g. `` `$368 ``).
 """
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
@@ -16,7 +20,10 @@ class GenerateTestsRequest(BaseModel):
     url: HttpUrl = Field(..., description="Target URL to analyze and generate tests for")
     user_instruction: Optional[str] = Field(
         None,
-        description="Optional user instructions for test generation (e.g., 'Test purchase flow for 5G plan')"
+        description=(
+            "Optional user instructions for test generation (e.g. 'Test purchase flow for 5G plan'). "
+            "Include exact plan prices/labels if required (PowerShell users: avoid `$` being stripped—see module docstring)."
+        ),
     )
     depth: int = Field(
         default=1,
@@ -39,6 +46,26 @@ class GenerateTestsRequest(BaseModel):
     gmail_credentials: Optional[Dict[str, str]] = Field(
         None,
         description="Gmail login for OTP verification: {'email': '...', 'password': '...'}. Used when flow requires checking email for OTP."
+    )
+    available_file_paths: Optional[List[str]] = Field(
+        None,
+        description="Local file paths for uploads during the flow (e.g. HKID image). Passed to browser-use Agent for file upload steps."
+    )
+    enable_signature_pad_tool: bool = Field(
+        default=True,
+        description=(
+            "When true, ObservationAgent registers browser-use tool draw_signature_pad for e-signature canvas strokes "
+            "(same browser session). Set false to use default tools only."
+        ),
+    )
+    max_browser_steps: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=500,
+        description=(
+            "Optional cap on browser-use Agent steps per observation run (login→checkout→payment→post-payment). "
+            "Server default is 120 if omitted. Increase (e.g. 200) for very long UAT flows."
+        ),
     )
     scenario_types: Optional[List[str]] = Field(
         default=None,
@@ -89,7 +116,10 @@ class GenerateTestsRequest(BaseModel):
 class ObservationRequest(BaseModel):
     """Request to run ObservationAgent only (crawl URL, extract UI elements)."""
     url: HttpUrl = Field(..., description="Target URL to observe")
-    user_instruction: Optional[str] = Field(None, description="Optional instruction for observation")
+    user_instruction: Optional[str] = Field(
+        None,
+        description="Optional instruction for observation (PowerShell: protect `$` in JSON—see workflow schema module docstring).",
+    )
     depth: int = Field(default=1, ge=1, le=3, description="Crawl depth")
     login_credentials: Optional[Dict[str, str]] = Field(None, description="Website login (username/email + password)")
     http_credentials: Optional[Dict[str, str]] = Field(
@@ -101,6 +131,20 @@ class ObservationRequest(BaseModel):
         description="Optional browser profile session data (cookies, localStorage, sessionStorage)"
     )
     gmail_credentials: Optional[Dict[str, str]] = Field(None, description="Gmail login for OTP verification (email + password)")
+    available_file_paths: Optional[List[str]] = Field(
+        None,
+        description="Local file paths for uploads during the flow (e.g. HKID image). Passed to browser-use Agent."
+    )
+    enable_signature_pad_tool: bool = Field(
+        default=True,
+        description="Register draw_signature_pad for canvas e-signatures during observation (browser-use).",
+    )
+    max_browser_steps: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=500,
+        description="Optional browser-use max steps for this observation run (default 120 on server if omitted).",
+    )
     model_config = ConfigDict(json_schema_extra={"example": {"url": "https://example.com/login", "depth": 1}})
 
 

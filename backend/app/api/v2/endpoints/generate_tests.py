@@ -61,9 +61,12 @@ async def generate_tests(
         "http_credentials": request.http_credentials,
         "browser_profile_data": request.browser_profile_data,
         "gmail_credentials": request.gmail_credentials,
+        "available_file_paths": request.available_file_paths,
+        "enable_signature_pad_tool": request.enable_signature_pad_tool,
         "scenario_types": request.scenario_types,
         "max_scenarios": request.max_scenarios,
         "focus_goal_only": request.focus_goal_only,
+        "max_browser_steps": request.max_browser_steps,
     }
 
     set_state(workflow_id, {

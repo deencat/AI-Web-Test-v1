@@ -71,6 +71,15 @@ class TestWorkflowSchemas:
         assert request.browser_profile_data is not None
         assert request.browser_profile_data["localStorage"]["journey"] == "active"
 
+    def test_generate_tests_request_accepts_available_file_paths(self):
+        from app.schemas.workflow import GenerateTestsRequest
+
+        request = GenerateTestsRequest(
+            url="https://example.com/",
+            available_file_paths=["C:\\Users\\test\\ekyctest\\test01.jpg"],
+        )
+        assert request.available_file_paths == ["C:\\Users\\test\\ekyctest\\test01.jpg"]
+
 
 class TestObservationAgentHelpers:
     def test_build_browser_profile_includes_basic_auth_header(self):
@@ -585,9 +594,10 @@ class TestOrchestrationPassThrough:
             )
 
         task_context = mock_observation_agent.execute_task.call_args.args[0]
+        # UAT URLs get hardcoded credentials (user/3.comUXuat), not user-provided
         assert task_context.payload["http_credentials"] == {
-            "username": "uat_user",
-            "password": "secret",
+            "username": "user",
+            "password": "3.comUXuat",
         }
 
     @pytest.mark.asyncio

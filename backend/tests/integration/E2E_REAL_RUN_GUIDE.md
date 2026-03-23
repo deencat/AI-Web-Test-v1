@@ -26,6 +26,37 @@ cd backend
 
 ---
 
+## Clean restart (stopped Python while `generate-tests` was running)
+
+The API process is gone, but **browser-use / Playwright** may have left **Chromium** running and **port 8000** might still be stuck until those children exit.
+
+1. **Free port 8000 and optionally kill automation browsers** (from `backend/`):
+
+   ```powershell
+   .\scripts\stop_dev_clean.ps1
+   .\scripts\stop_dev_clean.ps1 -KillPlaywrightBrowsers
+   ```
+
+   Use **`-KillPlaywrightBrowsers`** if an old automated Chromium window is still open. Avoid **`-KillAllChrome`** unless no important Chrome tabs are open.
+
+2. **Manual:** close any **automation Chromium** window yourself; in Task Manager look for Chromium tied to **ms-playwright** under your user profile.
+
+3. **Start clean:** one workflow at a time — wait for completion or `DELETE /api/v2/workflows/{id}` before starting another `generate-tests`.
+
+4. **Start the server again:**
+
+   ```powershell
+   cd backend
+   .\venv\Scripts\Activate.ps1
+   python .\start_server.py
+   ```
+
+### Long browser-use flows (step limit)
+
+Observation uses **browser-use** `Agent.run(max_steps=...)`. The server default is **`120`** steps (see `ObservationAgent` / `max_browser_steps`). For very long UAT checkout flows, pass **`max_browser_steps`** in **`POST /api/v2/generate-tests`** or **`POST /api/v2/observation`** (1–500), e.g. `"max_browser_steps": 200`.
+
+---
+
 ## Environment variables
 
 ### Required for 4-agent E2E
@@ -78,6 +109,20 @@ So for `pmo.andrewchan+010@gmail.com`:
 
 - Test site: `pmo.andrewchan+010@gmail.com`
 - Gmail: `pmo.andrewchan@gmail.com` (and same password or the one in `GMAIL_PASSWORD` if set).
+
+---
+
+## Three HK UAT payment test card (`wwwuat.three.com.hk`)
+
+When the observation URL host is **`wwwuat.three.com.hk`** (HTTP or HTTPS), **ObservationAgent** automatically adds UAT payment instructions to the browser-use task, including these **fixed sandbox card** values (see `backend/app/utils/three_uat_test_credentials.py`):
+
+| Field | Value |
+|-------|--------|
+| Card number | `4111111111111111` |
+| Expiry | `12/28` (adapt to month/year fields if the form splits them) |
+| CVV | `123` |
+
+Do **not** use these on production sites.
 
 ---
 
