@@ -11,10 +11,12 @@ import type { BrowserProfileListResponse, BrowserProfileData } from '../../../ty
 const mockGenerateTests = vi.fn();
 const mockGetAllProfiles = vi.fn();
 const mockLoadProfileSession = vi.fn();
+const mockUploadWorkflowFile = vi.fn();
 
 vi.mock('../../../services/agentWorkflowService', () => ({
   default: {
     generateTests: (...args: unknown[]) => mockGenerateTests(...args),
+    uploadWorkflowFile: (...args: unknown[]) => mockUploadWorkflowFile(...args),
   },
 }));
 
@@ -71,6 +73,11 @@ describe('AgentWorkflowTrigger', () => {
     mockGenerateTests.mockResolvedValue(MOCK_WORKFLOW_RESPONSE);
     mockGetAllProfiles.mockResolvedValue(MOCK_PROFILE_RESPONSE);
     mockLoadProfileSession.mockResolvedValue(MOCK_PROFILE_DATA);
+    mockUploadWorkflowFile.mockResolvedValue({
+      server_path: '/uploads/workflow-files/abc123/hkid.jpg',
+      filename: 'hkid.jpg',
+      size: 1024,
+    });
   });
 
   it('renders the form with expected fields', () => {
@@ -403,6 +410,8 @@ describe('AgentWorkflowTrigger', () => {
     render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
 
     await user.type(screen.getByTestId('url-input'), 'https://example.com');
+    // Switch to manual path mode first, then type the path
+    await user.click(screen.getByTestId('file-path-toggle-0'));
     await user.type(screen.getByTestId('file-path-input-0'), 'C:\\Users\\test\\file.jpg');
     await user.click(screen.getByTestId('generate-button'));
 
@@ -537,6 +546,105 @@ describe('AgentWorkflowTrigger', () => {
     await waitFor(() => {
       expect(mockGenerateTests).toHaveBeenCalledWith(
         expect.not.objectContaining({ focus_goal_only: expect.anything() })
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Sprint 10.8 — Hybrid file upload / path input
+  // ---------------------------------------------------------------------------
+
+  it('file entry row shows upload button and path toggle by default', () => {
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    expect(screen.getByTestId('file-upload-btn-0')).toBeInTheDocument();
+    expect(screen.getByTestId('file-path-toggle-0')).toBeInTheDocument();
+  });
+
+  it('clicking "type path instead" toggle shows text input', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await user.click(screen.getByTestId('file-path-toggle-0'));
+
+    expect(screen.getByTestId('file-path-input-0')).toBeInTheDocument();
+  });
+
+  it('uploading a file calls uploadWorkflowFile and shows filename', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    const file = new File([new Uint8Array(100)], 'hkid.jpg', { type: 'image/jpeg' });
+    const hiddenInput = screen.getByTestId('file-input-0');
+    await user.upload(hiddenInput, file);
+
+    await waitFor(() => {
+      expect(mockUploadWorkflowFile).toHaveBeenCalledWith(file);
+    });
+    expect(screen.getByText('hkid.jpg')).toBeInTheDocument();
+  });
+
+  it('uploaded server path is included in payload as available_file_paths', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    const file = new File([new Uint8Array(100)], 'hkid.jpg', { type: 'image/jpeg' });
+    await user.upload(screen.getByTestId('file-input-0'), file);
+
+    await user.type(screen.getByTestId('url-input'), 'https://example.com');
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.objectContaining({
+          available_file_paths: ['/uploads/workflow-files/abc123/hkid.jpg'],
+        })
+      );
+    });
+  });
+
+  it('typed server path is included in payload when using path mode', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await user.click(screen.getByTestId('file-path-toggle-0'));
+    await user.type(screen.getByTestId('file-path-input-0'), '/server/path/file.jpg');
+    await user.type(screen.getByTestId('url-input'), 'https://example.com');
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.objectContaining({
+          available_file_paths: ['/server/path/file.jpg'],
+        })
+      );
+    });
+  });
+
+  it('upload error is shown inline when uploadWorkflowFile rejects', async () => {
+    mockUploadWorkflowFile.mockRejectedValue(new Error('File type not allowed'));
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    const file = new File([new Uint8Array(10)], 'bad.exe', { type: 'application/octet-stream' });
+    await user.upload(screen.getByTestId('file-input-0'), file);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('file-upload-error-0')).toHaveTextContent('File type not allowed');
+    });
+  });
+
+  it('row with no upload and blank path is omitted from payload', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    // Do not interact with file row — leave blank
+    await user.type(screen.getByTestId('url-input'), 'https://example.com');
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.not.objectContaining({ available_file_paths: expect.anything() })
       );
     });
   });

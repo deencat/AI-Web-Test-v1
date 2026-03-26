@@ -18,6 +18,23 @@ export interface AgentWorkflowTriggerProps {
   className?: string;
 }
 
+/** Represents one file entry row — supports both browser upload and manual server path. */
+interface FileEntry {
+  serverPath: string;       // final value sent in payload
+  mode: 'upload' | 'path'; // upload = chose via browser, path = typed manually
+  displayName: string;      // shown next to upload button after upload
+  isUploading: boolean;
+  uploadError: string;
+}
+
+const emptyEntry = (): FileEntry => ({
+  serverPath: '',
+  mode: 'upload',
+  displayName: '',
+  isUploading: false,
+  uploadError: '',
+});
+
 export const AgentWorkflowTrigger: React.FC<AgentWorkflowTriggerProps> = ({
   onWorkflowStarted,
   className = '',
@@ -40,12 +57,28 @@ export const AgentWorkflowTrigger: React.FC<AgentWorkflowTriggerProps> = ({
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Sprint 10.8 — new fields
-  const [filePaths, setFilePaths] = useState<string[]>(['']);
+  const [fileEntries, setFileEntries] = useState<FileEntry[]>([emptyEntry()]);
   const [selectedScenarioTypes, setSelectedScenarioTypes] = useState<string[]>([]);
   const [maxScenarios, setMaxScenarios] = useState('');
   const [maxBrowserSteps, setMaxBrowserSteps] = useState('');
   const [maxFlowTimeout, setMaxFlowTimeout] = useState('');
   const [focusGoalOnly, setFocusGoalOnly] = useState(false);
+
+  const updateEntry = (idx: number, patch: Partial<FileEntry>) =>
+    setFileEntries((prev) => prev.map((e, i) => (i === idx ? { ...e, ...patch } : e)));
+
+  const handleFileChange = async (idx: number, file: File) => {
+    updateEntry(idx, { isUploading: true, uploadError: '', displayName: '', serverPath: '' });
+    try {
+      const result = await agentWorkflowService.uploadWorkflowFile(file);
+      updateEntry(idx, { isUploading: false, serverPath: result.server_path, displayName: result.filename });
+    } catch (err) {
+      updateEntry(idx, {
+        isUploading: false,
+        uploadError: err instanceof Error ? err.message : 'Upload failed',
+      });
+    }
+  };
 
   React.useEffect(() => {
     let isMounted = true;
@@ -111,7 +144,10 @@ export const AgentWorkflowTrigger: React.FC<AgentWorkflowTriggerProps> = ({
       ...(gmailEmail.trim() && gmailPassword
         ? { gmail_credentials: { email: gmailEmail.trim(), password: gmailPassword } }
         : {}),
-      ...(filePaths.some(p => p.trim()) && { available_file_paths: filePaths.filter(p => p.trim()) }),
+      ...(() => {
+        const paths = fileEntries.map(e => e.serverPath.trim()).filter(Boolean);
+        return paths.length > 0 ? { available_file_paths: paths } : {};
+      })(),
       ...(selectedScenarioTypes.length > 0 && { scenario_types: selectedScenarioTypes }),
       ...(maxScenarios !== '' && !isNaN(Number(maxScenarios)) && Number(maxScenarios) > 0 && { max_scenarios: Number(maxScenarios) }),
       ...(maxBrowserSteps !== '' && !isNaN(Number(maxBrowserSteps)) && Number(maxBrowserSteps) > 0 && { max_browser_steps: Number(maxBrowserSteps) }),
@@ -195,47 +231,101 @@ export const AgentWorkflowTrigger: React.FC<AgentWorkflowTriggerProps> = ({
           />
         </div>
 
-        {/* File paths */}
+        {/* File paths — hybrid upload / manual path */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             File paths <span className="text-gray-400 font-normal">(for eKYC / file upload, optional)</span>
           </label>
-          {filePaths.map((fp, idx) => (
-            <div key={idx} className="flex items-center gap-2 mb-2">
-              <input
-                data-testid={`file-path-input-${idx}`}
-                type="text"
-                value={fp}
-                onChange={(e) => {
-                  const updated = [...filePaths];
-                  updated[idx] = e.target.value;
-                  setFilePaths(updated);
-                }}
-                placeholder="C:\path\to\file.jpg"
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled={isSubmitting}
-              />
-              {filePaths.length > 1 && (
+          <p className="text-xs text-gray-500 mb-2">
+            Upload a file from your computer, or type a server-side path for CI/API use.
+          </p>
+
+          {fileEntries.map((entry, idx) => (
+            <div key={idx} className="mb-3 rounded-lg border border-gray-200 p-3 space-y-2">
+              {entry.mode === 'upload' ? (
+                /* --- Upload mode --- */
+                <div className="flex items-center gap-3">
+                  <label
+                    htmlFor={`file-input-${idx}`}
+                    data-testid={`file-upload-btn-${idx}`}
+                    className={`cursor-pointer inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 ${isSubmitting ? 'opacity-50 pointer-events-none' : ''}`}
+                  >
+                    {entry.isUploading ? 'Uploading…' : 'Choose file'}
+                  </label>
+                  <input
+                    id={`file-input-${idx}`}
+                    data-testid={`file-input-${idx}`}
+                    type="file"
+                    className="sr-only"
+                    disabled={isSubmitting || entry.isUploading}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleFileChange(idx, file);
+                    }}
+                  />
+                  {entry.displayName && (
+                    <span className="text-sm text-gray-700 truncate max-w-xs">{entry.displayName}</span>
+                  )}
+                  {entry.uploadError && (
+                    <span data-testid={`file-upload-error-${idx}`} className="text-sm text-red-600">
+                      {entry.uploadError}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    data-testid={`file-path-toggle-${idx}`}
+                    onClick={() => updateEntry(idx, { mode: 'path', serverPath: '', displayName: '', uploadError: '' })}
+                    className="text-xs text-blue-600 hover:text-blue-800 ml-auto shrink-0"
+                    disabled={isSubmitting}
+                  >
+                    type path instead
+                  </button>
+                </div>
+              ) : (
+                /* --- Manual path mode --- */
+                <div className="flex items-center gap-2">
+                  <input
+                    data-testid={`file-path-input-${idx}`}
+                    type="text"
+                    value={entry.serverPath}
+                    onChange={(e) => updateEntry(idx, { serverPath: e.target.value })}
+                    placeholder="/server/path/to/file.jpg"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={isSubmitting}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => updateEntry(idx, { mode: 'upload', serverPath: '', displayName: '', uploadError: '' })}
+                    className="text-xs text-blue-600 hover:text-blue-800 shrink-0"
+                    disabled={isSubmitting}
+                  >
+                    upload instead
+                  </button>
+                </div>
+              )}
+
+              {fileEntries.length > 1 && (
                 <button
                   type="button"
                   data-testid={`file-path-remove-${idx}`}
-                  onClick={() => setFilePaths(filePaths.filter((_, i) => i !== idx))}
-                  className="text-gray-400 hover:text-red-500 text-sm"
+                  onClick={() => setFileEntries(fileEntries.filter((_, i) => i !== idx))}
+                  className="text-xs text-gray-400 hover:text-red-500"
                   disabled={isSubmitting}
                 >
-                  ✕
+                  ✕ Remove
                 </button>
               )}
             </div>
           ))}
+
           <button
             type="button"
             data-testid="add-file-path-button"
-            onClick={() => setFilePaths([...filePaths, ''])}
+            onClick={() => setFileEntries([...fileEntries, emptyEntry()])}
             className="text-sm text-blue-600 hover:text-blue-800"
             disabled={isSubmitting}
           >
-            + Add file path
+            + Add file
           </button>
         </div>
 
