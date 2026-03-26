@@ -62,6 +62,12 @@ class Settings(BaseSettings):
 
     # Server: when True, start_server.py writes logs to backend/logs/ (in addition to console).
     ENABLE_SERVER_FILE_LOGGING: bool = False
+
+    # After ObservationAgent: write playwright_flow_recording.json + flow_steps.json under artifacts/flow_recordings/{workflow_id}/
+    FLOW_RECORDINGS_ENABLED: bool = True
+    # Optional override; relative paths are resolved from backend root. Env FLOW_RECORDINGS_DIR also supported.
+    FLOW_RECORDINGS_DIR: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,

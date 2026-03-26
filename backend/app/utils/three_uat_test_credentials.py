@@ -40,3 +40,24 @@ def three_uat_payment_test_instruction_block() -> str:
             - Enter them in the site's card fields as shown (expiry may be split into month/year fields: use 12 and 28 or 2028 per the form).
             - These are sandbox/test values for http(s)://{THREE_HK_UAT_HOSTNAME}/ only; do not assume they work on production.
             """
+
+
+def three_uat_my3_and_identity_upload_hints() -> str:
+    """
+    Navigation hints for Three HK UAT: avoid promotional traps and use the real upload control.
+
+    The "Upload" step is often an <a> link inside the Identity Document card, not a <button>,
+    so agents that only consider buttons may miss it.
+    """
+    return """
+
+            THREE HK UAT — MY3 APP PROMO (CRITICAL):
+            - Never click any control whose visible text is "Download My3 App" (or clearly promotes the My3 app download).
+            - That action opens a blocking modal and does not advance checkout; treat it as off-limits.
+            - If it is the only control you notice, scroll the page and use find_elements for links (a[href]) or text "Upload", "Next", "Continue", "Subscribe", or checkboxes/terms — do not use the My3 download button.
+
+            THREE HK UAT — IDENTITY DOCUMENT / HKID UPLOAD (CRITICAL):
+            - When you see the section titled "Identity Document" (or HKID upload instructions under "Register Info"), the file chooser is usually triggered by a blue underlined **"Upload"** link, not a primary button.
+            - You MUST click that **"Upload"** link (or equivalent "Choose file" / file input) to attach the document; do not skip this step because no `<button>` labeled Upload exists.
+            - After clicking Upload, complete the file picker using the provided available_file_paths when the browser-use upload tool applies.
+            """

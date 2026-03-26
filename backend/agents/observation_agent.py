@@ -335,15 +335,13 @@ class ObservationAgent(BaseAgent):
                 "message": "Launching browser for observation...",
             })
 
-        # Start Playwright browser
-        # Read headless mode from env (default: True for CI/CD compatibility)
-        # Support both HEADLESS_BROWSER (existing) and BROWSER_HEADLESS (for consistency)
         import os
+
         headless_str = os.getenv("HEADLESS_BROWSER") or os.getenv("BROWSER_HEADLESS", "true")
         headless_str = headless_str.lower()
         headless_mode = headless_str in ("true", "1", "yes")
         logger.info(f"ObservationAgent: Launching browser (headless={headless_mode})...")
-        
+
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=headless_mode)
             context_options = {
@@ -354,20 +352,16 @@ class ObservationAgent(BaseAgent):
             if normalized_http_credentials:
                 context_options["http_credentials"] = normalized_http_credentials
 
-            context = await browser.new_context(
-                **context_options
-            )
-            
-            # Add authentication if provided
+            context = await browser.new_context(**context_options)
+
             if auth:
                 logger.debug("ObservationAgent: Adding authentication to browser context...")
                 await context.add_init_script(f"""
                     localStorage.setItem('auth_token', '{auth.get('token', '')}');
                 """)
-            
+
             page = await context.new_page()
-            
-            # Crawl pages
+
             logger.info(f"ObservationAgent: Crawling pages (max_depth={max_depth})...")
             pages = await self._crawl_pages(page, url, max_depth)
             logger.info(f"ObservationAgent: Found {len(pages)} page(s) to analyze")
@@ -379,8 +373,7 @@ class ObservationAgent(BaseAgent):
                     "pages_total": len(pages),
                     "pages_analyzed": 0,
                 })
-            
-            # Extract UI elements from all pages (Playwright baseline)
+
             logger.info("ObservationAgent: Extracting UI elements from pages...")
             all_elements = []
             all_forms = []
@@ -389,11 +382,15 @@ class ObservationAgent(BaseAgent):
             cancelled_mid_stage = False
             for idx, page_info in enumerate(pages, 1):
                 if callable(cancel_check) and cancel_check():
-                    logger.info("ObservationAgent: Cancellation requested during page extraction. Returning partial results.")
+                    logger.info(
+                        "ObservationAgent: Cancellation requested during page extraction. Returning partial results."
+                    )
                     cancelled_mid_stage = True
                     break
 
-                logger.debug(f"ObservationAgent: Extracting elements from page {idx}/{len(pages)}: {page_info.url}")
+                logger.debug(
+                    f"ObservationAgent: Extracting elements from page {idx}/{len(pages)}: {page_info.url}"
+                )
                 elements = await self._extract_ui_elements(page, page_info.url)
                 forms = await self._extract_forms(page, page_info.url)
                 all_elements.extend(elements)
@@ -409,28 +406,31 @@ class ObservationAgent(BaseAgent):
                         "elements_found": len(all_elements),
                     })
 
-                logger.debug(f"ObservationAgent: Page {idx} - {len(elements)} elements, {len(forms)} forms")
-            
-            logger.info(f"ObservationAgent: Playwright baseline complete - {len(all_elements)} elements, {len(all_forms)} forms")
-            
-            # ENHANCEMENT: Use LLM to find elements Playwright might miss
+                logger.debug(
+                    f"ObservationAgent: Page {idx} - {len(elements)} elements, {len(forms)} forms"
+                )
+
+            logger.info(
+                f"ObservationAgent: Playwright baseline complete - {len(all_elements)} elements, "
+                f"{len(all_forms)} forms"
+            )
+
             llm_enhanced_elements = []
             llm_analysis = {}
             if not cancelled_mid_stage and self.llm_client and self.llm_client.enabled:
                 try:
-                    # Get page HTML for LLM analysis
                     html_content = await page.content()
                     page_title = await page.title()
-                    
+
                     logger.info("Analyzing page with LLM for enhanced element detection...")
                     llm_analysis = await self.llm_client.analyze_page_elements(
                         html=html_content,
-                        basic_elements=all_elements[:20],  # Send sample to LLM
+                        basic_elements=all_elements[:20],
                         url=url,
                         page_title=page_title,
-                        learned_patterns=None  # Learning system planned for Sprint 11-12
+                        learned_patterns=None,
                     )
-                    
+
                     llm_enhanced_elements = llm_analysis.get("enhanced_elements", [])
                     logger.info(f"LLM found {len(llm_enhanced_elements)} additional elements")
 
@@ -440,14 +440,11 @@ class ObservationAgent(BaseAgent):
                             "message": f"LLM enrichment complete (+{len(llm_enhanced_elements)} elements)",
                             "elements_found": len(all_elements) + len(llm_enhanced_elements),
                         })
-                    
-                    # Merge LLM findings with Playwright results
+
                     all_elements.extend(llm_enhanced_elements)
-                    
                 except Exception as e:
                     logger.warning(f"LLM analysis failed, continuing with Playwright-only results: {e}")
-            
-            # Identify navigation flows
+
             flows = self._identify_flows(pages)
 
             if callable(progress_callback):
@@ -458,17 +455,16 @@ class ObservationAgent(BaseAgent):
                     "pages_analyzed": processed_pages,
                     "elements_found": len(all_elements),
                 })
-            
+
             await browser.close()
-        
-        # Calculate confidence based on completeness
+
         confidence = self._calculate_confidence(
-            pages, 
-            all_elements, 
+            pages,
+            all_elements,
             all_forms,
-            has_llm_enhancement=bool(llm_enhanced_elements)
+            has_llm_enhancement=bool(llm_enhanced_elements),
         )
-        
+
         result = {
             "start_url": url,
             "pages_crawled": len(pages),
@@ -479,20 +475,20 @@ class ObservationAgent(BaseAgent):
             "forms": all_forms,
             "navigation_flows": flows,
             "page_context": {
-                "url": url,  # Primary URL for navigation
+                "url": url,
                 "title": pages[0].title if pages else "",
                 "page_structure": {
                     "total_pages": len(pages),
                     "total_elements": len(all_elements),
-                    "total_forms": len(all_forms)
-                }
+                    "total_forms": len(all_forms),
+                },
             },
             "llm_analysis": {
                 "used": bool(llm_enhanced_elements),
                 "elements_found": len(llm_enhanced_elements),
                 "suggested_selectors": llm_analysis.get("suggested_selectors", {}),
                 "page_patterns": llm_analysis.get("page_patterns", {}),
-                "missed_by_playwright": llm_analysis.get("missed_by_playwright", [])
+                "missed_by_playwright": llm_analysis.get("missed_by_playwright", []),
             },
             "summary": {
                 "buttons": len([e for e in all_elements if e.get("type") == "button"]),
@@ -500,22 +496,22 @@ class ObservationAgent(BaseAgent):
                 "links": len([e for e in all_elements if e.get("type") == "link"]),
                 "forms": len(all_forms),
                 "playwright_elements": len(all_elements) - len(llm_enhanced_elements),
-                "llm_enhanced_elements": len(llm_enhanced_elements)
-            }
+                "llm_enhanced_elements": len(llm_enhanced_elements),
+            },
         }
-        
+
         logger.info(
             f"Crawling complete: {len(pages)} pages, "
             f"{len(all_elements)} elements, {len(all_forms)} forms"
         )
-        
+
         return TaskResult(
             task_id=task.task_id,
             success=True,
             result=result,
-            confidence=confidence
+            confidence=confidence,
         )
-    
+
     async def _execute_multi_page_flow_crawling(
         self,
         task: TaskContext,
@@ -632,13 +628,15 @@ class ObservationAgent(BaseAgent):
             try:
                 from app.utils.three_uat_test_credentials import (
                     is_three_hk_uat_url,
+                    three_uat_my3_and_identity_upload_hints,
                     three_uat_payment_test_instruction_block,
                 )
 
                 if is_three_hk_uat_url(url):
                     task_description += three_uat_payment_test_instruction_block()
+                    task_description += three_uat_my3_and_identity_upload_hints()
                     logger.info(
-                        "ObservationAgent: Appended Three HK UAT test payment card instructions for browser-use task"
+                        "ObservationAgent: Appended Three HK UAT payment + My3/Identity upload hints for browser-use task"
                     )
             except Exception as e:
                 logger.warning("ObservationAgent: Could not append UAT payment instructions: %s", e)
@@ -651,6 +649,7 @@ class ObservationAgent(BaseAgent):
             - Use this EXACT file path for upload: {first_path}
             - Do NOT use /path/to/sample_id_document.jpg or placeholder paths.
             - The file is available at the path above; use it when the upload step appears.
+            - Many sites use a blue **"Upload"** or **"Choose file"** link (`<a>`), not a `<button>`. If you see "Identity Document" / HKID text and no button, click the Upload link or the visible file input.
             """
             
             if require_otp_handling:
@@ -768,13 +767,27 @@ class ObservationAgent(BaseAgent):
                     self.max_browser_steps,
                 )
             
-            # Run the agent to navigate through the flow with timeout
-            # Increased timeout to allow for Gmail navigation and OTP extraction
-            # Default: 10 minutes (600 seconds) for full flow including OTP verification
-            max_flow_timeout = self.config.get("max_flow_timeout_seconds", 600)
+            # Run the agent to navigate through the flow with wall-clock timeout (heartbeat loop).
+            # Default 1200s (20m): long UAT checkout flows often exceed 10m; OTP/Gmail can need more.
+            # Task payload overrides agent config. Clamped to 60s–7200s.
+            _raw_flow_timeout = task.payload.get("max_flow_timeout_seconds")
+            if _raw_flow_timeout is None:
+                _raw_flow_timeout = self.config.get("max_flow_timeout_seconds")
+            if _raw_flow_timeout is None:
+                max_flow_timeout = 1200
+            else:
+                try:
+                    max_flow_timeout = max(60, min(7200, int(_raw_flow_timeout)))
+                except (TypeError, ValueError):
+                    max_flow_timeout = 1200
+            if task.payload.get("max_flow_timeout_seconds") is not None:
+                logger.info(
+                    "ObservationAgent: max_flow_timeout_seconds=%s (from task payload)",
+                    max_flow_timeout,
+                )
             logger.info(
                 f"ObservationAgent: Running browser-use agent to navigate flow "
-                f"(max {max_flow_timeout}s, {effective_max_steps} steps)..."
+                f"(max {max_flow_timeout}s wall-clock, {effective_max_steps} steps)..."
             )
             if require_otp_handling:
                 logger.info("ObservationAgent: Agent may navigate to Gmail if OTP verification is required")
@@ -787,6 +800,7 @@ class ObservationAgent(BaseAgent):
                     "message": "Starting guided flow navigation...",
                 })
             
+            run_task: Optional[asyncio.Task] = None
             try:
                 # Run with heartbeat ticks so we can emit mid-stage progress and react to cancellation.
                 run_task = asyncio.create_task(agent.run(max_steps=effective_max_steps))
@@ -822,7 +836,7 @@ class ObservationAgent(BaseAgent):
                                         "start_url": url,
                                         "goal_reached": False,
                                         "pages_visited": [],
-                                        "flow_path": []
+                                        "flow_path": [],
                                     },
                                     "page_context": {
                                         "url": url,
@@ -830,8 +844,8 @@ class ObservationAgent(BaseAgent):
                                         "page_structure": {
                                             "total_pages": 0,
                                             "total_elements": 0,
-                                            "total_forms": 0
-                                        }
+                                            "total_forms": 0,
+                                        },
                                     },
                                 },
                                 confidence=0.0,
@@ -869,7 +883,24 @@ class ObservationAgent(BaseAgent):
                         # Fallback: create a minimal history structure
                         history = type('AgentHistoryList', (), {'history': []})()
                     logger.warning("ObservationAgent: No partial history available from timed-out agent - will return empty results")
-            
+
+                # Stop browser-use before returning so Requirements/Analysis do not overlap with a live run.
+                if run_task is not None and not run_task.done():
+                    logger.info(
+                        "ObservationAgent: Cancelling browser-use run after wall-clock timeout "
+                        "(waiting for task to end before downstream agents)."
+                    )
+                    run_task.cancel()
+                    try:
+                        await run_task
+                    except asyncio.CancelledError:
+                        pass
+                    except Exception as cleanup_err:
+                        logger.debug(
+                            "ObservationAgent: browser-use task cleanup after timeout: %s",
+                            cleanup_err,
+                        )
+
             # Extract pages and elements from browser-use history
             # AgentHistoryList structure:
             #   history.history: list[AgentHistory]
@@ -1069,7 +1100,8 @@ class ObservationAgent(BaseAgent):
                     flow_steps[i]["order"] = i + 1
             
             # 10A.10: Check if goal was reached with enhanced indicators
-            goal_reached = self._check_goal_reached(history, user_instruction, custom_goal_indicators)
+            hist_seq = history.history if hasattr(history, "history") else history
+            goal_reached = self._check_goal_reached(hist_seq, user_instruction, custom_goal_indicators)
             
             # Build navigation flow
             navigation_flow = {
@@ -1092,6 +1124,7 @@ class ObservationAgent(BaseAgent):
             
             result = {
                 "start_url": url,
+                "user_instruction": user_instruction or "",
                 "pages_crawled": len(pages_data),
                 "total_elements": len(all_elements),
                 "total_forms": len(all_forms),
@@ -1114,6 +1147,7 @@ class ObservationAgent(BaseAgent):
                         "total_forms": len(all_forms)
                     },
                     "goal_reached": goal_reached,
+                    "user_instruction": user_instruction or "",
                     "flow_steps_count": len(flow_steps),
                     "playwright_flow_recording_version": 1,
                 },
@@ -1538,6 +1572,14 @@ class ObservationAgent(BaseAgent):
                     for result in results:
                         if hasattr(result, 'extracted_content') and result.extracted_content:
                             content_lower += str(result.extracted_content).lower() + " "
+
+                # LLM step summaries (Eval / Memory / Next goal) — matches final "done" messaging
+                mo = getattr(history_item, "model_output", None)
+                if mo is not None:
+                    for _field in ("evaluation", "memory", "next_goal", "thought"):
+                        _v = getattr(mo, _field, None)
+                        if _v:
+                            content_lower += str(_v).lower() + " "
                 
                 # Check if any goal indicator is found
                 combined_text = f"{url_lower} {title_lower} {content_lower}"
@@ -1583,13 +1625,44 @@ class ObservationAgent(BaseAgent):
         
         instruction_lower = user_instruction.lower()
         
-        # Purchase/checkout flow indicators
-        if any(keyword in instruction_lower for keyword in ["purchase", "buy", "checkout", "order", "訂購", "購買"]):
+        # Purchase/checkout/subscription flow indicators
+        if any(
+            keyword in instruction_lower
+            for keyword in [
+                "purchase",
+                "buy",
+                "checkout",
+                "order",
+                "subscribe",
+                "subscription",
+                "訂購",
+                "購買",
+            ]
+        ):
             indicators.extend([
-                "confirmation", "order confirmed", "order complete", "thank you for your order",
-                "order number", "order id", "order #", "payment successful", "payment confirmed",
-                "purchase complete", "checkout complete", "receipt", "invoice",
-                "確認", "成功", "訂單編號", "訂單確認", "付款成功"
+                "confirmation",
+                "order confirmed",
+                "order complete",
+                "thank you for your order",
+                "order number",
+                "order id",
+                "order #",
+                "purchase id",
+                "payment successful",
+                "payment confirmed",
+                "purchase complete",
+                "checkout complete",
+                "receipt",
+                "invoice",
+                "successful subscribed",
+                "subscription successful",
+                "successfully completed",
+                "subscribed page",
+                "確認",
+                "成功",
+                "訂單編號",
+                "訂單確認",
+                "付款成功",
             ])
         
         # Registration/signup flow indicators

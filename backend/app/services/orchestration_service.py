@@ -9,7 +9,7 @@ This service coordinates the execution of the 4-agent workflow:
 
 Reference: Sprint 10 - Frontend Integration & Real-time Agent Progress
 """
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timezone
 import uuid
 import logging
@@ -18,6 +18,43 @@ import asyncio
 from app.utils.http_auth_credentials import http_credentials_for_url
 
 logger = logging.getLogger(__name__)
+
+
+def observation_goal_required_and_met(
+    obs_data: Dict[str, Any],
+    user_instruction: Optional[str],
+) -> Tuple[bool, str]:
+    """
+    When a non-empty user_instruction is present (from API or stored observation),
+    ObservationAgent must report goal_reached=True before Requirements / Analysis / Evolution run.
+
+    Observation sets page_context.goal_reached and navigation_flow.goal_reached via _check_goal_reached.
+    """
+    instr = (user_instruction or "").strip()
+    if not instr:
+        instr = (obs_data.get("user_instruction") or "").strip()
+    if not instr:
+        pc = obs_data.get("page_context") or {}
+        if isinstance(pc, dict):
+            instr = (pc.get("user_instruction") or "").strip()
+    if not instr:
+        return True, ""
+
+    pc = obs_data.get("page_context") or {}
+    nav = obs_data.get("navigation_flow") or {}
+    goal = pc.get("goal_reached") if isinstance(pc, dict) else None
+    if goal is None and isinstance(nav, dict):
+        goal = nav.get("goal_reached")
+    if goal is True:
+        return True, ""
+
+    return (
+        False,
+        "Observation did not confirm the user_instruction goal (goal_reached=false). "
+        "Requirements and later agents are skipped until the guided flow reaches the goal — "
+        "e.g. increase max_browser_steps, raise ObservationAgent max_flow_timeout_seconds, "
+        "or fix the site/automation. Partial crawl data is still in observation_result.",
+    )
 
 
 class _MockMessageQueue:
@@ -104,6 +141,8 @@ class OrchestrationService:
         max_scenarios = request.get("max_scenarios")
         focus_goal_only = bool(request.get("focus_goal_only"))
         max_browser_steps = request.get("max_browser_steps")
+        max_flow_timeout_seconds = request.get("max_flow_timeout_seconds")
+        save_flow_recording = bool(request.get("save_flow_recording", True))
 
         db = None
         try:
@@ -228,6 +267,8 @@ class OrchestrationService:
                 obs_payload["enable_signature_pad_tool"] = bool(enable_signature_pad_tool)
             if max_browser_steps is not None:
                 obs_payload["max_browser_steps"] = int(max_browser_steps)
+            if max_flow_timeout_seconds is not None:
+                obs_payload["max_flow_timeout_seconds"] = int(max_flow_timeout_seconds)
             obs_task = TaskContext(
                 conversation_id=workflow_id,
                 task_id=f"{workflow_id}-obs",
@@ -243,6 +284,20 @@ class OrchestrationService:
             if not observation_result.success:
                 raise RuntimeError(observation_result.error or "Observation failed")
             obs_data = observation_result.result
+            from app.utils.flow_recording_persistence import (
+                persist_observation_flow_artifacts,
+                persist_test_case_flow_manifests,
+            )
+
+            persist_observation_flow_artifacts(
+                workflow_id, obs_data, enabled=save_flow_recording
+            )
+
+            goal_ok, goal_msg = observation_goal_required_and_met(obs_data, user_instruction)
+            if not goal_ok:
+                logger.warning("Workflow %s blocked before Requirements: %s", workflow_id, goal_msg)
+                raise RuntimeError(goal_msg)
+
             ui_elements = obs_data.get("ui_elements", [])
             _emit("agent_completed", {
                 "agent": "observation",
@@ -262,6 +317,7 @@ class OrchestrationService:
                 "pages": obs_data.get("pages", []),
                 "navigation_flow": obs_data.get("navigation_flow"),
                 "flow_steps": obs_data.get("flow_steps", []),
+                "playwright_flow_recording": obs_data.get("playwright_flow_recording"),
             }
             if "url" not in observation_data["page_context"]:
                 observation_data["page_context"]["url"] = url
@@ -356,6 +412,7 @@ class OrchestrationService:
                 "test_data": requirements_result.result.get("test_data", []),
                 "db": db,
                 "flow_steps": observation_data.get("flow_steps", []),
+                "playwright_flow_recording": observation_data.get("playwright_flow_recording"),
                 "pages": observation_data.get("pages", []),
             }
 
@@ -390,6 +447,9 @@ class OrchestrationService:
                 raise RuntimeError(evolution_result.error or "Evolution failed")
             test_case_ids = evolution_result.result.get("test_case_ids", [])
             test_count = evolution_result.result.get("test_count", 0)
+            persist_test_case_flow_manifests(
+                workflow_id, test_case_ids, obs_data, enabled=save_flow_recording
+            )
             _emit("agent_completed", {
                 "agent": "evolution",
                 "tests_generated": test_count,
@@ -482,6 +542,8 @@ class OrchestrationService:
         available_file_paths = request.get("available_file_paths")
         enable_signature_pad_tool = request.get("enable_signature_pad_tool")
         max_browser_steps_only = request.get("max_browser_steps")
+        max_flow_timeout_only = request.get("max_flow_timeout_seconds")
+        save_flow_recording = bool(request.get("save_flow_recording", True))
         started_at = datetime.now(timezone.utc)
         pt = self.progress_tracker
 
@@ -510,6 +572,8 @@ class OrchestrationService:
             obs_payload["enable_signature_pad_tool"] = bool(enable_signature_pad_tool)
         if max_browser_steps_only is not None:
             obs_payload["max_browser_steps"] = int(max_browser_steps_only)
+        if max_flow_timeout_only is not None:
+            obs_payload["max_flow_timeout_seconds"] = int(max_flow_timeout_only)
         obs_task = TaskContext(
             conversation_id=workflow_id,
             task_id=f"{workflow_id}-obs",
@@ -530,6 +594,32 @@ class OrchestrationService:
             })
             raise RuntimeError(observation_result.error or "Observation failed")
         obs_data = observation_result.result
+        from app.utils.flow_recording_persistence import persist_observation_flow_artifacts
+
+        persist_observation_flow_artifacts(
+            workflow_id, obs_data, enabled=save_flow_recording
+        )
+
+        goal_ok, goal_msg = observation_goal_required_and_met(obs_data, user_instruction)
+        if not goal_ok:
+            logger.warning("Observation-only workflow %s failed goal gate: %s", workflow_id, goal_msg)
+            _emit("agent_completed", {"agent": "observation", "error": goal_msg})
+            set_state(workflow_id, {
+                "workflow_id": workflow_id,
+                "status": "failed",
+                "error": goal_msg,
+                "started_at": started_at.isoformat(),
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "workflow_type": "observation",
+                "result": {
+                    "observation_result": obs_data,
+                    "test_case_ids": [],
+                    "test_count": 0,
+                    "goal_gate_failed": True,
+                },
+            })
+            raise RuntimeError(goal_msg)
+
         ui_elements = obs_data.get("ui_elements", [])
         _emit("agent_completed", {
             "agent": "observation",
@@ -587,6 +677,11 @@ class OrchestrationService:
         observation_result = request.get("observation_result") or obs_from_store
         if not observation_result:
             raise ValueError("Missing observation data: provide workflow_id (with prior observation) or observation_result")
+
+        goal_ok, goal_msg = observation_goal_required_and_met(observation_result, user_instruction)
+        if not goal_ok:
+            raise ValueError(goal_msg)
+
         ui_elements = observation_result.get("ui_elements", [])
         page_context = observation_result.get("page_context", {})
         url = str(request.get("url") or page_context.get("url") or "")
@@ -607,6 +702,7 @@ class OrchestrationService:
             "pages": observation_result.get("pages", []),
             "navigation_flow": observation_result.get("navigation_flow"),
             "flow_steps": observation_result.get("flow_steps", []),
+            "playwright_flow_recording": observation_result.get("playwright_flow_recording"),
         }
         if user_instruction:
             observation_data["user_instruction"] = user_instruction
@@ -836,6 +932,7 @@ class OrchestrationService:
             "test_data": requirements_result.get("test_data", []),
             "db": db,
             "flow_steps": observation_result.get("flow_steps", []),
+            "playwright_flow_recording": observation_result.get("playwright_flow_recording"),
             "pages": observation_result.get("pages", []),
         }
         if user_instruction:

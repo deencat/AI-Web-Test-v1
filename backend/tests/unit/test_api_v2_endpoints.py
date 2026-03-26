@@ -66,6 +66,7 @@ async def test_generate_tests_accepts_optional_fields(client: httpx.AsyncClient)
             "url": "https://example.com/login",
             "user_instruction": "Test login",
             "depth": 2,
+            "max_flow_timeout_seconds": 1800,
         },
     )
     assert response.status_code == 202

@@ -471,6 +471,17 @@ class TestThreeHKWorldPlanTaskDescription:
         assert "reselect the same plan or add-on choices you already made" in desc
         assert "resume progressing forward instead of starting over with a different plan" in desc
 
+    def test_task_description_warns_against_my3_and_requires_upload_link(self, agent):
+        """Three HK UAT task must steer away from My3 promo and toward Identity Document Upload link."""
+        task = make_task(
+            url="https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/",
+            instruction="Subscribe to $368 World Plan",
+        )
+        desc = self._capture_task_description(agent, task)
+        assert "Download My3 App" in desc
+        assert "Never click" in desc or "off-limits" in desc
+        assert "Identity Document" in desc
+
 
 # ===========================================================================
 # Edge cases
@@ -516,6 +527,55 @@ class TestBrowserUseEdgeCases:
 
         assert result.success is True
         assert result.metadata.get("cancelled") is True
+
+    @pytest.mark.asyncio
+    async def test_wall_clock_timeout_cancels_browser_use_run(self, agent):
+        """After max_flow_timeout_seconds, observation must cancel agent.run before returning."""
+        pytest.importorskip("browser_use")
+
+        cancel_seen = {"v": False}
+
+        async def hang_until_cancel(*a, **kw):
+            try:
+                while True:
+                    await asyncio.sleep(0.05)
+            except asyncio.CancelledError:
+                cancel_seen["v"] = True
+                raise
+
+        mock_browser_agent = MagicMock()
+        mock_browser_agent.run = hang_until_cancel
+        mock_browser_agent.history = _make_fake_history(
+            [{"url": "https://wwwuat.three.com.hk/done", "title": "Done"}]
+        )
+
+        task = make_task(
+            url="https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/",
+            instruction="Subscribe to $368 World Plan",
+        )
+        task.payload["max_flow_timeout_seconds"] = 1
+
+        with (
+            patch("agents.observation_agent.ObservationAgent._create_browser_use_llm_adapter", return_value=MagicMock()),
+            patch(
+                "agents.observation_agent.ObservationAgent._prime_browser_session_http_auth",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+            patch("browser_use.Agent", return_value=mock_browser_agent),
+            patch("browser_use.Browser", return_value=MagicMock()),
+        ):
+            result = await agent._execute_multi_page_flow_crawling(
+                task=task,
+                url=task.payload["url"],
+                user_instruction=task.payload["user_instruction"],
+                login_credentials={},
+                gmail_credentials={},
+                auth=None,
+            )
+
+        assert cancel_seen["v"] is True
+        assert result.success is True
 
     @pytest.mark.asyncio
     async def test_browser_use_not_available_falls_back_to_traditional(self, agent):

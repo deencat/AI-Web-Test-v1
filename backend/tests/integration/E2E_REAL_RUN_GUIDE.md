@@ -51,9 +51,30 @@ The API process is gone, but **browser-use / Playwright** may have left **Chromi
    python .\start_server.py
    ```
 
+### Observation goal gate (`user_instruction`)
+
+If **`user_instruction`** is non-empty on **`/generate-tests`** or **`/observation`**, the API **blocks Requirements** until **`observation_result.page_context.goal_reached`** is **true**. Timeout or an unfinished flow → workflow **fails** at that gate (partial observation + flow JSON may still be saved). Use higher **`max_browser_steps`** and Observation **`max_flow_timeout_seconds`** for long UAT runs. Omit **`user_instruction`** for a crawl without this gate.
+
 ### Long browser-use flows (step limit)
 
 Observation uses **browser-use** `Agent.run(max_steps=...)`. The server default is **`120`** steps (see `ObservationAgent` / `max_browser_steps`). For very long UAT checkout flows, pass **`max_browser_steps`** in **`POST /api/v2/generate-tests`** or **`POST /api/v2/observation`** (1–500), e.g. `"max_browser_steps": 200`.
+
+### Flow recording JSON on disk (per workflow)
+
+After observation completes (standalone **`/observation`** or stage 1 of **`/generate-tests`**), the server writes:
+
+- `backend/artifacts/flow_recordings/{workflow_id}/playwright_flow_recording.json`
+- `backend/artifacts/flow_recordings/{workflow_id}/flow_steps.json`
+- `backend/artifacts/flow_recordings/{workflow_id}/playwright_step_ir.json` — flat locator IR for non-LLM tooling
+
+(`workflow_id` is the UUID from the API response; folder name is sanitized.)
+
+**Full `/generate-tests` only:** when Evolution stores test cases in the DB, one manifest per test is added under  
+`backend/artifacts/flow_recordings/{workflow_id}/by_test_case/test_case_{id}.json` (points at the three files above).
+
+**API:** `GET /api/v2/workflows/{workflow_id}/results` → `observation_result.flow_recording_artifacts` lists absolute paths (`directory`, `playwright_flow_recording_file`, `flow_steps_file`, `playwright_step_ir_file`, and after generate-tests `test_case_manifest_files` / `test_case_manifest_count`).
+
+**Opt out:** request body `"save_flow_recording": false`, or set **`FLOW_RECORDINGS_ENABLED=false`** in `.env`. Optional **`FLOW_RECORDINGS_DIR`** overrides the output root (absolute path or relative to `backend/`).
 
 ---
 
@@ -68,6 +89,13 @@ Observation uses **browser-use** `Agent.run(max_steps=...)`. The server default 
 | `AZURE_OPENAI_MODEL` | Deployment name | `ChatGPT-UAT` |
 
 These are used by ObservationAgent (browser-use LLM), RequirementsAgent, AnalysisAgent, and EvolutionAgent.
+
+### Optional – flow recording (disk)
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `FLOW_RECORDINGS_ENABLED` | When `false`, skip writing JSON under `artifacts/flow_recordings/` | `false` |
+| `FLOW_RECORDINGS_DIR` | Override output root (absolute or relative to `backend/`) | `D:\qa-recordings` |
 
 ### Optional – test behaviour
 

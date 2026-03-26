@@ -67,6 +67,24 @@ class GenerateTestsRequest(BaseModel):
             "Server default is 120 if omitted. Increase (e.g. 200) for very long UAT flows."
         ),
     )
+    max_flow_timeout_seconds: Optional[int] = Field(
+        default=None,
+        ge=60,
+        le=7200,
+        description=(
+            "Wall-clock seconds ObservationAgent waits for browser-use per run before snapshotting partial history "
+            "and cancelling the run. Default 1200 (20m) if omitted. Must finish or time out before Requirements starts."
+        ),
+    )
+    save_flow_recording: bool = Field(
+        default=True,
+        description=(
+            "When true (default), after observation writes ``playwright_flow_recording.json``, ``flow_steps.json``, "
+            "and ``playwright_step_ir.json`` under ``backend/artifacts/flow_recordings/{workflow_id}/`` "
+            "(unless disabled server-wide). Full generate-tests also writes ``by_test_case/test_case_{id}.json`` "
+            "manifests per stored test case. Paths are returned in ``observation_result.flow_recording_artifacts``."
+        ),
+    )
     scenario_types: Optional[List[str]] = Field(
         default=None,
         description=(
@@ -144,6 +162,22 @@ class ObservationRequest(BaseModel):
         ge=1,
         le=500,
         description="Optional browser-use max steps for this observation run (default 120 on server if omitted).",
+    )
+    max_flow_timeout_seconds: Optional[int] = Field(
+        default=None,
+        ge=60,
+        le=7200,
+        description=(
+            "Wall-clock cap for browser-use during observation (default 1200s). Run is cancelled after timeout "
+            "before returning so later agents never overlap with a live browser session."
+        ),
+    )
+    save_flow_recording: bool = Field(
+        default=True,
+        description=(
+            "When true, persist flow recording JSON files under artifacts/flow_recordings/{workflow_id}/ "
+            "(recording + step IR); see GenerateTestsRequest.save_flow_recording."
+        ),
     )
     model_config = ConfigDict(json_schema_extra={"example": {"url": "https://example.com/login", "depth": 1}})
 
