@@ -3,9 +3,9 @@
 **Purpose:** High-level architecture and design decisions for multi-agent test generation system  
 **Scope:** Framework selection, communication patterns, orchestration strategy, data flow, autonomous learning  
 **Audience:** Technical architects, lead developers, stakeholders  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete  
-**Version:** 1.5  
-**Last Updated:** February 10, 2026
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete · ✅ Observation hardening & Playwright flow recording (Mar 2026) · ✅ Observation wall-clock timeout + API `max_flow_timeout_seconds` (Mar 24, 2026)  
+**Version:** 1.7  
+**Last Updated:** March 24, 2026
 
 > **📖 When to Use This Document:**
 > - **System Design:** Understanding overall architecture, agent patterns, data flow
@@ -368,7 +368,7 @@ user_feedback (generation_id, rating, comments, created_at)
 
 | Agent | Input | Output | LLM Usage |
 |-------|-------|--------|-----------|
-| **ObservationAgent** | URL | UI elements (261 in Three HK test) | Azure GPT-4o ✅ |
+| **ObservationAgent** | URL, credentials, `user_instruction`, optional **`max_browser_steps`**, optional **`max_flow_timeout_seconds`** (wall-clock wait for browser-use; default 1200s) | UI elements, ordered **`flow_steps`** (with **`locator`** / XPath / Playwright hints), **`playwright_flow_recording`**, `navigation_flow` | Azure GPT-4o + **browser-use** ✅ |
 | **RequirementsAgent** | UI elements | 18 BDD scenarios (conf: 0.90) | Azure GPT-4o ✅ |
 | **AnalysisAgent** | Test scenarios | Risk scores (RPN), ROI, execution order | Azure GPT-4o |
 | **EvolutionAgent** | BDD scenarios (Given/When/Then) | Playwright test code (.spec.ts) | Azure GPT-4o |
@@ -1520,6 +1520,16 @@ Store Best Test Cases
 - Extracts elements from all pages in flow (4-5 pages typical)
 - Cost: ~$0.06 per flow (vs $0.015 per single page)
 
+**Playwright flow recording & observation hardening (Mar 2026):**
+- **`flow_steps` enrichment:** Each observed interaction step includes a **`locator`** object: XPath (from browser-use DOM), `backend_node_id`, `frame_id`, stable attributes (`data-testid`, `id`, `role`, etc.), and ordered **`playwright_suggestions`** (e.g. `getByTestId`, `getByRole`, CSS `#id`, xpath `locator`) for downstream codegen or replay pipelines.
+- **`playwright_flow_recording`:** Top-level observation payload (`schema_version`, `source`, `generated_at`, `goal_reached`, `steps`) — same enriched steps as `flow_steps`, documented for API consumers and future **deterministic** Evolution/Playwright generation (reduce LLM cost for happy-path tests).
+- **UAT Three HK:** HTTP Basic resolved by **hostname** `wwwuat.three.com.hk` (http/https); optional **fixed UAT payment card** text injected into browser-use task when URL is UAT (`backend/app/utils/three_uat_test_credentials.py`).
+- **E-signature:** Custom browser-use tool **`draw_signature_pad`** (canvas stroke via in-page events) registered when enabled; **`enable_signature_pad_tool`** on generate-tests / observation requests.
+- **Limits:** **`max_browser_steps`** (default **120**, optional 1–500 per request) passed to `Agent.run(max_steps=…)`. **`max_flow_timeout_seconds`:** optional on **`POST /api/v2/generate-tests`** and **`POST /api/v2/observation`** (allowed **60–7200**); when omitted, ObservationAgent defaults to **1200s** (20m) wall-clock. Agent `config["max_flow_timeout_seconds"]` is still respected if the API omits the field; **API overrides config** when both are set.
+- **Sequencing:** Observation runs browser-use inside `asyncio.create_task` with a heartbeat loop. If the wall-clock cap is exceeded, Observation **snapshots partial history**, **cancels and awaits** the browser-use task, then returns—so **RequirementsAgent never starts while browser-use is still stepping** (eliminates interleaved logs / overlapping browser sessions on timeout).
+- **Ops:** **`backend/scripts/stop_dev_clean.ps1`** frees port 8000 and optionally Playwright Chromium after hard server stops.
+- **Analysis real-time:** Stagehand navigation can apply **runtime HTTP Basic** credentials for UAT-first navigation (aligned with observation).
+
 **Iterative Improvement Loop:**
 - Configurable max_iterations (default: 5)
 - Configurable target_pass_rate (default: 90%)
@@ -1549,6 +1559,8 @@ Store Best Test Cases
   - 10A.9: Dynamic URL crawling (`EvolutionAgent._crawl_missing_urls()`)
   - 10A.10: Goal-oriented navigation (`ObservationAgent._get_goal_indicators()`)
   - 10A.11: Integration tests (17 tests in `test_iterative_workflow.py`)
+  - **10A.12 (Mar 2026):** Playwright-oriented **`playwright_flow_recording`** + **`locator`** on each **`flow_step`** (`app/utils/playwright_flow_recording.py`); UAT payment hints; signature pad tool; **`max_browser_steps`** API; HTTP Basic by hostname; dev cleanup script; tests in `test_playwright_flow_recording.py`, `test_http_auth_credentials.py`, etc. *(Branch: `feature/playwright-flow-recording-from-browser-use` — merge to main as team process allows.)*
+  - **10A.19 (Mar 24, 2026):** **`max_flow_timeout_seconds`** on generate-tests / observation requests; default wall-clock **1200s**; on timeout, **cancel + await** browser-use before returning so later pipeline stages do not overlap with a live browser session.
 - **Effort:** 10 days (completed)
 - **Priority:** HIGH - Solved current limitations
 

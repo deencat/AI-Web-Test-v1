@@ -2,9 +2,9 @@
 
 **Purpose:** Comprehensive implementation guide with code examples, sprint tasks, integration, testing, security, and autonomous learning  
 **Scope:** Sprint 7-12 detailed tasks, Phase 2 integration, code templates, testing strategy, security design, frontend integration, autonomous self-improvement  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Ready for Sprint 10  
-**Version:** 1.4  
-**Last Updated:** February 10, 2026
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Ready for Sprint 10 · ✅ Observation Playwright recording & UAT hardening implemented (Mar 2026) · ✅ Observation **`max_flow_timeout_seconds`** API + default **1200s** wall-clock + cancel-on-timeout (Mar 24, 2026)  
+**Version:** 1.6  
+**Last Updated:** March 24, 2026
 
 > **📖 When to Use This Document:**
 > - **Writing Code:** Code templates, implementation examples, API patterns
@@ -49,11 +49,13 @@
 **The 6 Agents and Their Roles:**
 
 1. **ObservationAgent** - Web Application Observer
-   - **What it does:** Crawls target web application using Playwright
-   - **Inputs:** URL, authentication credentials
-   - **Outputs:** Page map (URLs, UI elements, forms, buttons, links)
-   - **Technology:** Playwright for browser automation, DOM parsing
-   - **Example:** Given `https://myapp.com/login`, finds login form with username/password fields, submit button
+   - **What it does:** Crawls target web application using **browser-use** (LLM-guided multi-page flows) and/or traditional Playwright crawling
+   - **Inputs:** URL, optional `user_instruction`, website `login_credentials`, **`http_credentials`** (or auto UAT Basic for `wwwuat.three.com.hk`), `available_file_paths` (uploads), **`max_browser_steps`** (1–500, default 120), optional **`max_flow_timeout_seconds`** (60–7200 wall-clock seconds for browser-use; default **1200** when omitted), **`enable_signature_pad_tool`**
+   - **Outputs:** `pages`, `ui_elements`, ordered **`flow_steps`** (each step may include **`locator`**: xpath, `backend_node_id`, `playwright_suggestions`), **`playwright_flow_recording`** (schema v1 wrapper for codegen pipelines), `navigation_flow`, `page_context` (`goal_reached`, `playwright_flow_recording_version`)
+   - **Technology:** browser-use + CDP; custom tool **`draw_signature_pad`** for canvas e-signatures; UAT payment test card text injected on Three HK UAT URLs
+   - **Example:** Given Three HK UAT + purchase instruction, records full checkout including locators per click/input for future Playwright generation
+   - **Code reference:** `backend/agents/observation_agent.py`, `backend/app/utils/playwright_flow_recording.py`, `backend/agents/browser_use_signature_tool.py`, `backend/app/utils/three_uat_test_credentials.py`, `backend/app/utils/http_auth_credentials.py`
+   - **E2E / ops:** `backend/tests/integration/E2E_REAL_RUN_GUIDE.md` (clean restart, `max_browser_steps`, **`max_flow_timeout_seconds`** for long UAT runs, UAT card); `backend/scripts/stop_dev_clean.ps1`
 
 2. **RequirementsAgent** - Test Requirement Extractor ✅ E2E VERIFIED
    - **What it does:** Converts UI observations into BDD test scenarios with industry standards, continuously improves based on execution feedback
@@ -400,10 +402,11 @@ python -c "from cerebras.cloud.sdk import Cerebras; print('OK')"
 
 #### Agent-Specific LLM Usage
 
-**ObservationAgent (Sprint 8):**
-- Uses LLM for web element detection
-- Fallback: Works without LLM (Playwright-only mode)
-- Configuration: `use_llm=true` (default)
+**ObservationAgent (Sprint 8 + Mar 2026 hardening):**
+- **browser-use path:** Azure LLM drives navigation; observation extracts history into **`flow_steps`** + **`playwright_flow_recording`**
+- **LLM:** Used for navigation decisions inside browser-use; separate from optional post-observation codegen (future: deterministic steps from `playwright_suggestions` to cut Evolution LLM cost)
+- **Fallback:** Traditional crawling without browser-use when library unavailable
+- **Configuration:** `use_llm=true` (default); `max_browser_steps` and **`max_flow_timeout_seconds`** in agent `config` and/or **API** on `POST /api/v2/generate-tests` and `POST /api/v2/observation` (payload wins over config). Wall-clock default **1200s** when unset; on timeout, Observation **cancels and awaits** browser-use before returning so Requirements does not run concurrently with a live browser-use session.
 
 **RequirementsAgent (Sprint 8):**
 - Uses LLM for test scenario generation
@@ -604,7 +607,7 @@ All agents with LLM support include fallback logic to continue operation without
 | 9A.6 | Integration tests (4-agent coordination: Observe → Requirements → Analyze → Evolve) | 9A.5, Sprint 8 (8A.4) | 5 | 2 days | 9 |
 | 9A.7 | Replace AnalysisAgent stubs with real infrastructure (when Developer B ready) | 9B.1 (optional) | 3 | 1 day | 10 |
 
-**Total: 30 points, 12 days**  
+**Total: 30 points, 12 days**
 **Sprint 9 Progress:** ✅ **100% COMPLETE** (30 of 30 points)
 - ✅ 9A.1, 9A.3, 9A.4, 9A.5, 9A.6 - **COMPLETE**
 - ⏸️ 9A.2 - **SKIPPED** (Blocked - Azure OpenAI sufficient)
@@ -674,7 +677,20 @@ All agents with LLM support include fallback logic to continue operation without
 | 10A.10 | **Goal-Oriented Navigation (ObservationAgent)** | 10A.7 | 2 | 1 day | Navigate until goal reached (e.g., purchase confirmation), goal detection logic |
 | 10A.11 | Integration tests for iterative workflow | 10A.10 | 2 | 1 day | Test multi-page crawling, iteration loop, convergence, dynamic URL crawling |
 
-**Total: 45 points, 16.5 days** (Updated with iterative workflow enhancements: 10A.7-10A.11)
+**Post–Sprint 10 observation deliverables (Mar 2026 — tracked with 10A.x lineage; work on branch `feature/playwright-flow-recording-from-browser-use` until merged):**
+
+| Item | Description | Code / tests |
+|------|-------------|----------------|
+| **10A.12** | **`playwright_flow_recording`** + **`locator`** on each **`flow_step`** | `backend/app/utils/playwright_flow_recording.py`, `test_playwright_flow_recording.py` |
+| **10A.13** | UAT HTTP Basic by hostname; embedded-auth helpers | `backend/app/utils/http_auth_credentials.py`, `test_http_auth_credentials.py` |
+| **10A.14** | Three HK UAT payment test card injection | `backend/app/utils/three_uat_test_credentials.py` |
+| **10A.15** | **`draw_signature_pad`** browser-use tool | `backend/agents/browser_use_signature_tool.py` |
+| **10A.16** | **`max_browser_steps`** request field + orchestration payload | `workflow.py`, `orchestration_service.py`, `generate_tests.py`, `observation.py` |
+| **10A.17** | Analysis/Stagehand runtime HTTP credentials for first navigation | `analysis_agent.py`, `stagehand_service.py`, `test_runtime_http_credentials_navigation.py` |
+| **10A.18** | Dev cleanup + E2E real-run guide | `backend/scripts/stop_dev_clean.ps1`, `backend/tests/integration/E2E_REAL_RUN_GUIDE.md` |
+| **10A.19** | **`max_flow_timeout_seconds`** API (60–7200), default **1200s** wall-clock; **cancel + await** browser-use on timeout before downstream agents | `observation_agent.py`, `workflow.py`, `orchestration_service.py`, v2 routes, unit tests |
+
+**Total: 45 points, 16.5 days** (Updated with iterative workflow enhancements: 10A.7-10A.11; 10A.12-10A.19 delivered through Mar 2026)
 
 **New Backend Components:**
 ```python

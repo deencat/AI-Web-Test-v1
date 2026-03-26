@@ -3,9 +3,9 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · 📋 Sprint 10.7 Developer B Browser Profile HTTP Credentials Everywhere (auto-key, saved tests, 4-agent workflow, UI) PLANNED (Mar 16)  
-**Last Updated:** March 17, 2026 (Sprint 10.6 completion + ADR alignment)  
-**Version:** 3.0
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · 📋 Sprint 10.7 Developer B Browser Profile HTTP Credentials Everywhere (auto-key, saved tests, 4-agent workflow, UI) PLANNED (Mar 16)  
+**Last Updated:** March 24, 2026 (Sprint 10.6 on main merged with observation timeout / flow recording alignment)  
+**Version:** 3.3
 
 > **📖 When to Use This Document:**
 > - **Sprint Planning:** Task assignments, story point estimates, dependencies
@@ -814,7 +814,7 @@ After successful Phase 2 + Phase 3 merge and integration testing, comprehensive 
 
 ### Sprint 10: Frontend Integration & Real-time Agent Progress (Mar 6 - Mar 19, 2026)
 
-**Status:** 🔄 **IN PROGRESS** — Developer B Phase 2 ✅ COMPLETE (Feb 23, 2026) · Developer B Phase 3 (10B.11/10B.12) ✅ COMPLETE (Feb 26, 2026) · Developer A backend monitoring COMPLETE  
+**Status:** 🔄 **IN PROGRESS** — Developer B Phase 2 ✅ COMPLETE (Feb 23, 2026) · Developer B Phase 3 (10B.11/10B.12) ✅ COMPLETE (Feb 26, 2026) · Developer A: observation **10A.12–10A.19** ✅ COMPLETE (Mar 24, 2026); remaining 10A.x per roadmap  
 **Focus:** Frontend-Agent integration with real-time progress UI + agent control  
 **Reference:** [Sprint 10 Gap Analysis](SPRINT_10_GAP_ANALYSIS_AND_PLAN.md)
 
@@ -844,7 +844,20 @@ After successful Phase 2 + Phase 3 merge and integration testing, comprehensive 
 | **10A.10** | **Goal-Oriented Navigation (ObservationAgent)** | 1 day | 10A.7 | Navigate until goal reached (e.g., purchase confirmation), goal detection logic |
 | **10A.11** | Integration tests for iterative workflow | 1 day | 10A.10 | Test multi-page crawling, iteration loop, convergence, dynamic URL crawling |
 
-**Total: 50 points, 19.5 days** (includes 0.5 day API contract definition + 1 day DELETE endpoint + iterative workflow enhancements)
+**Delivered Mar 23, 2026 — Developer A observation / UAT / codegen support (10A.x extension; branch `feature/playwright-flow-recording-from-browser-use` until merged):**
+
+| Task | Description | Details |
+|------|-------------|---------|
+| **10A.12** | **`playwright_flow_recording`** + per-step **`locator`** | `playwright_flow_recording.py`, enriched `flow_steps` (`xpath`, `backend_node_id`, `playwright_suggestions`) |
+| **10A.13** | HTTP Basic by hostname + embedded-auth helpers | `http_auth_credentials.py` |
+| **10A.14** | Three HK UAT fixed payment test card text | `three_uat_test_credentials.py` |
+| **10A.15** | **`draw_signature_pad`** browser-use tool | `browser_use_signature_tool.py` |
+| **10A.16** | **`max_browser_steps`** (API + orchestration, default 120, range 1–500) | `workflow.py`, `orchestration_service.py`, v2 routes |
+| **10A.17** | Analysis/Stagehand first-navigation HTTP credentials | `analysis_agent.py`, `stagehand_service.py` |
+| **10A.18** | Dev cleanup + E2E runbook | `scripts/stop_dev_clean.ps1`, `tests/integration/E2E_REAL_RUN_GUIDE.md` |
+| **10A.19** | **`max_flow_timeout_seconds`** (optional 60–7200 on generate-tests / observation; default wall-clock **1200s**); on timeout, **cancel + await** browser-use before Observation returns (no overlap with Requirements) | `observation_agent.py`, `workflow.py`, `orchestration_service.py`, v2 routes |
+
+**Total: 50 points, 19.5 days** (includes 0.5 day API contract definition + 1 day DELETE endpoint + iterative workflow enhancements; **10A.12–10A.19** delivered Mar 2026)
 
 **File Ownership (Zero Conflicts):**
 - `backend/app/api/v2/` - Developer A owns entire directory
@@ -1437,6 +1450,7 @@ frontend/src/features/agent-workflow/
 
 
 **Sprint 10 Success Criteria (Updated with Iterative Workflow):**
+- ✅ **Observation hardening (Mar 2026):** `flow_steps` with **`locator`**, **`playwright_flow_recording`** (schema v1), Three HK UAT Basic + test card text, **`draw_signature_pad`**, **`max_browser_steps`**, **`max_flow_timeout_seconds`** (default **1200s** wall-clock; cancel browser-use on timeout before Requirements), Analysis/Stagehand runtime HTTP auth, `stop_dev_clean.ps1`, E2E real-run guide
 - ✅ Multi-page flow crawling: ObservationAgent crawls entire purchase flow (4-5 pages)
 - ✅ Iterative improvement loop: EvolutionAgent → AnalysisAgent loop (up to 5 iterations)
 - ✅ Convergence criteria: Stop when pass rate >= 90% or max iterations reached
@@ -1480,7 +1494,8 @@ frontend/src/features/agent-workflow/
   - Closes SSE stream
   - Returns updated workflow status
   - Can't cancel already completed/failed/cancelled workflows
-- ⏳ Multi-page flow crawling (ObservationAgent)
+- ✅ **ObservationAgent hardening (10A.12–10A.19, Mar 2026):** browser-use history → **`flow_steps`** + **`playwright_flow_recording`**; UAT/signature/**`max_browser_steps`**/**`max_flow_timeout_seconds`**; see Implementation Guide & Architecture § multi-page flow
+- ⏳ Multi-page flow crawling (remaining iterative/orchestration scope per 10A.7–10A.11 acceptance)
 - ⏳ Iterative improvement loop (EvolutionAgent → AnalysisAgent)
 - ⏳ Load test with real backend: 100 users, <5s latency
 

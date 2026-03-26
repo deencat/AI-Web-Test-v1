@@ -26,6 +26,58 @@ cd backend
 
 ---
 
+## Clean restart (stopped Python while `generate-tests` was running)
+
+The API process is gone, but **browser-use / Playwright** may have left **Chromium** running and **port 8000** might still be stuck until those children exit.
+
+1. **Free port 8000 and optionally kill automation browsers** (from `backend/`):
+
+   ```powershell
+   .\scripts\stop_dev_clean.ps1
+   .\scripts\stop_dev_clean.ps1 -KillPlaywrightBrowsers
+   ```
+
+   Use **`-KillPlaywrightBrowsers`** if an old automated Chromium window is still open. Avoid **`-KillAllChrome`** unless no important Chrome tabs are open.
+
+2. **Manual:** close any **automation Chromium** window yourself; in Task Manager look for Chromium tied to **ms-playwright** under your user profile.
+
+3. **Start clean:** one workflow at a time — wait for completion or `DELETE /api/v2/workflows/{id}` before starting another `generate-tests`.
+
+4. **Start the server again:**
+
+   ```powershell
+   cd backend
+   .\venv\Scripts\Activate.ps1
+   python .\start_server.py
+   ```
+
+### Observation goal gate (`user_instruction`)
+
+If **`user_instruction`** is non-empty on **`/generate-tests`** or **`/observation`**, the API **blocks Requirements** until **`observation_result.page_context.goal_reached`** is **true**. Timeout or an unfinished flow → workflow **fails** at that gate (partial observation + flow JSON may still be saved). Use higher **`max_browser_steps`** and Observation **`max_flow_timeout_seconds`** for long UAT runs. Omit **`user_instruction`** for a crawl without this gate.
+
+### Long browser-use flows (step limit)
+
+Observation uses **browser-use** `Agent.run(max_steps=...)`. The server default is **`120`** steps (see `ObservationAgent` / `max_browser_steps`). For very long UAT checkout flows, pass **`max_browser_steps`** in **`POST /api/v2/generate-tests`** or **`POST /api/v2/observation`** (1–500), e.g. `"max_browser_steps": 200`.
+
+### Flow recording JSON on disk (per workflow)
+
+After observation completes (standalone **`/observation`** or stage 1 of **`/generate-tests`**), the server writes:
+
+- `backend/artifacts/flow_recordings/{workflow_id}/playwright_flow_recording.json`
+- `backend/artifacts/flow_recordings/{workflow_id}/flow_steps.json`
+- `backend/artifacts/flow_recordings/{workflow_id}/playwright_step_ir.json` — flat locator IR for non-LLM tooling
+
+(`workflow_id` is the UUID from the API response; folder name is sanitized.)
+
+**Full `/generate-tests` only:** when Evolution stores test cases in the DB, one manifest per test is added under  
+`backend/artifacts/flow_recordings/{workflow_id}/by_test_case/test_case_{id}.json` (points at the three files above).
+
+**API:** `GET /api/v2/workflows/{workflow_id}/results` → `observation_result.flow_recording_artifacts` lists absolute paths (`directory`, `playwright_flow_recording_file`, `flow_steps_file`, `playwright_step_ir_file`, and after generate-tests `test_case_manifest_files` / `test_case_manifest_count`).
+
+**Opt out:** request body `"save_flow_recording": false`, or set **`FLOW_RECORDINGS_ENABLED=false`** in `.env`. Optional **`FLOW_RECORDINGS_DIR`** overrides the output root (absolute path or relative to `backend/`).
+
+---
+
 ## Environment variables
 
 ### Required for 4-agent E2E
@@ -37,6 +89,13 @@ cd backend
 | `AZURE_OPENAI_MODEL` | Deployment name | `ChatGPT-UAT` |
 
 These are used by ObservationAgent (browser-use LLM), RequirementsAgent, AnalysisAgent, and EvolutionAgent.
+
+### Optional – flow recording (disk)
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `FLOW_RECORDINGS_ENABLED` | When `false`, skip writing JSON under `artifacts/flow_recordings/` | `false` |
+| `FLOW_RECORDINGS_DIR` | Override output root (absolute or relative to `backend/`) | `D:\qa-recordings` |
 
 ### Optional – test behaviour
 
@@ -78,6 +137,20 @@ So for `pmo.andrewchan+010@gmail.com`:
 
 - Test site: `pmo.andrewchan+010@gmail.com`
 - Gmail: `pmo.andrewchan@gmail.com` (and same password or the one in `GMAIL_PASSWORD` if set).
+
+---
+
+## Three HK UAT payment test card (`wwwuat.three.com.hk`)
+
+When the observation URL host is **`wwwuat.three.com.hk`** (HTTP or HTTPS), **ObservationAgent** automatically adds UAT payment instructions to the browser-use task, including these **fixed sandbox card** values (see `backend/app/utils/three_uat_test_credentials.py`):
+
+| Field | Value |
+|-------|--------|
+| Card number | `4111111111111111` |
+| Expiry | `12/28` (adapt to month/year fields if the form splits them) |
+| CVV | `123` |
+
+Do **not** use these on production sites.
 
 ---
 

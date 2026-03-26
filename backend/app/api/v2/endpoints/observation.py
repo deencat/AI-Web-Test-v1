@@ -47,6 +47,11 @@ async def run_observation(
         "http_credentials": request.http_credentials,
         "browser_profile_data": request.browser_profile_data,
         "gmail_credentials": request.gmail_credentials,
+        "available_file_paths": request.available_file_paths,
+        "enable_signature_pad_tool": request.enable_signature_pad_tool,
+        "max_browser_steps": request.max_browser_steps,
+        "max_flow_timeout_seconds": request.max_flow_timeout_seconds,
+        "save_flow_recording": request.save_flow_recording,
     }
     set_state(workflow_id, {
         "workflow_id": workflow_id,

@@ -183,7 +183,7 @@ def observation_agent_real(mock_message_queue):
         "max_depth": 1,
         "max_pages": 1,
         "max_browser_steps": 50,  # Allow more steps for full flow including Gmail OTP extraction
-        "max_flow_timeout_seconds": 600  # 10 minute timeout for full flow including Gmail navigation and OTP verification
+        "max_flow_timeout_seconds": 1200  # 20m; ObservationAgent default is 1200s if omitted (was 600s)
     }
     return ObservationAgent(
         message_queue=mock_message_queue,

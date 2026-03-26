@@ -59,7 +59,19 @@ class StagehandExecutionService:
         
         self.stagehand: Optional[Stagehand] = None
         self.page = None
-    
+        # Set during execute_test / analysis realtime runs so _execute_navigation can embed HTTP Basic auth
+        self._runtime_http_credentials: Optional[Dict[str, Any]] = None
+
+    def set_runtime_http_credentials(self, creds: Optional[Dict[str, Any]]) -> None:
+        """HTTP Basic auth for navigations (e.g. UAT). Applied in _execute_navigation when URL is extracted."""
+        if creds and creds.get("username") and creds.get("password"):
+            self._runtime_http_credentials = {
+                "username": str(creds["username"]),
+                "password": str(creds["password"]),
+            }
+        else:
+            self._runtime_http_credentials = None
+
     async def initialize(self, user_config: Optional[Dict[str, Any]] = None):
         """
         Initialize Stagehand browser.
@@ -759,7 +771,8 @@ class StagehandExecutionService:
         base_url: str,
         environment: str = "dev",
         progress_callback: Optional[Callable] = None,
-        skip_navigation: bool = False
+        skip_navigation: bool = False,
+        http_credentials: Optional[Dict[str, Any]] = None,
     ):
         """
         Execute a test case and track results.
@@ -773,6 +786,7 @@ class StagehandExecutionService:
             environment: Environment name (dev, staging, production)
             progress_callback: Optional callback for progress updates
             skip_navigation: If True, skip navigating to base_url (for suite continuation)
+            http_credentials: Optional HTTP Basic auth {"username","password"} (e.g. UAT) for initial navigation
             
         Returns:
             TestExecution object with results
@@ -795,6 +809,7 @@ class StagehandExecutionService:
             
             # Initialize browser
             await self.initialize()
+            self.set_runtime_http_credentials(http_credentials)
             
             # Execute steps
             steps = test_case.steps
@@ -816,8 +831,17 @@ class StagehandExecutionService:
             
             # Navigate to base URL only if not continuing from suite and first step doesn't navigate
             if not skip_navigation and not first_step_has_url:
+                nav_url = base_url
+                if http_credentials and http_credentials.get("username") and http_credentials.get("password"):
+                    from app.utils.http_auth_credentials import url_with_embedded_http_basic_auth
+                    nav_url = url_with_embedded_http_basic_auth(
+                        base_url,
+                        str(http_credentials["username"]),
+                        str(http_credentials["password"]),
+                    )
+                    logger.info("StagehandExecutionService: Navigating with HTTP Basic credentials in URL")
                 print(f"[DEBUG] Navigating to base URL: {base_url}")
-                await self.page.goto(base_url)
+                await self.page.goto(nav_url)
                 await asyncio.sleep(1)  # Wait for page to stabilize
             elif skip_navigation:
                 print(f"[DEBUG] Skipping navigation (continuing from previous test in suite)")
@@ -965,6 +989,7 @@ class StagehandExecutionService:
                 })
         
         finally:
+            self.set_runtime_http_credentials(None)
             # Cleanup
             await self.cleanup()
         
@@ -1768,6 +1793,15 @@ class StagehandExecutionService:
                 }
             
             url = url_match.group(1)
+            creds = getattr(self, "_runtime_http_credentials", None)
+            if creds and creds.get("username") and creds.get("password"):
+                from app.utils.http_auth_credentials import url_with_embedded_http_basic_auth
+                url = url_with_embedded_http_basic_auth(
+                    url, creds["username"], creds["password"]
+                )
+                logger.info(
+                    "StagehandExecutionService: Navigation step uses HTTP Basic credentials (embedded URL)"
+                )
             print(f"[DEBUG] Navigating to URL: {url}")
             
             # Navigate using Playwright page

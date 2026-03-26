@@ -158,6 +158,7 @@ class AnalysisAgent(BaseAgent):
             test_data = task.payload.get("test_data", [])
             coverage_metrics = task.payload.get("coverage_metrics", {})
             page_context = task.payload.get("page_context", {})
+            workflow_http_credentials = task.payload.get("http_credentials")
             
             logger.info(f"AnalysisAgent: Processing {len(scenarios)} scenarios...")
 
@@ -309,7 +310,9 @@ class AnalysisAgent(BaseAgent):
                         
                         # Create tasks for parallel execution
                         tasks = [
-                            self._execute_scenario_real_time(scenario, page_context)
+                            self._execute_scenario_real_time(
+                                scenario, page_context, http_credentials=workflow_http_credentials
+                            )
                             for scenario in batch
                         ]
                         
@@ -1272,7 +1275,10 @@ Respond with valid JSON only."""
         }
     
     async def _execute_scenario_real_time(
-        self, scenario: Dict, page_context: Optional[Dict]
+        self,
+        scenario: Dict,
+        page_context: Optional[Dict],
+        http_credentials: Optional[Dict[str, str]] = None,
     ) -> Optional[Dict]:
         """
         Execute a scenario in real-time using Phase 2 execution engine.
@@ -1296,6 +1302,15 @@ Respond with valid JSON only."""
                 return None
             
             base_url = page_context.get("url", "https://example.com") if page_context else "https://example.com"
+
+            from app.utils.http_auth_credentials import http_credentials_for_url
+
+            resolved_http_creds = http_credentials or http_credentials_for_url(base_url, None)
+            if resolved_http_creds:
+                logger.info(
+                    "AnalysisAgent: Real-time execution will use HTTP Basic credentials for %s",
+                    base_url[:80],
+                )
             
             # Create temporary test case for execution
             temp_test_case = TestCase(
@@ -1343,12 +1358,8 @@ Respond with valid JSON only."""
                 # Initialize execution service (browser + Stagehand)
                 # Navigation will be handled by the first \"navigate\" step in test_steps,
                 # which is interpreted by StagehandExecutionService._execute_step_simple
-                await execution_service.initialize(
-                    user_config={
-                        "provider": self.config.get("llm_provider", "azure"),
-                        "model": self.config.get("llm_model", "ChatGPT-UAT"),
-                    }
-                )
+                await execution_service.initialize()
+                execution_service.set_runtime_http_credentials(resolved_http_creds)
 
                 # Execute using Phase 2 engine (3-tier strategy)
                 # Note: StagehandExecutionService uses hybrid execution (Tier 1 → Tier 3)
@@ -1360,7 +1371,8 @@ Respond with valid JSON only."""
                         execution_id=execution_id,
                         user_id=1,
                         base_url=base_url,
-                        environment="dev"
+                        environment="dev",
+                        http_credentials=resolved_http_creds,
                     )
                     # Calculate success rate from database execution result
                     total_steps = execution_result.total_steps or len(test_steps)
@@ -1395,6 +1407,7 @@ Respond with valid JSON only."""
                         )
                 else:
                     # Real execution without database (still executes, just doesn't save records)
+                    # set_runtime_http_credentials already applied so first Navigate step gets UAT auth
                     logger.info(f"Real execution for scenario {scenario.get('scenario_id')} (no database tracking)")
                     logger.info(f"Executing {len(test_steps)} steps: {test_steps}")
                     
@@ -1467,10 +1480,10 @@ Respond with valid JSON only."""
                     "tier_used": "error"  # Mark as error tier
                 }
             finally:
-                # Cleanup
                 try:
+                    execution_service.set_runtime_http_credentials(None)
                     await execution_service.cleanup()
-                except:
+                except Exception:
                     pass
                     
         except Exception as e:
