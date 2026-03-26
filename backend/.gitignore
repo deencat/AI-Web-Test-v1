@@ -36,6 +36,9 @@ logs/
 *.db
 *.sqlite3
 
+# User-uploaded files (runtime content — not source code)
+uploads/
+
 # OS
 .DS_Store
 Thumbs.db

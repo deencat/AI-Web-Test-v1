@@ -58,6 +58,7 @@ class TestWorkflowFileUploadHappyPath:
         assert "filename" in body
         assert "size" in body
         assert body["size"] == len(jpeg_data)
+        assert os.path.isabs(body["server_path"]), "server_path must be absolute for Playwright setInputFiles()"
 
     def test_png_upload_accepted(self, tmp_path):
         client = _make_client()
@@ -104,6 +105,7 @@ class TestWorkflowFileUploadHappyPath:
 
         assert response.status_code == 200
         server_path = response.json()["server_path"]
+        assert os.path.isabs(server_path), f"server_path must be absolute; got: {server_path}"
         assert os.path.exists(server_path)
 
     def test_each_upload_gets_unique_subdirectory(self, tmp_path):

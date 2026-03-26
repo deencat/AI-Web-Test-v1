@@ -114,7 +114,7 @@ async def upload_workflow_file(
     dest_path.write_bytes(content)
 
     return WorkflowFileUploadResponse(
-        server_path=str(dest_path),
+        server_path=str(dest_path.resolve()),  # absolute path — required for Playwright setInputFiles()
         filename=safe_name,
         size=len(content),
     )
