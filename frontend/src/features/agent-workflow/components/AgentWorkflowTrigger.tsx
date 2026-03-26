@@ -39,6 +39,14 @@ export const AgentWorkflowTrigger: React.FC<AgentWorkflowTriggerProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // Sprint 10.8 — new fields
+  const [filePaths, setFilePaths] = useState<string[]>(['']);
+  const [selectedScenarioTypes, setSelectedScenarioTypes] = useState<string[]>([]);
+  const [maxScenarios, setMaxScenarios] = useState('');
+  const [maxBrowserSteps, setMaxBrowserSteps] = useState('');
+  const [maxFlowTimeout, setMaxFlowTimeout] = useState('');
+  const [focusGoalOnly, setFocusGoalOnly] = useState(false);
+
   React.useEffect(() => {
     let isMounted = true;
 
@@ -103,6 +111,12 @@ export const AgentWorkflowTrigger: React.FC<AgentWorkflowTriggerProps> = ({
       ...(gmailEmail.trim() && gmailPassword
         ? { gmail_credentials: { email: gmailEmail.trim(), password: gmailPassword } }
         : {}),
+      ...(filePaths.some(p => p.trim()) && { available_file_paths: filePaths.filter(p => p.trim()) }),
+      ...(selectedScenarioTypes.length > 0 && { scenario_types: selectedScenarioTypes }),
+      ...(maxScenarios !== '' && !isNaN(Number(maxScenarios)) && Number(maxScenarios) > 0 && { max_scenarios: Number(maxScenarios) }),
+      ...(maxBrowserSteps !== '' && !isNaN(Number(maxBrowserSteps)) && Number(maxBrowserSteps) > 0 && { max_browser_steps: Number(maxBrowserSteps) }),
+      ...(maxFlowTimeout !== '' && !isNaN(Number(maxFlowTimeout)) && Number(maxFlowTimeout) > 0 && { max_flow_timeout_seconds: Number(maxFlowTimeout) }),
+      ...(focusGoalOnly && { focus_goal_only: true }),
     };
 
     try {
@@ -179,6 +193,50 @@ export const AgentWorkflowTrigger: React.FC<AgentWorkflowTriggerProps> = ({
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             disabled={isSubmitting}
           />
+        </div>
+
+        {/* File paths */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            File paths <span className="text-gray-400 font-normal">(for eKYC / file upload, optional)</span>
+          </label>
+          {filePaths.map((fp, idx) => (
+            <div key={idx} className="flex items-center gap-2 mb-2">
+              <input
+                data-testid={`file-path-input-${idx}`}
+                type="text"
+                value={fp}
+                onChange={(e) => {
+                  const updated = [...filePaths];
+                  updated[idx] = e.target.value;
+                  setFilePaths(updated);
+                }}
+                placeholder="C:\path\to\file.jpg"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={isSubmitting}
+              />
+              {filePaths.length > 1 && (
+                <button
+                  type="button"
+                  data-testid={`file-path-remove-${idx}`}
+                  onClick={() => setFilePaths(filePaths.filter((_, i) => i !== idx))}
+                  className="text-gray-400 hover:text-red-500 text-sm"
+                  disabled={isSubmitting}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            type="button"
+            data-testid="add-file-path-button"
+            onClick={() => setFilePaths([...filePaths, ''])}
+            className="text-sm text-blue-600 hover:text-blue-800"
+            disabled={isSubmitting}
+          >
+            + Add file path
+          </button>
         </div>
 
         {/* Login credentials (website) */}
@@ -328,6 +386,115 @@ export const AgentWorkflowTrigger: React.FC<AgentWorkflowTriggerProps> = ({
             <option value={3}>3 — Deep crawl</option>
           </select>
         </div>
+
+        {/* Advanced options */}
+        <details data-testid="advanced-options" className="border border-gray-200 rounded-lg p-4">
+          <summary className="text-sm font-medium text-gray-700 cursor-pointer select-none">
+            Advanced options
+          </summary>
+
+          <div className="mt-4 space-y-4">
+            {/* Scenario types */}
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-2">
+                Scenario types <span className="text-gray-400 font-normal">(default: all)</span>
+              </p>
+              <div className="flex flex-wrap gap-3">
+                {(['functional', 'accessibility', 'security', 'edge_case', 'usability', 'performance'] as const).map((type) => (
+                  <label key={type} className="flex items-center gap-1 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      data-testid={`scenario-type-${type}`}
+                      checked={selectedScenarioTypes.includes(type)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedScenarioTypes([...selectedScenarioTypes, type]);
+                        } else {
+                          setSelectedScenarioTypes(selectedScenarioTypes.filter((t) => t !== type));
+                        }
+                      }}
+                      disabled={isSubmitting}
+                    />
+                    {type}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Numeric limits */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <label htmlFor="max-scenarios" className="block text-sm font-medium text-gray-700 mb-1">
+                  Max scenarios
+                </label>
+                <input
+                  id="max-scenarios"
+                  data-testid="max-scenarios-input"
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={maxScenarios}
+                  onChange={(e) => setMaxScenarios(e.target.value)}
+                  placeholder="12 (default: no limit)"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isSubmitting}
+                />
+              </div>
+              <div>
+                <label htmlFor="max-browser-steps" className="block text-sm font-medium text-gray-700 mb-1">
+                  Max browser steps
+                </label>
+                <input
+                  id="max-browser-steps"
+                  data-testid="max-browser-steps-input"
+                  type="number"
+                  min={1}
+                  max={500}
+                  value={maxBrowserSteps}
+                  onChange={(e) => setMaxBrowserSteps(e.target.value)}
+                  placeholder="200 (default: 120)"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isSubmitting}
+                />
+              </div>
+              <div>
+                <label htmlFor="max-flow-timeout" className="block text-sm font-medium text-gray-700 mb-1">
+                  Flow timeout (s)
+                </label>
+                <input
+                  id="max-flow-timeout"
+                  data-testid="max-flow-timeout-input"
+                  type="number"
+                  min={60}
+                  max={7200}
+                  value={maxFlowTimeout}
+                  onChange={(e) => setMaxFlowTimeout(e.target.value)}
+                  placeholder="1200 (default: 1200)"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isSubmitting}
+                />
+              </div>
+            </div>
+
+            {/* Goal-focused mode */}
+            <label className="flex items-start gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                data-testid="focus-goal-only-checkbox"
+                checked={focusGoalOnly}
+                onChange={(e) => setFocusGoalOnly(e.target.checked)}
+                disabled={isSubmitting}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="font-medium">Goal-focused mode</span>
+                <span className="block text-xs text-gray-500">
+                  Only generate scenarios aligned with your instruction (trims low-relevance scenarios first)
+                </span>
+              </span>
+            </label>
+          </div>
+        </details>
 
         {/* Error */}
         {submitError && (

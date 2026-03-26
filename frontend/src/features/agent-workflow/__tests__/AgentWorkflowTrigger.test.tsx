@@ -385,4 +385,159 @@ describe('AgentWorkflowTrigger', () => {
       );
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Sprint 10.8 — AgentWorkflowTrigger Missing Fields
+  // ---------------------------------------------------------------------------
+
+  it('Advanced options section is collapsed by default', () => {
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    const details = screen.getByTestId('advanced-options');
+    expect(details).toBeInTheDocument();
+    expect(details).not.toHaveAttribute('open');
+  });
+
+  it('Adding a file path and submitting includes available_file_paths in payload', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await user.type(screen.getByTestId('url-input'), 'https://example.com');
+    await user.type(screen.getByTestId('file-path-input-0'), 'C:\\Users\\test\\file.jpg');
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.objectContaining({
+          available_file_paths: ['C:\\Users\\test\\file.jpg'],
+        })
+      );
+    });
+  });
+
+  it('Blank file path entries are filtered before submission', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await user.type(screen.getByTestId('url-input'), 'https://example.com');
+    // Default first entry is blank — do not type anything
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.not.objectContaining({ available_file_paths: expect.anything() })
+      );
+    });
+  });
+
+  it('Checking functional + accessibility scenario types includes scenario_types in payload', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await user.type(screen.getByTestId('url-input'), 'https://example.com');
+    await user.click(screen.getByTestId('scenario-type-functional'));
+    await user.click(screen.getByTestId('scenario-type-accessibility'));
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.objectContaining({
+          scenario_types: expect.arrayContaining(['functional', 'accessibility']),
+        })
+      );
+    });
+
+    const call = mockGenerateTests.mock.calls[0][0];
+    expect(call.scenario_types).toHaveLength(2);
+  });
+
+  it('Leaving scenario types unchecked omits scenario_types from payload', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await user.type(screen.getByTestId('url-input'), 'https://example.com');
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.not.objectContaining({ scenario_types: expect.anything() })
+      );
+    });
+  });
+
+  it('Setting max_scenarios to 12 includes max_scenarios: 12 in payload', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await user.type(screen.getByTestId('url-input'), 'https://example.com');
+    await user.clear(screen.getByTestId('max-scenarios-input'));
+    await user.type(screen.getByTestId('max-scenarios-input'), '12');
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.objectContaining({ max_scenarios: 12 })
+      );
+    });
+  });
+
+  it('Leaving max_scenarios empty omits field from payload', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await user.type(screen.getByTestId('url-input'), 'https://example.com');
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.not.objectContaining({ max_scenarios: expect.anything() })
+      );
+    });
+  });
+
+  it('Setting max_browser_steps to 200 includes max_browser_steps: 200 in payload', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await user.type(screen.getByTestId('url-input'), 'https://example.com');
+    await user.clear(screen.getByTestId('max-browser-steps-input'));
+    await user.type(screen.getByTestId('max-browser-steps-input'), '200');
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.objectContaining({ max_browser_steps: 200 })
+      );
+    });
+  });
+
+  it('Enabling focus_goal_only includes focus_goal_only: true in payload', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await user.type(screen.getByTestId('url-input'), 'https://example.com');
+    await user.click(screen.getByTestId('focus-goal-only-checkbox'));
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.objectContaining({ focus_goal_only: true })
+      );
+    });
+  });
+
+  it('focus_goal_only unchecked omits field from payload', async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkflowTrigger onWorkflowStarted={onWorkflowStarted} />);
+
+    await user.type(screen.getByTestId('url-input'), 'https://example.com');
+    // focus_goal_only default is unchecked — do not click
+    await user.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(mockGenerateTests).toHaveBeenCalledWith(
+        expect.not.objectContaining({ focus_goal_only: expect.anything() })
+      );
+    });
+  });
 });

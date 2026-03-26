@@ -81,6 +81,18 @@ export interface GenerateTestsRequest {
   browser_profile_data?: BrowserProfileData;
   /** Optional Gmail credentials for OTP */
   gmail_credentials?: { email: string; password: string };
+  /** One or more local file paths (e.g. HKID image for eKYC) */
+  available_file_paths?: string[];
+  /** Filter: functional, accessibility, security, edge_case, usability, performance */
+  scenario_types?: string[];
+  /** Hard cap on scenarios generated (1–100) */
+  max_scenarios?: number;
+  /** Cap on browser-use agent steps per run (1–500) */
+  max_browser_steps?: number;
+  /** Wall-clock timeout per observation run in seconds (60–7200) */
+  max_flow_timeout_seconds?: number;
+  /** Goal-focused mode — trims low-alignment scenarios before max_scenarios cap */
+  focus_goal_only?: boolean;
 }
 
 // ---------------------------------------------------------------------------
