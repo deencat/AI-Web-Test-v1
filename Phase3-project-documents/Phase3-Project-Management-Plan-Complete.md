@@ -3,9 +3,9 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · 📋 Sprint 10.7 Developer B Browser Profile HTTP Credentials Everywhere (auto-key, saved tests, 4-agent workflow, UI) PLANNED (Mar 16)  
-**Last Updated:** March 24, 2026 (Sprint 10.6 on main merged with observation timeout / flow recording alignment)  
-**Version:** 3.3
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · 📋 Sprint 10.7 Developer B Browser Profile HTTP Credentials Everywhere (auto-key, saved tests, 4-agent workflow, UI) PLANNED (Mar 16) · 📋 Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) PLANNED (Mar 26)  
+**Last Updated:** March 26, 2026 (Sprint 10.8 planned — AgentWorkflowTrigger missing fields gap identified)  
+**Version:** 3.4
 
 > **📖 When to Use This Document:**
 > - **Sprint Planning:** Task assignments, story point estimates, dependencies
@@ -2209,7 +2209,158 @@ User on Agent Workflow page
 
 ---
 
-### Sprint 11: Autonomous Learning System Activation (Mar 20 - Apr 2, 2026)
+### Developer B Sprint 10.8: AgentWorkflowTrigger Missing Fields (Mar 26 - Mar 28, 2026)
+
+**Owner:** Developer B  
+**Status:** 📋 PLANNED (Mar 26, 2026)  
+**Story Points:** 8 points / ~3 days  
+
+**Background:** Developer A confirmed the backend `POST /api/v2/generate-tests` already accepts several advanced fields that are not yet exposed in the frontend trigger form. The following PowerShell command exercised them successfully at the API level:
+
+```powershell
+$bodyObj = @{
+  url                  = 'https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/'
+  user_instruction     = 'Subscribe to $368/month plan - World Plan. Complete the whole purchase flow until the successful subscribed page.'
+  login_credentials    = @{ username = 'abc@gmail.com'; password = '123' }
+  available_file_paths = @('C:\Users\andrechw\Downloads\ekyctest\test03.jpg')
+  scenario_types       = @('functional', 'accessibility')
+  max_scenarios        = 12
+  max_browser_steps    = 200
+  focus_goal_only      = $true
+}
+```
+
+**Gap:** The `GenerateTestsRequest` TypeScript interface and `AgentWorkflowTrigger.tsx` form are missing:
+
+| Field | Backend type | Default | Notes |
+|-------|-------------|---------|-------|
+| `available_file_paths` | `Optional[List[str]]` | `null` | One or more local file paths (e.g. HKID image for eKYC) |
+| `max_scenarios` | `Optional[int]` (1–100) | `null` | Hard cap on scenarios generated |
+| `max_browser_steps` | `Optional[int]` (1–500) | `null` (server uses 120) | Cap on browser-use agent steps per run |
+| `max_flow_timeout_seconds` | `Optional[int]` (60–7200) | `null` (server uses 1200) | Wall-clock timeout per observation run |
+| `scenario_types` | `Optional[List[str]]` | `null` | Filter: `functional`, `accessibility`, `security`, `edge_case`, `usability`, `performance` |
+| `focus_goal_only` | `bool` | `false` | Goal-focused mode — trims low-alignment scenarios before `max_scenarios` cap |
+
+---
+
+#### Phase 1: TypeScript Types
+
+**Step 1: Extend `GenerateTestsRequest` interface** *(File: `frontend/src/types/agentWorkflow.types.ts`)*
+
+- **Action:** Add the six missing fields to the `GenerateTestsRequest` interface:
+  ```ts
+  available_file_paths?: string[];
+  scenario_types?: string[];
+  max_scenarios?: number;
+  max_browser_steps?: number;
+  max_flow_timeout_seconds?: number;
+  focus_goal_only?: boolean;
+  ```
+- **Why:** TypeScript catches payload mismatches at compile time; without this, the fields are silently dropped by strict TS builds.
+- **Dependencies:** None
+- **Risk:** Low — additive only
+
+---
+
+#### Phase 2: Frontend Form UI
+
+**Step 2: Add `available_file_paths` dynamic list input** *(File: `frontend/src/features/agent-workflow/components/AgentWorkflowTrigger.tsx`)*
+
+- **Action:**
+  1. Add `filePaths: string[]` state, initial `['']`.
+  2. Render a labeled list where each entry has a text input (placeholder `C:\path\to\file.jpg`) plus a `✕` remove button, and an `+ Add file path` button below.
+  3. Only include `available_file_paths` in the payload when at least one non-empty entry exists (filter blank entries before sending).
+- **UI placement:** Below the Instructions field, above Login credentials.
+- **Why:** eKYC and document-upload flows require injecting a local file path so browser-use can `input[type=file].setInputFiles(path)`.
+- **Risk:** Low — file paths are plain strings; no actual upload to the server
+
+**Step 3: Add `scenario_types` multi-checkbox group** *(File: `AgentWorkflowTrigger.tsx`)*
+
+- **Action:**
+  1. Add `selectedScenarioTypes: string[]` state, initial `[]` (all types = no filter).
+  2. Render six labeled checkboxes inline: `functional`, `accessibility`, `security`, `edge_case`, `usability`, `performance`.
+  3. Only include `scenario_types` in payload when `selectedScenarioTypes.length > 0`.
+- **UI placement:** Inside a collapsible "Advanced options" `<details>` block (collapsed by default), before numeric controls.
+- **Risk:** Low
+
+**Step 4: Add `max_scenarios`, `max_browser_steps`, `max_flow_timeout_seconds` numeric inputs** *(File: `AgentWorkflowTrigger.tsx`)*
+
+- **Action:** Add three numeric `<input type="number">` fields inside the "Advanced options" block:
+  - **Max scenarios** — `min=1`, `max=100`, placeholder `12 (default: no limit)`.
+  - **Max browser steps** — `min=1`, `max=500`, placeholder `200 (default: 120)`.
+  - **Flow timeout (seconds)** — `min=60`, `max=7200`, placeholder `1200 (default: 1200)`.
+  - Only include each in payload when the user has entered a value (guard against empty string → `NaN`).
+- **Risk:** Low
+
+**Step 5: Add `focus_goal_only` checkbox toggle** *(File: `AgentWorkflowTrigger.tsx`)*
+
+- **Action:** Add a single checkbox labeled **"Goal-focused mode"** with a helper text `"Only generate scenarios aligned with your instruction (trims low-relevance scenarios first)"`. Inside the "Advanced options" block. Default unchecked. Only include in payload when `true`.
+- **Risk:** Low
+
+**Step 6: Wire all new fields into the `request` object in `handleSubmit`** *(File: `AgentWorkflowTrigger.tsx`)*
+
+- **Action:** Add the six new fields to the `GenerateTestsRequest` spread in `handleSubmit`, each guarded:
+  ```ts
+  ...(filePaths.some(p => p.trim()) && { available_file_paths: filePaths.filter(p => p.trim()) }),
+  ...(selectedScenarioTypes.length > 0 && { scenario_types: selectedScenarioTypes }),
+  ...(maxScenarios > 0 && { max_scenarios: maxScenarios }),
+  ...(maxBrowserSteps > 0 && { max_browser_steps: maxBrowserSteps }),
+  ...(maxFlowTimeout > 0 && { max_flow_timeout_seconds: maxFlowTimeout }),
+  ...(focusGoalOnly && { focus_goal_only: true }),
+  ```
+- **Risk:** Low
+
+---
+
+#### Phase 3: Tests (TDD — write before implementing)
+
+**Step 7: Extend `AgentWorkflowTrigger.test.tsx` with new field tests** *(File: `frontend/src/features/agent-workflow/__tests__/AgentWorkflowTrigger.test.tsx`)*
+
+- **Tests to add:**
+  1. "Advanced options section is collapsed by default"
+  2. "Adding a file path and submitting includes `available_file_paths` in payload"
+  3. "Blank file path entries are filtered before submission"
+  4. "Checking functional + accessibility scenario types includes `scenario_types` in payload"
+  5. "Leaving scenario types unchecked omits `scenario_types` from payload"
+  6. "Setting max_scenarios to 12 includes `max_scenarios: 12` in payload"
+  7. "Leaving max_scenarios empty omits field from payload"
+  8. "Setting max_browser_steps to 200 includes `max_browser_steps: 200` in payload"
+  9. "Enabling focus_goal_only includes `focus_goal_only: true` in payload"
+  10. "focus_goal_only unchecked omits field from payload"
+- **Risk:** Low
+
+---
+
+#### Sprint 10.8 Combined Task Table
+
+| Task | File | Description | Duration | Risk |
+|------|------|-------------|----------|------|
+| **10.8-B1** | `frontend/src/types/agentWorkflow.types.ts` | Add 6 missing fields to `GenerateTestsRequest` | 0.25 day | Low |
+| **10.8-B2** | `AgentWorkflowTrigger.tsx` | `available_file_paths` dynamic list input | 0.5 day | Low |
+| **10.8-B3** | `AgentWorkflowTrigger.tsx` | `scenario_types` multi-checkbox in Advanced options | 0.5 day | Low |
+| **10.8-B4** | `AgentWorkflowTrigger.tsx` | `max_scenarios`, `max_browser_steps`, `max_flow_timeout_seconds` numeric inputs | 0.25 day | Low |
+| **10.8-B5** | `AgentWorkflowTrigger.tsx` | `focus_goal_only` checkbox toggle | 0.25 day | Low |
+| **10.8-B6** | `AgentWorkflowTrigger.tsx` | Wire all new fields in `handleSubmit` | 0.25 day | Low |
+| **10.8-B7** | `AgentWorkflowTrigger.test.tsx` | 10 new tests covering all fields (TDD) | 0.5 day | Low |
+
+**Total: 8 points / ~2.5 days**
+
+---
+
+#### Sprint 10.8 Success Criteria
+
+- [ ] `AgentWorkflowTrigger` shows a dynamic file path list ("Add file path") below the Instructions field
+- [ ] Blank file path entries are stripped before submission; field omitted entirely when all entries are blank
+- [ ] "Advanced options" collapsible block contains scenario type checkboxes, numeric limits, and focus_goal_only toggle; collapsed by default
+- [ ] Submitting with `functional` + `accessibility` checked sends `scenario_types: ["functional", "accessibility"]`
+- [ ] `max_scenarios`, `max_browser_steps`, `max_flow_timeout_seconds` use correct `min`/`max` HTML constraints matching backend validation
+- [ ] All six new fields omitted from payload when left at default (no sending `null`/`0`/`false` unnecessarily)
+- [ ] `GenerateTestsRequest` TypeScript interface includes all six fields; no TypeScript compile errors
+- [ ] 10 new tests pass in `AgentWorkflowTrigger.test.tsx`; no regression in existing tests
+
+---
+
+### Sprint 11: Autonomous Learning System Activation (Mar 26 - Apr 2, 2026)
 
 **Focus:** Achieve true autonomous self-improvement through automated learning mechanisms  
 **Reference:** [Sprint 10 Gap Analysis - Autonomous Self-Improvement](SPRINT_10_GAP_ANALYSIS_AND_PLAN.md#-gap-3-autonomous-self-improvement-critical)
