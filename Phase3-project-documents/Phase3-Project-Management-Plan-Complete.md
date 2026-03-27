@@ -2212,8 +2212,17 @@ User on Agent Workflow page
 ### Developer B Sprint 10.8: AgentWorkflowTrigger Missing Fields (Mar 26 - Mar 28, 2026)
 
 **Owner:** Developer B  
-**Status:** 📋 PLANNED (Mar 26, 2026)  
-**Story Points:** 8 points / ~3 days  
+**Status:** ✅ **COMPLETE** (Mar 27, 2026) — All planned fields exposed in the trigger form; hybrid file upload added; backend upload endpoint created; TDD green across backend and frontend.  
+**Story Points:** 10 points / ~3 days *(+2 points for hybrid upload scope expansion)*  
+
+**Implementation Outcome (Actual):**
+- ✅ `GenerateTestsRequest` TypeScript interface extended with six missing fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `max_flow_timeout_seconds`, `focus_goal_only`).
+- ✅ `AgentWorkflowTrigger.tsx` form exposes all six fields. File paths use a hybrid upload/manual-path UI per entry row (see scope expansion below). Advanced numeric/checkbox controls live inside a collapsible "Advanced options" `<details>` block, collapsed by default.
+- ✅ All fields are omitted from the payload when left at default — no `null`, `0`, or `false` sent unnecessarily.
+- ✅ **Scope expansion — Hybrid file upload:** Users running a remote backend have no knowledge of the server filesystem, making a raw text path input unusable. A `POST /api/v1/uploads/workflow-files` endpoint was added that accepts a file via multipart form-data, saves it under a UUID-namespaced directory, and returns an **absolute** `server_path` (via `Path.resolve()`). The trigger form entry row defaults to upload mode; a "type path instead" toggle reveals a text input for CI/API users who already have files staged on the server. Root cause of upload-mode failure identified and fixed: the initial relative path returned by the endpoint was silently invalid for Playwright `set_input_files()`, which requires an absolute path.
+- ✅ 10 frontend tests for advanced fields (TDD) + 7 frontend tests for hybrid upload UI + 10 backend tests for the upload endpoint — all green.
+- ✅ No regression in existing trigger tests (190/190 frontend tests pass).
+- ✅ ADR-004 updated with ADR-004-7 (hybrid file upload decisions) and ADR-004-8 (advanced fields omission strategy).
 
 **Background:** Developer A confirmed the backend `POST /api/v2/generate-tests` already accepts several advanced fields that are not yet exposed in the frontend trigger form. The following PowerShell command exercised them successfully at the API level:
 
@@ -2230,7 +2239,7 @@ $bodyObj = @{
 }
 ```
 
-**Gap:** The `GenerateTestsRequest` TypeScript interface and `AgentWorkflowTrigger.tsx` form are missing:
+**Gap:** The `GenerateTestsRequest` TypeScript interface and `AgentWorkflowTrigger.tsx` form were missing:
 
 | Field | Backend type | Default | Notes |
 |-------|-------------|---------|-------|
@@ -2243,120 +2252,111 @@ $bodyObj = @{
 
 ---
 
+#### Scope Expansion: Hybrid File Upload (Mar 27, 2026)
+
+**Problem identified after initial implementation:** The original plan called for a plain text input for `available_file_paths` (users type a server-side path). This works for local deployments but fails for remote deployments — users have no knowledge of the server filesystem and would get opaque Playwright `set_input_files()` errors at runtime. Additionally, the initial upload endpoint returned a relative path, which Playwright silently failed to resolve.
+
+**Decision:** Implement a hybrid model per file entry row:
+- **Upload mode (default)** — `<input type="file">` → `POST /api/v1/uploads/workflow-files` → absolute `server_path` returned and stored.
+- **Server path mode** — "type path instead" toggle → text input for CI/API users.
+
+See ADR-004-7 for full design rationale and security decisions.
+
+---
+
 #### Phase 1: TypeScript Types
 
-**Step 1: Extend `GenerateTestsRequest` interface** *(File: `frontend/src/types/agentWorkflow.types.ts`)*
+**Step 1: Extend `GenerateTestsRequest` interface** *(File: `frontend/src/types/agentWorkflow.types.ts`)* ✅
 
-- **Action:** Add the six missing fields to the `GenerateTestsRequest` interface:
-  ```ts
-  available_file_paths?: string[];
-  scenario_types?: string[];
-  max_scenarios?: number;
-  max_browser_steps?: number;
-  max_flow_timeout_seconds?: number;
-  focus_goal_only?: boolean;
-  ```
-- **Why:** TypeScript catches payload mismatches at compile time; without this, the fields are silently dropped by strict TS builds.
-- **Dependencies:** None
-- **Risk:** Low — additive only
+Added six fields:
+```ts
+available_file_paths?: string[];
+scenario_types?: string[];
+max_scenarios?: number;
+max_browser_steps?: number;
+max_flow_timeout_seconds?: number;
+focus_goal_only?: boolean;
+```
 
 ---
 
-#### Phase 2: Frontend Form UI
+#### Phase 2: Backend Upload Endpoint (Scope Expansion) ✅
 
-**Step 2: Add `available_file_paths` dynamic list input** *(File: `frontend/src/features/agent-workflow/components/AgentWorkflowTrigger.tsx`)*
+**Step 2a: `POST /api/v1/uploads/workflow-files`** *(File: `backend/app/api/v1/endpoints/uploads.py`)*
 
-- **Action:**
-  1. Add `filePaths: string[]` state, initial `['']`.
-  2. Render a labeled list where each entry has a text input (placeholder `C:\path\to\file.jpg`) plus a `✕` remove button, and an `+ Add file path` button below.
-  3. Only include `available_file_paths` in the payload when at least one non-empty entry exists (filter blank entries before sending).
-- **UI placement:** Below the Instructions field, above Login credentials.
-- **Why:** eKYC and document-upload flows require injecting a local file path so browser-use can `input[type=file].setInputFiles(path)`.
-- **Risk:** Low — file paths are plain strings; no actual upload to the server
+- JWT auth required; extension allowlist (images, PDF, doc, csv, txt); 50 MB cap; `Path(raw_name).name` sanitisation against path traversal; UUID subdirectory per upload; `dest_path.resolve()` returns absolute path for Playwright compatibility; post-write traversal guard.
 
-**Step 3: Add `scenario_types` multi-checkbox group** *(File: `AgentWorkflowTrigger.tsx`)*
+**Step 2b: Register upload router** *(File: `backend/app/api/v1/api.py`)* — `api_router.include_router(uploads.router, tags=["uploads"])`.
 
-- **Action:**
-  1. Add `selectedScenarioTypes: string[]` state, initial `[]` (all types = no filter).
-  2. Render six labeled checkboxes inline: `functional`, `accessibility`, `security`, `edge_case`, `usability`, `performance`.
-  3. Only include `scenario_types` in payload when `selectedScenarioTypes.length > 0`.
-- **UI placement:** Inside a collapsible "Advanced options" `<details>` block (collapsed by default), before numeric controls.
-- **Risk:** Low
-
-**Step 4: Add `max_scenarios`, `max_browser_steps`, `max_flow_timeout_seconds` numeric inputs** *(File: `AgentWorkflowTrigger.tsx`)*
-
-- **Action:** Add three numeric `<input type="number">` fields inside the "Advanced options" block:
-  - **Max scenarios** — `min=1`, `max=100`, placeholder `12 (default: no limit)`.
-  - **Max browser steps** — `min=1`, `max=500`, placeholder `200 (default: 120)`.
-  - **Flow timeout (seconds)** — `min=60`, `max=7200`, placeholder `1200 (default: 1200)`.
-  - Only include each in payload when the user has entered a value (guard against empty string → `NaN`).
-- **Risk:** Low
-
-**Step 5: Add `focus_goal_only` checkbox toggle** *(File: `AgentWorkflowTrigger.tsx`)*
-
-- **Action:** Add a single checkbox labeled **"Goal-focused mode"** with a helper text `"Only generate scenarios aligned with your instruction (trims low-relevance scenarios first)"`. Inside the "Advanced options" block. Default unchecked. Only include in payload when `true`.
-- **Risk:** Low
-
-**Step 6: Wire all new fields into the `request` object in `handleSubmit`** *(File: `AgentWorkflowTrigger.tsx`)*
-
-- **Action:** Add the six new fields to the `GenerateTestsRequest` spread in `handleSubmit`, each guarded:
-  ```ts
-  ...(filePaths.some(p => p.trim()) && { available_file_paths: filePaths.filter(p => p.trim()) }),
-  ...(selectedScenarioTypes.length > 0 && { scenario_types: selectedScenarioTypes }),
-  ...(maxScenarios > 0 && { max_scenarios: maxScenarios }),
-  ...(maxBrowserSteps > 0 && { max_browser_steps: maxBrowserSteps }),
-  ...(maxFlowTimeout > 0 && { max_flow_timeout_seconds: maxFlowTimeout }),
-  ...(focusGoalOnly && { focus_goal_only: true }),
-  ```
-- **Risk:** Low
+**Step 2c: `uploadWorkflowFile(file)` service method** *(File: `frontend/src/services/agentWorkflowService.ts`)* — POSTs multipart/form-data; returns `WorkflowFileUploadResponse { server_path, filename, size }`.
 
 ---
 
-#### Phase 3: Tests (TDD — write before implementing)
+#### Phase 3: Frontend Form UI ✅
 
-**Step 7: Extend `AgentWorkflowTrigger.test.tsx` with new field tests** *(File: `frontend/src/features/agent-workflow/__tests__/AgentWorkflowTrigger.test.tsx`)*
+**Step 3: Hybrid file entry rows** *(File: `AgentWorkflowTrigger.tsx`)*
 
-- **Tests to add:**
-  1. "Advanced options section is collapsed by default"
-  2. "Adding a file path and submitting includes `available_file_paths` in payload"
-  3. "Blank file path entries are filtered before submission"
-  4. "Checking functional + accessibility scenario types includes `scenario_types` in payload"
-  5. "Leaving scenario types unchecked omits `scenario_types` from payload"
-  6. "Setting max_scenarios to 12 includes `max_scenarios: 12` in payload"
-  7. "Leaving max_scenarios empty omits field from payload"
-  8. "Setting max_browser_steps to 200 includes `max_browser_steps: 200` in payload"
-  9. "Enabling focus_goal_only includes `focus_goal_only: true` in payload"
-  10. "focus_goal_only unchecked omits field from payload"
-- **Risk:** Low
+Each row has two modes (upload / path). `FileEntry` state struct tracks `serverPath`, `mode`, `displayName`, `isUploading`, `uploadError`. `handleFileChange()` calls `agentWorkflowService.uploadWorkflowFile()` and updates entry state asynchronously. Upload errors are shown inline per row without blocking form submission.
+
+**Step 4: `scenario_types` multi-checkbox group** *(File: `AgentWorkflowTrigger.tsx`)* — Six checkboxes inside "Advanced options" `<details>` block, collapsed by default.
+
+**Step 5: `max_scenarios`, `max_browser_steps`, `max_flow_timeout_seconds` numeric inputs** *(File: `AgentWorkflowTrigger.tsx`)* — `min`/`max` constraints matching backend validation; inside "Advanced options" block.
+
+**Step 6: `focus_goal_only` checkbox** *(File: `AgentWorkflowTrigger.tsx`)* — Inside "Advanced options" block.
+
+**Step 7: Wire all fields in `handleSubmit`** *(File: `AgentWorkflowTrigger.tsx`)* — All six fields guarded: only included in payload when non-default.
 
 ---
 
-#### Sprint 10.8 Combined Task Table
+#### Phase 4: Tests (TDD) ✅
 
-| Task | File | Description | Duration | Risk |
-|------|------|-------------|----------|------|
-| **10.8-B1** | `frontend/src/types/agentWorkflow.types.ts` | Add 6 missing fields to `GenerateTestsRequest` | 0.25 day | Low |
-| **10.8-B2** | `AgentWorkflowTrigger.tsx` | `available_file_paths` dynamic list input | 0.5 day | Low |
-| **10.8-B3** | `AgentWorkflowTrigger.tsx` | `scenario_types` multi-checkbox in Advanced options | 0.5 day | Low |
-| **10.8-B4** | `AgentWorkflowTrigger.tsx` | `max_scenarios`, `max_browser_steps`, `max_flow_timeout_seconds` numeric inputs | 0.25 day | Low |
-| **10.8-B5** | `AgentWorkflowTrigger.tsx` | `focus_goal_only` checkbox toggle | 0.25 day | Low |
-| **10.8-B6** | `AgentWorkflowTrigger.tsx` | Wire all new fields in `handleSubmit` | 0.25 day | Low |
-| **10.8-B7** | `AgentWorkflowTrigger.test.tsx` | 10 new tests covering all fields (TDD) | 0.5 day | Low |
+**Backend upload endpoint** *(File: `backend/tests/test_workflow_file_upload.py`)* — 10 tests: JPEG/PNG/PDF accepted; `server_path` is absolute and file exists on disk; unique subdirectory per upload; unauthenticated rejected (401); disallowed extension rejected (400); oversized rejected (413); path traversal sanitised.
 
-**Total: 8 points / ~2.5 days**
+**Frontend advanced fields** *(File: `frontend/src/features/agent-workflow/__tests__/AgentWorkflowTrigger.test.tsx`)* — 10 tests: advanced options collapsed by default; per-field include/omit coverage for `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`, `available_file_paths`.
+
+**Frontend hybrid upload UI** *(Same file)* — 7 tests: upload button and toggle present; toggle reveals text input; `uploadWorkflowFile` called on file selection; filename shown after upload; `server_path` in payload; typed path in payload; upload error shown inline; blank row omitted from payload.
 
 ---
 
-#### Sprint 10.8 Success Criteria
+#### Sprint 10.8 Combined Task Table (Actual)
 
-- [ ] `AgentWorkflowTrigger` shows a dynamic file path list ("Add file path") below the Instructions field
-- [ ] Blank file path entries are stripped before submission; field omitted entirely when all entries are blank
-- [ ] "Advanced options" collapsible block contains scenario type checkboxes, numeric limits, and focus_goal_only toggle; collapsed by default
-- [ ] Submitting with `functional` + `accessibility` checked sends `scenario_types: ["functional", "accessibility"]`
-- [ ] `max_scenarios`, `max_browser_steps`, `max_flow_timeout_seconds` use correct `min`/`max` HTML constraints matching backend validation
-- [ ] All six new fields omitted from payload when left at default (no sending `null`/`0`/`false` unnecessarily)
-- [ ] `GenerateTestsRequest` TypeScript interface includes all six fields; no TypeScript compile errors
-- [ ] 10 new tests pass in `AgentWorkflowTrigger.test.tsx`; no regression in existing tests
+| Task | File | Description | Duration | Risk | Status |
+|------|------|-------------|----------|------|--------|
+| **10.8-B1** | `agentWorkflow.types.ts` | Add 6 missing fields to `GenerateTestsRequest` | 0.25 day | Low | ✅ |
+| **10.8-B2** | `uploads.py` | `POST /api/v1/uploads/workflow-files` endpoint (scope expansion) | 0.5 day | Low | ✅ |
+| **10.8-B3** | `api.py` | Register upload router | 0.1 day | Low | ✅ |
+| **10.8-B4** | `agentWorkflowService.ts` | `uploadWorkflowFile()` service method | 0.25 day | Low | ✅ |
+| **10.8-B5** | `AgentWorkflowTrigger.tsx` | Hybrid file entry rows (upload + path toggle) | 0.75 day | Low | ✅ |
+| **10.8-B6** | `AgentWorkflowTrigger.tsx` | `scenario_types` multi-checkbox in Advanced options | 0.25 day | Low | ✅ |
+| **10.8-B7** | `AgentWorkflowTrigger.tsx` | `max_scenarios`, `max_browser_steps`, `max_flow_timeout_seconds` numeric inputs | 0.25 day | Low | ✅ |
+| **10.8-B8** | `AgentWorkflowTrigger.tsx` | `focus_goal_only` checkbox + wire all fields in `handleSubmit` | 0.25 day | Low | ✅ |
+| **10.8-B9** | `test_workflow_file_upload.py` | 10 backend upload endpoint tests (TDD) | 0.5 day | Low | ✅ |
+| **10.8-B10** | `AgentWorkflowTrigger.test.tsx` | 17 frontend tests (10 advanced fields + 7 upload UI, TDD) | 0.5 day | Low | ✅ |
+| **10.8-B11** | `ADR-004-agent-workflow.md` | Document ADR-004-7 (hybrid upload) and ADR-004-8 (advanced fields) | 0.25 day | Low | ✅ |
+
+**Total: 10 points / ~3.5 days**
+
+---
+
+#### Sprint 10.8 Success Criteria (Actual)
+
+- [x] `AgentWorkflowTrigger` shows a hybrid file entry row (upload button + "type path instead" toggle) below the Instructions field
+- [x] Upload mode: `POST /api/v1/uploads/workflow-files` saves file, returns absolute `server_path`; filename shown next to button; upload error displayed inline per row
+- [x] Server path mode: text input accepts a server-side absolute path (for CI/API users)
+- [x] Blank/empty rows are stripped before submission; field omitted entirely when all entries are blank
+- [x] "Advanced options" collapsible block contains scenario type checkboxes, numeric limits, and focus_goal_only toggle; collapsed by default
+- [x] Submitting with `functional` + `accessibility` checked sends `scenario_types: ["functional", "accessibility"]`
+- [x] `max_scenarios`, `max_browser_steps`, `max_flow_timeout_seconds` use correct `min`/`max` HTML constraints matching backend validation
+- [x] All six new fields omitted from payload when left at default (no sending `null`/`0`/`false` unnecessarily)
+- [x] `GenerateTestsRequest` TypeScript interface includes all six fields; no TypeScript compile errors
+- [x] Upload endpoint rejects: unauthenticated (401), disallowed extensions (400), oversized files (413), path traversal filenames
+- [x] `server_path` in upload endpoint response is always absolute — required for Playwright `set_input_files()`
+- [x] 10 backend upload tests + 17 frontend tests pass; 190/190 total frontend tests pass; no regression
+- [x] ADR-004 updated (ADR-004-7 hybrid upload, ADR-004-8 advanced fields)
+
+#### Known Follow-Up Item
+
+- [ ] **Upload file TTL cleanup** — Files in `uploads/workflow-files/` persist indefinitely. A scheduled cleanup job (e.g. delete entries older than 7 days) should be added in a future sprint.
 
 ---
 

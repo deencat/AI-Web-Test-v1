@@ -1,16 +1,17 @@
-# Architecture Decision Records — ObservationAgent HTTP Basic Auth for Preprod
+# Architecture Decision Records — ObservationAgent HTTP Basic Auth, Preprod Browser Session, and AgentWorkflowTrigger Advanced Fields
 
 **Document ID:** ADR-004  
-**Component:** ObservationAgent / browser-use Integration  
+**Component:** ObservationAgent / browser-use Integration / AgentWorkflowTrigger  
 **Status:** Accepted  
 **Date:** March 13, 2026  
-**Last Amended:** March 17, 2026 (Sprint 10.6 provider-aware LLM wiring)  
+**Last Amended:** March 27, 2026 (Sprint 10.8 — hybrid file upload, `available_file_paths` absolute path, advanced trigger fields)  
 **Author:** Developer B  
 **Related Files:**
 - `backend/agents/observation_agent.py`
 - `backend/llm/browser_use_adapter.py`
 - `backend/llm/client_factory.py`
 - `backend/app/schemas/workflow.py`
+- `backend/app/api/v1/endpoints/uploads.py`
 - `backend/app/api/v2/endpoints/observation.py`
 - `backend/app/api/v2/endpoints/generate_tests.py`
 - `backend/app/services/orchestration_service.py`
@@ -18,7 +19,11 @@
 - `backend/tests/agents/test_observation_agent_browser_use.py`
 - `backend/tests/unit/test_agent_runtime_model_wiring.py`
 - `backend/tests/unit/test_orchestration_agent_config_wiring.py`
+- `backend/tests/test_workflow_file_upload.py`
 - `frontend/src/features/agent-workflow/components/AgentWorkflowTrigger.tsx`
+- `frontend/src/services/agentWorkflowService.ts`
+- `frontend/src/types/agentWorkflow.types.ts`
+- `frontend/src/features/agent-workflow/__tests__/AgentWorkflowTrigger.test.tsx`
 
 ---
 
@@ -226,9 +231,107 @@ def _normalize_http_credentials(self, creds):
 
 ---
 
+---
+
+### ADR-004-7: Hybrid File Upload / Server Path for `available_file_paths`
+
+**Context:** The `GenerateTestsRequest` payload accepts an `available_file_paths` field — a list of server-side file paths that browser-use injects into `<input type="file">` elements via Playwright's `page.set_input_files(selector, path)`. Sprint 10.8 exposed this field in the `AgentWorkflowTrigger` form, requiring a UI interaction pattern that works for both end-user scenarios.
+
+**Problem:**
+
+1. **Remote deployment gap** — If the user is accessing the frontend from a machine different from the one running the backend, there is no meaningful way for them to type a file path that exists on the server. Requiring a raw server path is only usable by operators who already know the server's filesystem layout (CI pipelines, local development).
+
+2. **Absolute path requirement** — Playwright's `set_input_files()` requires an absolute filesystem path. The initial upload endpoint implementation returned a relative path (`uploads/workflow-files/{uuid}/file.jpg`), which caused silent failures when Playwright tried to resolve it relative to the process CWD.
+
+**Decision:** Implement a **hybrid interaction model** with two modes per file entry:
+
+- **Upload mode (default)** — The user selects a file via a standard `<input type="file">` button. The frontend calls `POST /api/v1/uploads/workflow-files` (multipart/form-data), which saves the file to a UUID-namespaced directory on the server and returns an **absolute** `server_path`. That absolute path is stored in component state and sent as `available_file_paths` on form submission.
+- **Server path mode (power users)** — Accessible via a "type path instead" toggle. A text input appears where the user can directly enter a server-side absolute path. Intended for CI/API consumers that already have files staged on the server.
+
+The `+ Add file` button allows multiple entries, each independently in upload or path mode.
+
+**Upload Endpoint Design** (`POST /api/v1/uploads/workflow-files`):
+
+```
+Request:  multipart/form-data, field name "file", JWT Bearer required
+Response: { server_path: string, filename: string, size: number }
+```
+
+Key decisions in the endpoint implementation:
+
+| Decision | Rationale |
+|---|---|
+| JWT auth required | Prevent anonymous file staging on the server |
+| Extension allowlist (`.jpg .jpeg .png .gif .webp .pdf .doc .docx .csv .txt`) | OWASP file upload — reject executables and scripts |
+| Max 50 MB | Prevent DoS via large file uploads |
+| `Path(raw_name).name` sanitisation | Strip directory components from filename to block path traversal (e.g. `../../etc/passwd.jpg`) |
+| UUID subdirectory per upload | Prevents filename collisions across concurrent uploads |
+| `dest_path.resolve()` in response | Returns absolute path — required by Playwright `set_input_files()`; relative paths silently fail if the process CWD differs from the expected root |
+| Post-write path-traversal guard | `dest_path.resolve().relative_to(upload_root.resolve())` confirms the final resolved path is still inside the upload directory, even after sanitisation |
+
+**Why not upload-only (no text path toggle)?**
+
+The text path fallback preserves compatibility with the existing API contract (`available_file_paths` accepts any string list) and supports CI/API consumers who pipe file paths directly without going through the browser UI. Removing it would be a breaking UX change for power users.
+
+**Why not text-path-only (no upload button)?**
+
+Users accessing a remotely hosted backend have no knowledge of the server filesystem. A text path field alone would be unusable for them and would produce opaque Playwright errors at runtime rather than a clear UI error at submission time.
+
+**Consequences — Positive**
+- Upload mode works correctly for both local and remote deployments.
+- Absolute path in response eliminates the silent `set_input_files()` failure.
+- Security: extension allowlist, size cap, filename sanitisation, auth gate, and path-traversal guard align with OWASP file upload recommendations.
+- Power-user path mode preserved for backward compatibility and CI use cases.
+- Upload errors are surfaced inline per row; they do not block other form fields.
+
+**Consequences — Negative**
+- Uploaded files persist in `uploads/workflow-files/` indefinitely (no TTL cleanup implemented yet). A future maintenance task should add a scheduled cleanup for files older than N days.
+- The upload endpoint is on the v1 API (`/api/v1/uploads/workflow-files`) while the workflow trigger is on v2 (`/api/v2/generate-tests`). This is consistent with the existing split: v1 = resource CRUD, v2 = agent workflow execution.
+
+---
+
+### ADR-004-8: Advanced `GenerateTestsRequest` Fields Exposed in AgentWorkflowTrigger
+
+**Context:** The backend `POST /api/v2/generate-tests` already accepted several advanced fields that were not exposed in the frontend form as of Sprint 10.7. Sprint 10.8 adds them.
+
+**Fields added to `GenerateTestsRequest` TypeScript interface and form:**
+
+| Field | Type | Backend range | Default | UI placement |
+|---|---|---|---|---|
+| `available_file_paths` | `string[]` | — | omitted | Below Instructions field |
+| `scenario_types` | `string[]` | `functional \| accessibility \| security \| edge_case \| usability \| performance` | omitted (= all) | Advanced options block |
+| `max_scenarios` | `number` | 1–100 | omitted (server: no limit) | Advanced options block |
+| `max_browser_steps` | `number` | 1–500 | omitted (server: 120) | Advanced options block |
+| `max_flow_timeout_seconds` | `number` | 60–7200 | omitted (server: 1200) | Advanced options block |
+| `focus_goal_only` | `boolean` | — | omitted (= `false`) | Advanced options block |
+
+**Decision: Omit fields from payload when at default, never send `null`/`0`/`false`**
+
+Each field is guarded before inclusion in the request object:
+- Numeric fields: only included if the input is non-empty and parses to a positive number.
+- `scenario_types`: only included if at least one checkbox is checked.
+- `focus_goal_only`: only included when `true`.
+- `available_file_paths`: only included when at least one non-blank path exists.
+
+**Why:** Sending explicit `null` or `0` to the backend may override the server's own defaults or trigger validation errors. Omitting the field entirely lets the backend apply its own defaults cleanly.
+
+**Decision: `scenario_types` multi-checkbox, numeric fields, and `focus_goal_only` go inside a collapsible `<details>` block ('Advanced options'), collapsed by default**
+
+**Why:** These fields are optional power-user controls. Expanding the form by default with 5 additional inputs increases cognitive load for the common case (URL + instruction only). The `<details>` element collapses on render without JavaScript state management.
+
+**Consequences — Positive**
+- All six fields are now exercisable from the UI without API tooling.
+- TypeScript catches payload shape mismatches at compile time (`GenerateTestsRequest` interface updated).
+- Common-case form (URL + instruction) is unchanged in visual complexity.
+
+**Consequences — Negative**
+- Advanced options are invisible until expanded; users who need them must know to look. Mitigated by the `<details>` summary label "Advanced options".
+
+---
+
 ## Implementation Summary
 
-| Method | File | Role |
+| Method / Component | File | Role |
 |---|---|---|
 | `_normalize_http_credentials()` | `observation_agent.py` | Strip/validate credentials before use |
 | `_build_http_auth_headers()` | `observation_agent.py` | Build `Authorization: Basic` headers (used in `_build_browser_profile`) |
@@ -242,6 +345,10 @@ def _normalize_http_credentials(self, creds):
 | `execute_task()` | `observation_agent.py` | Extracts and forwards `http_credentials` to both paths |
 | `_resolve_per_agent_llm_config()` | `orchestration_service.py` | Resolve ObservationAgent provider/model override from `user_settings` before workflow start |
 | `AzureOpenAIAdapter.__init__()` | `browser_use_adapter.py` | Wrap provider-specific clients for browser-use and expose provider/model metadata |
+| `upload_workflow_file()` | `api/v1/endpoints/uploads.py` | `POST /api/v1/uploads/workflow-files` — save file, return absolute `server_path` |
+| `uploadWorkflowFile()` | `agentWorkflowService.ts` | Frontend service method — POST multipart/form-data, return `WorkflowFileUploadResponse` |
+| `AgentWorkflowTrigger` file section | `AgentWorkflowTrigger.tsx` | Hybrid upload/path UI per entry row; inline upload error display |
+| `GenerateTestsRequest` interface | `agentWorkflow.types.ts` | TypeScript type for all six new fields |
 
 ## Test Coverage
 
@@ -255,16 +362,21 @@ def _normalize_http_credentials(self, creds):
 | Browser-use regression | `test_observation_agent_browser_use.py` | No regressions after CDP changes |
 | Observation runtime wiring | `test_agent_runtime_model_wiring.py` | Non-Azure browser-use adapter path honors configured provider/model |
 | Orchestration config wiring | `test_orchestration_agent_config_wiring.py` | ObservationAgent receives provider/model override from `user_settings` |
+| `TestWorkflowFileUploadHappyPath` | `test_workflow_file_upload.py` | JPEG/PNG/PDF accepted; `server_path` is absolute and file exists on disk; unique subdirectory per upload |
+| `TestWorkflowFileUploadRejection` | `test_workflow_file_upload.py` | Unauthenticated rejected (401); disallowed extension rejected (400); Python script rejected (400); oversized file rejected (413); path traversal filename sanitised |
+| Hybrid file UI — upload mode | `AgentWorkflowTrigger.test.tsx` | Upload button present; `uploadWorkflowFile` called on file select; filename shown; `server_path` sent as `available_file_paths` |
+| Hybrid file UI — path mode | `AgentWorkflowTrigger.test.tsx` | Toggle reveals text input; typed path sent as `available_file_paths` |
+| Hybrid file UI — error & omission | `AgentWorkflowTrigger.test.tsx` | Upload error shown inline; blank row omitted from payload |
+| Advanced fields | `AgentWorkflowTrigger.test.tsx` | Advanced options collapsed by default; `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only` included/omitted per TDD spec |
 
-**Total: 41 directly relevant tests passing** (39 ADR-004 auth/browser-use tests + 2 Sprint 10.6 Observation runtime/config wiring tests).
+**Total: 61 directly relevant tests passing** (39 ADR-004 auth/browser-use + 2 Sprint 10.6 wiring + 10 backend upload endpoint + 10 Sprint 10.8 frontend advanced fields tests).  
+*Note: the 10 frontend upload tests are counted within the AgentWorkflowTrigger suite.*
 
 ## Status
 
-**Accepted** — implemented and tested March 13, 2026.
+**Accepted** — implemented and tested. Last updated March 27, 2026.
 
-### What Was Fixed
-
-This ADR resolves two preprod environment issues discovered during ObservationAgent testing:
+### What Was Fixed / Added
 
 1. **HTTP Basic Auth Gate (ADR-004-1 to ADR-004-4)** — ObservationAgent can now access preprod pages protected by HTTP Basic Auth. The CDP-level `Fetch.authRequired` handler (mirroring browser-use's own `_setup_proxy_auth` pattern) responds to `401 WWW-Authenticate: Basic` challenges, eliminating `ERR_INVALID_AUTH_CREDENTIALS` errors.
 
@@ -272,12 +384,18 @@ This ADR resolves two preprod environment issues discovered during ObservationAg
 
 3. **Provider-Aware browser-use Runtime (ADR-004-6)** — ObservationAgent now preserves the configured per-agent provider/model in the browser-use execution path instead of implicitly favoring Azure-only adapter logic. This keeps Sprint 10.6 settings behavior consistent with ADR-004's authenticated crawling flow.
 
+4. **Hybrid File Upload / Absolute Path for `available_file_paths` (ADR-004-7)** — The `AgentWorkflowTrigger` form now supports browser file upload (for remote deployments) and manual server path entry (for CI/API users). The backend upload endpoint returns an absolute `server_path` via `dest_path.resolve()` so Playwright `set_input_files()` resolves the file correctly regardless of process CWD. Security controls: extension allowlist, 50 MB cap, filename sanitisation, UUID namespacing, path-traversal guard, JWT auth.
+
+5. **Advanced `GenerateTestsRequest` Fields Exposed in UI (ADR-004-8)** — Six fields previously only accessible via API (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `max_flow_timeout_seconds`, `focus_goal_only`) are now exposed in the `AgentWorkflowTrigger` form. Numeric/checkbox controls live inside a collapsible "Advanced options" block (collapsed by default). All fields are omitted from the payload when left at their defaults.
+
 ### Test Results
 
-**41 directly relevant backend tests passing:**
+**61 directly relevant tests passing:**
 - `test_observation_agent_http_credentials.py` — HTTP auth schema, CDP handler unit, browser-use flow integration, traditional Playwright path
 - `test_observation_agent_browser_use.py` — No regressions after hardened browser session and enhanced instructions
 - `test_agent_runtime_model_wiring.py` — Observation runtime uses provider-aware adapter path for non-Azure models
 - `test_orchestration_agent_config_wiring.py` — Orchestration resolves and injects Observation provider/model overrides
+- `test_workflow_file_upload.py` — Upload endpoint: happy path (JPEG/PNG/PDF, absolute path, unique dirs) + rejection (auth, extension, size, path traversal)
+- `AgentWorkflowTrigger.test.tsx` — Hybrid upload/path UI, all six advanced fields, omission guards
 
 **All tests green; ready for production.**
