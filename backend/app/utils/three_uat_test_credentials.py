@@ -37,6 +37,8 @@ def three_uat_payment_test_instruction_block() -> str:
               • Card number: {THREE_UAT_TEST_PAYMENT_CARD_NUMBER}
               • Expiry date: {THREE_UAT_TEST_PAYMENT_EXPIRY}
               • CVV: {THREE_UAT_TEST_PAYMENT_CVV}
+            - PAYMENT METHOD DEFAULT (CRITICAL): when payment method tiles/options are shown, always select **VISA** as the default payment method.
+              Only if VISA is not available/disabled should you choose MasterCard as fallback.
             - Enter them in the site's card fields as shown (expiry may be split into month/year fields: use 12 and 28 or 2028 per the form).
             - These are sandbox/test values for http(s)://{THREE_HK_UAT_HOSTNAME}/ only; do not assume they work on production.
             """
@@ -60,4 +62,10 @@ def three_uat_my3_and_identity_upload_hints() -> str:
             - When you see the section titled "Identity Document" (or HKID upload instructions under "Register Info"), the file chooser is usually triggered by a blue underlined **"Upload"** link, not a primary button.
             - You MUST click that **"Upload"** link (or equivalent "Choose file" / file input) to attach the document; do not skip this step because no `<button>` labeled Upload exists.
             - After clicking Upload, complete the file picker using the provided available_file_paths when the browser-use upload tool applies.
+            - Treat this as a hard checkpoint: do not proceed to "Next"/"Continue" until upload has been triggered.
+            - If you cannot find the Upload link immediately, run find_elements for anchor/input controls first, for example:
+              • selector: "a[href], a, input[type=file], label[for*='upload' i], [role='link']"
+              • include_text: true, max_results: 20
+              Then click the entry whose text/label is "Upload" in the Identity Document panel.
+            - Avoid clicking banners/cards in this section; only use the Identity Document card's Upload link or file input.
             """

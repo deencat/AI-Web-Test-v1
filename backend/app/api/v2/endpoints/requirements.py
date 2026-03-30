@@ -28,7 +28,8 @@ router = APIRouter()
     description="""
     Runs **RequirementsAgent** only: generates BDD scenarios from observation data.
 
-    **Input:** Either `workflow_id` (from a completed observation workflow) or inline `observation_result`.
+    **Input:** `workflow_id` (prior observation in store), inline `observation_result`, or
+    `flow_recording_path` (folder name under `artifacts/flow_recordings` with saved JSON — skips ObservationAgent).
     **Returns:** workflow_id (runs in background).
     **Chain:** Pass this or the same workflow_id to POST `/api/v2/analysis` next.
     """,
@@ -40,10 +41,15 @@ async def run_requirements(
     progress_tracker: ProgressTracker = Depends(get_progress_tracker),
 ) -> WorkflowStatusResponse:
     """Start requirements-only workflow in background."""
-    if not request.workflow_id and not request.observation_result:
+    has_inline_obs = bool(request.observation_result)
+    has_rec_path = bool(request.flow_recording_path and request.flow_recording_path.strip())
+    if not request.workflow_id and not has_inline_obs and not has_rec_path:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error": "Provide workflow_id or observation_result", "code": "MISSING_INPUT"},
+            detail={
+                "error": "Provide workflow_id, observation_result, or flow_recording_path",
+                "code": "MISSING_INPUT",
+            },
         )
     if request.workflow_id and not get_state(request.workflow_id):
         raise HTTPException(
@@ -55,10 +61,12 @@ async def run_requirements(
     request_dict = {
         "workflow_id": request.workflow_id,
         "observation_result": request.observation_result,
+        "flow_recording_path": request.flow_recording_path,
         "user_instruction": request.user_instruction,
         "scenario_types": request.scenario_types,
         "max_scenarios": request.max_scenarios,
         "focus_goal_only": request.focus_goal_only,
+        "recorded_path_only": request.recorded_path_only,
     }
     set_state(workflow_id, {
         "workflow_id": workflow_id,
@@ -78,7 +86,20 @@ async def run_requirements(
             await orchestration_service.run_requirements_after_observation(workflow_id, request_dict)
         except Exception as e:
             import logging
-            logging.getLogger(__name__).exception("Background requirements %s failed: %s", workflow_id, e)
+            _log = logging.getLogger(__name__)
+            _log.exception("Background requirements %s failed: %s", workflow_id, e)
+            err = str(e)
+            _log.error("Requirements workflow %s marked failed in store: %s", workflow_id, err)
+            prev = get_state(workflow_id) or {}
+            set_state(workflow_id, {
+                **prev,
+                "workflow_id": workflow_id,
+                "status": "failed",
+                "current_agent": None,
+                "error": err,
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "workflow_type": "requirements",
+            })
 
     background_tasks.add_task(run_in_background)
     return WorkflowStatusResponse(

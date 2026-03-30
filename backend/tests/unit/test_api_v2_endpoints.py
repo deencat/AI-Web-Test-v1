@@ -72,6 +72,21 @@ async def test_generate_tests_accepts_optional_fields(client: httpx.AsyncClient)
     assert response.status_code == 202
     data = response.json()
     assert data["workflow_id"]
+    assert data.get("replay_flow_recording_path") in (None, "")
+
+
+@pytest.mark.asyncio
+async def test_generate_tests_echoes_replay_flow_recording_path(client: httpx.AsyncClient):
+    response = await client.post(
+        "/api/v2/generate-tests",
+        json={
+            "url": "https://example.com/login",
+            "flow_recording_path": "613bbc29-4bde-493d-bbcc-fa874fcaf69c",
+        },
+    )
+    assert response.status_code == 202
+    data = response.json()
+    assert data["replay_flow_recording_path"] == "613bbc29-4bde-493d-bbcc-fa874fcaf69c"
 
 
 @pytest.mark.asyncio

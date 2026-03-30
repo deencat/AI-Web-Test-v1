@@ -7,9 +7,11 @@ import json
 import os
 import sys
 import threading
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Callable
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 import logging
 
@@ -61,6 +63,15 @@ class StagehandExecutionService:
         self.page = None
         # Set during execute_test / analysis realtime runs so _execute_navigation can embed HTTP Basic auth
         self._runtime_http_credentials: Optional[Dict[str, Any]] = None
+        # Optional deterministic inputs (used for strict observed-flow replay).
+        self._runtime_available_file_paths: Optional[List[str]] = None
+
+    def set_runtime_available_file_paths(self, file_paths: Optional[List[str]]) -> None:
+        """File paths used for <input type=file> in strict replay."""
+        if isinstance(file_paths, list) and file_paths:
+            self._runtime_available_file_paths = [str(p).strip() for p in file_paths if str(p).strip()]
+        else:
+            self._runtime_available_file_paths = None
 
     def set_runtime_http_credentials(self, creds: Optional[Dict[str, Any]]) -> None:
         """HTTP Basic auth for navigations (e.g. UAT). Applied in _execute_navigation when URL is extracted."""
@@ -773,6 +784,11 @@ class StagehandExecutionService:
         progress_callback: Optional[Callable] = None,
         skip_navigation: bool = False,
         http_credentials: Optional[Dict[str, Any]] = None,
+        strict_replay: bool = False,
+        fail_fast: bool = False,
+        allow_ai_fallback: bool = True,
+        allowed_hosts: Optional[List[str]] = None,
+        available_file_paths: Optional[List[str]] = None,
     ):
         """
         Execute a test case and track results.
@@ -810,6 +826,7 @@ class StagehandExecutionService:
             # Initialize browser
             await self.initialize()
             self.set_runtime_http_credentials(http_credentials)
+            self.set_runtime_available_file_paths(available_file_paths)
             
             # Execute steps
             steps = test_case.steps
@@ -854,8 +871,17 @@ class StagehandExecutionService:
             
             print(f"[DEBUG] Executing {total_steps} steps")
             
+            normalized_allowed_hosts = {str(h).lower() for h in (allowed_hosts or []) if str(h).strip()}
+
             for idx, step_desc in enumerate(steps, start=1):
                 step_start = datetime.utcnow()
+                if isinstance(step_desc, (dict, list)):
+                    try:
+                        step_desc_for_db = json.dumps(step_desc, ensure_ascii=False)
+                    except Exception:
+                        step_desc_for_db = str(step_desc)
+                else:
+                    step_desc_for_db = str(step_desc)
                 
                 try:
                     if progress_callback:
@@ -868,17 +894,48 @@ class StagehandExecutionService:
                     
                     print(f"[DEBUG] Step {idx}/{total_steps}: {step_desc}")
                     
-                    # Hybrid execution strategy:
-                    # 1. Try Playwright selectors first (fast, free, reliable)
-                    # 2. If fails, fallback to Stagehand AI (flexible, handles complex cases)
-                    USE_AI_ONLY = os.getenv("USE_AI_EXECUTION", "false").lower() == "true"
-                    
-                    if USE_AI_ONLY:
-                        # Force AI execution for all steps
-                        result = await self._execute_step_ai(step_desc, idx)
+                    if strict_replay and isinstance(step_desc, dict):
+                        result = await self._execute_recorded_step_strict(
+                            step_desc,
+                            idx,
+                            allow_ai_fallback=allow_ai_fallback,
+                        )
                     else:
-                        # Try Playwright first, fallback to AI if it fails
-                        result = await self._execute_step_hybrid(step_desc, idx)
+                        # Hybrid execution strategy:
+                        # 1. Try Playwright selectors first (fast, free, reliable)
+                        # 2. If fails, fallback to Stagehand AI (flexible, handles complex cases)
+                        USE_AI_ONLY = os.getenv("USE_AI_EXECUTION", "false").lower() == "true"
+                        if USE_AI_ONLY:
+                            # Force AI execution for all steps
+                            result = await self._execute_step_ai(str(step_desc), idx)
+                        else:
+                            # Try Playwright first, fallback to AI if it fails
+                            result = await self._execute_step_hybrid(str(step_desc), idx)
+
+                    # Host guard for strict replay (prevents drift to unrelated domains).
+                    if (
+                        strict_replay
+                        and normalized_allowed_hosts
+                        and not result.get("host_guard_checked")
+                    ):
+                        current_url = ""
+                        try:
+                            current_url = str(self.page.url or "")
+                        except Exception:
+                            current_url = ""
+                        current_host = self._hostname_of_url(current_url)
+                        if current_host and current_host not in normalized_allowed_hosts:
+                            result = {
+                                "success": False,
+                                "error": (
+                                    f"Host guard blocked navigation to '{current_host}'. "
+                                    f"Allowed hosts: {sorted(normalized_allowed_hosts)}"
+                                ),
+                                "actual": f"Current URL: {current_url}",
+                                "expected": f"Stay on allowed hosts: {sorted(normalized_allowed_hosts)}",
+                                "action_method": "host_guard",
+                                "selector_used": result.get("selector_used"),
+                            }
                     
                     step_end = datetime.utcnow()
                     duration = (step_end - step_start).total_seconds()
@@ -897,7 +954,7 @@ class StagehandExecutionService:
                         db=db,
                         execution_id=execution.id,
                         step_number=idx,
-                        step_description=step_desc,
+                        step_description=step_desc_for_db,
                         expected_result=result.get("expected", "Step completes successfully"),
                         result=step_result,
                         actual_result=result.get("actual", ""),
@@ -914,6 +971,9 @@ class StagehandExecutionService:
                     else:
                         failed_steps += 1
                         print(f"[DEBUG] Step {idx} FAILED: {result.get('error')}")
+                        if fail_fast:
+                            print(f"[DEBUG] Fail-fast enabled: stopping execution after step {idx} failure")
+                            break
                     
                 except Exception as e:
                     failed_steps += 1
@@ -933,12 +993,15 @@ class StagehandExecutionService:
                         db=db,
                         execution_id=execution.id,
                         step_number=idx,
-                        step_description=step_desc,
+                        step_description=step_desc_for_db,
                         result=ExecutionResult.ERROR,
                         error_message=str(e),
                         screenshot_path=screenshot_path,
                         duration_seconds=duration
                     )
+                    if fail_fast:
+                        print(f"[DEBUG] Fail-fast enabled: stopping execution after step {idx} exception")
+                        break
             
             # Get final screenshot
             final_screenshot = await self._capture_screenshot(
@@ -1307,6 +1370,7 @@ class StagehandExecutionService:
                                         await element.click(force=True)
                                     else:
                                         raise
+
                                 
                                 await asyncio.sleep(1.5)  # Wait for click effects
                                 
@@ -1643,6 +1707,510 @@ class StagehandExecutionService:
                 "actual": f"Error: {str(e)}",
                 "expected": step_description
             }
+
+    def _hostname_of_url(self, url: str) -> str:
+        """Return normalized hostname for URL, or empty string when invalid."""
+        try:
+            parsed = urlparse(url or "")
+            return (parsed.hostname or "").strip().lower()
+        except Exception:
+            return ""
+
+    async def _try_click_descendant_radio_under_xpath(
+        self,
+        pw_page,
+        container_xpath: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        When browser-use recorded a click on a card/wrapper ``div``/``span``, the actionable
+        control is often a descendant ``input[type=radio]``. Prefer that for deterministic replay
+        if the raw container xpath no longer hits a clickable node.
+        """
+        cx = (container_xpath or "").strip()
+        if not cx:
+            return None
+        try:
+            scoped = f"xpath={cx}//input[@type='radio']"
+            loc = pw_page.locator(scoped)
+            n = await loc.count()
+            if n < 1:
+                return None
+            elem = loc.first
+            await elem.wait_for(state="visible", timeout=5000)
+            await elem.click(timeout=5000)
+            return {
+                "success": True,
+                "actual": (
+                    f"Clicked descendant radio under recorded container xpath "
+                    f"({n} candidate(s))"
+                ),
+                "expected": f"Click control under {cx[:80]}",
+                "selector_used": scoped,
+                "action_method": "playwright_ir_xpath_radio_descendant",
+            }
+        except Exception:
+            return None
+
+    def _is_ambiguous_ir_step(
+        self,
+        step: Dict[str, Any],
+        *,
+        locator: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Heuristic: generic click/input step with insufficient semantic target."""
+        loc = locator if isinstance(locator, dict) else {}
+        xp = str(loc.get("xpath") or "").strip()
+        if xp and (xp.startswith("html") or xp.startswith("/") or "//" in xp):
+            return False
+        ct = loc.get("class_tokens")
+        if isinstance(ct, list) and any(str(t).strip() for t in ct):
+            return False
+        action = str(step.get("action") or "").lower().strip()
+        target = str(step.get("target") or "").lower().strip()
+        element_type = str(step.get("element_type") or "").lower().strip()
+        generic_tokens = {"", "div", "span", "input", "button", "a"}
+        if action == "click":
+            return target in generic_tokens and element_type in {"", "div", "span"}
+        if action == "input":
+            # Input without explicit value + generic target is ambiguous.
+            return target in {"", "input"} and not str(step.get("value") or "").strip()
+        return False
+
+    async def _execute_recorded_step_strict(
+        self,
+        step: Dict[str, Any],
+        step_number: int,
+        *,
+        allow_ai_fallback: bool,
+    ) -> Dict[str, Any]:
+        """
+        Execute one recorded IR step with locator-first Playwright strategy.
+        AI fallback is disabled for ambiguous actions by default.
+        """
+        from app.utils.playwright_flow_recording import normalize_strict_replay_locator
+
+        locator = normalize_strict_replay_locator(step)
+        action = str(step.get("action") or "").lower().strip()
+        target = str(step.get("target") or "").strip()
+        suggestions = locator.get("playwright_suggestions") if isinstance(locator.get("playwright_suggestions"), list) else []
+        suggestions = suggestions if isinstance(suggestions, list) else []
+        xpath = str((locator or {}).get("xpath") or "").strip()
+        value = str(step.get("value") or "").strip()
+
+        if self._is_ambiguous_ir_step(step, locator=locator):
+            return {
+                "success": False,
+                "error": (
+                    f"Ambiguous recorded step blocked in strict replay: "
+                    f"action={action!r}, target={target!r}"
+                ),
+                "actual": "Step requires manual disambiguation in recording/IR",
+                "expected": "Specific actionable control (role/name/id/xpath) and value when input",
+                "action_method": "strict_replay_guard",
+            }
+
+        pw_page = self.page._page
+
+        if action == "navigate":
+            nav_url = str(step.get("target") or "").strip()
+            if not nav_url:
+                return {
+                    "success": False,
+                    "error": "Recorded navigate step missing URL target",
+                    "actual": f"Step #{step_number}: {step}",
+                    "expected": "navigate step with target URL",
+                    "action_method": "strict_replay_navigation",
+                }
+            res = await self._execute_navigation(f"Navigate to {nav_url}")
+            res["action_method"] = "playwright_ir_navigation"
+            return res
+
+        if action == "click":
+            last_error = ""
+
+            # 0) testId from IR
+            for s in suggestions:
+                if not isinstance(s, dict):
+                    continue
+                if str(s.get("kind") or "") != "testId":
+                    continue
+                tid = str(s.get("test_id") or "").strip()
+                if not tid:
+                    continue
+                try:
+                    elem = pw_page.get_by_test_id(tid).first
+                    await elem.wait_for(state="visible", timeout=5000)
+                    await elem.click(timeout=5000)
+                    return {
+                        "success": True,
+                        "actual": f"Clicked by test id {tid!r}",
+                        "expected": f"Click {target}",
+                        "selector_used": f"testId:{tid}",
+                        "action_method": "playwright_ir_testid",
+                    }
+                except Exception as e:
+                    last_error = str(e)
+
+            # 1) role/name from IR
+            for s in suggestions:
+                if not isinstance(s, dict):
+                    continue
+                if str(s.get("kind") or "") != "role":
+                    continue
+                role = str(s.get("role") or "").strip()
+                name = str(s.get("name") or "").strip()
+                if not role:
+                    continue
+                try:
+                    if name:
+                        elem = pw_page.get_by_role(role, name=name).first
+                    else:
+                        elem = pw_page.get_by_role(role).first
+                    await elem.wait_for(state="visible", timeout=5000)
+                    await elem.click(timeout=5000)
+                    return {
+                        "success": True,
+                        "actual": f"Clicked by role={role} name={name}",
+                        "expected": f"Click {target}",
+                        "selector_used": f"role:{role}:{name}",
+                        "action_method": "playwright_ir_role",
+                    }
+                except Exception as e:
+                    last_error = str(e)
+
+            # 2) css id from IR
+            for s in suggestions:
+                if not isinstance(s, dict):
+                    continue
+                if str(s.get("kind") or "") != "css_id":
+                    continue
+                css_id = str(s.get("id") or "").strip()
+                if not css_id:
+                    continue
+                try:
+                    selector = f"#{css_id}"
+                    elem = pw_page.locator(selector).first
+                    await elem.wait_for(state="visible", timeout=5000)
+                    await elem.click(timeout=5000)
+                    return {
+                        "success": True,
+                        "actual": f"Clicked by css id {selector}",
+                        "expected": f"Click {target}",
+                        "selector_used": selector,
+                        "action_method": "playwright_ir_css_id",
+                    }
+                except Exception as e:
+                    last_error = str(e)
+
+            # 3) xpath from IR (positional replay on near-identical DOM)
+            if xpath:
+                try:
+                    selector = f"xpath={xpath}"
+                    elem = pw_page.locator(selector).first
+                    await elem.wait_for(state="visible", timeout=5000)
+                    await elem.click(timeout=5000)
+                    return {
+                        "success": True,
+                        "actual": f"Clicked by xpath {xpath}",
+                        "expected": f"Click {target}",
+                        "selector_used": selector,
+                        "action_method": "playwright_ir_xpath",
+                    }
+                except Exception as e:
+                    last_error = str(e)
+                    # Card/wrapper clicks: actionable control is often a descendant radio.
+                    et = str(step.get("element_type") or "").lower()
+                    if et in ("div", "span"):
+                        radio_attempt = await self._try_click_descendant_radio_under_xpath(pw_page, xpath)
+                        if radio_attempt:
+                            return radio_attempt
+            else:
+                last_error = last_error or "No xpath provided"
+
+            # 4) compound CSS from recorded class list (when xpath/testId/role fail or DOM shifted)
+            for s in suggestions:
+                if not isinstance(s, dict):
+                    continue
+                if str(s.get("kind") or "") != "css":
+                    continue
+                sel = str(s.get("selector") or "").strip()
+                if not sel:
+                    continue
+                try:
+                    elem = pw_page.locator(sel).first
+                    await elem.wait_for(state="visible", timeout=5000)
+                    await elem.click(timeout=5000)
+                    return {
+                        "success": True,
+                        "actual": f"Clicked by CSS selector {sel!r}",
+                        "expected": f"Click {target}",
+                        "selector_used": sel,
+                        "action_method": "playwright_ir_css",
+                    }
+                except Exception as e:
+                    last_error = str(e)
+
+            if allow_ai_fallback:
+                ai_res = await self._execute_step_ai(f"Click '{target}'", step_number)
+                ai_res["action_method"] = ai_res.get("action_method") or "stagehand_ai"
+                return ai_res
+
+            return {
+                "success": False,
+                "error": f"Strict click replay failed for target={target!r}: {last_error}",
+                "actual": f"Locator suggestions tried={len(suggestions)} xpath={bool(xpath)}",
+                "expected": f"Click {target}",
+                "selector_used": xpath or "",
+                "action_method": "playwright_ir_click_fail",
+            }
+
+        if action == "input":
+            input_type = str(step.get("input_type") or "").lower().strip()
+            attrs = step.get("attributes") if isinstance(step.get("attributes"), dict) else {}
+            if not isinstance(attrs, dict):
+                attrs = {}
+            # Observation IR stores both `input_type` and locator.attributes.type; prefer the latter when present.
+            attrs_type = str(attrs.get("type") or "").lower().strip()
+            effective_type = attrs_type or input_type
+
+            # Helper: try to resolve a locator to a Playwright Locator.
+            locator_resolved = False
+            last_err = ""
+
+            async def _try_xpath():
+                nonlocal locator_resolved, last_err
+                if not xpath:
+                    return None
+                try:
+                    selector = f"xpath={xpath}"
+                    elem = pw_page.locator(selector).first
+                    await elem.wait_for(state="visible", timeout=5000)
+                    locator_resolved = True
+                    return elem, selector
+                except Exception as e:
+                    last_err = str(e)
+                    return None
+
+            async def _try_suggestions():
+                nonlocal locator_resolved, last_err
+                # Prefer selector kinds that are deterministic to re-locate.
+                ordered_kinds = ["css_id", "css", "xpath", "testId", "role"]
+                for s in suggestions:
+                    if not isinstance(s, dict):
+                        continue
+                    kind = str(s.get("kind") or "").strip()
+                    if kind not in ordered_kinds:
+                        continue
+                    try:
+                        if kind == "css_id":
+                            cid = str(s.get("id") or "").strip()
+                            if not cid:
+                                continue
+                            selector = f"#{cid}"
+                            elem = pw_page.locator(selector).first
+                            await elem.wait_for(state="visible", timeout=5000)
+                            locator_resolved = True
+                            return elem, selector
+                        if kind == "css":
+                            sel = str(s.get("selector") or "").strip()
+                            if not sel:
+                                continue
+                            elem = pw_page.locator(sel).first
+                            await elem.wait_for(state="visible", timeout=5000)
+                            locator_resolved = True
+                            return elem, sel
+                        if kind == "xpath":
+                            xp = str(s.get("xpath") or "").strip()
+                            if not xp:
+                                continue
+                            selector = f"xpath={xp}"
+                            elem = pw_page.locator(selector).first
+                            await elem.wait_for(state="visible", timeout=5000)
+                            locator_resolved = True
+                            return elem, selector
+                    except Exception as e:
+                        last_err = str(e)
+                        continue
+                return None
+
+            # Checkbox / radio: toggle via check(), no string value required.
+            if effective_type in {"checkbox", "radio"}:
+                resolved = await _try_xpath() or await _try_suggestions()
+                if not resolved:
+                    return {
+                        "success": False,
+                        "error": f"Strict {effective_type} replay failed: no locator",
+                        "actual": f"target={target!r}, xpath={xpath!r}",
+                        "expected": f"Toggle {effective_type} for {target}",
+                        "selector_used": xpath or "",
+                        "action_method": "playwright_ir_input_fail",
+                    }
+                elem, selector_used = resolved
+                try:
+                    # Playwright check() works for checkboxes and radios.
+                    await elem.check(timeout=5000)
+                    return {
+                        "success": True,
+                        "actual": f"Checked {effective_type} using {selector_used}",
+                        "expected": f"Toggle {effective_type} for {target}",
+                        "selector_used": selector_used,
+                        "action_method": "playwright_ir_input_check",
+                    }
+                except Exception:
+                    try:
+                        await elem.click(timeout=5000)
+                        return {
+                            "success": True,
+                            "actual": f"Clicked {effective_type} using {selector_used}",
+                            "expected": f"Toggle {effective_type} for {target}",
+                            "selector_used": selector_used,
+                            "action_method": "playwright_ir_input_click",
+                        }
+                    except Exception as e:
+                        return {
+                            "success": False,
+                            "error": f"Strict {effective_type} replay failed: {e}",
+                            "actual": f"target={target!r}",
+                            "expected": f"Toggle {effective_type} for {target}",
+                            "selector_used": selector_used,
+                            "action_method": "playwright_ir_input_fail",
+                        }
+
+            # File input: requires a file path value.
+            if effective_type == "file":
+                if not value:
+                    if self._runtime_available_file_paths:
+                        value = self._runtime_available_file_paths[0]
+                    elif allow_ai_fallback:
+                        ai_res = await self._execute_step_ai(f"Upload file for '{target}'", step_number)
+                        ai_res["action_method"] = ai_res.get("action_method") or "stagehand_ai"
+                        return ai_res
+                    else:
+                        return {
+                            "success": False,
+                            "error": "Strict file replay blocked: missing file path value",
+                            "actual": f"target={target!r}",
+                            "expected": "input step with concrete file path",
+                            "selector_used": xpath or "",
+                            "action_method": "strict_replay_guard",
+                        }
+
+                resolved = await _try_xpath() or await _try_suggestions()
+                if not resolved:
+                    return {
+                        "success": False,
+                        "error": "Strict file replay failed: no locator",
+                        "actual": f"target={target!r}, xpath={xpath!r}",
+                        "expected": "Locate <input type=file> element",
+                        "selector_used": xpath or "",
+                        "action_method": "playwright_ir_input_fail",
+                    }
+                elem, selector_used = resolved
+                try:
+                    await elem.set_input_files(value, timeout=5000)
+                    return {
+                        "success": True,
+                        "actual": f"Set file(s) using {selector_used}",
+                        "expected": f"Upload file for {target}",
+                        "selector_used": selector_used,
+                        "action_method": "playwright_ir_input_file",
+                    }
+                except Exception as e:
+                    return {
+                        "success": False,
+                        "error": f"Strict file replay failed: {e}",
+                        "actual": f"target={target!r}",
+                        "expected": f"Upload file for {target}",
+                        "selector_used": selector_used,
+                        "action_method": "playwright_ir_input_fail",
+                    }
+
+            # Text/tel/password: requires explicit string value.
+            if not value:
+                # Deterministic UAT value inference to keep strict replay moving.
+                inferred = ""
+                try:
+                    from app.utils.test_data_generator import TestDataGenerator
+                    from app.utils.three_uat_test_credentials import (
+                        THREE_UAT_TEST_PAYMENT_CARD_NUMBER,
+                        THREE_UAT_TEST_PAYMENT_EXPIRY,
+                        THREE_UAT_TEST_PAYMENT_CVV,
+                    )
+                    import zlib
+
+                    name = str(attrs.get("name") or "").lower().strip()
+                    el_id = str(attrs.get("id") or "").lower().strip()
+                    typ = str(attrs.get("type") or "").lower().strip()
+                    effective = effective_type or typ or input_type
+                    seed_material = f"{effective}|{name}|{el_id}|{target}"
+                    seed = zlib.crc32(seed_material.encode("utf-8")) & 0xFFFFFFFF
+                    gen = TestDataGenerator(seed=seed)
+
+                    if effective in {"text", "tel"} and (name in {"id", "hkid"} or "identity" in name or "passport" in name or target.lower() == "id"):
+                        inferred = gen.generate_hkid()
+                    elif effective == "tel" or name in {"contactnum", "contact-number"} or "contact" in name:
+                        inferred = gen.generate_phone()
+                    elif effective == "password" or name == "password" or typ == "password":
+                        inferred = "Password123!"
+                    elif "email" in name or effective == "email":
+                        inferred = gen.generate_email()
+                    elif name == "nmbr" or el_id in {"creditcard"}:
+                        inferred = THREE_UAT_TEST_PAYMENT_CARD_NUMBER
+                    elif name == "hldr":
+                        inferred = "THREE UAT TEST USER"
+                    elif name == "xdt":
+                        inferred = THREE_UAT_TEST_PAYMENT_EXPIRY
+                    elif name in {"cvv", "cvc"} or "cvv" in name or "cvc" in name:
+                        inferred = THREE_UAT_TEST_PAYMENT_CVV
+                    else:
+                        inferred = f"TEST_{seed % 1000000}"
+                except Exception:
+                    inferred = ""
+
+                if inferred:
+                    value = inferred
+                else:
+                    return {
+                        "success": False,
+                        "error": "Strict input replay blocked: missing explicit value in recorded step",
+                        "actual": f"target={target!r}, xpath={xpath!r}",
+                        "expected": "input step with concrete value",
+                        "selector_used": xpath or "",
+                        "action_method": "strict_replay_guard",
+                    }
+
+            resolved = await _try_xpath() or await _try_suggestions()
+            if not resolved:
+                return {
+                    "success": False,
+                    "error": "Strict input replay failed: no xpath/css locator available",
+                    "actual": f"target={target!r}",
+                    "expected": f"Input value into {target}",
+                    "action_method": "playwright_ir_input_fail",
+                }
+            elem, selector_used = resolved
+
+            try:
+                await elem.fill(value, timeout=5000)
+                return {
+                    "success": True,
+                    "actual": f"Filled input using {selector_used}",
+                    "expected": f"Input value into {target}",
+                    "selector_used": selector_used,
+                    "action_method": "playwright_ir_input",
+                }
+            except Exception as e:
+                return {
+                    "success": False,
+                    "error": f"Strict input replay failed: {e}",
+                    "actual": f"target={target!r}",
+                    "expected": f"Input value into {target}",
+                    "selector_used": selector_used,
+                    "action_method": "playwright_ir_input_fail",
+                }
+
+        # Verification/non-interactive steps can still use existing hybrid parser.
+        return await self._execute_step_hybrid(f"{action} {target}".strip(), step_number)
     
     async def _execute_type_simple(self, step_description: str) -> Dict[str, Any]:
         """Execute typing actions using simple Playwright selectors."""

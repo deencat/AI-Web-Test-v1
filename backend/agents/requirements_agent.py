@@ -14,6 +14,10 @@ from llm.client_factory import get_llm_client
 
 logger = logging.getLogger(__name__)
 
+# Synthetic scenario that binds Analysis/Evolution to ObservationAgent flow_steps (browser-use path).
+OBSERVED_RECORDING_SCENARIO_ID = "REQ-OBS-RECORDING"
+OBSERVED_FLOW_TAG = "observed-flow"
+
 
 class ScenarioPriority(Enum):
     """Test scenario priority levels (ISTQB standard)"""
@@ -155,6 +159,7 @@ class RequirementsAgent(BaseAgent):
             scenario_types_filter = task.payload.get("scenario_types") or []
             max_scenarios = task.payload.get("max_scenarios")
             focus_goal_only = bool(task.payload.get("focus_goal_only"))
+            recorded_path_only = bool(task.payload.get("recorded_path_only"))
 
             if isinstance(scenario_types_filter, list):
                 scenario_types_filter = {s.lower() for s in scenario_types_filter}
@@ -176,6 +181,8 @@ class RequirementsAgent(BaseAgent):
                 logger.info(f"RequirementsAgent: max_scenarios={max_scenarios}")
             if focus_goal_only and user_instruction:
                 logger.info("RequirementsAgent: focus_goal_only enabled (goal-focused mode)")
+            if recorded_path_only:
+                logger.info("RequirementsAgent: recorded_path_only requested (needs non-empty flow_steps to take effect)")
 
             _emit_progress(0.05, "Grouping UI elements", ui_elements=len(ui_elements))
             if _is_cancelled():
@@ -214,92 +221,152 @@ class RequirementsAgent(BaseAgent):
             if flow_steps:
                 logger.info(f"RequirementsAgent: Using observed flow from crawl ({len(flow_steps)} steps) for end-to-end scenario")
 
+            if recorded_path_only and not flow_steps:
+                logger.warning(
+                    "RequirementsAgent: recorded_path_only ignored — no flow_steps in payload; generating all scenario types"
+                )
+            skip_generated_scenarios = bool(recorded_path_only and flow_steps)
+            if skip_generated_scenarios:
+                logger.info(
+                    "RequirementsAgent: recorded_path_only — skipping functional/accessibility/security/edge generation"
+                )
+
             include_functional = not scenario_types_filter or "functional" in scenario_types_filter
             include_accessibility = not scenario_types_filter or "accessibility" in scenario_types_filter
             include_security = not scenario_types_filter or "security" in scenario_types_filter
             include_edge = not scenario_types_filter or "edge_case" in scenario_types_filter
 
             functional_scenarios: List[Scenario] = []
-            if include_functional:
-                functional_scenarios = await self._generate_functional_scenarios(
-                    user_journeys, element_groups, page_context, page_structure, user_instruction, execution_feedback,
-                    flow_steps=flow_steps, pages=pages, navigation_flow=navigation_flow
-                )
-                logger.info(f"RequirementsAgent: Generated {len(functional_scenarios)} functional scenarios")
-            else:
-                logger.info("RequirementsAgent: Functional scenarios disabled by scenario_types filter")
-
-            _emit_progress(0.48, "Generating accessibility scenarios", scenarios_generated=len(functional_scenarios))
-            if _is_cancelled():
-                logger.info("RequirementsAgent: Cancelled after Stage 3")
-                return _cancelled_result()
-            
-            # Stage 4: Generate accessibility scenarios (WCAG 2.1)
             accessibility_scenarios: List[Scenario] = []
-            if include_accessibility:
-                logger.debug("RequirementsAgent: Stage 4 - Generating accessibility scenarios...")
-                accessibility_scenarios = self._generate_accessibility_scenarios(ui_elements)
-                logger.info(f"RequirementsAgent: Generated {len(accessibility_scenarios)} accessibility scenarios")
-            else:
-                logger.info("RequirementsAgent: Accessibility scenarios disabled by scenario_types filter")
-
-            _emit_progress(0.60, "Generating security scenarios", scenarios_generated=(len(functional_scenarios) + len(accessibility_scenarios)))
-            if _is_cancelled():
-                logger.info("RequirementsAgent: Cancelled after Stage 4")
-                return _cancelled_result()
-            
-            # Stage 5: Generate security scenarios (OWASP)
             security_scenarios: List[Scenario] = []
-            if include_security:
-                logger.debug("RequirementsAgent: Stage 5 - Generating security scenarios...")
-                security_scenarios = self._generate_security_scenarios(ui_elements, page_context)
-                logger.info(f"RequirementsAgent: Generated {len(security_scenarios)} security scenarios")
-            else:
-                logger.info("RequirementsAgent: Security scenarios disabled by scenario_types filter")
-
-            _emit_progress(0.72, "Generating edge-case scenarios", scenarios_generated=(len(functional_scenarios) + len(accessibility_scenarios) + len(security_scenarios)))
-            if _is_cancelled():
-                logger.info("RequirementsAgent: Cancelled after Stage 5")
-                return _cancelled_result()
-            
-            # Stage 6: Generate edge case scenarios
             edge_case_scenarios: List[Scenario] = []
-            if include_edge:
-                logger.debug("RequirementsAgent: Stage 6 - Generating edge case scenarios...")
-                edge_case_scenarios = self._generate_edge_case_scenarios(ui_elements)
-                logger.info(f"RequirementsAgent: Generated {len(edge_case_scenarios)} edge case scenarios")
+
+            if skip_generated_scenarios:
+                _emit_progress(0.48, "Recorded path only: skipped functional scenarios", scenarios_generated=0)
+                if _is_cancelled():
+                    logger.info("RequirementsAgent: Cancelled after Stage 3 (recorded path only)")
+                    return _cancelled_result()
+                _emit_progress(0.60, "Recorded path only: skipped accessibility scenarios", scenarios_generated=0)
+                if _is_cancelled():
+                    logger.info("RequirementsAgent: Cancelled after Stage 4 (recorded path only)")
+                    return _cancelled_result()
+                _emit_progress(0.72, "Recorded path only: skipped security scenarios", scenarios_generated=0)
+                if _is_cancelled():
+                    logger.info("RequirementsAgent: Cancelled after Stage 5 (recorded path only)")
+                    return _cancelled_result()
+                _emit_progress(0.84, "Recorded path only: skipped edge-case scenarios", scenarios_generated=0)
+                if _is_cancelled():
+                    logger.info("RequirementsAgent: Cancelled after Stage 6 (recorded path only)")
+                    return _cancelled_result()
             else:
-                logger.info("RequirementsAgent: Edge case scenarios disabled by scenario_types filter")
+                if include_functional:
+                    functional_scenarios = await self._generate_functional_scenarios(
+                        user_journeys, element_groups, page_context, page_structure, user_instruction, execution_feedback,
+                        flow_steps=flow_steps, pages=pages, navigation_flow=navigation_flow
+                    )
+                    logger.info(f"RequirementsAgent: Generated {len(functional_scenarios)} functional scenarios")
+                else:
+                    logger.info("RequirementsAgent: Functional scenarios disabled by scenario_types filter")
+
+                _emit_progress(0.48, "Generating accessibility scenarios", scenarios_generated=len(functional_scenarios))
+                if _is_cancelled():
+                    logger.info("RequirementsAgent: Cancelled after Stage 3")
+                    return _cancelled_result()
+                
+                # Stage 4: Generate accessibility scenarios (WCAG 2.1)
+                if include_accessibility:
+                    logger.debug("RequirementsAgent: Stage 4 - Generating accessibility scenarios...")
+                    accessibility_scenarios = self._generate_accessibility_scenarios(ui_elements)
+                    logger.info(f"RequirementsAgent: Generated {len(accessibility_scenarios)} accessibility scenarios")
+                else:
+                    logger.info("RequirementsAgent: Accessibility scenarios disabled by scenario_types filter")
+
+                _emit_progress(0.60, "Generating security scenarios", scenarios_generated=(len(functional_scenarios) + len(accessibility_scenarios)))
+                if _is_cancelled():
+                    logger.info("RequirementsAgent: Cancelled after Stage 4")
+                    return _cancelled_result()
+                
+                # Stage 5: Generate security scenarios (OWASP)
+                if include_security:
+                    logger.debug("RequirementsAgent: Stage 5 - Generating security scenarios...")
+                    security_scenarios = self._generate_security_scenarios(ui_elements, page_context)
+                    logger.info(f"RequirementsAgent: Generated {len(security_scenarios)} security scenarios")
+                else:
+                    logger.info("RequirementsAgent: Security scenarios disabled by scenario_types filter")
+
+                _emit_progress(0.72, "Generating edge-case scenarios", scenarios_generated=(len(functional_scenarios) + len(accessibility_scenarios) + len(security_scenarios)))
+                if _is_cancelled():
+                    logger.info("RequirementsAgent: Cancelled after Stage 5")
+                    return _cancelled_result()
+                
+                # Stage 6: Generate edge case scenarios
+                if include_edge:
+                    logger.debug("RequirementsAgent: Stage 6 - Generating edge case scenarios...")
+                    edge_case_scenarios = self._generate_edge_case_scenarios(ui_elements)
+                    logger.info(f"RequirementsAgent: Generated {len(edge_case_scenarios)} edge case scenarios")
+                else:
+                    logger.info("RequirementsAgent: Edge case scenarios disabled by scenario_types filter")
             
-            # Combine all scenarios
+            # Observed browser-use path: one pinned scenario (always first; never trimmed by max_scenarios).
+            recording_head: List[Scenario] = []
+            if flow_steps:
+                from app.utils.flow_steps_to_test_strings import compact_observed_flow_steps
+
+                compact_steps = compact_observed_flow_steps(flow_steps)
+                rec_scen = self._build_observed_recording_scenario(
+                    flow_steps,
+                    user_instruction,
+                    page_context,
+                    navigation_flow,
+                )
+                if rec_scen:
+                    recording_head.append(rec_scen)
+                    logger.info(
+                        "RequirementsAgent: Injected %s (%s raw steps; %s unique consecutive for playback dedupe)",
+                        rec_scen.scenario_id,
+                        len(flow_steps),
+                        len(compact_steps),
+                    )
+
+            # Combine all scenarios (recorded path first when present)
             all_scenarios = (
-                functional_scenarios +
-                accessibility_scenarios +
-                security_scenarios +
-                edge_case_scenarios
+                recording_head
+                + functional_scenarios
+                + accessibility_scenarios
+                + security_scenarios
+                + edge_case_scenarios
             )
-            
+
             # Deduplicate scenario_ids: LLM may assign IDs like REQ-A-xxx, REQ-S-xxx
             # that conflict with template-generated accessibility/security/edge scenarios.
-            # Re-number any duplicates to ensure uniqueness.
+            # Re-number any duplicates to ensure uniqueness. Reserve REQ-OBS-RECORDING for observed-flow.
             seen_ids = set()
             for scenario in all_scenarios:
                 if scenario.scenario_id in seen_ids:
-                    # Generate a new unique ID based on type
-                    type_prefix = {
-                        ScenarioType.FUNCTIONAL: "F",
-                        ScenarioType.ACCESSIBILITY: "A",
-                        ScenarioType.SECURITY: "S",
-                        ScenarioType.EDGE_CASE: "E",
-                        ScenarioType.USABILITY: "U",
-                        ScenarioType.PERFORMANCE: "P",
-                    }.get(scenario.scenario_type, "X")
-                    counter = 1
-                    while f"REQ-{type_prefix}-{counter:03d}" in seen_ids:
-                        counter += 1
                     old_id = scenario.scenario_id
-                    scenario.scenario_id = f"REQ-{type_prefix}-{counter:03d}"
-                    logger.debug(f"RequirementsAgent: Renumbered duplicate scenario_id {old_id} -> {scenario.scenario_id}")
+                    if OBSERVED_FLOW_TAG in scenario.tags:
+                        nfix = 2
+                        while f"{OBSERVED_RECORDING_SCENARIO_ID}-{nfix}" in seen_ids:
+                            nfix += 1
+                        scenario.scenario_id = f"{OBSERVED_RECORDING_SCENARIO_ID}-{nfix}"
+                    else:
+                        type_prefix = {
+                            ScenarioType.FUNCTIONAL: "F",
+                            ScenarioType.ACCESSIBILITY: "A",
+                            ScenarioType.SECURITY: "S",
+                            ScenarioType.EDGE_CASE: "E",
+                            ScenarioType.USABILITY: "U",
+                            ScenarioType.PERFORMANCE: "P",
+                        }.get(scenario.scenario_type, "X")
+                        counter = 1
+                        while f"REQ-{type_prefix}-{counter:03d}" in seen_ids:
+                            counter += 1
+                        scenario.scenario_id = f"REQ-{type_prefix}-{counter:03d}"
+                    logger.debug(
+                        "RequirementsAgent: Renumbered duplicate scenario_id %s -> %s",
+                        old_id,
+                        scenario.scenario_id,
+                    )
                 seen_ids.add(scenario.scenario_id)
 
             _emit_progress(0.84, "Extracting test data", scenarios_total=len(all_scenarios))
@@ -307,9 +374,8 @@ class RequirementsAgent(BaseAgent):
                 logger.info("RequirementsAgent: Cancelled after Stage 6")
                 return _cancelled_result()
             
-            # Optional goal-focused reordering and limiting
+            # Optional goal-focused reordering and limiting (never drops observed-flow scenarios)
             if all_scenarios:
-                # First, sort by priority (critical/high first)
                 priority_order = {
                     ScenarioPriority.CRITICAL: 0,
                     ScenarioPriority.HIGH: 1,
@@ -320,17 +386,18 @@ class RequirementsAgent(BaseAgent):
                 def _base_order(s: Scenario) -> int:
                     return priority_order.get(s.priority, 2)
 
-                if focus_goal_only and user_instruction:
+                pinned = [s for s in all_scenarios if OBSERVED_FLOW_TAG in s.tags]
+                rest_all = [s for s in all_scenarios if OBSERVED_FLOW_TAG not in s.tags]
+
+                if focus_goal_only and user_instruction and rest_all:
                     scored = [
                         (self._score_scenario_relevance(s, user_instruction), s)
-                        for s in all_scenarios
+                        for s in rest_all
                     ]
-                    # Filter out very low relevance, but keep a fallback if everything is low.
                     filtered = [s for score, s in scored if score >= 0.15]
                     if not filtered:
                         filtered = [s for _, s in scored]
 
-                    # Rebuild scores for filtered scenarios
                     scored_filtered = [
                         (self._score_scenario_relevance(s, user_instruction), s)
                         for s in filtered
@@ -341,14 +408,21 @@ class RequirementsAgent(BaseAgent):
                         return (-score, _base_order(scen))
 
                     scored_filtered.sort(key=_sort_key)
-                    all_scenarios = [s for score, s in scored_filtered]
-                else:
-                    all_scenarios.sort(key=_base_order)
+                    rest_all = [s for score, s in scored_filtered]
+                elif rest_all:
+                    rest_all.sort(key=_base_order)
 
-                # Apply max_scenarios limit if provided
                 if isinstance(max_scenarios, int) and max_scenarios > 0:
-                    all_scenarios = all_scenarios[:max_scenarios]
-                    logger.info(f"RequirementsAgent: Trimmed scenarios to max_scenarios={max_scenarios}")
+                    budget = max(0, max_scenarios - len(pinned))
+                    rest_all = rest_all[:budget]
+                    logger.info(
+                        "RequirementsAgent: max_scenarios=%s → pinned observed-flow=%s, other=%s",
+                        max_scenarios,
+                        len(pinned),
+                        len(rest_all),
+                    )
+
+                all_scenarios = pinned + rest_all
 
             # Stage 7: Extract test data
             test_data = self._extract_test_data(ui_elements)
@@ -880,6 +954,58 @@ class RequirementsAgent(BaseAgent):
             distribution[scenario.priority.value] += 1
         
         return distribution
+
+    def _build_observed_recording_scenario(
+        self,
+        flow_steps: List[Dict[str, Any]],
+        user_instruction: str,
+        page_context: Dict[str, Any],
+        navigation_flow: Dict[str, Any],
+    ) -> Optional[Scenario]:
+        """
+        One functional scenario tagged ``observed-flow`` so AnalysisAgent / EvolutionAgent can
+        always map executable steps to the browser-use recording (not LLM-paraphrased BDD).
+        """
+        if not flow_steps:
+            return None
+        start_url = (
+            (navigation_flow or {}).get("start_url")
+            or (page_context or {}).get("url")
+            or ""
+        ).strip()
+        n = len(flow_steps)
+        title_hint = (user_instruction or "").strip()[:100]
+        title = (
+            f"Recorded browser-use path ({n} steps): {title_hint}"
+            if title_hint
+            else f"Recorded browser-use path ({n} steps)"
+        )
+        scen = Scenario(
+            scenario_id=OBSERVED_RECORDING_SCENARIO_ID,
+            title=title,
+            given=(
+                f"Application under test is reachable (start: {start_url or 'see flow'}). "
+                f"ObservationAgent captured an ordered path of {n} actions."
+            ),
+            when=(
+                "Execute the same ordered actions as in the ObservationAgent recording (flow_steps): "
+                "same clicks, inputs, navigations — no alternate paths or exploratory branches."
+            ),
+            then=(
+                "The journey completes as captured in the observation recording (success/payment/confirmation "
+                "as recorded)."
+            ),
+            priority=ScenarioPriority.CRITICAL,
+            scenario_type=ScenarioType.FUNCTIONAL,
+            tags=[
+                OBSERVED_FLOW_TAG,
+                "user-requirement",
+                "end-to-end",
+                "priority-test",
+            ],
+        )
+        scen.confidence = 1.0
+        return scen
     
     def _scenario_to_dict(self, scenario: Scenario) -> Dict:
         """Convert Scenario to dictionary"""

@@ -12,7 +12,7 @@ by the shell and remove dollar amounts from ``user_instruction``. Prefer single-
 """
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, HttpUrl
 
 
 class GenerateTestsRequest(BaseModel):
@@ -80,9 +80,21 @@ class GenerateTestsRequest(BaseModel):
         default=True,
         description=(
             "When true (default), after observation writes ``playwright_flow_recording.json``, ``flow_steps.json``, "
-            "and ``playwright_step_ir.json`` under ``backend/artifacts/flow_recordings/{workflow_id}/`` "
+            "and ``playwright_step_ir.json`` under ``backend/artifacts/flow_recordings/{YYYYMMDDTHHMMSSZ}_{short_workflow}/`` "
             "(unless disabled server-wide). Full generate-tests also writes ``by_test_case/test_case_{id}.json`` "
             "manifests per stored test case. Paths are returned in ``observation_result.flow_recording_artifacts``."
+        ),
+    )
+    flow_recording_path: Optional[str] = Field(
+        None,
+        validation_alias=AliasChoices("flow_recording_path", "flowRecordingPath"),
+        description=(
+            "When set (folder under ``artifacts/flow_recordings``, same rules as RequirementsRequest), "
+            "POST /generate-tests skips ObservationAgent and runs Requirements → Analysis → Evolution from disk "
+            "(``playwright_flow_recording.json`` / ``flow_steps.json``). Use the same body as a full run "
+            "(``url``, ``user_instruction``, ``login_credentials``, ``scenario_types``, etc.); ``url`` is still "
+            "used for HTTP Basic auth lookup and optional ``page_context.url`` fallback. JSON may use "
+            "``flow_recording_path`` (snake_case) or ``flowRecordingPath`` (camelCase)."
         ),
     )
     scenario_types: Optional[List[str]] = Field(
@@ -106,6 +118,15 @@ class GenerateTestsRequest(BaseModel):
             "`user_instruction` (goal-focused mode) before applying max_scenarios."
         ),
     )
+    recorded_path_only: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("recorded_path_only", "recordedPathOnly"),
+        description=(
+            "When true and observed ``flow_steps`` are present (from Observation or ``flow_recording_path`` replay), "
+            "RequirementsAgent only emits the pinned ``REQ-OBS-RECORDING`` scenario and skips generating other "
+            "functional/accessibility/security/edge scenarios (lower token cost; use while debugging recording replay)."
+        ),
+    )
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -123,6 +144,7 @@ class GenerateTestsRequest(BaseModel):
                 "scenario_types": ["functional", "accessibility"],
                 "max_scenarios": 12,
                 "focus_goal_only": True,
+                "recorded_path_only": False,
             }
         }
     )
@@ -175,7 +197,7 @@ class ObservationRequest(BaseModel):
     save_flow_recording: bool = Field(
         default=True,
         description=(
-            "When true, persist flow recording JSON files under artifacts/flow_recordings/{workflow_id}/ "
+            "When true, persist flow recording JSON files under artifacts/flow_recordings/{UTC_timestamp}_{short_workflow}/ "
             "(recording + step IR); see GenerateTestsRequest.save_flow_recording."
         ),
     )
@@ -185,6 +207,18 @@ class ObservationRequest(BaseModel):
 class RequirementsRequest(BaseModel):
     """Request to run RequirementsAgent. Provide workflow_id (from observation) or inline observation payload."""
     workflow_id: Optional[str] = Field(None, description="ID of workflow that has observation results")
+    flow_recording_path: Optional[str] = Field(
+        None,
+        validation_alias=AliasChoices("flow_recording_path", "flowRecordingPath"),
+        description=(
+            "Folder under ``artifacts/flow_recordings`` (name only or relative path) whose "
+            "``playwright_flow_recording.json`` / ``flow_steps.json`` should be loaded instead of running "
+            "ObservationAgent. Example: ``613bbc29-4bde-493d-bbcc-fa874fcaf69c``. "
+            "Ignored if ``observation_result`` is set. Do not combine with ``workflow_id`` unless that "
+            "workflow already has observation in the store (path is for disk-only replay). "
+            "JSON may use ``flowRecordingPath`` (camelCase) or ``flow_recording_path``."
+        ),
+    )
     observation_result: Optional[Dict[str, Any]] = Field(
         None,
         description="Inline observation result (ui_elements, page_structure, page_context) if no workflow_id"
@@ -211,6 +245,14 @@ class RequirementsRequest(BaseModel):
             "`user_instruction` (goal-focused mode) before applying max_scenarios."
         ),
     )
+    recorded_path_only: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("recorded_path_only", "recordedPathOnly"),
+        description=(
+            "Same as GenerateTestsRequest.recorded_path_only: with ``flow_steps`` from observation or "
+            "``flow_recording_path``, emit only ``REQ-OBS-RECORDING`` and skip other scenario categories."
+        ),
+    )
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -219,6 +261,7 @@ class RequirementsRequest(BaseModel):
                 "scenario_types": ["functional", "security"],
                 "max_scenarios": 10,
                 "focus_goal_only": True,
+                "recorded_path_only": False,
             }
         }
     )
@@ -292,6 +335,15 @@ class WorkflowStatusResponse(BaseModel):
     )
     started_at: datetime = Field(..., description="When workflow started")
     estimated_completion: Optional[datetime] = Field(None, description="Estimated completion time")
+    replay_flow_recording_path: Optional[str] = Field(
+        None,
+        description=(
+            "POST /generate-tests only: non-empty when the server accepted ``flow_recording_path`` and will skip "
+            "ObservationAgent for this workflow. If you send ``flow_recording_path`` in JSON but this is null, "
+            "the process is likely running an older server build that omits this field on the request schema "
+            "(extra JSON keys are ignored)."
+        ),
+    )
     error: Optional[str] = Field(None, description="Error message if workflow failed")
     model_config = ConfigDict(
         json_schema_extra={

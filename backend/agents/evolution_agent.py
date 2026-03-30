@@ -200,7 +200,8 @@ class EvolutionAgent(BaseAgent):
                         "scenario_id": scenario_id,
                         "steps": cached_result["steps"],
                         "confidence": cached_result["confidence"],
-                        "from_cache": True
+                        "from_cache": True,
+                        "step_generation_source": cached_result.get("step_generation_source", "unknown"),
                     })
                     logger.debug(f"EvolutionAgent: Cached scenario {scenario_id} has {len(cached_result['steps'])} steps")
                     _emit_progress(
@@ -213,15 +214,33 @@ class EvolutionAgent(BaseAgent):
                     continue
                 
                 # Generate test steps using LLM or template
-                # When we have observed flow_steps and this scenario is the end-to-end one, use flow_steps so steps match the crawl (no Gmail/login hallucination)
+                # Prefer pinned ``observed-flow`` scenario, then first other end-to-end / user-requirement.
                 scenario_tags = scenario.get("tags") or []
+                is_observed_flow = "observed-flow" in scenario_tags
                 is_end_to_end = ("end-to-end" in scenario_tags or "user-requirement" in scenario_tags)
                 steps_result = None
-                if flow_steps and not flow_steps_used_for_scenario and is_end_to_end:
-                    steps_result = self._flow_steps_to_test_steps(flow_steps, page_context, login_credentials)
+                step_generation_source = "llm_or_template"
+                use_recording_steps = (
+                    flow_steps
+                    and not flow_steps_used_for_scenario
+                    and (is_observed_flow or is_end_to_end)
+                )
+                if use_recording_steps:
+                    steps_result = self._flow_steps_to_test_steps(
+                        flow_steps,
+                        page_context,
+                        login_credentials,
+                        dedupe_consecutive=is_observed_flow,
+                    )
                     if steps_result and steps_result.get("steps"):
                         flow_steps_used_for_scenario = True
-                        logger.info(f"EvolutionAgent: Using observed flow_steps for end-to-end scenario {scenario_id} ({len(steps_result['steps'])} steps)")
+                        step_generation_source = "observed_flow_steps"
+                        logger.info(
+                            "EvolutionAgent: Using observed flow_steps for scenario %s (%s steps, tag=%s)",
+                            scenario_id,
+                            len(steps_result["steps"]),
+                            "observed-flow" if is_observed_flow else "e2e/user-requirement",
+                        )
                 
                 if not steps_result:
                     logger.debug(f"EvolutionAgent: Generating steps for scenario {scenario_id} using {'LLM' if (self.use_llm and self.llm_client) else 'template'}")
@@ -248,7 +267,8 @@ class EvolutionAgent(BaseAgent):
                         "scenario_id": scenario_id,
                         "steps": steps_result["steps"],
                         "confidence": steps_result.get("confidence", 0.85),
-                        "from_cache": False
+                        "from_cache": False,
+                        "step_generation_source": step_generation_source,
                     })
                     total_tokens += steps_result.get("tokens_used", 0)
                     
@@ -257,6 +277,7 @@ class EvolutionAgent(BaseAgent):
                         self.steps_cache[cache_key] = {
                             "steps": steps_result["steps"],
                             "confidence": steps_result.get("confidence", 0.85),
+                            "step_generation_source": step_generation_source,
                             "cached_at": datetime.now(timezone.utc).isoformat()
                         }
 
@@ -483,6 +504,25 @@ class EvolutionAgent(BaseAgent):
             priority = priority_map.get(scenario_priority, Priority.MEDIUM)
             
             # Create TestCase object
+            step_src = test_case_data.get("step_generation_source", "unknown")
+            meta = {
+                "scenario_id": scenario_id,
+                "generation_id": generation_id,
+                "rpn": risk_info.get("rpn", 0),
+                "scenario_type": scenario.get("scenario_type", "functional"),
+                "generated_by": "EvolutionAgent",
+                "step_generation_source": step_src,
+            }
+            if step_src == "observed_flow_steps" and page_context and isinstance(
+                page_context.get("flow_recording_artifacts"), dict
+            ):
+                a = page_context["flow_recording_artifacts"]
+                meta["flow_recording_artifacts"] = {
+                    k: a.get(k)
+                    for k in ("directory", "playwright_flow_recording_file", "flow_steps_file")
+                    if a.get(k)
+                }
+
             db_test_case = TestCase(
                 title=scenario.get("title", f"Test: {scenario_id}"),
                 description=scenario.get("given", ""),
@@ -493,13 +533,7 @@ class EvolutionAgent(BaseAgent):
                 expected_result=scenario.get("then", ""),
                 preconditions=scenario.get("given", ""),
                 user_id=1,  # Default system user (can be passed from task if needed)
-                test_metadata={
-                    "scenario_id": scenario_id,
-                    "generation_id": generation_id,
-                    "rpn": risk_info.get("rpn", 0),
-                    "scenario_type": scenario.get("scenario_type", "functional"),
-                    "generated_by": "EvolutionAgent"
-                }
+                test_metadata=meta,
             )
             
             db_session.add(db_test_case)
@@ -781,41 +815,19 @@ Return JSON: {{"steps": ["step1", "step2", ...]}}"""
         flow_steps: List[Dict],
         page_context: Dict,
         login_credentials: Dict,
+        *,
+        dedupe_consecutive: bool = False,
     ) -> Optional[Dict]:
         """
         Convert observed crawl flow_steps (from ObservationAgent browser-use) into Phase 2 test step strings.
         Uses login_credentials for email/password inputs when provided; otherwise placeholders.
         This ensures the generated test follows the exact path observed (e.g. in-page login, not Gmail).
         """
-        if not flow_steps:
-            return None
-        steps = []
-        login_email = (login_credentials.get("email") or login_credentials.get("username") or "").strip()
-        login_password = (login_credentials.get("password") or "").strip()
-        # Sort by order
-        ordered = sorted(flow_steps, key=lambda s: s.get("order", 999))
-        for s in ordered:
-            action = (s.get("action") or "").lower()
-            target = (s.get("target") or "").strip()
-            element_type = (s.get("element_type") or "").lower()
-            input_type = (s.get("input_type") or "text").lower()
-            if action == "navigate":
-                steps.append(f"Navigate to {target}" if target else "Navigate to start URL")
-            elif action == "click":
-                steps.append(f"Click '{target}'" if target else "Click the button/link")
-            elif action == "input":
-                if "password" in target.lower() or input_type == "password" or element_type == "password":
-                    value = login_password if login_password else "[user's password]"
-                elif any(k in target.lower() for k in ("email", "username", "e-mail", "account")):
-                    value = login_email if login_email else "[user's email]"
-                else:
-                    value = "[value]"
-                steps.append(f"Input '{value}' into {target}" if target else f"Input '{value}' into input field")
-            else:
-                if target:
-                    steps.append(f"{action.capitalize()} '{target}'")
-                else:
-                    steps.append(action.capitalize())
+        from app.utils.flow_steps_to_test_strings import flow_steps_to_natural_language_steps
+
+        steps = flow_steps_to_natural_language_steps(
+            flow_steps, login_credentials, dedupe_consecutive=dedupe_consecutive
+        )
         if not steps:
             return None
         return {

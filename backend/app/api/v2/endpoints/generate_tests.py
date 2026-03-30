@@ -14,10 +14,12 @@ from app.services.orchestration_service import OrchestrationService, get_orchest
 from app.services.progress_tracker import ProgressTracker, get_progress_tracker
 from app.services.workflow_store import set_state
 import asyncio
+import logging
 import uuid
 from datetime import datetime, timezone
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post(
@@ -32,7 +34,7 @@ router = APIRouter()
     Triggers the 4-agent workflow to analyze a URL and generate test cases.
 
     **Workflow Stages:**
-    1. **ObservationAgent**: Crawls the URL and extracts UI elements
+    1. **ObservationAgent**: Crawls the URL and extracts UI elements — **skipped** when `flow_recording_path` is set (load saved recording instead)
     2. **RequirementsAgent**: Generates BDD test scenarios
     3. **AnalysisAgent**: Analyzes risks, ROI, and dependencies
     4. **EvolutionAgent**: Generates executable test code
@@ -41,6 +43,10 @@ router = APIRouter()
     **Progress:** Track via SSE stream at `/api/v2/workflows/{workflow_id}/stream`
     **Status:** Check via GET `/api/v2/workflows/{workflow_id}`
     **Results:** Retrieve via GET `/api/v2/workflows/{workflow_id}/results`
+
+    **Replay:** Include JSON field `flow_recording_path` (or `flowRecordingPath`) — a folder under
+    `artifacts/flow_recordings`; see logs for `replay mode` vs `full crawl`. PowerShell: add the key
+    to the hashtable before `ConvertTo-Json` (a PS variable alone is not sent).
     """
 )
 async def generate_tests(
@@ -66,10 +72,25 @@ async def generate_tests(
         "scenario_types": request.scenario_types,
         "max_scenarios": request.max_scenarios,
         "focus_goal_only": request.focus_goal_only,
+        "recorded_path_only": request.recorded_path_only,
         "max_browser_steps": request.max_browser_steps,
         "max_flow_timeout_seconds": request.max_flow_timeout_seconds,
         "save_flow_recording": request.save_flow_recording,
+        "flow_recording_path": request.flow_recording_path,
     }
+
+    _frp = (request.flow_recording_path or "").strip()
+    if _frp:
+        logger.info(
+            "POST /generate-tests workflow_id=%s replay from disk flow_recording_path=%r (ObservationAgent skipped)",
+            workflow_id,
+            _frp,
+        )
+    else:
+        logger.info(
+            "POST /generate-tests workflow_id=%s full crawl (flow_recording_path empty; ObservationAgent will run)",
+            workflow_id,
+        )
 
     set_state(workflow_id, {
         "workflow_id": workflow_id,
@@ -102,6 +123,7 @@ async def generate_tests(
         total_progress=0.0,
         started_at=started_at,
         estimated_completion=None,
+        replay_flow_recording_path=_frp or None,
         error=None,
     )
 

@@ -522,6 +522,43 @@ class ScenarioSerialization:
         assert "smoke" in result["tags"]
 
 
+@pytest.mark.asyncio
+async def test_recorded_path_only_emits_only_obs_scenario(
+    requirements_agent,
+    sample_ui_elements,
+    sample_page_structure,
+    sample_page_context,
+):
+    """With flow_steps and recorded_path_only, skip generated categories; only REQ-OBS-RECORDING."""
+    flow_steps = [
+        {
+            "order": 1,
+            "action": "navigate",
+            "target": "https://example.com/uat/",
+            "page_url": "https://example.com/uat/",
+        },
+    ]
+    task = TaskContext(
+        conversation_id="test-conv",
+        task_id="test-recorded-only",
+        task_type="requirement_extraction",
+        payload={
+            "ui_elements": sample_ui_elements,
+            "page_structure": sample_page_structure,
+            "page_context": sample_page_context,
+            "flow_steps": flow_steps,
+            "recorded_path_only": True,
+            "user_instruction": "Complete purchase flow",
+        },
+    )
+    result = await requirements_agent.execute_task(task)
+    assert result.success is True
+    scenarios = result.result["scenarios"]
+    assert len(scenarios) == 1
+    assert scenarios[0]["scenario_id"] == "REQ-OBS-RECORDING"
+    assert "observed-flow" in scenarios[0]["tags"]
+
+
 class TestTokenEstimation:
     """Test token usage estimation"""
     

@@ -16,7 +16,9 @@ import logging
 import asyncio
 
 from app.services.user_settings_service import user_settings_service
+from app.services.workflow_store import get_state, set_state, update_state, is_cancel_requested
 from app.utils.http_auth_credentials import http_credentials_for_url
+from app.utils.flow_recording_persistence import persist_requirements_result_to_flow_recording
 
 logger = logging.getLogger(__name__)
 
@@ -212,9 +214,11 @@ class OrchestrationService:
         scenario_types = request.get("scenario_types")
         max_scenarios = request.get("max_scenarios")
         focus_goal_only = bool(request.get("focus_goal_only"))
+        recorded_path_only = bool(request.get("recorded_path_only"))
         max_browser_steps = request.get("max_browser_steps")
         max_flow_timeout_seconds = request.get("max_flow_timeout_seconds")
         save_flow_recording = bool(request.get("save_flow_recording", True))
+        flow_recording_path = (request.get("flow_recording_path") or "").strip()
 
         db = None
         try:
@@ -311,73 +315,104 @@ class OrchestrationService:
             if _check_cancelled():
                 return {"workflow_id": workflow_id, "status": "cancelled"}
 
-            # Stage 1: Observation
-            _emit("agent_started", {"agent": "observation", "timestamp": started_at.isoformat()})
-            obs_payload = {"url": url, "max_depth": depth}
-
-            def _observation_progress(progress_data: Dict[str, Any]):
-                data = dict(progress_data or {})
-                stage_progress = data.pop("progress", 0.0)
-                stage_message = data.pop("message", None)
-                _emit_progress("observation", stage_progress, stage_message, **data)
-
-            obs_payload["progress_callback"] = _observation_progress
-            obs_payload["cancel_check"] = lambda: is_cancel_requested(workflow_id)
-
-            if user_instruction:
-                obs_payload["user_instruction"] = user_instruction
-            if login_credentials:
-                obs_payload["login_credentials"] = login_credentials
             _creds = http_credentials_for_url(url, http_credentials)
-            if _creds:
-                obs_payload["http_credentials"] = _creds
-            if browser_profile_data:
-                obs_payload["browser_profile_data"] = browser_profile_data
-            if gmail_credentials:
-                obs_payload["gmail_credentials"] = gmail_credentials
-            if available_file_paths:
-                obs_payload["available_file_paths"] = available_file_paths
-            if enable_signature_pad_tool is not None:
-                obs_payload["enable_signature_pad_tool"] = bool(enable_signature_pad_tool)
-            if max_browser_steps is not None:
-                obs_payload["max_browser_steps"] = int(max_browser_steps)
-            if max_flow_timeout_seconds is not None:
-                obs_payload["max_flow_timeout_seconds"] = int(max_flow_timeout_seconds)
-            obs_task = TaskContext(
-                conversation_id=workflow_id,
-                task_id=f"{workflow_id}-obs",
-                task_type="ui_element_extraction",
-                payload=obs_payload,
-                priority=8,
-            )
-            observation_result = await observation_agent.execute_task(obs_task)
 
-            if _check_cancelled():
-                return {"workflow_id": workflow_id, "status": "cancelled"}
-
-            if not observation_result.success:
-                raise RuntimeError(observation_result.error or "Observation failed")
-            obs_data = observation_result.result
             from app.utils.flow_recording_persistence import (
                 persist_observation_flow_artifacts,
                 persist_test_case_flow_manifests,
+                observation_result_from_flow_recording_dir,
+                resolve_flow_recording_directory,
             )
 
-            persist_observation_flow_artifacts(
-                workflow_id, obs_data, enabled=save_flow_recording
-            )
+            # Stage 1: Observation (or load saved flow recording — no browser crawl)
+            _emit("agent_started", {"agent": "observation", "timestamp": started_at.isoformat()})
+            if flow_recording_path:
+                logger.info(
+                    "Workflow %s: using flow_recording_path=%r — skipping ObservationAgent (no browser-use crawl for this stage)",
+                    workflow_id,
+                    flow_recording_path,
+                )
+                rec_dir = resolve_flow_recording_directory(flow_recording_path)
+                obs_data = observation_result_from_flow_recording_dir(rec_dir)
+                pc = obs_data.setdefault("page_context", {})
+                if url and not str(pc.get("url") or "").strip():
+                    pc["url"] = url
+                fa = pc.get("flow_recording_artifacts")
+                if isinstance(fa, dict) and not obs_data.get("flow_recording_artifacts"):
+                    obs_data["flow_recording_artifacts"] = fa
+                goal_ok, goal_msg = observation_goal_required_and_met(obs_data, user_instruction)
+                if not goal_ok:
+                    logger.warning("Workflow %s blocked before Requirements: %s", workflow_id, goal_msg)
+                    raise RuntimeError(goal_msg)
+                ui_elements = obs_data.get("ui_elements", [])
+                _emit("agent_completed", {
+                    "agent": "observation",
+                    "elements_found": len(ui_elements),
+                    "duration_seconds": 0.0,
+                    "replayed_from_flow_recording": True,
+                    "flow_recording_path": flow_recording_path,
+                })
+            else:
+                obs_payload = {"url": url, "max_depth": depth}
 
-            goal_ok, goal_msg = observation_goal_required_and_met(obs_data, user_instruction)
-            if not goal_ok:
-                logger.warning("Workflow %s blocked before Requirements: %s", workflow_id, goal_msg)
-                raise RuntimeError(goal_msg)
+                def _observation_progress(progress_data: Dict[str, Any]):
+                    data = dict(progress_data or {})
+                    stage_progress = data.pop("progress", 0.0)
+                    stage_message = data.pop("message", None)
+                    _emit_progress("observation", stage_progress, stage_message, **data)
 
-            ui_elements = obs_data.get("ui_elements", [])
-            _emit("agent_completed", {
-                "agent": "observation",
-                "elements_found": len(ui_elements),
-                "duration_seconds": getattr(observation_result, "execution_time_seconds", None),
-            })
+                obs_payload["progress_callback"] = _observation_progress
+                obs_payload["cancel_check"] = lambda: is_cancel_requested(workflow_id)
+
+                if user_instruction:
+                    obs_payload["user_instruction"] = user_instruction
+                if login_credentials:
+                    obs_payload["login_credentials"] = login_credentials
+                if _creds:
+                    obs_payload["http_credentials"] = _creds
+                if browser_profile_data:
+                    obs_payload["browser_profile_data"] = browser_profile_data
+                if gmail_credentials:
+                    obs_payload["gmail_credentials"] = gmail_credentials
+                if available_file_paths:
+                    obs_payload["available_file_paths"] = available_file_paths
+                if enable_signature_pad_tool is not None:
+                    obs_payload["enable_signature_pad_tool"] = bool(enable_signature_pad_tool)
+                if max_browser_steps is not None:
+                    obs_payload["max_browser_steps"] = int(max_browser_steps)
+                if max_flow_timeout_seconds is not None:
+                    obs_payload["max_flow_timeout_seconds"] = int(max_flow_timeout_seconds)
+                obs_task = TaskContext(
+                    conversation_id=workflow_id,
+                    task_id=f"{workflow_id}-obs",
+                    task_type="ui_element_extraction",
+                    payload=obs_payload,
+                    priority=8,
+                )
+                observation_result = await observation_agent.execute_task(obs_task)
+
+                if _check_cancelled():
+                    return {"workflow_id": workflow_id, "status": "cancelled"}
+
+                if not observation_result.success:
+                    raise RuntimeError(observation_result.error or "Observation failed")
+                obs_data = observation_result.result
+
+                persist_observation_flow_artifacts(
+                    workflow_id, obs_data, enabled=save_flow_recording
+                )
+
+                goal_ok, goal_msg = observation_goal_required_and_met(obs_data, user_instruction)
+                if not goal_ok:
+                    logger.warning("Workflow %s blocked before Requirements: %s", workflow_id, goal_msg)
+                    raise RuntimeError(goal_msg)
+
+                ui_elements = obs_data.get("ui_elements", [])
+                _emit("agent_completed", {
+                    "agent": "observation",
+                    "elements_found": len(ui_elements),
+                    "duration_seconds": getattr(observation_result, "execution_time_seconds", None),
+                })
             if _check_cancelled():
                 return {"workflow_id": workflow_id, "status": "cancelled"}
 
@@ -414,6 +449,8 @@ class OrchestrationService:
                 req_payload["max_scenarios"] = max_scenarios
             if focus_goal_only:
                 req_payload["focus_goal_only"] = focus_goal_only
+            if recorded_path_only:
+                req_payload["recorded_path_only"] = recorded_path_only
             req_task = TaskContext(
                 conversation_id=workflow_id,
                 task_id=f"{workflow_id}-req",
@@ -434,6 +471,11 @@ class OrchestrationService:
                 "scenarios_generated": len(scenarios),
                 "duration_seconds": getattr(requirements_result, "execution_time_seconds", None),
             })
+            persist_requirements_result_to_flow_recording(
+                obs_data,
+                requirements_result.result,
+                workflow_id=workflow_id,
+            )
             if _check_cancelled():
                 return {"workflow_id": workflow_id, "status": "cancelled"}
 
@@ -456,6 +498,10 @@ class OrchestrationService:
                     "coverage_metrics": requirements_result.result.get("coverage_metrics", {}),
                     "page_context": observation_data["page_context"],
                     "http_credentials": _creds,
+                    "flow_steps": observation_data.get("flow_steps", []),
+                    "login_credentials": login_credentials or {},
+                    "available_file_paths": available_file_paths or [],
+                    "flow_recording_artifacts": obs_data.get("flow_recording_artifacts"),
                     "progress_callback": _analysis_progress,
                     "cancel_check": lambda: is_cancel_requested(workflow_id),
                 },
@@ -740,19 +786,35 @@ class OrchestrationService:
         Persists requirements_result in workflow store.
         """
         from agents.base_agent import TaskContext
+        from app.services.workflow_store import get_state, set_state, update_state
 
         user_instruction = request.get("user_instruction") or ""
         scenario_types = request.get("scenario_types")
         max_scenarios = request.get("max_scenarios")
         focus_goal_only = bool(request.get("focus_goal_only"))
+        recorded_path_only = bool(request.get("recorded_path_only"))
         obs_from_store = None
         source_wid = request.get("workflow_id") or workflow_id
         state = get_state(source_wid)
         if state:
             obs_from_store = (state.get("result") or {}).get("observation_result")
-        observation_result = request.get("observation_result") or obs_from_store
+        observation_result = request.get("observation_result")
+        rec_path = (request.get("flow_recording_path") or "").strip()
+        if observation_result is None and rec_path:
+            from app.utils.flow_recording_persistence import (
+                observation_result_from_flow_recording_dir,
+                resolve_flow_recording_directory,
+            )
+
+            rec_dir = resolve_flow_recording_directory(rec_path)
+            observation_result = observation_result_from_flow_recording_dir(rec_dir)
+        if observation_result is None:
+            observation_result = obs_from_store
         if not observation_result:
-            raise ValueError("Missing observation data: provide workflow_id (with prior observation) or observation_result")
+            raise ValueError(
+                "Missing observation data: provide workflow_id (with prior observation), "
+                "observation_result, or flow_recording_path (under flow_recordings/)"
+            )
 
         goal_ok, goal_msg = observation_goal_required_and_met(observation_result, user_instruction)
         if not goal_ok:
@@ -790,6 +852,8 @@ class OrchestrationService:
             observation_data["max_scenarios"] = max_scenarios
         if focus_goal_only:
             observation_data["focus_goal_only"] = focus_goal_only
+        if recorded_path_only:
+            observation_data["recorded_path_only"] = recorded_path_only
         req_task = TaskContext(
             conversation_id=workflow_id,
             task_id=f"{workflow_id}-req",
@@ -814,6 +878,11 @@ class OrchestrationService:
             "scenarios_generated": len(scenarios),
             "duration_seconds": getattr(requirements_result, "execution_time_seconds", None),
         })
+        persist_requirements_result_to_flow_recording(
+            observation_result,
+            requirements_result.result,
+            workflow_id=workflow_id,
+        )
         completed_at = datetime.now(timezone.utc)
         total_duration = (completed_at - started_at).total_seconds()
         if pt:
@@ -856,6 +925,7 @@ class OrchestrationService:
         Persists analysis_result in workflow store.
         """
         from agents.base_agent import TaskContext
+        from app.services.workflow_store import get_state, set_state, update_state
 
         state = get_state(workflow_id) or {}
         existing_result = state.get("result") or {}
@@ -903,6 +973,9 @@ class OrchestrationService:
                     "coverage_metrics": requirements_result.get("coverage_metrics", {}),
                     "page_context": page_context,
                     "http_credentials": _analysis_http_creds,
+                    "flow_steps": observation_result.get("flow_steps", []),
+                    "login_credentials": request.get("login_credentials") or {},
+                    "flow_recording_artifacts": observation_result.get("flow_recording_artifacts"),
                 },
                 priority=5,
             )
@@ -968,6 +1041,7 @@ class OrchestrationService:
         Persists evolution_result and test_case_ids in workflow store.
         """
         from agents.base_agent import TaskContext
+        from app.services.workflow_store import get_state, set_state, update_state
 
         db = None
         try:

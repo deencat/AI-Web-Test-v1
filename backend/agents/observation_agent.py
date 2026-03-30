@@ -331,8 +331,7 @@ class ObservationAgent(BaseAgent):
         task: TaskContext,
         url: str,
         max_depth: int,
-        auth: Optional[Dict]
-        ,
+        auth: Optional[Dict],
         http_credentials: Optional[Dict[str, str]] = None,
         progress_callback=None,
         cancel_check=None,
@@ -362,164 +361,165 @@ class ObservationAgent(BaseAgent):
                 context_options["http_credentials"] = normalized_http_credentials
 
             context = await browser.new_context(**context_options)
-
-            if auth:
-                logger.debug("ObservationAgent: Adding authentication to browser context...")
-                await context.add_init_script(f"""
-                    localStorage.setItem('auth_token', '{auth.get('token', '')}');
-                """)
-
-            page = await context.new_page()
-
-            logger.info(f"ObservationAgent: Crawling pages (max_depth={max_depth})...")
-            pages = await self._crawl_pages(page, url, max_depth)
-            logger.info(f"ObservationAgent: Found {len(pages)} page(s) to analyze")
-
-            if callable(progress_callback):
-                progress_callback({
-                    "progress": 0.20,
-                    "message": f"Discovered {len(pages)} pages. Starting element extraction...",
-                    "pages_total": len(pages),
-                    "pages_analyzed": 0,
-                })
-
-            logger.info("ObservationAgent: Extracting UI elements from pages...")
-            all_elements = []
-            all_forms = []
-            total_pages = max(len(pages), 1)
-            processed_pages = 0
-            cancelled_mid_stage = False
-            for idx, page_info in enumerate(pages, 1):
-                if callable(cancel_check) and cancel_check():
-                    logger.info(
-                        "ObservationAgent: Cancellation requested during page extraction. Returning partial results."
+            try:
+                if auth:
+                    logger.debug("ObservationAgent: Adding authentication to browser context...")
+                    await context.add_init_script(
+                        f"""
+                        localStorage.setItem('auth_token', '{auth.get('token', '')}');
+                        """
                     )
-                    cancelled_mid_stage = True
-                    break
 
-                logger.debug(
-                    f"ObservationAgent: Extracting elements from page {idx}/{len(pages)}: {page_info.url}"
-                )
-                elements = await self._extract_ui_elements(page, page_info.url)
-                forms = await self._extract_forms(page, page_info.url)
-                all_elements.extend(elements)
-                all_forms.extend(forms)
-                processed_pages += 1
+                page = await context.new_page()
+                logger.info(f"ObservationAgent: Crawling pages (max_depth={max_depth})...")
+                pages = await self._crawl_pages(page, url, max_depth)
+                logger.info(f"ObservationAgent: Found {len(pages)} page(s) to analyze")
 
                 if callable(progress_callback):
                     progress_callback({
-                        "progress": 0.20 + (0.55 * (idx / total_pages)),
-                        "message": f"Analyzing page {idx}/{total_pages}",
-                        "pages_total": total_pages,
-                        "pages_analyzed": idx,
-                        "elements_found": len(all_elements),
+                        "progress": 0.20,
+                        "message": f"Discovered {len(pages)} pages. Starting element extraction...",
+                        "pages_total": len(pages),
+                        "pages_analyzed": 0,
                     })
 
-                logger.debug(
-                    f"ObservationAgent: Page {idx} - {len(elements)} elements, {len(forms)} forms"
-                )
+                logger.info("ObservationAgent: Extracting UI elements from pages...")
+                all_elements = []
+                all_forms = []
+                total_pages = max(len(pages), 1)
+                processed_pages = 0
+                cancelled_mid_stage = False
 
-            logger.info(
-                f"ObservationAgent: Playwright baseline complete - {len(all_elements)} elements, "
-                f"{len(all_forms)} forms"
-            )
+                for idx, page_info in enumerate(pages, 1):
+                    if callable(cancel_check) and cancel_check():
+                        logger.info(
+                            "ObservationAgent: Cancellation requested during page extraction. Returning partial results."
+                        )
+                        cancelled_mid_stage = True
+                        break
 
-            llm_enhanced_elements = []
-            llm_analysis = {}
-            if not cancelled_mid_stage and self.llm_client and self.llm_client.enabled:
-                try:
-                    html_content = await page.content()
-                    page_title = await page.title()
-
-                    logger.info("Analyzing page with LLM for enhanced element detection...")
-                    llm_analysis = await self.llm_client.analyze_page_elements(
-                        html=html_content,
-                        basic_elements=all_elements[:20],
-                        url=url,
-                        page_title=page_title,
-                        learned_patterns=None,
+                    logger.debug(
+                        f"ObservationAgent: Extracting elements from page {idx}/{len(pages)}: {page_info.url}"
                     )
-
-                    llm_enhanced_elements = llm_analysis.get("enhanced_elements", [])
-                    logger.info(f"LLM found {len(llm_enhanced_elements)} additional elements")
+                    elements = await self._extract_ui_elements(page, page_info.url)
+                    forms = await self._extract_forms(page, page_info.url)
+                    all_elements.extend(elements)
+                    all_forms.extend(forms)
+                    processed_pages += 1
 
                     if callable(progress_callback):
                         progress_callback({
-                            "progress": 0.90,
-                            "message": f"LLM enrichment complete (+{len(llm_enhanced_elements)} elements)",
-                            "elements_found": len(all_elements) + len(llm_enhanced_elements),
+                            "progress": 0.20 + (0.55 * (idx / total_pages)),
+                            "message": f"Analyzing page {idx}/{total_pages}",
+                            "pages_total": total_pages,
+                            "pages_analyzed": idx,
+                            "elements_found": len(all_elements),
                         })
 
-                    all_elements.extend(llm_enhanced_elements)
-                except Exception as e:
-                    logger.warning(f"LLM analysis failed, continuing with Playwright-only results: {e}")
+                    logger.debug(
+                        f"ObservationAgent: Page {idx} - {len(elements)} elements, {len(forms)} forms"
+                    )
 
-            flows = self._identify_flows(pages)
+                logger.info(
+                    f"ObservationAgent: Playwright baseline complete - {len(all_elements)} elements, "
+                    f"{len(all_forms)} forms"
+                )
 
-            if callable(progress_callback):
-                progress_callback({
-                    "progress": 1.0,
-                    "message": "Observation extraction complete",
-                    "pages_total": len(pages),
-                    "pages_analyzed": processed_pages,
-                    "elements_found": len(all_elements),
-                })
+                llm_enhanced_elements = []
+                llm_analysis = {}
+                if not cancelled_mid_stage and self.llm_client and self.llm_client.enabled:
+                    try:
+                        html_content = await page.content()
+                        page_title = await page.title()
 
-            await browser.close()
+                        logger.info("Analyzing page with LLM for enhanced element detection...")
+                        llm_analysis = await self.llm_client.analyze_page_elements(
+                            html=html_content,
+                            basic_elements=all_elements[:20],
+                            url=url,
+                            page_title=page_title,
+                            learned_patterns=None,
+                        )
 
-        confidence = self._calculate_confidence(
-            pages,
-            all_elements,
-            all_forms,
-            has_llm_enhancement=bool(llm_enhanced_elements),
-        )
+                        llm_enhanced_elements = llm_analysis.get("enhanced_elements", [])
+                        logger.info(f"LLM found {len(llm_enhanced_elements)} additional elements")
+                        all_elements.extend(llm_enhanced_elements)
 
-        result = {
-            "start_url": url,
-            "pages_crawled": len(pages),
-            "total_elements": len(all_elements),
-            "total_forms": len(all_forms),
-            "pages": [self._page_to_dict(p) for p in pages],
-            "ui_elements": all_elements,
-            "forms": all_forms,
-            "navigation_flows": flows,
-            "page_context": {
-                "url": url,
-                "title": pages[0].title if pages else "",
-                "page_structure": {
-                    "total_pages": len(pages),
+                        if callable(progress_callback):
+                            progress_callback({
+                                "progress": 0.90,
+                                "message": f"LLM enrichment complete (+{len(llm_enhanced_elements)} elements)",
+                                "elements_found": len(all_elements),
+                            })
+                    except Exception as e:
+                        logger.warning(f"LLM analysis failed, continuing with Playwright-only results: {e}")
+
+                flows = self._identify_flows(pages)
+
+                if callable(progress_callback):
+                    progress_callback({
+                        "progress": 1.0,
+                        "message": "Observation extraction complete",
+                        "pages_total": len(pages),
+                        "pages_analyzed": processed_pages,
+                        "elements_found": len(all_elements),
+                    })
+
+                confidence = self._calculate_confidence(
+                    pages,
+                    all_elements,
+                    all_forms,
+                    has_llm_enhancement=bool(llm_enhanced_elements),
+                )
+
+                result = {
+                    "start_url": url,
+                    "pages_crawled": len(pages),
                     "total_elements": len(all_elements),
                     "total_forms": len(all_forms),
-                },
-            },
-            "llm_analysis": {
-                "used": bool(llm_enhanced_elements),
-                "elements_found": len(llm_enhanced_elements),
-                "suggested_selectors": llm_analysis.get("suggested_selectors", {}),
-                "page_patterns": llm_analysis.get("page_patterns", {}),
-                "missed_by_playwright": llm_analysis.get("missed_by_playwright", []),
-            },
-            "summary": {
-                "buttons": len([e for e in all_elements if e.get("type") == "button"]),
-                "inputs": len([e for e in all_elements if e.get("type") == "input"]),
-                "links": len([e for e in all_elements if e.get("type") == "link"]),
-                "forms": len(all_forms),
-                "playwright_elements": len(all_elements) - len(llm_enhanced_elements),
-                "llm_enhanced_elements": len(llm_enhanced_elements),
-            },
-        }
+                    "pages": [self._page_to_dict(p) for p in pages],
+                    "ui_elements": all_elements,
+                    "forms": all_forms,
+                    "navigation_flows": flows,
+                    "page_context": {
+                        "url": url,
+                        "title": pages[0].title if pages else "",
+                        "page_structure": {
+                            "total_pages": len(pages),
+                            "total_elements": len(all_elements),
+                            "total_forms": len(all_forms),
+                        },
+                    },
+                    "llm_analysis": {
+                        "used": bool(llm_enhanced_elements),
+                        "elements_found": len(llm_enhanced_elements),
+                        "suggested_selectors": llm_analysis.get("suggested_selectors", {}),
+                        "page_patterns": llm_analysis.get("page_patterns", {}),
+                        "missed_by_playwright": llm_analysis.get("missed_by_playwright", []),
+                    },
+                    "summary": {
+                        "buttons": len([e for e in all_elements if e.get("type") == "button"]),
+                        "inputs": len([e for e in all_elements if e.get("type") == "input"]),
+                        "links": len([e for e in all_elements if e.get("type") == "link"]),
+                        "forms": len(all_forms),
+                        "playwright_elements": len(all_elements) - len(llm_enhanced_elements),
+                        "llm_enhanced_elements": len(llm_enhanced_elements),
+                    },
+                }
 
-        logger.info(
-            f"Crawling complete: {len(pages)} pages, "
-            f"{len(all_elements)} elements, {len(all_forms)} forms"
-        )
+                logger.info(
+                    f"Crawling complete: {len(pages)} pages, "
+                    f"{len(all_elements)} elements, {len(all_forms)} forms"
+                )
 
-        return TaskResult(
-            task_id=task.task_id,
-            success=True,
-            result=result,
-            confidence=confidence,
-        )
+                return TaskResult(
+                    task_id=task.task_id,
+                    success=True,
+                    result=result,
+                    confidence=confidence,
+                )
+            finally:
+                await browser.close()
 
     async def _execute_multi_page_flow_crawling(
         self,
@@ -618,6 +618,8 @@ class ObservationAgent(BaseAgent):
             - After a file upload completes, wait briefly (1–3s) for validation/UI to update before clicking "Next" or "Continue".
             - If you click "Next" twice in a row and the page URL and main content do not change, STOP repeating: dismiss any overlay, scroll, fix a validation error,
               or click a different element that matches the step (e.g. checkbox, I understand).
+            - HARD DENYLIST (DO NOT CLICK): "Download My3 App", "Unlock now", "surprise offer", "My3 App" promo banners/popups, and unrelated homepage promo CTAs.
+              If these appear, close/dismiss them; do not activate them.
             
             Extract UI elements from each page you visit during this flow.
             Stop when you reach the confirmation/success page (or payment page if that is the end of the flow).
@@ -659,6 +661,8 @@ class ObservationAgent(BaseAgent):
             - Do NOT use /path/to/sample_id_document.jpg or placeholder paths.
             - The file is available at the path above; use it when the upload step appears.
             - Many sites use a blue **"Upload"** or **"Choose file"** link (`<a>`), not a `<button>`. If you see "Identity Document" / HKID text and no button, click the Upload link or the visible file input.
+            - HARD RULE: in Identity Document screen, do NOT click "Next/Continue" until Upload link/input has been clicked and file picker/upload step has executed.
+            - Prefer anchors and file inputs for this step: `a[href]`, `a`, `input[type=file]`, labels targeting upload.
             """
             
             if require_otp_handling:
@@ -932,8 +936,16 @@ class ObservationAgent(BaseAgent):
             flow_steps = []  # Ordered list of actions taken during crawl for RequirementsAgent / Playwright codegen
             from app.utils.playwright_flow_recording import (
                 build_locator_bundle,
+                normalize_browser_use_attributes,
                 wrap_playwright_flow_recording,
             )
+
+            def _class_attr_fallback_from_elem(elem) -> Optional[str]:
+                for attr in ("class_name", "className"):
+                    v = getattr(elem, attr, None)
+                    if v:
+                        return str(v)
+                return None
 
             def _locator_for_elem(elem) -> Optional[Dict[str, Any]]:
                 if elem is None:
@@ -947,7 +959,101 @@ class ObservationAgent(BaseAgent):
                     node_name=(getattr(elem, "node_name", "") or ""),
                     stable_hash=getattr(elem, "stable_hash", None),
                     element_hash=getattr(elem, "element_hash", None),
+                    class_attr_fallback=_class_attr_fallback_from_elem(elem),
                 )
+
+            def _is_disallowed_promo_target(target: str, attrs: Dict[str, Any]) -> bool:
+                """Reject known promo CTAs that derail the checkout flow."""
+                t = (target or "").strip().lower()
+                attr_text = " ".join(
+                    str(v).lower()
+                    for v in (attrs or {}).values()
+                    if isinstance(v, (str, int, float))
+                )
+                hay = f"{t} {attr_text}"
+                blocked = (
+                    "download my3 app",
+                    "my3 app",
+                    "unlock now",
+                    "surprise offer",
+                )
+                return any(b in hay for b in blocked)
+
+            def _derive_step_target(
+                node_name: str,
+                attrs: Dict[str, Any],
+                ax_name: str,
+                node_value: str,
+                locator: Optional[Dict[str, Any]],
+            ) -> Tuple[str, str, bool]:
+                """
+                Build a deterministic, semantic target for flow_steps.
+                Returns (target, source, ambiguous).
+                """
+                attrs = attrs or {}
+                candidates: List[Tuple[str, str]] = []
+                if ax_name:
+                    candidates.append((str(ax_name).strip(), "ax_name"))
+                if node_value:
+                    candidates.append((str(node_value).strip(), "node_value"))
+                for key in ("aria-label", "title", "name", "placeholder", "id"):
+                    v = str(attrs.get(key) or "").strip()
+                    if v:
+                        candidates.append((v, f"attr:{key}"))
+
+                if locator and isinstance(locator, dict):
+                    suggestions = locator.get("playwright_suggestions") or []
+                    if isinstance(suggestions, list):
+                        for s in suggestions:
+                            if not isinstance(s, dict):
+                                continue
+                            if str(s.get("kind") or "") == "role":
+                                n = str(s.get("name") or "").strip()
+                                if n:
+                                    candidates.append((n, "locator:role_name"))
+                            if str(s.get("kind") or "") == "css_id":
+                                i = str(s.get("id") or "").strip()
+                                if i:
+                                    candidates.append((f"#{i}", "locator:css_id"))
+                    xp = str(locator.get("xpath") or "").strip()
+                    if xp:
+                        candidates.append((xp, "locator:xpath"))
+
+                # Pick first non-generic, non-empty candidate.
+                generic = {"", "div", "span", "input", "button", "a", "small"}
+                for value, src in candidates:
+                    nv = value.strip()
+                    if nv.lower() not in generic:
+                        return nv[:200], src, False
+
+                # Fallback: preserve node name but mark as ambiguous.
+                fallback = (node_name or "element").strip()[:200]
+                return fallback, "fallback:node_name", True
+
+            def _is_noise_container_click(
+                node_name: str,
+                target: str,
+                locator: Optional[Dict[str, Any]],
+            ) -> bool:
+                """Skip obviously non-actionable container clicks in recordings."""
+                if node_name not in {"div", "span"}:
+                    return False
+                low_target = (target or "").strip().lower()
+                if low_target not in {"div", "span", "#__next"}:
+                    return False
+                if not locator or not isinstance(locator, dict):
+                    return True
+                xpath = str(locator.get("xpath") or "").strip().lower()
+                if xpath in {"html/body/div", "/html/body/div"}:
+                    return True
+                suggestions = locator.get("playwright_suggestions") or []
+                if isinstance(suggestions, list):
+                    for s in suggestions:
+                        if not isinstance(s, dict):
+                            continue
+                        if str(s.get("kind") or "") == "css_id" and str(s.get("id") or "") == "__next":
+                            return True
+                return False
 
             for idx, history_item in enumerate(history_items):
                 try:
@@ -975,16 +1081,33 @@ class ObservationAgent(BaseAgent):
                         if elem is None:
                             continue
                         
-                        # Map DOMInteractedElement attributes to our UI element format
-                        attrs = getattr(elem, 'attributes', {}) or {}
+                        # Map DOMInteractedElement attributes (normalize class for recording/CSS fallbacks)
+                        attrs = normalize_browser_use_attributes(
+                            getattr(elem, "attributes", None) or {},
+                            class_attr_fallback=_class_attr_fallback_from_elem(elem),
+                        )
                         node_name = getattr(elem, 'node_name', '').lower()
                         ax_name = getattr(elem, 'ax_name', '') or ''
                         node_value = getattr(elem, 'node_value', '') or ''
                         x_path = getattr(elem, 'x_path', '') or ''
                         
                         # Build one flow step for RequirementsAgent (ordered crawl actions)
-                        step_text = ax_name or node_value or attrs.get('aria-label', '') or attrs.get('title', '') or node_name
+                        loc_bundle = _locator_for_elem(elem)
+                        step_text, target_source, is_ambiguous = _derive_step_target(
+                            node_name=node_name,
+                            attrs=attrs,
+                            ax_name=ax_name,
+                            node_value=node_value,
+                            locator=loc_bundle,
+                        )
                         if node_name == 'input':
+                            if _is_disallowed_promo_target(step_text, attrs):
+                                logger.debug(
+                                    "ObservationAgent: Skipping disallowed promo input target=%r attrs=%r",
+                                    step_text,
+                                    attrs,
+                                )
+                                continue
                             flow_steps.append({
                                 "order": len(flow_steps) + 1,
                                 "action": "input",
@@ -993,9 +1116,18 @@ class ObservationAgent(BaseAgent):
                                 "page_title": page_title or "",
                                 "element_type": node_name,
                                 "input_type": attrs.get("type", "text"),
-                                "locator": _locator_for_elem(elem),
+                                "locator": loc_bundle,
+                                "target_source": target_source,
+                                "ambiguous_target": is_ambiguous,
                             })
                         elif node_name in ('button', 'a') or attrs.get('role') in ('button', 'link'):
+                            if _is_disallowed_promo_target(step_text, attrs):
+                                logger.debug(
+                                    "ObservationAgent: Skipping disallowed promo click target=%r attrs=%r",
+                                    step_text,
+                                    attrs,
+                                )
+                                continue
                             flow_steps.append({
                                 "order": len(flow_steps) + 1,
                                 "action": "click",
@@ -1003,9 +1135,27 @@ class ObservationAgent(BaseAgent):
                                 "page_url": page_url,
                                 "page_title": page_title or "",
                                 "element_type": node_name,
-                                "locator": _locator_for_elem(elem),
+                                "locator": loc_bundle,
+                                "target_source": target_source,
+                                "ambiguous_target": is_ambiguous,
                             })
                         else:
+                            # Skip obvious noise container clicks (e.g. html/body/div or #__next wrapper).
+                            if _is_noise_container_click(node_name, step_text, loc_bundle):
+                                logger.debug(
+                                    "ObservationAgent: Skipping noise container click node=%s target=%r xpath=%r",
+                                    node_name,
+                                    step_text,
+                                    (loc_bundle or {}).get("xpath") if isinstance(loc_bundle, dict) else "",
+                                )
+                                continue
+                            if _is_disallowed_promo_target(step_text, attrs):
+                                logger.debug(
+                                    "ObservationAgent: Skipping disallowed promo generic click target=%r attrs=%r",
+                                    step_text,
+                                    attrs,
+                                )
+                                continue
                             flow_steps.append({
                                 "order": len(flow_steps) + 1,
                                 "action": "click",
@@ -1013,7 +1163,9 @@ class ObservationAgent(BaseAgent):
                                 "page_url": page_url,
                                 "page_title": page_title or "",
                                 "element_type": node_name,
-                                "locator": _locator_for_elem(elem),
+                                "locator": loc_bundle,
+                                "target_source": target_source,
+                                "ambiguous_target": is_ambiguous,
                             })
                         
                         # Determine element type from tag name and attributes

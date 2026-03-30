@@ -12,6 +12,7 @@ import re
 import asyncio
 from datetime import datetime, timedelta
 from enum import Enum
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +160,10 @@ class AnalysisAgent(BaseAgent):
             coverage_metrics = task.payload.get("coverage_metrics", {})
             page_context = task.payload.get("page_context", {})
             workflow_http_credentials = task.payload.get("http_credentials")
+            flow_steps_payload = task.payload.get("flow_steps") or []
+            login_credentials_payload = task.payload.get("login_credentials") or {}
+            available_file_paths_payload = task.payload.get("available_file_paths") or []
+            flow_recording_artifacts_payload = task.payload.get("flow_recording_artifacts")
             
             logger.info(f"AnalysisAgent: Processing {len(scenarios)} scenarios...")
 
@@ -252,6 +257,16 @@ class AnalysisAgent(BaseAgent):
                     logger.info("AnalysisAgent: Cancelled before real-time execution")
                     return _cancelled_result()
 
+                observed_flow_lock = asyncio.Lock()
+                # When any scenario is pinned to the recording (observed-flow), do not also
+                # assign flow_steps to unrelated high-RPN scenarios via the anchor.
+                any_observed_flow = any(
+                    "observed-flow" in (s.get("tags") or []) for s in scenarios
+                )
+                observed_flow_anchor = {
+                    "remaining": bool(flow_steps_payload) and not any_observed_flow,
+                }
+
                 # Get RPN threshold from config (default: 80 for production, lower for testing)
                 rpn_threshold = self.config.get("execution_rpn_threshold", 80) if self.config else 80
                 
@@ -272,6 +287,22 @@ class AnalysisAgent(BaseAgent):
                     ]
                     scenarios_with_scores.sort(key=lambda x: x[1].rpn if x[1] else 0, reverse=True)
                     critical_scenarios = [s for s, _ in scenarios_with_scores[:2]]
+
+                # Always run pinned browser-use recording scenarios (observed-flow) when flow_steps exist,
+                # even if RPN ranking would skip them.
+                if flow_steps_payload:
+                    have_ids = {s.get("scenario_id") for s in critical_scenarios}
+                    for s in scenarios:
+                        if "observed-flow" not in (s.get("tags") or []):
+                            continue
+                        sid = s.get("scenario_id")
+                        if sid and sid not in have_ids:
+                            critical_scenarios.insert(0, s)
+                            have_ids.add(sid)
+                            logger.info(
+                                "AnalysisAgent: Queued observed-flow scenario %s for real-time execution",
+                                sid,
+                            )
                 
                 if critical_scenarios:
                     # Get parallel execution batch size from config (default: 3)
@@ -308,10 +339,18 @@ class AnalysisAgent(BaseAgent):
                         logger.info(f"AnalysisAgent: Executing batch {batch_num}/{total_batches} "
                                    f"({len(batch)} scenarios in parallel)")
                         
-                        # Create tasks for parallel execution
+                        # Create tasks for parallel execution (observed crawl steps → one end-to-end scenario, under lock)
                         tasks = [
                             self._execute_scenario_real_time(
-                                scenario, page_context, http_credentials=workflow_http_credentials
+                                scenario,
+                                page_context,
+                                workflow_http_credentials,
+                                flow_steps=flow_steps_payload,
+                                login_credentials=login_credentials_payload,
+                                available_file_paths=available_file_paths_payload,
+                                flow_recording_artifacts=flow_recording_artifacts_payload,
+                                observed_flow_anchor=observed_flow_anchor,
+                                observed_flow_lock=observed_flow_lock,
                             )
                             for scenario in batch
                         ]
@@ -1279,13 +1318,22 @@ Respond with valid JSON only."""
         scenario: Dict,
         page_context: Optional[Dict],
         http_credentials: Optional[Dict[str, str]] = None,
+        *,
+        flow_steps: Optional[List[Dict]] = None,
+        login_credentials: Optional[Dict[str, Any]] = None,
+        available_file_paths: Optional[List[str]] = None,
+        flow_recording_artifacts: Optional[Dict[str, Any]] = None,
+        observed_flow_anchor: Optional[Dict[str, Any]] = None,
+        observed_flow_lock: Optional[asyncio.Lock] = None,
     ) -> Optional[Dict]:
         """
         Execute a scenario in real-time using Phase 2 execution engine.
         
-        Converts BDD scenario (Given/When/Then) to executable test steps
-        and executes using 3-tier strategy (Playwright → Hybrid → Stagehand AI).
-        
+        Uses full ``flow_steps`` for scenarios tagged ``observed-flow`` (pinned recording path).
+        Otherwise uses ``flow_steps`` once for the first end-to-end / user-requirement scenario when
+        ``observed_flow_anchor`` allows it; then converts BDD (Given/When/Then) to steps.
+        Executes using 3-tier strategy (Playwright → Hybrid → Stagehand AI).
+
         Returns execution result with success rate for scoring.
         """
         try:
@@ -1293,11 +1341,212 @@ Respond with valid JSON only."""
             from app.models.test_case import TestCase, TestType, Priority
             from app.models.test_execution import ExecutionStatus, ExecutionResult
             from app.crud import test_execution as crud_execution
-            
-            # Convert BDD scenario to test steps
-            test_steps = self._convert_scenario_to_steps(scenario, page_context)
-            
-            if not test_steps:
+            from app.utils.flow_steps_to_test_strings import flow_steps_to_natural_language_steps
+
+            flow_steps = flow_steps or []
+            login_credentials = login_credentials if isinstance(login_credentials, dict) else {}
+            available_file_paths = available_file_paths if isinstance(available_file_paths, list) else []
+
+            step_source = "bdd"
+            test_steps: Optional[List[str]] = None
+            ir_steps: Optional[List[Dict[str, Any]]] = None
+            tags = scenario.get("tags") or []
+
+            # Strict replay path for observed-flow scenarios: use Playwright IR directly.
+            if "observed-flow" in tags and isinstance(flow_recording_artifacts, dict):
+                ir_path = str(flow_recording_artifacts.get("playwright_step_ir_file") or "").strip()
+                if ir_path:
+                    try:
+                        with open(ir_path, "r", encoding="utf-8") as f:
+                            ir_doc = json.load(f)
+                        raw_steps = ir_doc.get("steps") if isinstance(ir_doc, dict) else None
+                        if isinstance(raw_steps, list) and raw_steps:
+                            ir_steps = [s for s in raw_steps if isinstance(s, dict)]
+                            if ir_steps:
+                                step_source = "observed_flow_ir"
+                                logger.info(
+                                    "AnalysisAgent: Strict observed-flow replay uses playwright_step_ir (%s steps) for %s",
+                                    len(ir_steps),
+                                    scenario.get("scenario_id"),
+                                )
+                    except Exception as ir_err:
+                        logger.warning(
+                            "AnalysisAgent: Could not load playwright_step_ir_file=%r: %s",
+                            ir_path,
+                            ir_err,
+                        )
+
+            # If IR file couldn't be loaded, build deterministic IR from the provided flow_steps
+            # and still execute via strict Playwright (no NL conversion for observed-flow).
+            if "observed-flow" in tags and (not ir_steps) and flow_steps:
+                try:
+                    from app.utils.flow_recording_persistence import build_playwright_step_ir
+
+                    ir_doc = build_playwright_step_ir(flow_steps)
+                    raw_steps = ir_doc.get("steps") if isinstance(ir_doc, dict) else None
+                    if isinstance(raw_steps, list) and raw_steps:
+                        ir_steps = [s for s in raw_steps if isinstance(s, dict)]
+                        if ir_steps:
+                            step_source = "observed_flow_ir_from_flow_steps"
+                            logger.info(
+                                "AnalysisAgent: Built observed-flow IR from flow_steps (%s steps) for %s",
+                                len(ir_steps),
+                                scenario.get("scenario_id"),
+                            )
+                except Exception as ir_build_err:
+                    logger.warning(
+                        "AnalysisAgent: Could not build observed-flow IR from flow_steps: %s",
+                        ir_build_err,
+                    )
+
+            # Enrich strict observed-flow IR with deterministic input values so strict input replay
+            # does not immediately fail due to missing recorded `value`.
+            if ir_steps:
+                try:
+                    from app.utils.test_data_generator import TestDataGenerator
+                    from app.utils.three_uat_test_credentials import (
+                        THREE_UAT_TEST_PAYMENT_CARD_NUMBER,
+                        THREE_UAT_TEST_PAYMENT_EXPIRY,
+                        THREE_UAT_TEST_PAYMENT_CVV,
+                    )
+                    import zlib
+
+                    def _stable_seed(s: str) -> int:
+                        return zlib.crc32((s or "").encode("utf-8")) & 0xFFFFFFFF
+
+                    scenario_id = str(scenario.get("scenario_id") or "")
+                    seed = _stable_seed(scenario_id)
+                    gen = TestDataGenerator(seed=seed)
+
+                    hkid = gen.generate_hkid()
+                    phone = gen.generate_phone()
+                    email = (
+                        str(
+                            login_credentials.get("email")
+                            or login_credentials.get("username")
+                            or login_credentials.get("user_email")
+                            or ""
+                        ).strip()
+                        or gen.generate_email()
+                    )
+                    password = (
+                        str(
+                            login_credentials.get("password")
+                            or login_credentials.get("user_password")
+                            or ""
+                        ).strip()
+                        or "Password123!"
+                    )
+                    card_holder = "THREE UAT TEST USER"
+
+                    file_path = ""
+                    if available_file_paths:
+                        file_path = str(available_file_paths[0]).strip()
+
+                    for st in ir_steps:
+                        if not isinstance(st, dict):
+                            continue
+                        if str(st.get("action") or "").lower().strip() != "input":
+                            continue
+                        if st.get("value"):
+                            # Respect any prefilled value.
+                            continue
+
+                        input_type = str(st.get("input_type") or "").lower().strip()
+                        attrs = st.get("attributes") if isinstance(st.get("attributes"), dict) else {}
+                        if not isinstance(attrs, dict):
+                            attrs = {}
+                        name = str(attrs.get("name") or "").lower().strip()
+                        el_id = str(attrs.get("id") or "").lower().strip()
+                        typ = str(attrs.get("type") or "").lower().strip()
+
+                        # For checkboxes/radios, strict replay should toggle via locator; no text value needed.
+                        if input_type in {"checkbox", "radio"} or typ in {"checkbox", "radio"}:
+                            continue
+
+                        # File input: use first available_file_paths entry.
+                        if input_type == "file" or typ == "file":
+                            st["value"] = file_path
+                            continue
+
+                        # Payment (card) fields.
+                        if name == "nmbr" or el_id == "creditcard" or el_id == "creditCard".lower():
+                            st["value"] = THREE_UAT_TEST_PAYMENT_CARD_NUMBER
+                            continue
+                        if name == "hldr":
+                            st["value"] = card_holder
+                            continue
+                        if name == "xdt":
+                            st["value"] = THREE_UAT_TEST_PAYMENT_EXPIRY
+                            continue
+                        if name == "cvv" or name == "cvc" or "cvv" in name or "cvc" in name:
+                            st["value"] = THREE_UAT_TEST_PAYMENT_CVV
+                            continue
+
+                        # Registration/login fields.
+                        if name == "id" or name == "hkid" or "identity" in name or "passport" in name:
+                            st["value"] = hkid
+                            continue
+                        if input_type == "password" or name == "password" or typ == "password":
+                            st["value"] = password
+                            continue
+                        if name in {"contactnum", "contact-number"} or input_type in {"tel"} or typ == "tel":
+                            st["value"] = phone
+                            continue
+                        if "email" in name or input_type in {"email"}:
+                            st["value"] = email
+                            continue
+
+                        # Fallback: deterministic placeholder to keep strict replay running.
+                        st["value"] = f"TEST_{seed % 1000000}"
+                except Exception as ir_enrich_err:
+                    logger.warning("AnalysisAgent: IR input enrichment failed: %s", ir_enrich_err)
+
+            if flow_steps and observed_flow_lock and "observed-flow" in tags and not ir_steps:
+                async with observed_flow_lock:
+                    test_steps = flow_steps_to_natural_language_steps(
+                        flow_steps, login_credentials, dedupe_consecutive=True
+                    )
+                    if test_steps:
+                        step_source = "observed_flow_steps"
+                        logger.info(
+                            "AnalysisAgent: Real-time run uses observed flow_steps (%s steps) for %s "
+                            "(observed-flow tag; browser-use recording path); step_source=%s",
+                            len(test_steps),
+                            scenario.get("scenario_id"),
+                            step_source,
+                        )
+
+            if (
+                not test_steps
+                and not ir_steps
+                and flow_steps
+                and observed_flow_anchor
+                and observed_flow_lock
+                and observed_flow_anchor.get("remaining")
+            ):
+                is_e2e = ("end-to-end" in tags or "user-requirement" in tags)
+                if is_e2e:
+                    async with observed_flow_lock:
+                        if observed_flow_anchor.get("remaining"):
+                            test_steps = flow_steps_to_natural_language_steps(
+                                flow_steps, login_credentials
+                            )
+                            if test_steps:
+                                observed_flow_anchor["remaining"] = False
+                                step_source = "observed_flow_steps"
+                                logger.info(
+                                    "AnalysisAgent: Real-time run uses observed flow_steps (%s steps) for %s "
+                                    "(ObservationAgent crawl / flow JSON); step_source=%s",
+                                    len(test_steps),
+                                    scenario.get("scenario_id"),
+                                    step_source,
+                                )
+
+            if not test_steps and not ir_steps:
+                test_steps = self._convert_scenario_to_steps(scenario, page_context)
+
+            if not test_steps and not ir_steps:
                 logger.warning(f"No executable steps for scenario {scenario.get('scenario_id')}")
                 return None
             
@@ -1318,7 +1567,7 @@ Respond with valid JSON only."""
                 description=scenario.get("given", ""),
                 test_type=TestType.E2E,
                 priority=Priority.HIGH,
-                steps=test_steps,
+                steps=ir_steps if ir_steps else test_steps,
                 expected_result=scenario.get("then", ""),
                 user_id=1  # Default user for agent executions
             )
@@ -1364,6 +1613,13 @@ Respond with valid JSON only."""
                 # Execute using Phase 2 engine (3-tier strategy)
                 # Note: StagehandExecutionService uses hybrid execution (Tier 1 → Tier 3)
                 if execution_id and self.db:
+                    allowed_hosts: List[str] = []
+                    try:
+                        host = (urlparse(base_url).hostname or "").strip().lower()
+                        if host:
+                            allowed_hosts = [host]
+                    except Exception:
+                        allowed_hosts = []
                     # Full execution with database tracking
                     execution_result = await execution_service.execute_test(
                         db=self.db,
@@ -1373,9 +1629,14 @@ Respond with valid JSON only."""
                         base_url=base_url,
                         environment="dev",
                         http_credentials=resolved_http_creds,
+                        strict_replay=bool(ir_steps),
+                        fail_fast=bool(ir_steps),
+                        allow_ai_fallback=not bool(ir_steps),
+                        allowed_hosts=allowed_hosts,
+                        available_file_paths=available_file_paths,
                     )
                     # Calculate success rate from database execution result
-                    total_steps = execution_result.total_steps or len(test_steps)
+                    total_steps = execution_result.total_steps or (len(ir_steps) if ir_steps else len(test_steps))
                     passed_steps = execution_result.passed_steps or 0
                     success_rate = (passed_steps / total_steps) if total_steps > 0 else 0.0
                     final_result = execution_result.result.value if execution_result.result else "unknown"
@@ -1409,21 +1670,51 @@ Respond with valid JSON only."""
                     # Real execution without database (still executes, just doesn't save records)
                     # set_runtime_http_credentials already applied so first Navigate step gets UAT auth
                     logger.info(f"Real execution for scenario {scenario.get('scenario_id')} (no database tracking)")
-                    logger.info(f"Executing {len(test_steps)} steps: {test_steps}")
+                    executable_steps = ir_steps if ir_steps else test_steps
+                    logger.info(f"Executing {len(executable_steps)} steps: {executable_steps}")
                     
                     # Execute steps manually without database
-                    total_steps = len(test_steps)
+                    total_steps = len(executable_steps)
                     passed_steps = 0
                     failed_steps = 0
                     
                     # Track which tier was used
                     tier_used = "tier1"  # Default to Tier 1 (Playwright)
                     
-                    for idx, step_desc in enumerate(test_steps, start=1):
+                    allowed_hosts: List[str] = []
+                    try:
+                        host = (urlparse(base_url).hostname or "").strip().lower()
+                        if host:
+                            allowed_hosts = [host]
+                    except Exception:
+                        allowed_hosts = []
+
+                    for idx, step_desc in enumerate(executable_steps, start=1):
                         try:
                             logger.info(f"Executing step {idx}/{total_steps}: {step_desc}")
-                            # Use hybrid execution (Tier 1 → Tier 3)
-                            result = await execution_service._execute_step_hybrid(step_desc, idx)
+                            if ir_steps and isinstance(step_desc, dict):
+                                result = await execution_service._execute_recorded_step_strict(
+                                    step_desc,
+                                    idx,
+                                    allow_ai_fallback=False,
+                                )
+                            else:
+                                # Use hybrid execution (Tier 1 → Tier 3)
+                                result = await execution_service._execute_step_hybrid(step_desc, idx)
+
+                            if allowed_hosts:
+                                current_url = str(getattr(execution_service.page, "url", "") or "")
+                                current_host = (urlparse(current_url).hostname or "").strip().lower()
+                                if current_host and current_host not in allowed_hosts:
+                                    result = {
+                                        "success": False,
+                                        "error": (
+                                            f"Host guard blocked navigation to '{current_host}'. "
+                                            f"Allowed hosts: {allowed_hosts}"
+                                        ),
+                                        "actual": f"Current URL: {current_url}",
+                                        "action_method": "host_guard",
+                                    }
                             if result.get("success", False):
                                 passed_steps += 1
                                 # Track tier used (from action_method if available)
@@ -1441,9 +1732,15 @@ Respond with valid JSON only."""
                                 error_msg = result.get("error", "Unknown error")
                                 actual = result.get("actual", "No details")
                                 logger.warning(f"Step {idx} FAILED: {error_msg} | Actual: {actual}")
+                                if ir_steps:
+                                    logger.warning("Fail-fast strict replay: stopping after step %s failure", idx)
+                                    break
                         except Exception as step_error:
                             logger.warning(f"Step {idx} EXCEPTION: {step_error}", exc_info=True)
                             failed_steps += 1
+                            if ir_steps:
+                                logger.warning("Fail-fast strict replay: stopping after step %s exception", idx)
+                                break
                     
                     # Calculate success rate for real execution without database
                     success_rate = (passed_steps / total_steps) if total_steps > 0 else 0.0
@@ -1458,15 +1755,19 @@ Respond with valid JSON only."""
                 logger.info(f"Scenario {scenario.get('scenario_id')} executed: "
                           f"{passed_steps}/{total_steps} passed, success_rate={success_rate:.2f}, tier={tier_used}")
                 
-                return {
+                out: Dict[str, Any] = {
                     "scenario_id": scenario.get("scenario_id"),
                     "success_rate": success_rate,
                     "passed_steps": passed_steps,
                     "total_steps": total_steps,
                     "result": final_result,
                     "execution_id": execution_id,
-                    "tier_used": tier_used
+                    "tier_used": tier_used,
+                    "step_source": step_source,
                 }
+                if step_source == "observed_flow_steps" and flow_recording_artifacts:
+                    out["flow_recording_artifacts"] = flow_recording_artifacts
+                return out
                 
             except Exception as e:
                 logger.error(f"Execution failed for scenario {scenario.get('scenario_id')}: {e}", exc_info=True)
@@ -1474,10 +1775,11 @@ Respond with valid JSON only."""
                     "scenario_id": scenario.get("scenario_id"),
                     "success_rate": 0.0,
                     "passed_steps": 0,
-                    "total_steps": len(test_steps),
+                    "total_steps": len(ir_steps) if ir_steps else len(test_steps or []),
                     "result": "fail",
                     "error": str(e),
-                    "tier_used": "error"  # Mark as error tier
+                    "tier_used": "error",  # Mark as error tier
+                    "step_source": step_source,
                 }
             finally:
                 try:

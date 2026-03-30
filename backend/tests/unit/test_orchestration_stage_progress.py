@@ -154,7 +154,12 @@ async def test_run_workflow_emits_intra_stage_agent_progress_events():
     tracker = _Tracker()
     service = OrchestrationService(progress_tracker=tracker)
 
-    service._create_agents = lambda db=None: (_ObsAgent(False), _ReqAgent(), _AnalysisAgent(), _EvolutionAgent())
+    service._create_agents = lambda db=None, **kwargs: (
+        _ObsAgent(False),
+        _ReqAgent(),
+        _AnalysisAgent(),
+        _EvolutionAgent(),
+    )
 
     result = await service.run_workflow(workflow_id, {"url": "https://example.com"})
     assert result["status"] == "completed"
@@ -177,7 +182,12 @@ async def test_run_workflow_can_cancel_during_observation_stage_work():
     tracker = _Tracker()
     service = OrchestrationService(progress_tracker=tracker)
 
-    service._create_agents = lambda db=None: (_ObsAgent(True), _ReqAgent(), _AnalysisAgent(), _EvolutionAgent())
+    service._create_agents = lambda db=None, **kwargs: (
+        _ObsAgent(True),
+        _ReqAgent(),
+        _AnalysisAgent(),
+        _EvolutionAgent(),
+    )
 
     result = await service.run_workflow(workflow_id, {"url": "https://example.com"})
     assert result["status"] == "cancelled"
