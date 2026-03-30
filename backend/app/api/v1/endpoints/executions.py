@@ -161,11 +161,7 @@ async def run_test_with_playwright(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Browser profile {request.browser_profile_id} not found"
             )
-        if not profile.has_session_data:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Browser profile has no synced session data"
-            )
+        # Note: has_session_data guard removed (Sprint 10.7) — UAT creds auto-injected
     
     # Create initial execution record with QUEUED status (Sprint 3 Day 2)
     execution = crud_executions.create_execution(

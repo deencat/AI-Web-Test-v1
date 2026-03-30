@@ -26,6 +26,7 @@ from app.crud import test_execution as crud_execution
 from app.crud import execution_feedback as crud_feedback
 from app.schemas.execution_feedback import ExecutionFeedbackCreate
 from app.services.three_tier_execution_service import ThreeTierExecutionService
+from app.utils.http_auth_credentials import http_credentials_for_url
 from app.utils.test_data_generator import TestDataGenerator
 
 logger = logging.getLogger(__name__)
@@ -343,6 +344,9 @@ class ExecutionService:
             
             # Initialize browser
             await self.initialize()
+            # Auto-inject UAT credentials if none explicitly supplied (Sprint 10.7)
+            if not http_credentials:
+                http_credentials = http_credentials_for_url(base_url)
             await self.create_context(record_video=True, http_credentials=http_credentials)
             page = await self.create_page()
 

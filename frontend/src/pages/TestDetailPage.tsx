@@ -225,8 +225,8 @@ export const TestDetailPage: React.FC = () => {
             <RunTestButton
               testCaseId={typeof test.id === 'string' ? parseInt(test.id) : test.id}
               testCaseName={test.title || test.name}
+              testUrl={(test as { url?: string }).url ?? ''}
               onExecutionStart={handleExecutionStart}
-              enableProfileUpload
             />
           </div>
         </div>
