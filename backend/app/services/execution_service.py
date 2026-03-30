@@ -6,6 +6,7 @@ Integrated with 3-Tier Execution Engine (Sprint 5.5)
 import asyncio
 import json
 import os
+import re
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -347,6 +348,16 @@ class ExecutionService:
             # Auto-inject UAT credentials if none explicitly supplied (Sprint 10.7)
             if not http_credentials:
                 http_credentials = http_credentials_for_url(base_url)
+            # Fallback: scan test steps for navigate URLs when base_url is generic (Sprint 10.7)
+            if not http_credentials and test_case.steps:
+                for step in test_case.steps:
+                    for url in re.findall(r'https?://\S+', str(step)):
+                        creds = http_credentials_for_url(url.rstrip('.,;)"\"'))
+                        if creds:
+                            http_credentials = creds
+                            break
+                    if http_credentials:
+                        break
             await self.create_context(record_video=True, http_credentials=http_credentials)
             page = await self.create_page()
 

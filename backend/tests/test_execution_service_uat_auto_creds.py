@@ -172,3 +172,58 @@ async def test_execute_test_non_uat_url_no_credentials_injected():
     assert "http_credentials" not in kwargs or kwargs.get("http_credentials") is None, (
         f"Expected no http_credentials but got {kwargs.get('http_credentials')}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Test 3 — Non-UAT base_url but UAT URL embedded in a test step
+#           (real-world case: frontend sends 'https://web.three.com.hk' as base_url
+#            while the actual step says "Navigate to https://wwwuat.three.com.hk/path")
+#           Expected: step scan detects UAT hostname → new_context called WITH UAT creds
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_execute_test_uat_url_in_step_injects_creds_when_base_url_is_non_uat():
+    """
+    Non-UAT base_url + UAT URL inside a step → credentials should still be auto-injected.
+
+    This covers the production scenario where the frontend sends base_url='https://web.three.com.hk'
+    (fallback) but the test step says 'Navigate to https://wwwuat.three.com.hk/path'.
+    """
+    non_uat_base_url = "https://web.three.com.hk"
+    uat_step_url = "https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/"
+    test_case = _make_test_case(
+        steps=[f"Navigate to {uat_step_url} in a web browser"]
+    )
+    db = MagicMock()
+
+    mock_browser, _mock_context, _mock_page = _make_browser_page_context()
+    mock_pw_instance = _make_playwright_instance(mock_browser)
+
+    with (
+        patch("app.services.execution_service.crud_execution") as mock_crud,
+        patch("app.services.execution_service.ThreeTierExecutionService") as mock_3tier,
+    ):
+        _configure_crud(mock_crud, execution_id=30)
+        _configure_3tier(mock_3tier)
+
+        service = ExecutionService(ExecutionConfig(headless=True))
+        service.playwright = mock_pw_instance
+        service.browser = mock_browser
+
+        # base_url is NOT a UAT URL; credentials NOT provided explicitly
+        await service.execute_test(
+            db=db,
+            test_case=test_case,
+            user_id=1,
+            base_url=non_uat_base_url,
+            environment="dev",
+            execution_id=30,
+            http_credentials=None,
+        )
+
+    # Verify new_context WAS called with UAT creds (found via step scan)
+    mock_browser.new_context.assert_awaited_once()
+    _, kwargs = mock_browser.new_context.call_args
+    assert kwargs.get("http_credentials") == UAT_HTTP_CREDENTIALS, (
+        f"Expected UAT creds injected from step URL, but got {kwargs.get('http_credentials')}"
+    )
