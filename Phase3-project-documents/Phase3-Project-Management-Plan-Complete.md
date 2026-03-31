@@ -3,7 +3,7 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · 📋 Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly PLANNED (Mar 16) · 📋 Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) PLANNED (Mar 26)  
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · 📋 Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · 📋 Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) PLANNED (Mar 26)  
 **Last Updated:** March 30, 2026 (Sprint 10.7 revised — browser profile picker removed for ALL saved test runs; UAT creds auto-injected; non-UAT URLs run directly with no profile required)  
 **Version:** 3.4
 
@@ -2056,15 +2056,15 @@ SettingsPage
 ### Developer B Sprint 10.7: 3-Tier Execution — Remove Browser Profile Picker, Auto-Inject UAT Credentials (Mar 16 - Mar 21, 2026)
 
 **Owner:** Developer B  
-**Status:** 📋 **PLANNED**  
+**Status:** ✅ **COMPLETE** (Mar 30, 2026) — UAT credentials auto-injected in `ExecutionService`; step-URL fallback scan added for generic `base_url` case; browser profile picker removed from `RunTestButton`; `Browser Profiles` nav entry removed from sidebar; 3 backend + 5 frontend tests green; 49 total backend tests pass, 195 frontend tests pass.  
 **Branch:** `feature/sprint10-7-execution-no-profile-picker`  
-**Story Points:** 5 points / ~2.5 days
+**Story Points:** 5 points / ~2.5 days *(+0.5 points for step-URL fallback scope expansion)*
 
 ---
 
 #### Problem Statement
 
-The agent workflow already auto-injects hardcoded UAT credentials. When `OrchestrationService` receives a URL, it calls `http_credentials_for_url(url)` from `backend/app/utils/http_auth_credentials.py`, which returns `{"username": "user", "password": "3.comUXuat"}` for any Three HK UAT hostname — no user input required.
+The agent workflow already auto-injects hardcoded UAT credentials. When `OrchestrationService` receives a URL, it calls `http_credentials_for_url(url)` from `backend/app/utils/http_auth_credentials.py`, which returns the default http credential for any Three HK UAT hostname — no user input required.
 
 The 3-tier execution path (`POST /v1/executions/{id}/run` → `ExecutionService`) does **not** call this function. When a saved test targets `wwwuat.three.com.hk`, the Playwright context is created with no credentials and the browser returns 401. Additionally, `RunTestButton` forces the user to select a browser profile before every run — for all URLs — which is unnecessary friction: UAT credentials are hardcoded, and most non-HTTP-auth URLs need no credentials at all.
 
@@ -2092,8 +2092,8 @@ User on Saved Tests page — test URL is wwwuat.three.com.hk
   → POST /v1/executions/{id}/run sent (no browser_profile_id)
   → ExecutionService calls http_credentials_for_url(test.url)
       → is_three_hk_uat_url(url) → True
-      → returns {"username": "user", "password": "3.comUXuat"}
-  → Playwright new_context(http_credentials={"username": "user", "password": "3.comUXuat"})
+      → returns default http credential
+  → Playwright new_context(http_credentials=default http credential)
   → Test executes successfully — no 401
 
 User on Saved Tests page — test URL is non-UAT (prod, staging, etc.)
@@ -2105,6 +2105,20 @@ User on Saved Tests page — test URL is non-UAT (prod, staging, etc.)
 
 ---
 
+#### Implementation Outcome (Actual)
+
+- ✅ `http_credentials_for_url()` imported and called in `ExecutionService.execute_test()` before `create_context()` — mirrors `OrchestrationService` exactly.
+- ✅ **Scope expansion — Step-URL fallback scan:** Production testing revealed that `RunTestButton` sends `base_url: 'https://web.three.com.hk'` (hardcoded fallback) because `GeneratedTestCase` TypeScript type carries no `url` field. Stage 1 (`http_credentials_for_url(base_url)`) returns `None` for that hostname. A stage 2 scan was added: iterate `test_case.steps`, extract embedded `https?://` URLs via `re.findall`, and call `http_credentials_for_url` on each — first UAT match wins. This fixes `ERR_INVALID_AUTH_CREDENTIALS` without any frontend or API schema changes. Documented in ADR-002-13.
+- ✅ `has_session_data` guard removed from `POST /tests/{id}/run` in `executions.py` — was dead code once `browser_profile_id` is no longer sent.
+- ✅ `RunTestButton.tsx` rewritten: all profile picker state removed; `testUrl?: string` prop added; `🔐 UAT credentials auto-applied` badge shown only when `isUatUrl(testUrl)` is true; `browser_profile_id` no longer sent in payload.
+- ✅ `isUatUrl(url)` pure utility created in `frontend/src/utils/urlUtils.ts`.
+- ✅ `Browser Profiles` nav entry removed from `Sidebar.tsx` and `/browser-profiles` route removed from `App.tsx`. Underlying API, service, and TypeScript types retained.
+- ✅ 3 backend unit tests (`test_execution_service_uat_auto_creds.py`): UAT URL → creds injected; non-UAT URL → no creds; UAT URL in step with generic base_url → creds injected. All pass.
+- ✅ 5 frontend tests (`RunTestButton.test.tsx` + `isUatUrl`): UAT URL renders badge + no picker; non-UAT renders no badge + no picker; no picker when `testUrl` omitted; `isUatUrl` returns correct values. All pass.
+- ✅ ADR-002-12, ADR-002-13, ADR-002-14 recorded in `documentation/ADR-002-test-execution-engine.md`.
+
+---
+
 #### Phase 1: Backend — Wire `http_credentials_for_url()` into ExecutionService (G1)
 
 **File map:**
@@ -2113,7 +2127,7 @@ User on Saved Tests page — test URL is non-UAT (prod, staging, etc.)
 |---|------|------|---------|------|
 | 1.1 | **Call `http_credentials_for_url()` before `new_context()`** — import `http_credentials_for_url` from `app.utils.http_auth_credentials`; resolve `http_creds = http_credentials_for_url(test.url)` early in the execution path; pass as `http_credentials=http_creds` to Playwright `new_context()`. Returns `None` for non-UAT URLs so `new_context()` runs normally | `backend/app/services/execution_service.py` | Mirrors `OrchestrationService` exactly | Low |
 | 1.2 | **Remove the browser profile guard entirely** — delete the `if not profile` / HTTP 400 guard from `POST /v1/executions/{id}/run`. Browser profile is no longer required or checked for any URL | `backend/app/api/v1/endpoints/executions.py` | Guard removal only; no other logic changes | Low |
-| 1.3 | **Unit test — UAT URL, no profile, auto-injected creds** — `test.url = "https://wwwuat.three.com.hk/..."`, no `browser_profile_id`; assert `http_credentials_for_url` returns UAT creds; assert `new_context()` called with `http_credentials={"username": "user", "password": "3.comUXuat"}`; assert HTTP 200 | `backend/tests/test_execution_service_uat_auto_creds.py` | New test file | Low |
+| 1.3 | **Unit test — UAT URL, no profile, auto-injected creds** — `test.url = "https://wwwuat.three.com.hk/..."`, no `browser_profile_id`; assert `http_credentials_for_url` returns UAT creds; assert `new_context()` called with `http_credentials=default http credential`; assert HTTP 200 | `backend/tests/test_execution_service_uat_auto_creds.py` | New test file | Low |
 | 1.4 | **Unit test — non-UAT URL, no profile** — assert `http_credentials_for_url` returns `None`; assert `new_context()` called without `http_credentials`; assert HTTP 200 (no 400) | `backend/tests/test_execution_service_uat_auto_creds.py` | Key regression guard — non-UAT now passes without profile | Low |
 
 **Total Phase 1: 2.5 points / ~1.25 days**
@@ -2138,14 +2152,16 @@ User on Saved Tests page — test URL is non-UAT (prod, staging, etc.)
 
 #### Sprint 10.7 Combined Task Table
 
-| Task | Description | File | Duration | Dependencies | Risk |
-|------|-------------|------|----------|--------------|------|
-| **10.7-B1** | Call `http_credentials_for_url()` in `ExecutionService` before `new_context()` | `execution_service.py` | 0.5 day | None | Low |
-| **10.7-B2** | Remove browser profile guard from `POST /v1/executions/{id}/run` | `api/v1/endpoints/executions.py` | 0.25 day | 10.7-B1 | Low |
-| **10.7-B3** | Unit tests — UAT auto-inject (no profile); non-UAT no profile → HTTP 200 | `test_execution_service_uat_auto_creds.py` | 0.5 day | 10.7-B2 | Low |
-| **10.7-B4** | `isUatUrl()` utility | `frontend/src/utils/urlUtils.ts` | 0.25 day | None | Low |
-| **10.7-B5** | `RunTestButton` — remove profile picker; add UAT badge only | `RunTestButton.tsx` | 0.5 day | 10.7-B4 | Low |
-| **10.7-B6** | Frontend unit tests — Run button direct; badge on UAT; no picker on any URL | `RunTestButton.test.tsx` | 0.5 day | 10.7-B5 | Low |
+| Task | Description | File | Duration | Dependencies | Risk | Status |
+|------|-------------|------|----------|--------------|------|--------|
+| **10.7-B1** | Call `http_credentials_for_url()` in `ExecutionService` before `new_context()` | `execution_service.py` | 0.5 day | None | Low | ✅ |
+| **10.7-B2** | Remove browser profile guard from `POST /v1/executions/{id}/run` | `api/v1/endpoints/executions.py` | 0.25 day | 10.7-B1 | Low | ✅ |
+| **10.7-B3** | Unit tests — UAT auto-inject (no profile); non-UAT no profile → HTTP 200 | `test_execution_service_uat_auto_creds.py` | 0.5 day | 10.7-B2 | Low | ✅ |
+| **10.7-B3a** | Unit test — UAT URL in step with generic base_url → creds injected *(scope expansion)* | `test_execution_service_uat_auto_creds.py` | 0.25 day | 10.7-B1 | Low | ✅ |
+| **10.7-B4** | `isUatUrl()` utility | `frontend/src/utils/urlUtils.ts` | 0.25 day | None | Low | ✅ |
+| **10.7-B5** | `RunTestButton` — remove profile picker; add UAT badge only | `RunTestButton.tsx` | 0.5 day | 10.7-B4 | Low | ✅ |
+| **10.7-B6** | Frontend unit tests — Run button direct; badge on UAT; no picker on any URL | `RunTestButton.test.tsx` | 0.5 day | 10.7-B5 | Low | ✅ |
+| **10.7-B7** | Remove `Browser Profiles` nav item from `Sidebar.tsx` and route from `App.tsx` | `Sidebar.tsx`, `App.tsx` | 0.25 day | 10.7-B5 | Low | ✅ |
 
 **Total: 5 points / ~2.5 days**
 
@@ -2154,20 +2170,23 @@ User on Saved Tests page — test URL is non-UAT (prod, staging, etc.)
 #### Sprint 10.7 Success Criteria
 
 **Backend: UAT auto-inject, profile guard removed (G1)**
-- [ ] A saved test targeting `wwwuat.three.com.hk` runs successfully with no browser profile — `http_credentials_for_url()` auto-injects `{"username": "user", "password": "3.comUXuat"}` into Playwright `new_context()`
-- [ ] A saved test targeting any non-UAT URL runs successfully with no browser profile — execution proceeds with no `http_credentials`
-- [ ] `POST /v1/executions/{id}/run` never returns HTTP 400 due to missing browser profile
+- [x] A saved test targeting `wwwuat.three.com.hk` runs successfully with no browser profile — `http_credentials_for_url()` auto-injects UAT credentials into Playwright `new_context()`
+- [x] A saved test targeting any non-UAT URL runs successfully with no browser profile — execution proceeds with no `http_credentials`
+- [x] `POST /v1/executions/{id}/run` never returns HTTP 400 due to missing browser profile
+- [x] *(Scope expansion)* A saved test where `base_url` is the generic fallback `https://web.three.com.hk` but a step contains `https://wwwuat.three.com.hk/...` auto-injects UAT credentials via step-URL scan
 
 **Frontend: Profile picker removed for all tests (G2)**
-- [ ] `RunTestButton` renders no browser profile `<select>` for any test URL
-- [ ] `RunTestButton` for a UAT test URL shows `🔐 UAT credentials auto-applied` badge below the Run button
-- [ ] `RunTestButton` for a non-UAT test URL shows only the Run button — no picker, no badge
-- [ ] Agent workflow page (`AgentWorkflowTrigger`) is unchanged
+- [x] `RunTestButton` renders no browser profile `<select>` for any test URL
+- [x] `RunTestButton` for a UAT test URL shows `🔐 UAT credentials auto-applied` badge below the Run button
+- [x] `RunTestButton` for a non-UAT test URL shows only the Run button — no picker, no badge
+- [x] Agent workflow page (`AgentWorkflowTrigger`) is unchanged
+- [x] `Browser Profiles` nav item removed from sidebar; `/browser-profiles` route removed from `App.tsx`
 
 **Tests**
-- [ ] 2 backend unit tests pass in `test_execution_service_uat_auto_creds.py`
-- [ ] 3 frontend unit tests pass in `RunTestButton.test.tsx`
-- [ ] No regression in existing execution or agent workflow tests
+- [x] 3 backend unit tests pass in `test_execution_service_uat_auto_creds.py` (2 original + 1 step-scan)
+- [x] 5 frontend tests pass in `RunTestButton.test.tsx` (3 button/badge + 2 `isUatUrl` unit)
+- [x] 49 total backend execution-service tests pass — no regression
+- [x] 195 total frontend tests pass — no regression
 
 ---
 

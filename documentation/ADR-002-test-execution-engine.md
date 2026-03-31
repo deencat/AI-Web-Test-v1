@@ -13,6 +13,13 @@
 - `backend/app/services/xpath_extractor.py`
 - `backend/app/services/xpath_cache_service.py`
 - `backend/app/services/stagehand_service.py`
+- `backend/app/services/execution_service.py`
+- `backend/app/api/v1/endpoints/executions.py`
+- `backend/app/utils/http_auth_credentials.py`
+- `frontend/src/components/RunTestButton.tsx`
+- `frontend/src/utils/urlUtils.ts`
+- `backend/tests/test_execution_service_uat_auto_creds.py`
+- `frontend/src/components/__tests__/RunTestButton.test.tsx`
 - `backend/tests/test_tier2_payment_helpers.py`
 - `backend/tests/test_stagehand_service_azure_cdp.py`
 - `backend/tests/unit/test_universal_llm_azure.py`
@@ -32,6 +39,9 @@
 9. [ADR-002-9: Semantic Field-Type XPath Cache Validation](#adr-002-9-semantic-field-type-xpath-cache-validation)
 10. [ADR-002-10: Pre-Click Enabled State Polling](#adr-002-10-pre-click-enabled-state-polling)
 11. [ADR-002-11: Azure LiteLLM Native Provider Routing for Stagehand Initialization](#adr-002-11-azure-litellm-native-provider-routing-for-stagehand-initialization)
+12. [ADR-002-12: Auto-Inject UAT HTTP Credentials in ExecutionService](#adr-002-12-auto-inject-uat-http-credentials-in-executionservice)
+13. [ADR-002-13: Step-URL Fallback Scan for UAT Credential Detection](#adr-002-13-step-url-fallback-scan-for-uat-credential-detection)
+14. [ADR-002-14: Remove Browser Profile Picker from Saved-Test Run Flow](#adr-002-14-remove-browser-profile-picker-from-saved-test-run-flow)
 
 ---
 
@@ -587,6 +597,123 @@ elif model_provider == "azure":
 
 ---
 
+## ADR-002-12: Auto-Inject UAT HTTP Credentials in ExecutionService
+
+**Date:** March 30, 2026 (Sprint 10.7)
+
+### Context
+
+The agent workflow path (`OrchestrationService` → `ObservationAgent`) already calls `http_credentials_for_url(url)` from `app.utils.http_auth_credentials` before opening a Playwright context. This returns the default http credential for any `wwwuat.three.com.hk` hostname and `None` otherwise.
+
+The 3-tier saved-test execution path (`POST /tests/{id}/run` → queue manager → `ExecutionService.execute_test()`) did not call this function. Playwright's `new_context()` was created with no `http_credentials`, so every navigation to `wwwuat.three.com.hk` returned `ERR_INVALID_AUTH_CREDENTIALS`. Users had to work around this by manually selecting a browser profile with stored credentials before every run.
+
+### Decision
+
+In `ExecutionService.execute_test()`, immediately before `create_context()`, resolve credentials with a two-stage lookup:
+
+**Stage 1** — call `http_credentials_for_url(base_url)`. Returns UAT creds when `base_url` is the UAT hostname; `None` otherwise.
+
+**Stage 2** — if stage 1 returns `None` and `test_case.steps` is non-empty, scan each step string for embedded `https?://` URLs using `re.findall`, strip trailing punctuation, and call `http_credentials_for_url` on each. Stop at the first match. (Covered by ADR-002-13.)
+
+The resolved value (UAT creds dict or `None`) is passed directly to `create_context(http_credentials=...)`. Explicit credentials supplied by callers are never overwritten (guarded by `if not http_credentials`).
+
+### Consequences
+
+**Positive**
+- UAT saved tests run without any user action on credentials — mirrors the agent workflow policy.
+- Non-UAT tests are entirely unaffected (both stages return `None`).
+- Explicit `http_credentials` passed by the queue manager (e.g. from a browser profile) are preserved.
+
+**Negative**
+- Stage 2 `re.findall` is a heuristic — won't match URLs stored only in variable tokens (e.g. `{{base_url}}`).
+- `import re` added to `execution_service.py`.
+
+**Alternatives Considered**
+- **Resolve credentials in queue manager**: Splits responsibility; queue manager already passes credentials through unchanged.
+- **Keep browser profile picker**: Removed by design (see ADR-002-14).
+- **Front-end sends correct `base_url`**: Correct long-term fix (requires `url` field in `GeneratedTestCase` type); deferred.
+
+---
+
+## ADR-002-13: Step-URL Fallback Scan for UAT Credential Detection
+
+**Date:** March 30, 2026 (Sprint 10.7)
+
+### Context
+
+`RunTestButton` sends `base_url: 'https://web.three.com.hk'` as a hardcoded fallback because `GeneratedTestCase` (the TypeScript type returned by the tests API) carries no `url` field. `http_credentials_for_url('https://web.three.com.hk')` returns `None` — the hostname is `web.three.com.hk`, not `wwwuat.three.com.hk`. The Playwright context was therefore created without credentials and step 1 (`Navigate to https://wwwuat.three.com.hk/...`) failed with `ERR_INVALID_AUTH_CREDENTIALS` in production.
+
+### Decision
+
+Add a **stage 2 step-text scan** in `execute_test()`: iterate `test_case.steps`, extract all `https?://...` substrings with `re.findall`, strip trailing punctuation (`rstrip('.,;)"\'`)`), call `http_credentials_for_url` on each, and use the first non-`None` result.
+
+Key properties:
+- Runs only when stage 1 yields `None` — zero overhead when `base_url` already resolves credentials.
+- Stops at the first credentialled URL found — consistent with navigate-first step ordering.
+- Coerces each step to `str()` before scanning — handles both plain-string and JSON-object step formats.
+
+### Consequences
+
+**Positive**
+- Fixes the `ERR_INVALID_AUTH_CREDENTIALS` production failure transparently, without frontend or API schema changes.
+- Works for both plain-string steps and JSON step objects.
+- Covered by a dedicated regression test: `test_execute_test_uat_url_in_step_injects_creds_when_base_url_is_non_uat`.
+
+**Negative**
+- Heuristic: steps storing the UAT URL only in a variable substitution token (e.g. `{{uat_url}}`) won't be matched.
+- Ordering assumption: a non-credentialled URL appearing before a credentialled one in steps is correctly skipped, but this relies on `http_credentials_for_url` returning `None` for non-UAT URLs.
+
+**Alternatives Considered**
+- **Add `url` field to `GeneratedTestCase` TypeScript type**: Correct long-term fix; when the frontend passes the real test URL as `base_url`, stage 2 is never reached. Deferred to a future sprint.
+- **Parse only `navigate` action steps**: More precise but requires all steps to carry an `action` field; plain-string steps don't.
+
+---
+
+## ADR-002-14: Remove Browser Profile Picker from Saved-Test Run Flow
+
+**Date:** March 30, 2026 (Sprint 10.7)
+
+### Context
+
+`RunTestButton` rendered a modal dialog with a `<select>` dropdown for choosing a browser profile before every test run, unconditionally for all URLs. This blocked execution until the user made a selection and caused two problems:
+
+1. **UAT tests**: users had to maintain a browser profile with http credential and select it manually — even though those credentials are hardcoded in `http_auth_credentials.py` and already auto-applied by the agent workflow.
+2. **Non-UAT tests**: most tests require no HTTP credentials. The picker still appeared and blocked the run, adding mandatory friction with no functional benefit.
+
+### Decision
+
+**Remove the browser profile picker entirely from `RunTestButton`.**
+
+- Drop all profile-related state: `selectedProfileId`, `profiles`, `profilesLoading`, `showProfileDialog`.
+- Drop `enableProfileUpload` prop; add `testUrl?: string` prop.
+- Send `POST /tests/{id}/run` immediately on click — no `browser_profile_id` in the payload.
+- Render a read-only `🔐 UAT credentials auto-applied` badge below the Run button **only** when `isUatUrl(testUrl)` is `true`.
+
+**`isUatUrl(url: string): boolean`** — new pure utility in `frontend/src/utils/urlUtils.ts`, hostname check against `wwwuat.three.com.hk` via `new URL()`.
+
+**Browser Profiles sidebar nav item and `/browser-profiles` route** removed from `App.tsx` and `Sidebar.tsx`. The underlying API, service, and TypeScript types are retained — available via direct URL or future UI entry points.
+
+**`has_session_data` guard removed** from `POST /tests/{id}/run` (`executions.py`): the guard blocked runs when a profile had no synced session data. Since `browser_profile_id` is no longer sent, the guard is dead code and is removed.
+
+### Consequences
+
+**Positive**
+- Zero-click execution from Saved Tests for all URL types.
+- UAT credential injection is guaranteed and transparent.
+- `RunTestButton` reduced from ~170 lines to ~70 lines.
+- Consistent UX with the agent workflow (no credential prompt there either).
+
+**Negative**
+- Users who used the picker for session-cookie injection (logged-in test replay) lose the UI entry point. The browser profile sync API remains accessible at `/browser-profiles` directly and via API.
+- `testUrl` falls back to `''` when omitted by callers — UAT badge not shown, but execution still works (credentials injected via ADR-002-12/13 regardless of badge state).
+
+**Alternatives Considered**
+- **Keep picker, make it optional with a bypass**: One extra click still adds friction; picker implies user responsibility for credentials.
+- **Auto-populate picker with UAT profile**: Brittle, requires a matching profile to exist, duplicates credential logic in `http_auth_credentials.py`.
+- **Remove picker only for UAT URLs**: Conditional picker adds UI complexity. Current test suite has no known non-UAT tests requiring HTTP Basic Auth.
+
+---
+
 ## Summary Table
 
 | ADR | Decision | Status | Risk |
@@ -602,5 +729,8 @@ elif model_provider == "azure":
 | 002-9 | Semantic field-type XPath cache validation | Accepted | Low |
 | 002-10 | Pre-click enabled state polling | Accepted | Low |
 | 002-11 | Azure LiteLLM native provider routing for Stagehand init | Accepted | Medium |
+| 002-12 | Auto-inject UAT HTTP credentials in `ExecutionService` before `new_context()` | Accepted | Low |
+| 002-13 | Step-URL fallback scan for UAT credential detection when `base_url` is generic | Accepted | Low |
+| 002-14 | Remove browser profile picker from saved-test run flow; UAT badge only | Accepted | Low |
 
 ADR-002-7 and ADR-002-8 carry medium risk because their heuristics (navigation-button keyword list, iframe frame enumeration) depend on real-world page structure diversity. ADR-002-11 carries medium risk due to process-global `os.environ` mutation — safe for single-worker deployments but must be revisited when parallel test execution is introduced. All three should be monitored via tier-level execution metrics and LLM provider error rates across test runs.
