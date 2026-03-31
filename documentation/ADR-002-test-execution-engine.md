@@ -42,6 +42,8 @@
 12. [ADR-002-12: Auto-Inject UAT HTTP Credentials in ExecutionService](#adr-002-12-auto-inject-uat-http-credentials-in-executionservice)
 13. [ADR-002-13: Step-URL Fallback Scan for UAT Credential Detection](#adr-002-13-step-url-fallback-scan-for-uat-credential-detection)
 14. [ADR-002-14: Remove Browser Profile Picker from Saved-Test Run Flow](#adr-002-14-remove-browser-profile-picker-from-saved-test-run-flow)
+15. [ADR-002-15: Payment Direct Handler — Enable by Default + exp. date Keyword + Combined Expiry Fill](#adr-002-15-payment-direct-handler--enable-by-default--exp-date-keyword--combined-expiry-fill)
+16. [ADR-002-16: Autopay Page URL Path Detection for Extended Readiness Wait](#adr-002-16-autopay-page-url-path-detection-for-extended-readiness-wait)
 
 ---
 
@@ -732,5 +734,97 @@ Key properties:
 | 002-12 | Auto-inject UAT HTTP credentials in `ExecutionService` before `new_context()` | Accepted | Low |
 | 002-13 | Step-URL fallback scan for UAT credential detection when `base_url` is generic | Accepted | Low |
 | 002-14 | Remove browser profile picker from saved-test run flow; UAT badge only | Accepted | Low |
+| 002-15 | Payment direct handler: enable by default, add `exp. date` keyword, add combined expiry fill selectors | Accepted | Low |
+| 002-16 | Autopay URL path/query detection: extend 8000ms readiness wait to `?step=autopay` pages | Accepted | Low |
 
 ADR-002-7 and ADR-002-8 carry medium risk because their heuristics (navigation-button keyword list, iframe frame enumeration) depend on real-world page structure diversity. ADR-002-11 carries medium risk due to process-global `os.environ` mutation — safe for single-worker deployments but must be revisited when parallel test execution is introduced. All three should be monitored via tier-level execution metrics and LLM provider error rates across test runs.
+
+---
+
+## ADR-002-15: Payment Direct Handler — Enable by Default + exp. date Keyword + Combined Expiry Fill
+
+**Date:** Mar 31, 2026 · **Author:** Developer B
+
+### Context
+
+Field testing against a Three HK autopay/payment gateway page revealed three independent bugs that caused steps 31–33 (credit card number, card holder name, expiry date) to fail with `[3-Tier] ❌ All tiers exhausted`:
+
+1. **`ENABLE_PAYMENT_DIRECT_HANDLING` defaulted to `false`** — The iframe-aware CSS-selector fill path (`_try_payment_field_action`) was built in a prior sprint but left opt-in via an env var. In practice this setting was never set, so the direct handler was never called. After the payment-readiness wait failed (`⚠️ Payment gateway readiness not confirmed`), execution fell through to `observe()`, which cannot penetrate cross-origin payment iframes.
+
+2. **`"exp. date"` / `"exp date"` not in `_is_payment_instruction` keywords** — The keyword list contained `"expiry"` and `"expiration"` but not the abbreviated form used by LLM-generated test steps. Step 33 (`Input exp. date '01/39'`) was therefore never identified as a payment step, bypassing both the readiness wait and the direct handler entirely.
+
+3. **No `fill` selector for combined MM/YY expiry inputs** — `_try_payment_field_action` handled expiry only as a `select` action (separate month/year dropdowns). A single combined text input (`01/39`) had no matching selector branch.
+
+### Decision
+
+**Bug 1 — Default to `true`:**  
+Change `ENABLE_PAYMENT_DIRECT_HANDLING` default from `"false"` to `"true"`. The direct handler is safe: it attempts multiple CSS selectors and returns `None` on failure, letting execution continue normally. Operators who need to disable it can still set `ENABLE_PAYMENT_DIRECT_HANDLING=false` in `.env`.
+
+**Bug 2 — Add `"exp. date"` and `"exp date"` to `_is_payment_instruction` keywords:**  
+Both abbreviated forms are added to the keyword list alongside `"expiry"` and `"expiration"`.
+
+**Bug 3 — Add combined expiry fill selectors to `_try_payment_field_action`:**  
+When `action` is `fill`/`type`/`input` and the instruction contains `exp. date`, `exp date`, `expiry`, or `expiration`, try these selectors (main page then iframes):
+```
+input[name*='expiry'], input[id*='expiry'], input[name*='expiration'],
+input[id*='expiration'], input[name*='exp'], input[id*='exp'],
+input[autocomplete='cc-exp'], input[placeholder*='MM'], input[placeholder*='mm']
+```
+
+### Consequences
+
+**Positive**
+- Steps 31–33 (card number, cardholder name, combined expiry) now succeed via direct CSS fill without requiring `observe()` to penetrate cross-origin iframes.
+- No change for non-payment steps — detection is keyword-gated.
+- Operators retain opt-out capability via `ENABLE_PAYMENT_DIRECT_HANDLING=false`.
+
+**Negative**
+- Direct handler now runs on all deployments by default; if a site uses non-standard card field names not in the selector list, it falls through silently (existing behavior preserved).
+- `"exp"` substring in selectors may occasionally match unrelated inputs named `expand` or similar — mitigated by also requiring the instruction to contain the keyword.
+
+**Tests added (TDD):** 13 new tests in `tests/test_tier2_payment_helpers.py` — `TestPaymentInstructionKeywords` (5), `TestPaymentDirectDefault` (3), `TestCombinedExpiryFill` (2), plus existing 18 passing.
+
+---
+
+## ADR-002-16: Autopay Page URL Path Detection for Extended Readiness Wait
+
+**Date:** Mar 31, 2026 · **Author:** Developer B
+
+### Context
+
+The Three HK autopay setup page URL is:
+```
+https://wwwuat.three.com.hk/...?step=autopay
+```
+
+Credit card fields on this page (Credit Card No., Card Holder Name, Exp. Date MM/YY) are standard HTML inputs rendered by a SPA — they are **not** inside cross-origin iframes. However, the SPA component takes longer than 1500ms to mount after navigation.
+
+`_is_external_payment_gateway_url()` only checked the **hostname** against a keyword list. `wwwuat.three.com.hk` matches none of `gateway`, `pay`, `mastercard`, etc., so `_maybe_wait_for_payment_gateway()` used the 1500ms fast-path timeout. The SPA form was not yet rendered when the CSS selector probe ran, so the warning `⚠️ Payment gateway readiness not confirmed` was logged and `observe()` ran immediately — before the fields existed in the DOM. This is exactly the scenario ADR-002-4 documented as a known false-negative: *"Unknown gateway domain results in a 1500ms timeout instead of 8000ms"*.
+
+**Why 60 seconds is wrong:** The waits are already bounded. Adding a 60s timeout would stall every payment step on genuinely missing elements for a full minute. The correct fix is to **classify autopay pages correctly** so they get the existing 8000ms wait, not to increase the global cap.
+
+### Decision
+
+Extend `_is_external_payment_gateway_url()` to also check the **URL path and query string** for autopay-specific keywords in addition to the hostname check:
+
+```python
+path_and_query = (parsed.path + "?" + (parsed.query or "")).lower()
+autopay_keywords = ["autopay", "auto-pay", "step=autopay", "step=auto-pay"]
+return any(keyword in path_and_query for keyword in autopay_keywords)
+```
+
+This makes the Three HK autopay page use the 8000ms readiness wait, giving the SPA component time to render before the CSS selector probe and `observe()` run.
+
+### Consequences
+
+**Positive**
+- `wwwuat.three.com.hk/...?step=autopay` now correctly gets 8000ms wait.
+- Zero impact on non-autopay pages — the path/query check only activates on the new keywords.
+- Hostname checks are unchanged; existing external gateways (Mastercard, Stripe, etc.) are unaffected.
+- Directly addresses the documented ADR-002-4 known limitation about manual gateway list maintenance.
+
+**Negative**
+- Sites that use `step=autopay` in their URL for non-payment purposes (unlikely) would get the extended wait unnecessarily — acceptable trade-off.
+- Path-based matching is still a heuristic; sites with unconventional autopay URL patterns require further additions.
+
+**Tests added (TDD):** 8 new tests in `tests/test_tier2_payment_helpers.py` — `TestAutopayUrlDetection` class (5 parametrized URL checks + 3 boundary tests).

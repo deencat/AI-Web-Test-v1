@@ -48,7 +48,7 @@ class Tier2HybridExecutor:
         self.xpath_extractor = xpath_extractor
         self.timeout_ms = timeout_ms
         self.cache_service = XPathCacheService(db)
-        self.payment_direct_enabled = os.getenv("ENABLE_PAYMENT_DIRECT_HANDLING", "false").lower() == "true"
+        self.payment_direct_enabled = os.getenv("ENABLE_PAYMENT_DIRECT_HANDLING", "true").lower() != "false"
         self.payment_gateway_ready = False
         self.payment_gateway_url = None
     
@@ -686,6 +686,8 @@ class Tier2HybridExecutor:
             "card holder",
             "expiry",
             "expiration",
+            "exp. date",
+            "exp date",
             "cvv",
             "cvc",
             "security code",
@@ -714,11 +716,18 @@ class Tier2HybridExecutor:
         return ", ".join(selectors)
 
     def _is_external_payment_gateway_url(self, url: str) -> bool:
-        """Detect external payment gateway pages requiring longer readiness waits."""
+        """Detect payment pages requiring longer readiness waits (8s).
+
+        Returns True for:
+        - External payment gateway hostnames (mastercard, stripe, adyen, etc.)
+        - Same-origin autopay/checkout pages identified by URL path or query
+          (e.g. ?step=autopay on wwwuat.three.com.hk).
+        """
         if not url:
             return False
 
-        hostname = (urlparse(url).hostname or "").lower()
+        parsed = urlparse(url)
+        hostname = (parsed.hostname or "").lower()
         gateway_keywords = [
             "gateway",
             "mastercard",
@@ -731,7 +740,14 @@ class Tier2HybridExecutor:
             "paypal",
             "cybersource",
         ]
-        return any(keyword in hostname for keyword in gateway_keywords)
+        if any(keyword in hostname for keyword in gateway_keywords):
+            return True
+
+        # Also treat same-origin autopay pages as needing the extended wait.
+        # The Three HK autopay form is SPA-rendered and takes >1500ms to mount.
+        path_and_query = (parsed.path + "?" + (parsed.query or "")).lower()
+        autopay_keywords = ["autopay", "auto-pay", "step=autopay", "step=auto-pay"]
+        return any(keyword in path_and_query for keyword in autopay_keywords)
 
     async def _maybe_wait_for_payment_gateway(self, page: Page) -> None:
         """Wait once per page for payment gateway fields to appear."""
@@ -793,6 +809,20 @@ class Tier2HybridExecutor:
                 "input[id*='name']",
                 "input[autocomplete='cc-name']",
             ]
+        elif "exp. date" in instruction_lower or "exp date" in instruction_lower or "expiry" in instruction_lower or "expiration" in instruction_lower:
+            if action in ["fill", "type", "input"]:
+                # Combined MM/YY or MM/YYYY expiry input (single text field)
+                input_selectors = [
+                    "input[name*='expiry']",
+                    "input[id*='expiry']",
+                    "input[name*='expiration']",
+                    "input[id*='expiration']",
+                    "input[name*='exp']",
+                    "input[id*='exp']",
+                    "input[autocomplete='cc-exp']",
+                    "input[placeholder*='MM']",
+                    "input[placeholder*='mm']",
+                ]
 
         if action == "select" and ("month" in instruction_lower or "year" in instruction_lower or "expiry" in instruction_lower):
             if "month" in instruction_lower:

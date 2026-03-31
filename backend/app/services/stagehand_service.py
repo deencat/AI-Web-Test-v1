@@ -201,7 +201,18 @@ class StagehandExecutionService:
                 # Strip provider prefix from model if present
                 if azure_model and azure_model.lower().startswith("azure/"):
                     azure_model = azure_model.split("/", 1)[1]
-                
+
+                # gpt-5.2 lives on a dedicated Azure resource — override endpoint/version/key
+                if azure_model == "gpt-5.2":
+                    gpt52_endpoint = os.getenv("AZURE_OPENAI_GPT52_ENDPOINT")
+                    gpt52_api_version = os.getenv("AZURE_OPENAI_GPT52_API_VERSION", "2024-12-01-preview")
+                    gpt52_api_key = os.getenv("AZURE_OPENAI_GPT52_API_KEY") or azure_api_key
+                    if gpt52_endpoint:
+                        azure_endpoint = gpt52_endpoint
+                    azure_api_version = gpt52_api_version
+                    if gpt52_api_key:
+                        azure_api_key = gpt52_api_key
+
                 if not azure_api_key:
                     raise ValueError(
                         "AZURE_OPENAI_API_KEY not set in .env file. "
@@ -347,6 +358,16 @@ class StagehandExecutionService:
                 azure_model = user_config.get("model") if user_config else os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT")
                 if azure_model and azure_model.lower().startswith("azure/"):
                     azure_model = azure_model.split("/", 1)[1]
+
+                if azure_model == "gpt-5.2":
+                    gpt52_endpoint = os.getenv("AZURE_OPENAI_GPT52_ENDPOINT")
+                    gpt52_api_version = os.getenv("AZURE_OPENAI_GPT52_API_VERSION", "2024-12-01-preview")
+                    gpt52_api_key = os.getenv("AZURE_OPENAI_GPT52_API_KEY") or azure_api_key
+                    if gpt52_endpoint:
+                        azure_endpoint = gpt52_endpoint
+                    azure_api_version = gpt52_api_version
+                    if gpt52_api_key:
+                        azure_api_key = gpt52_api_key
 
                 if not azure_api_key:
                     raise ValueError("AZURE_OPENAI_API_KEY not set in .env file")
@@ -530,6 +551,16 @@ class StagehandExecutionService:
 
                 if azure_model and azure_model.lower().startswith("azure/"):
                     azure_model = azure_model.split("/", 1)[1]
+
+                if azure_model == "gpt-5.2":
+                    gpt52_endpoint = os.getenv("AZURE_OPENAI_GPT52_ENDPOINT")
+                    gpt52_api_version = os.getenv("AZURE_OPENAI_GPT52_API_VERSION", "2024-12-01-preview")
+                    gpt52_api_key = os.getenv("AZURE_OPENAI_GPT52_API_KEY") or azure_api_key
+                    if gpt52_endpoint:
+                        azure_endpoint = gpt52_endpoint
+                    azure_api_version = gpt52_api_version
+                    if gpt52_api_key:
+                        azure_api_key = gpt52_api_key
 
                 if not azure_api_key:
                     raise ValueError("AZURE_OPENAI_API_KEY not set in .env file")

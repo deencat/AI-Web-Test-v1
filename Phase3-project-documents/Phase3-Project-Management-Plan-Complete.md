@@ -3,7 +3,7 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · 📋 Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · 📋 Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) PLANNED (Mar 26)  
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · 📋 Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31)  
 **Last Updated:** March 30, 2026 (Sprint 10.7 revised — browser profile picker removed for ALL saved test runs; UAT creds auto-injected; non-UAT URLs run directly with no profile required)  
 **Version:** 3.4
 
@@ -2338,6 +2338,63 @@ Each row has two modes (upload / path). `FileEntry` state struct tracks `serverP
 #### Known Follow-Up Item
 
 - [ ] **Upload file TTL cleanup** — Files in `uploads/workflow-files/` persist indefinitely. A scheduled cleanup job (e.g. delete entries older than 7 days) should be added in a future sprint.
+
+---
+
+### Developer B Sprint 10.9: Add gpt-5.2 Azure Model to Settings Page (Mar 31, 2026)
+
+**Owner:** Developer B  
+**Status:** ✅ **COMPLETE** (Mar 31, 2026)  
+**Story Points:** 5 points / 1 day  
+
+**Summary:** Added `gpt-5.2` as a selectable model under the Azure OpenAI provider on the Settings page. The new model uses a dedicated Azure resource (`hutch-mkklgrll-eastus2.cognitiveservices.azure.com`) with API version `2024-12-01-preview`, configured via new environment variables. All routing is handled transparently by per-model endpoint override logic in `UniversalLLMService`.
+
+**Connection details (from dev.txt):**
+- **Endpoint:** `https://hutch-mkklgrll-eastus2.cognitiveservices.azure.com/`
+- **Deployment name:** `gpt-5.2`
+- **API version:** `2024-12-01-preview`
+
+**Files changed:**
+
+| File | Change |
+|------|--------|
+| `backend/app/services/user_settings_service.py` | Added `"gpt-5.2"` to Azure `PROVIDER_CONFIGS` models list |
+| `backend/app/core/config.py` | Added `AZURE_OPENAI_GPT52_ENDPOINT`, `AZURE_OPENAI_GPT52_API_VERSION`, `AZURE_OPENAI_GPT52_API_KEY` env vars |
+| `backend/app/services/universal_llm.py` | Added `_azure_model_endpoints` dict for per-model routing; updated `_call_azure` and `_build_azure_request_candidates` to accept `endpoint`/`api_version` overrides |
+| `backend/llm/azure_client.py` | Updated `AzureClient.__init__` to detect `gpt-5.2` deployment and use its dedicated endpoint/API version |
+| `backend/app/services/stagehand_service.py` | Added gpt-5.2 override block to all 3 Azure branches so Tier 2 (litellm/observe) also routes to the hutch endpoint |
+| `backend/tests/unit/test_user_settings_service.py` | Added `TestAzureGpt52Model` (4 tests, TDD) |
+| `backend/tests/unit/test_universal_llm_azure.py` | Added 3 tests for gpt-5.2 endpoint routing (TDD) |
+| `backend/tests/test_stagehand_service_azure_cdp.py` | Added 3 tests for Tier 2/Stagehand gpt-5.2 routing (TDD) |
+
+**New environment variables (add to `backend/.env`):**
+```
+AZURE_OPENAI_GPT52_ENDPOINT=https://hutch-mkklgrll-eastus2.cognitiveservices.azure.com/
+AZURE_OPENAI_GPT52_API_VERSION=2024-12-01-preview
+AZURE_OPENAI_GPT52_API_KEY=<your-api-key>   # optional: defaults to AZURE_OPENAI_API_KEY
+```
+
+**Task table:**
+
+| Task | File | Description | Status |
+|------|------|-------------|--------|
+| **10.9-B1** | `test_user_settings_service.py` | TDD: 4 tests for gpt-5.2 in Azure model list | ✅ |
+| **10.9-B2** | `test_universal_llm_azure.py` | TDD: 3 tests for dedicated endpoint routing (UniversalLLMService) | ✅ |
+| **10.9-B3** | `test_stagehand_service_azure_cdp.py` | TDD: 3 tests for Tier 2 litellm/stagehand gpt-5.2 routing | ✅ |
+| **10.9-B4** | `user_settings_service.py` | Add `gpt-5.2` to Azure `PROVIDER_CONFIGS` | ✅ |
+| **10.9-B5** | `config.py` | Add `AZURE_OPENAI_GPT52_*` config vars | ✅ |
+| **10.9-B6** | `universal_llm.py` | Per-model endpoint override + `_call_azure` refactor | ✅ |
+| **10.9-B7** | `azure_client.py` | gpt-5.2 endpoint/API-version detection in `AzureClient` | ✅ |
+| **10.9-B8** | `stagehand_service.py` | gpt-5.2 override in all 3 Azure branches (fixes Tier 2 litellm routing) | ✅ |
+
+**Test results:** 12 new tests pass · 287 pre-existing tests unaffected · 3 pre-existing failures confirmed unrelated
+
+**Success criteria:**
+- [x] `gpt-5.2` visible in the Azure OpenAI model dropdown on the Settings page
+- [x] Requests for `gpt-5.2` route to the hutch eastus2 endpoint with `2024-12-01-preview` API version — in **all 3 execution paths**: `UniversalLLMService` (Tier 1 agents), `AzureClient` (legacy agent path), and `StagehandService` / litellm (Tier 2 XPath observe)
+- [x] Fallback: if `AZURE_OPENAI_GPT52_ENDPOINT` is not set, requests fall back to the default Azure endpoint
+- [x] `ChatGPT-UAT` continues to use the original endpoint without any change
+- [x] All new tests pass (TDD green); no regression in existing tests
 
 ---
 

@@ -68,7 +68,8 @@ class UserSettingsService:
         "azure": {
             "display_name": "Azure OpenAI",
             "models": [
-                "ChatGPT-UAT"
+                "ChatGPT-UAT",
+                "gpt-5.2",
             ],
             "recommended": "ChatGPT-UAT",
             "api_key_env": "AZURE_OPENAI_API_KEY"

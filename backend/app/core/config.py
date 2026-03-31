@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     AZURE_OPENAI_ENDPOINT: str = "https://chatgpt-uat.openai.azure.com/openai/v1"
     AZURE_OPENAI_API_VERSION: str = "2024-02-01"
     AZURE_OPENAI_MODEL: str = "ChatGPT-UAT"  # Deployment name
+
+    # Azure OpenAI — gpt-5.2 dedicated deployment (hutch resource, eastus2)
+    AZURE_OPENAI_GPT52_ENDPOINT: str | None = None   # https://hutch-mkklgrll-eastus2.cognitiveservices.azure.com/
+    AZURE_OPENAI_GPT52_API_VERSION: str = "2024-12-01-preview"
+    AZURE_OPENAI_GPT52_API_KEY: str | None = None    # Defaults to AZURE_OPENAI_API_KEY when not set
     
     # Model Provider Selection (new unified approach)
     # Options: "openrouter", "google", "cerebras", "azure"

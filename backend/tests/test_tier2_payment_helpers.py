@@ -307,3 +307,156 @@ class TestTier2PaymentHelpers:
             call.kwargs == {"state": "hidden", "timeout": 8000}
             for call in loading_element.wait_for.await_args_list
         )
+
+
+# ---------------------------------------------------------------------------
+# Bug fixes: exp. date keyword + payment_direct default — Sprint 10.9
+# ---------------------------------------------------------------------------
+
+class TestPaymentInstructionKeywords:
+    """_is_payment_instruction must recognise 'exp.' / 'exp date' shorthand."""
+
+    def setup_method(self):
+        self.executor = Tier2HybridExecutor(db=MagicMock(), xpath_extractor=MagicMock(), timeout_ms=30000)
+
+    @pytest.mark.parametrize("instruction", [
+        "Step 33: Input exp. date '01/39'",
+        "Input exp date '01/39'",
+        "Fill in exp. date 01/39",
+        "Enter exp date 12/28",
+    ])
+    def test_exp_date_shorthand_recognised_as_payment(self, instruction):
+        assert self.executor._is_payment_instruction(instruction, "fill") is True, (
+            f"Expected '{instruction}' to be recognised as payment instruction"
+        )
+
+    def test_exp_date_not_recognised_for_click_action(self):
+        """Non fill/type/select actions must still return False."""
+        assert self.executor._is_payment_instruction("exp. date field", "click") is False
+
+
+class TestPaymentDirectDefault:
+    """ENABLE_PAYMENT_DIRECT_HANDLING must default to True (opt-out, not opt-in)."""
+
+    def test_payment_direct_enabled_by_default(self, monkeypatch):
+        monkeypatch.delenv("ENABLE_PAYMENT_DIRECT_HANDLING", raising=False)
+        executor = Tier2HybridExecutor(db=MagicMock(), xpath_extractor=MagicMock(), timeout_ms=30000)
+        assert executor.payment_direct_enabled is True
+
+    def test_payment_direct_can_be_disabled_via_env(self, monkeypatch):
+        monkeypatch.setenv("ENABLE_PAYMENT_DIRECT_HANDLING", "false")
+        executor = Tier2HybridExecutor(db=MagicMock(), xpath_extractor=MagicMock(), timeout_ms=30000)
+        assert executor.payment_direct_enabled is False
+
+    def test_payment_direct_enabled_via_env(self, monkeypatch):
+        monkeypatch.setenv("ENABLE_PAYMENT_DIRECT_HANDLING", "true")
+        executor = Tier2HybridExecutor(db=MagicMock(), xpath_extractor=MagicMock(), timeout_ms=30000)
+        assert executor.payment_direct_enabled is True
+
+
+class TestCombinedExpiryFill:
+    """_try_payment_field_action must handle combined MM/YY expiry fill (not just select)."""
+
+    def setup_method(self):
+        self.executor = Tier2HybridExecutor(db=MagicMock(), xpath_extractor=MagicMock(), timeout_ms=30000)
+
+    @pytest.mark.asyncio
+    async def test_combined_expiry_fill_succeeds_via_direct_selector(self):
+        page = MagicMock()
+        page.url = "https://paygwuat.hthk.com/pay"
+
+        mock_element = AsyncMock()
+        mock_element.wait_for = AsyncMock(return_value=None)
+        mock_element.fill = AsyncMock(return_value=None)
+
+        mock_locator = MagicMock()
+        mock_locator.first = mock_element
+        page.locator = MagicMock(return_value=mock_locator)
+        page.frame_locator = MagicMock(return_value=MagicMock())
+
+        result = await self.executor._try_payment_field_action(
+            page=page,
+            action="fill",
+            instruction="Step 33: Input exp. date '01/39'",
+            value="01/39",
+            start_time=__import__("time").time(),
+        )
+
+        assert result is not None
+        assert result["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_combined_expiry_returns_none_when_no_selector_matches(self):
+        """Returns None (not a crash) when no combined expiry selector is visible."""
+        page = MagicMock()
+        page.url = "https://example.com"
+
+        mock_element = AsyncMock()
+        mock_element.wait_for = AsyncMock(side_effect=Exception("not found"))
+
+        mock_locator = MagicMock()
+        mock_locator.first = mock_element
+
+        mock_frame = MagicMock()
+        mock_frame.locator = MagicMock(return_value=mock_locator)
+        page.locator = MagicMock(return_value=mock_locator)
+        page.frame_locator = MagicMock(return_value=mock_frame)
+
+        result = await self.executor._try_payment_field_action(
+            page=page,
+            action="fill",
+            instruction="Step 33: Input exp. date '01/39'",
+            value="01/39",
+            start_time=__import__("time").time(),
+        )
+
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Bug fix: autopay page URL path detection — Sprint 10.9
+# ---------------------------------------------------------------------------
+
+class TestAutopayUrlDetection:
+    """_is_external_payment_gateway_url must also detect autopay pages via URL path/query."""
+
+    def setup_method(self):
+        self.executor = Tier2HybridExecutor(db=MagicMock(), xpath_extractor=MagicMock(), timeout_ms=30000)
+
+    @pytest.mark.parametrize("url", [
+        "https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/checkout/checkout?promotionId=HPPRM0000000879&step=autopay",
+        "https://example.com/checkout?step=autopay",
+        "https://shop.example.com/payment/auto-pay",
+        "https://wwwuat.three.com.hk/en/checkout?step=auto-pay",
+    ])
+    def test_autopay_url_detected_as_payment_page(self, url):
+        assert self.executor._is_external_payment_gateway_url(url) is True, (
+            f"Expected '{url}' to be detected as a payment page requiring 8s wait"
+        )
+
+    def test_non_autopay_checkout_url_not_detected(self):
+        """A regular checkout page without autopay in path/query uses 1500ms timeout."""
+        url = "https://wwwuat.three.com.hk/en/checkout?step=review"
+        assert self.executor._is_external_payment_gateway_url(url) is False
+
+    def test_existing_external_gateway_hostname_still_detected(self):
+        url = "https://gphk.gateway.mastercard.com/checkout/pay/SESSION123"
+        assert self.executor._is_external_payment_gateway_url(url) is True
+
+    def test_empty_url_returns_false(self):
+        assert self.executor._is_external_payment_gateway_url("") is False
+
+    @pytest.mark.asyncio
+    async def test_autopay_page_uses_8000ms_wait_timeout(self):
+        """_maybe_wait_for_payment_gateway must use 8000ms for autopay pages."""
+        page = MagicMock()
+        page.url = "https://wwwuat.three.com.hk/en/checkout?step=autopay"
+        page.wait_for_selector = AsyncMock(side_effect=Exception("not ready"))
+
+        await self.executor._maybe_wait_for_payment_gateway(page)
+
+        page.wait_for_selector.assert_called_once_with(
+            self.executor._payment_input_css_selector(),
+            state="visible",
+            timeout=8000,
+        )

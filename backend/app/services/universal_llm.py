@@ -23,7 +23,20 @@ class UniversalLLMService:
         self.azure_api_key = settings.AZURE_OPENAI_API_KEY or os.getenv("AZURE_OPENAI_API_KEY")
         self.azure_endpoint = settings.AZURE_OPENAI_ENDPOINT or os.getenv("AZURE_OPENAI_ENDPOINT")
         self.azure_api_version = settings.AZURE_OPENAI_API_VERSION or os.getenv("AZURE_OPENAI_API_VERSION") or "2024-02-01"
-        
+
+        # Per-model endpoint overrides: maps deployment name -> {endpoint, api_version, api_key}
+        # gpt-5.2 lives on a separate Azure resource (hutch, eastus2) with a newer API version.
+        _gpt52_endpoint = getattr(settings, "AZURE_OPENAI_GPT52_ENDPOINT", None) or os.getenv("AZURE_OPENAI_GPT52_ENDPOINT")
+        _gpt52_api_version = getattr(settings, "AZURE_OPENAI_GPT52_API_VERSION", "2024-12-01-preview") or "2024-12-01-preview"
+        _gpt52_api_key = getattr(settings, "AZURE_OPENAI_GPT52_API_KEY", None) or os.getenv("AZURE_OPENAI_GPT52_API_KEY")
+        self._azure_model_endpoints: dict = {
+            "gpt-5.2": {
+                "endpoint": _gpt52_endpoint,
+                "api_version": _gpt52_api_version,
+                "api_key": _gpt52_api_key or self.azure_api_key,
+            }
+        }
+
         # OPT-1: HTTP Session Reuse - Create shared httpx client for connection pooling
         # This reduces connection overhead by 20-30% for multiple LLM calls
         self._http_client: Optional[httpx.AsyncClient] = None
@@ -207,22 +220,28 @@ class UniversalLLMService:
         max_tokens: Optional[int] = None
     ) -> dict:
         """Call Azure OpenAI API (OpenAI-compatible)."""
-        if not self.azure_api_key:
+        # Resolve per-model endpoint overrides (e.g. gpt-5.2 uses a dedicated resource)
+        model_override = self._azure_model_endpoints.get(model or "", {})
+        effective_endpoint = model_override.get("endpoint") or self.azure_endpoint
+        effective_api_version = model_override.get("api_version") or self.azure_api_version
+        effective_api_key = model_override.get("api_key") or self.azure_api_key
+
+        if not effective_api_key:
             raise ValueError(
                 "AZURE_OPENAI_API_KEY not set in environment. "
                 "Please add your Azure OpenAI API key to backend/.env file."
             )
-        
-        if not self.azure_endpoint:
+
+        if not effective_endpoint:
             raise ValueError(
                 "AZURE_OPENAI_ENDPOINT not set in environment. "
                 "Please add your Azure endpoint to backend/.env file."
             )
-        
+
         # Use default model if not specified (deployment name)
         if not model:
             model = "ChatGPT-UAT"
-        
+
         # OPT-1: Reuse HTTP client for connection pooling (20-30% faster)
         client = await self._get_http_client()
         request_candidates = self._build_azure_request_candidates(
@@ -230,6 +249,8 @@ class UniversalLLMService:
             model=model,
             temperature=temperature,
             max_tokens=max_tokens,
+            endpoint=effective_endpoint,
+            api_version=effective_api_version,
         )
 
         for index, request_candidate in enumerate(request_candidates):
@@ -237,7 +258,7 @@ class UniversalLLMService:
                 response = await client.post(
                     request_candidate["url"],
                     headers={
-                        "api-key": self.azure_api_key,
+                        "api-key": effective_api_key,
                         "Content-Type": "application/json"
                     },
                     json=request_candidate["payload"]
@@ -269,12 +290,15 @@ class UniversalLLMService:
         model: str,
         temperature: float,
         max_tokens: Optional[int],
+        endpoint: Optional[str] = None,
+        api_version: Optional[str] = None,
     ) -> List[Dict[str, object]]:
         """Build Azure request candidates for v1 and deployment API formats."""
-        endpoint = (self.azure_endpoint or "").rstrip("/")
-        resource_base = endpoint.split("/openai")[0] if "/openai" in endpoint else endpoint
+        resolved_endpoint = (endpoint or self.azure_endpoint or "").rstrip("/")
+        resolved_api_version = api_version or self.azure_api_version
+        resource_base = resolved_endpoint.split("/openai")[0] if "/openai" in resolved_endpoint else resolved_endpoint
 
-        v1_base = endpoint if "/openai/v1" in endpoint else f"{resource_base}/openai/v1"
+        v1_base = resolved_endpoint if "/openai/v1" in resolved_endpoint else f"{resource_base}/openai/v1"
         v1_url = f"{v1_base.rstrip('/')}/chat/completions"
 
         v1_payload: Dict[str, object] = {
@@ -287,7 +311,7 @@ class UniversalLLMService:
 
         deployment_url = (
             f"{resource_base}/openai/deployments/{model}/chat/completions"
-            f"?api-version={self.azure_api_version}"
+            f"?api-version={resolved_api_version}"
         )
         deployment_payload: Dict[str, object] = {
             "messages": messages,

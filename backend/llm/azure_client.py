@@ -57,13 +57,25 @@ class AzureClient:
         self.deployment = deployment or os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT")
         self.temperature = temperature
         self.max_tokens = max_tokens
-        
+
+        # gpt-5.2 lives on a separate Azure resource with a newer API version
+        if self.deployment == "gpt-5.2":
+            gpt52_endpoint = os.getenv("AZURE_OPENAI_GPT52_ENDPOINT", "")
+            gpt52_key = os.getenv("AZURE_OPENAI_GPT52_API_KEY", "") or self.api_key
+            if gpt52_endpoint:
+                self.endpoint = gpt52_endpoint
+            if gpt52_key:
+                self.api_key = gpt52_key
+            api_version_to_use = os.getenv("AZURE_OPENAI_GPT52_API_VERSION", "2024-12-01-preview")
+        else:
+            api_version_to_use = "2024-02-15-preview"
+
         if AZURE_AVAILABLE and self.api_key and self.endpoint:
             # Remove /openai/v1 suffix if present, SDK adds it automatically
             clean_endpoint = self.endpoint.replace("/openai/v1", "").replace("/openai", "")
             self.client = AzureOpenAI(
                 api_key=self.api_key,
-                api_version="2024-02-15-preview",
+                api_version=api_version_to_use,
                 azure_endpoint=clean_endpoint
             )
             self.enabled = True

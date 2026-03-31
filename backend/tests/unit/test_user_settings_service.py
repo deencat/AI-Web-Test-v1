@@ -170,3 +170,40 @@ class TestModelOptionSchema:
         import inspect
         fields = AvailableProvider.model_fields if hasattr(AvailableProvider, "model_fields") else AvailableProvider.__fields__
         assert "model_options" in fields, "AvailableProvider must have a 'model_options' field"
+
+
+# ---------------------------------------------------------------------------
+# Azure gpt-5.2 model — Sprint 10.8 Developer B
+# ---------------------------------------------------------------------------
+
+class TestAzureGpt52Model:
+    """gpt-5.2 must appear in the Azure provider model list."""
+
+    def test_gpt52_in_azure_models(self, service: UserSettingsService):
+        models = service.PROVIDER_CONFIGS["azure"]["models"]
+        assert "gpt-5.2" in models, "gpt-5.2 must be listed in Azure models"
+
+    def test_azure_provider_has_more_than_one_model(self, service: UserSettingsService):
+        models = service.PROVIDER_CONFIGS["azure"]["models"]
+        assert len(models) >= 2, "Azure provider must have ChatGPT-UAT and gpt-5.2"
+
+    def test_gpt52_in_available_providers_azure_models(self, service: UserSettingsService):
+        with patch("app.services.user_settings_service.settings") as mock_settings:
+            mock_settings.GOOGLE_API_KEY = "key"
+            mock_settings.CEREBRAS_API_KEY = "key"
+            mock_settings.OPENROUTER_API_KEY = "key"
+            mock_settings.AZURE_OPENAI_API_KEY = "key"
+            providers = service.get_available_providers()
+        azure = next(p for p in providers if p.name == "azure")
+        assert "gpt-5.2" in azure.models, "gpt-5.2 must appear in the azure provider models list"
+
+    def test_gpt52_model_option_is_not_free(self, service: UserSettingsService):
+        with patch("app.services.user_settings_service.settings") as mock_settings:
+            mock_settings.GOOGLE_API_KEY = "key"
+            mock_settings.CEREBRAS_API_KEY = "key"
+            mock_settings.OPENROUTER_API_KEY = "key"
+            mock_settings.AZURE_OPENAI_API_KEY = "key"
+            providers = service.get_available_providers()
+        azure = next(p for p in providers if p.name == "azure")
+        gpt52_opt = next(o for o in azure.model_options if o.id == "gpt-5.2")
+        assert gpt52_opt.is_free is False
