@@ -799,6 +799,9 @@ class Tier2HybridExecutor:
         if action in ["fill", "type", "input"] and not value:
             return None
 
+        if action == "select" and not value:
+            return None
+
         input_selectors = []
         select_selectors = []
 

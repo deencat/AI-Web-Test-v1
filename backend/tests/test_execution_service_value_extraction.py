@@ -32,6 +32,14 @@ class TestExecutionServiceValueExtraction:
             ("Select ‘HONG KONG’ from the Region dropdown.", "HONG KONG"),
             ("Select '01' as the expiry month dropdown", "01"),
             ("Select '39' as the expiry year dropdown", "39"),
+            # Format: "select FIELD_LABEL 'VALUE' from the dropdown"
+            ("Select expiry month '01' from the dropdown", "01"),
+            ("Select expiry year '39' from the dropdown", "39"),
+            ("Step 43: Select expiry month '01' from the dropdown", "01"),
+            ("Step 44: Select expiry year '39' from the dropdown", "39"),
+            # Unquoted variants
+            ("Select expiry month 01 from the dropdown", "01"),
+            ("Select expiry year 2027 from the dropdown", "2027"),
         ],
     )
     def test_dropdown_value_extraction(self, description, expected):

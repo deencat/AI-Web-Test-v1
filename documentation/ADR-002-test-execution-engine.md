@@ -45,6 +45,7 @@
 15. [ADR-002-15: Payment Direct Handler — Enable by Default + exp. date Keyword + Combined Expiry Fill](#adr-002-15-payment-direct-handler--enable-by-default--exp-date-keyword--combined-expiry-fill)
 16. [ADR-002-16: Autopay Page URL Path Detection for Extended Readiness Wait](#adr-002-16-autopay-page-url-path-detection-for-extended-readiness-wait)
 17. [ADR-002-17: Split Payment Host Detection — Separate Readiness Wait from Probe Timeout](#adr-002-17-split-payment-host-detection--separate-readiness-wait-from-probe-timeout)
+18. [ADR-002-18: Quote-Aware Expiry Month/Year Value Extraction + `select` Guard for `value=None`](#adr-002-18-quote-aware-expiry-monthyear-value-extraction--select-guard-for-valuenone)
 
 ---
 
@@ -738,6 +739,7 @@ Key properties:
 | 002-15 | Payment direct handler: enable by default, add `exp. date` keyword, add combined expiry fill selectors | Accepted | Low |
 | 002-16 | Autopay URL path/query detection: extend 8000ms readiness wait to `?step=autopay` pages | Accepted | Low |
 | 002-17 | Split host detection: `_is_cross_origin_payment_host()` for per-selector probe timeout; add `"Credit Card No."` label | Accepted | Low |
+| 002-18 | Quote-aware expiry month/year value extraction; `select` guard for `value=None` in payment direct handler | Accepted | Low |
 
 ADR-002-7 and ADR-002-8 carry medium risk because their heuristics (navigation-button keyword list, iframe frame enumeration) depend on real-world page structure diversity. ADR-002-11 carries medium risk due to process-global `os.environ` mutation — safe for single-worker deployments but must be revisited when parallel test execution is introduced. All three should be monitored via tier-level execution metrics and LLM provider error rates across test runs.
 
@@ -884,3 +886,68 @@ Also add `"Credit Card No."` and `"Credit Card Number"` to `label_candidates` fo
 - If a same-origin form takes genuinely long to mount (>1500ms per field), this probe timeout is too short. In practice, same-origin SPA forms render all fields together so a single 8000ms readiness wait is sufficient before probing begins.
 
 **Tests added (TDD):** `TestAutopayDirectHandlerTimeout` (2 async tests) and `TestCreditCardLabelCandidates` (1 async test) in `tests/test_tier2_payment_helpers.py`.
+
+---
+
+## ADR-002-18: Quote-Aware Expiry Month/Year Value Extraction + `select` Guard for `value=None`
+
+**Date:** Mar 31, 2026
+
+### Context
+
+On the Mastercard payment gateway (`gphk.gateway.mastercard.com`), AI-generated test steps for expiry dropdowns took the form:
+
+```
+Step 43: Select expiry month '01' from the dropdown
+Step 44: Select expiry year '39' from the dropdown
+```
+
+The value (`'01'`, `'39'`) appears **after the field label** and is **single-quoted**. The existing `_extract_value_from_description()` patterns for month:
+
+```python
+r'(?:select|choose|pick|set)\s+(?:expiry\s+)?month\s+(\d{1,2})'
+```
+
+require the digit to follow `month ` with only whitespace — they don't allow a quote character before the digit. The quoted pattern in the list:
+
+```python
+rf'(?:select|choose|pick|set)\s+[{quote_chars}]?(\d{{1,2}})[{quote_chars}]?\s+as\s+(?:the\s+)?(?:expiry\s+)?month'
+```
+
+handles `"Select '01' as the expiry month"` (value-first ordering) but not `"Select expiry month '01' from the dropdown"` (field-first ordering).
+
+Result: `value=None` was passed to the 3-tier engine. `_try_payment_field_action()` had no early-exit guard for `select` with `value=None`, so it exhausted all CSS selector candidates (each timing out at the `wait_timeout`), then fell through to Stagehand `observe()`. Both tiers consumed the full 36-second budget finding the `<select>` element — but `select_option(None)` silently completed without selecting any option. The form validation engine displayed `"This field is required"` and blocked the next step.
+
+### Decision
+
+**Fix 1 — Quote-aware month/year patterns in `_extract_value_from_description()`:**
+
+Convert the plain `r'...'` month and year patterns to f-strings that include the `quote_chars` character class:
+
+```python
+rf'(?:select|choose|pick|set)\s+(?:expiry\s+)?month\s+[{quote_chars}]?(\d{{1,2}})[{quote_chars}]?',
+rf'(?:select|choose|pick|set)\s+(?:expiry\s+)?year\s+[{quote_chars}]?(\d{{2,4}})[{quote_chars}]?',
+```
+
+The `[{quote_chars}]?` is optional on both sides — so `Select expiry month 01` (unquoted) and `Select expiry month '01'` (quoted) both match.
+
+**Fix 2 — Early-exit guard in `_try_payment_field_action()` for `select` with `value=None`:**
+
+```python
+if action == "select" and not value:
+    return None
+```
+
+This mirrors the existing fill guard (`if action in ["fill", "type", "input"] and not value: return None`) and prevents the function from spending time probing CSS selectors that cannot succeed without a value to select.
+
+### Consequences
+
+**Positive**
+- Expiry month/year values are correctly extracted from both field-first (`"Select expiry month '01' from the dropdown"`) and value-first (`"Select '01' as the expiry month"`) orderings.
+- The 36-second stall on these steps is eliminated — the payment direct handler selects the correct `<select>` element and sets the value with CSS selectors typically within 200ms.
+- `select` with `value=None` exits immediately instead of exhausting the probe loop — reduces diagnostic noise and wasted time if extraction fails for any other reason.
+
+**Negative**
+- If `value=None` for a `select` step (e.g. due to a future extraction gap), the direct handler returns early and the step escalates to Stagehand `observe()` faster. The underlying extraction failure must be fixed rather than relying on `observe()` to somehow pick a value from the instruction.
+
+**Tests added (TDD):** 8 new parametrized cases in `TestExecutionServiceValueExtraction.test_dropdown_value_extraction` in `tests/test_execution_service_value_extraction.py` covering both quoted/unquoted variants and the `Step N:` prefix format.

@@ -1426,8 +1426,9 @@ class ExecutionService:
             r'(?:expiry|expiration|exp.*date).*?(\d{2}/\d{2,4})',
             
             # Dropdown/Select patterns - Extract month, year, day values
-            r'(?:select|choose|pick|set)\s+(?:expiry\s+)?month\s+(\d{1,2})',
-            r'(?:select|choose|pick|set)\s+(?:expiry\s+)?year\s+(\d{2,4})',
+            # Format: "select expiry month '01' from the dropdown" OR "select expiry month 01"
+            rf'(?:select|choose|pick|set)\s+(?:expiry\s+)?month\s+[{quote_chars}]?(\d{{1,2}})[{quote_chars}]?',
+            rf'(?:select|choose|pick|set)\s+(?:expiry\s+)?year\s+[{quote_chars}]?(\d{{2,4}})[{quote_chars}]?',
             r'(?:select|choose|pick|set)\s+day\s+(\d{1,2})',
             r'(?:select|choose|pick|set)\s+(\d{1,2})\s+as\s+(?:month|day)',
             r'(?:select|choose|pick|set)\s+(\d{2,4})\s+as\s+year',
