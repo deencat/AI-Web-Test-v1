@@ -460,3 +460,192 @@ class TestAutopayUrlDetection:
             state="visible",
             timeout=8000,
         )
+
+
+# ---------------------------------------------------------------------------
+# Bug fix: same-origin autopay page must NOT stall 10s per selector
+# when payment_gateway_ready=False — Sprint 10.9 / ADR-002-16 gap
+# ---------------------------------------------------------------------------
+
+class TestAutopayDirectHandlerTimeout:
+    """
+    _try_payment_field_action must use a short probe timeout (<=2000ms) for
+    same-origin autopay pages even when payment_gateway_ready is False.
+
+    Gap identified: if _maybe_wait_for_payment_gateway cannot match the page's
+    actual CSS selectors (e.g. Three HK autopay uses non-standard field attrs),
+    payment_gateway_ready stays False and the fallback wait_timeout becomes 10000ms
+    per selector — causing a ~50s stall before observe() is called.
+    """
+
+    def setup_method(self):
+        self.executor = Tier2HybridExecutor(db=MagicMock(), xpath_extractor=MagicMock(), timeout_ms=30000)
+
+    @pytest.mark.asyncio
+    async def test_same_origin_autopay_uses_short_probe_timeout_when_readiness_failed(self):
+        """
+        For a same-origin ?step=autopay URL where payment_gateway_ready=False,
+        _try_payment_field_action must wait no more than 2000ms per selector,
+        not the 10000ms that was used for external gateways.
+        """
+        page = MagicMock()
+        page.url = "https://three.com.hk/postpaid/en/checkout/checkout?promotionId=HPPRM0000000187&step=autopay"
+
+        # Readiness check failed — gateway_ready stays False
+        self.executor.payment_gateway_ready = False
+        self.executor.payment_gateway_url = None
+
+        wait_calls = []
+
+        mock_element = AsyncMock()
+
+        async def track_wait_for(**kwargs):
+            wait_calls.append(kwargs)
+            raise Exception("not found")  # all selectors fail
+
+        mock_element.wait_for = track_wait_for
+        mock_element.fill = AsyncMock(return_value=None)
+
+        mock_locator = MagicMock()
+        mock_locator.first = mock_element
+
+        mock_frame = MagicMock()
+        mock_frame.locator = MagicMock(return_value=mock_locator)
+
+        page.locator = MagicMock(return_value=mock_locator)
+        page.frame_locator = MagicMock(return_value=mock_frame)
+
+        # get_by_label also fails
+        mock_label_locator = AsyncMock()
+        mock_label_locator.wait_for = AsyncMock(side_effect=Exception("not found"))
+        page.get_by_label = MagicMock(return_value=mock_label_locator)
+
+        await self.executor._try_payment_field_action(
+            page=page,
+            action="fill",
+            instruction="Step 31: Input credit card number 4111111111111111",
+            value="4111111111111111",
+            start_time=__import__("time").time(),
+        )
+
+        # All wait_for calls must use <=2000ms — NOT the 10000ms external-gateway value
+        assert wait_calls, "Expected at least one wait_for call on selectors"
+        for call_kwargs in wait_calls:
+            timeout = call_kwargs.get("timeout", 0)
+            assert timeout <= 2000, (
+                f"Same-origin autopay page must not stall {timeout}ms per selector "
+                f"(expected <=2000ms). This causes ~50s stall when all selectors fail."
+            )
+
+    @pytest.mark.asyncio
+    async def test_external_gateway_keeps_generous_timeout_when_readiness_failed(self):
+        """
+        External cross-origin gateways (e.g. mastercard) MAY use a longer probe
+        timeout because iframe content loads slowly.
+        """
+        page = MagicMock()
+        page.url = "https://gphk.gateway.mastercard.com/checkout/pay/SESSION123"
+
+        self.executor.payment_gateway_ready = False
+        self.executor.payment_gateway_url = None
+
+        wait_calls = []
+
+        mock_element = AsyncMock()
+
+        async def track_wait_for(**kwargs):
+            wait_calls.append(kwargs)
+            raise Exception("not found")
+
+        mock_element.wait_for = track_wait_for
+        mock_locator = MagicMock()
+        mock_locator.first = mock_element
+
+        mock_frame = MagicMock()
+        mock_frame.locator = MagicMock(return_value=mock_locator)
+
+        page.locator = MagicMock(return_value=mock_locator)
+        page.frame_locator = MagicMock(return_value=mock_frame)
+
+        mock_label_locator = AsyncMock()
+        mock_label_locator.wait_for = AsyncMock(side_effect=Exception("not found"))
+        page.get_by_label = MagicMock(return_value=mock_label_locator)
+
+        await self.executor._try_payment_field_action(
+            page=page,
+            action="fill",
+            instruction="Step 31: Input credit card number 4111111111111111",
+            value="4111111111111111",
+            start_time=__import__("time").time(),
+        )
+
+        # External gateway must use >2000ms to tolerate slow iframe loading
+        if wait_calls:
+            any_generous = any(kw.get("timeout", 0) > 2000 for kw in wait_calls)
+            assert any_generous, (
+                "External gateway should use a generous per-selector timeout to tolerate slow iframes"
+            )
+
+
+class TestCreditCardLabelCandidates:
+    """
+    _try_payment_field_action must include 'Credit Card No.' in label_candidates
+    for credit card steps, covering Three HK autopay form which uses that exact label.
+    """
+
+    def setup_method(self):
+        self.executor = Tier2HybridExecutor(db=MagicMock(), xpath_extractor=MagicMock(), timeout_ms=30000)
+
+    @pytest.mark.asyncio
+    async def test_credit_card_no_label_tried_on_autopay_page(self):
+        """
+        When CSS selector probing fails, get_by_label("Credit Card No.") must be
+        attempted for a 'credit card number' instruction (Three HK autopay form).
+        """
+        page = MagicMock()
+        page.url = "https://three.com.hk/postpaid/en/checkout/checkout?promotionId=HPPRM0000000187&step=autopay"
+
+        self.executor.payment_gateway_ready = False
+        self.executor.payment_gateway_url = None
+
+        # All CSS selector probes fail
+        mock_fail_element = AsyncMock()
+        mock_fail_element.wait_for = AsyncMock(side_effect=Exception("not found"))
+        mock_fail_locator = MagicMock()
+        mock_fail_locator.first = mock_fail_element
+
+        mock_frame = MagicMock()
+        mock_frame.locator = MagicMock(return_value=mock_fail_locator)
+
+        page.locator = MagicMock(return_value=mock_fail_locator)
+        page.frame_locator = MagicMock(return_value=mock_frame)
+
+        # Only "Credit Card No." label resolves successfully
+        tried_labels = []
+
+        mock_success_element = AsyncMock()
+        mock_success_element.wait_for = AsyncMock(return_value=None)
+        mock_success_element.fill = AsyncMock(return_value=None)
+
+        def get_by_label_side_effect(label, exact=False):
+            tried_labels.append(label)
+            if label == "Credit Card No.":
+                return mock_success_element
+            fail = AsyncMock()
+            fail.wait_for = AsyncMock(side_effect=Exception("not found"))
+            return fail
+
+        page.get_by_label = MagicMock(side_effect=get_by_label_side_effect)
+
+        result = await self.executor._try_payment_field_action(
+            page=page,
+            action="fill",
+            instruction="Step 31: Input credit card number 4111111111111111",
+            value="4111111111111111",
+            start_time=__import__("time").time(),
+        )
+
+        assert "Credit Card No." in tried_labels, (
+            f"Expected 'Credit Card No.' in label candidates, got: {tried_labels}"
+        )
+        assert result is not None and result["success"] is True

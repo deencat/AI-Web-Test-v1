@@ -44,6 +44,7 @@
 14. [ADR-002-14: Remove Browser Profile Picker from Saved-Test Run Flow](#adr-002-14-remove-browser-profile-picker-from-saved-test-run-flow)
 15. [ADR-002-15: Payment Direct Handler — Enable by Default + exp. date Keyword + Combined Expiry Fill](#adr-002-15-payment-direct-handler--enable-by-default--exp-date-keyword--combined-expiry-fill)
 16. [ADR-002-16: Autopay Page URL Path Detection for Extended Readiness Wait](#adr-002-16-autopay-page-url-path-detection-for-extended-readiness-wait)
+17. [ADR-002-17: Split Payment Host Detection — Separate Readiness Wait from Probe Timeout](#adr-002-17-split-payment-host-detection--separate-readiness-wait-from-probe-timeout)
 
 ---
 
@@ -736,6 +737,7 @@ Key properties:
 | 002-14 | Remove browser profile picker from saved-test run flow; UAT badge only | Accepted | Low |
 | 002-15 | Payment direct handler: enable by default, add `exp. date` keyword, add combined expiry fill selectors | Accepted | Low |
 | 002-16 | Autopay URL path/query detection: extend 8000ms readiness wait to `?step=autopay` pages | Accepted | Low |
+| 002-17 | Split host detection: `_is_cross_origin_payment_host()` for per-selector probe timeout; add `"Credit Card No."` label | Accepted | Low |
 
 ADR-002-7 and ADR-002-8 carry medium risk because their heuristics (navigation-button keyword list, iframe frame enumeration) depend on real-world page structure diversity. ADR-002-11 carries medium risk due to process-global `os.environ` mutation — safe for single-worker deployments but must be revisited when parallel test execution is introduced. All three should be monitored via tier-level execution metrics and LLM provider error rates across test runs.
 
@@ -828,3 +830,57 @@ This makes the Three HK autopay page use the 8000ms readiness wait, giving the S
 - Path-based matching is still a heuristic; sites with unconventional autopay URL patterns require further additions.
 
 **Tests added (TDD):** 8 new tests in `tests/test_tier2_payment_helpers.py` — `TestAutopayUrlDetection` class (5 parametrized URL checks + 3 boundary tests).
+
+---
+
+## ADR-002-17: Split Payment Host Detection — Separate Readiness Wait from Probe Timeout
+
+**Date:** Mar 31, 2026
+
+### Context
+
+ADR-002-16 extended `_is_external_payment_gateway_url()` to return `True` for same-origin autopay pages (`?step=autopay`) so they get the 8000ms readiness wait. This was correct for `_maybe_wait_for_payment_gateway()`.
+
+However, `_try_payment_field_action()` used the same function to choose its **per-selector probe timeout**:
+
+```python
+wait_timeout = 3000 if payment_gateway_ready else 10000
+```
+
+When `payment_gateway_ready=False` (the readiness CSS selector probe failed to match the page's actual field attributes), the fallback became `wait_timeout=10000`. For a card-number step with 5 CSS selectors this meant up to **50 seconds** of stall before `observe()` was called — even on a same-origin SPA form where fields are always instantly accessible once rendered.
+
+Root cause: `_is_external_payment_gateway_url()` conflates two distinct concepts:
+1. **Extended readiness wait** — Does this page need 8000ms for the CSS probe? (includes same-origin autopay)
+2. **Generous per-selector probe** — Is the field likely inside a slow cross-origin iframe? (external hostnames only)
+
+### Decision
+
+Introduce **`_is_cross_origin_payment_host(url)`** — a hostname-only check that returns `True` only for known external payment gateway domains (not same-origin autopay pages). Factor out `_GATEWAY_HOST_KEYWORDS` as a class-level constant shared by both methods to avoid duplication.
+
+**`_try_payment_field_action()` timeout logic:**
+```python
+if payment_gateway_ready and payment_gateway_url == page.url:
+    wait_timeout = 3000       # confirmed ready, fast probe
+elif _is_cross_origin_payment_host(page.url):
+    wait_timeout = 5000       # cross-origin iframe may still be loading
+else:
+    wait_timeout = 1500       # same-origin form: probe quickly
+```
+
+**`_maybe_wait_for_payment_gateway()`** continues to use `_is_external_payment_gateway_url()` (unchanged) so same-origin autopay pages still get the 8000ms mount wait.
+
+Also add `"Credit Card No."` and `"Credit Card Number"` to `label_candidates` for card-number steps — these are the exact visible labels used by the Three HK autopay form when none of the CSS attribute selectors match.
+
+### Consequences
+
+**Positive**
+- Same-origin autopay page: per-selector probe drops from 10000ms to 1500ms → worst-case stall drops from ~50s to ~7.5s (5 selectors × 1.5s) before `observe()` is called.
+- `get_by_label("Credit Card No.")` now resolves the Three HK card number field without needing `observe()`.
+- Cross-origin gateways (Mastercard, etc.) are unaffected — they keep the 5000ms generous probe.
+- `_GATEWAY_HOST_KEYWORDS` is defined once; both methods stay in sync automatically.
+
+**Negative**
+- Same-origin forms not yet handled by CSS or label fallbacks still escalate to `observe()`, but much faster (seconds, not minutes).
+- If a same-origin form takes genuinely long to mount (>1500ms per field), this probe timeout is too short. In practice, same-origin SPA forms render all fields together so a single 8000ms readiness wait is sufficient before probing begins.
+
+**Tests added (TDD):** `TestAutopayDirectHandlerTimeout` (2 async tests) and `TestCreditCardLabelCandidates` (1 async test) in `tests/test_tier2_payment_helpers.py`.

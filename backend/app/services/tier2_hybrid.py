@@ -715,6 +715,26 @@ class Tier2HybridExecutor:
         ]
         return ", ".join(selectors)
 
+    # Gateway hostnames shared by both detection methods below.
+    _GATEWAY_HOST_KEYWORDS = [
+        "gateway", "mastercard", "checkout", "pay", "payment",
+        "3dsecure", "adyen", "stripe", "paypal", "cybersource",
+    ]
+
+    def _is_cross_origin_payment_host(self, url: str) -> bool:
+        """Return True only when the URL hostname belongs to a known external
+        payment gateway (mastercard, stripe, adyen, etc.).
+
+        Unlike _is_external_payment_gateway_url(), this method does NOT match
+        same-origin autopay pages (e.g. three.com.hk/...?step=autopay).
+        Used in _try_payment_field_action to select the per-selector probe
+        timeout: cross-origin iframes load slowly, same-origin forms do not.
+        """
+        if not url:
+            return False
+        hostname = (urlparse(url).hostname or "").lower()
+        return any(kw in hostname for kw in self._GATEWAY_HOST_KEYWORDS)
+
     def _is_external_payment_gateway_url(self, url: str) -> bool:
         """Detect payment pages requiring longer readiness waits (8s).
 
@@ -726,25 +746,12 @@ class Tier2HybridExecutor:
         if not url:
             return False
 
-        parsed = urlparse(url)
-        hostname = (parsed.hostname or "").lower()
-        gateway_keywords = [
-            "gateway",
-            "mastercard",
-            "checkout",
-            "pay",
-            "payment",
-            "3dsecure",
-            "adyen",
-            "stripe",
-            "paypal",
-            "cybersource",
-        ]
-        if any(keyword in hostname for keyword in gateway_keywords):
+        if self._is_cross_origin_payment_host(url):
             return True
 
         # Also treat same-origin autopay pages as needing the extended wait.
         # The Three HK autopay form is SPA-rendered and takes >1500ms to mount.
+        parsed = urlparse(url)
         path_and_query = (parsed.path + "?" + (parsed.query or "")).lower()
         autopay_keywords = ["autopay", "auto-pay", "step=autopay", "step=auto-pay"]
         return any(keyword in path_and_query for keyword in autopay_keywords)
@@ -778,7 +785,16 @@ class Tier2HybridExecutor:
     ) -> Optional[Dict[str, Any]]:
         """Try to interact with payment fields directly when possible."""
         instruction_lower = instruction.lower()
-        wait_timeout = 3000 if (self.payment_gateway_ready and self.payment_gateway_url == page.url) else 10000
+        if self.payment_gateway_ready and self.payment_gateway_url == page.url:
+            wait_timeout = 3000
+        elif self._is_cross_origin_payment_host(page.url):
+            # Cross-origin gateway iframe content can be slow to load
+            wait_timeout = 5000
+        else:
+            # Same-origin page (e.g. autopay setup form): probe quickly.
+            # A 10000ms fallback here causes a ~50s stall when CSS selectors
+            # don't match the page's actual field attributes (ADR-002-16 gap).
+            wait_timeout = 1500
 
         if action in ["fill", "type", "input"] and not value:
             return None
@@ -956,7 +972,7 @@ class Tier2HybridExecutor:
                             continue
             label_candidates = []
             if "card number" in instruction_lower or "credit card" in instruction_lower:
-                label_candidates = ["Card number", "Card Number", "Card no", "Card No"]
+                label_candidates = ["Card number", "Card Number", "Card no", "Card No", "Credit Card No.", "Credit Card Number"]
             elif "cvv" in instruction_lower or "cvc" in instruction_lower or "security code" in instruction_lower:
                 label_candidates = ["CVV", "CVC", "Security code", "Security Code"]
             elif "cardholder" in instruction_lower or "card holder" in instruction_lower:
