@@ -8,13 +8,15 @@ import os
 import time
 from typing import Dict, Any, Optional
 from urllib.parse import urlparse
+import re
 from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
 from sqlalchemy.orm import Session
 import logging
 
-from app.services.post_click_readiness import wait_for_post_click_readiness
+from app.services.post_click_readiness import auto_dismiss_blocking_modals, wait_for_post_click_readiness
 from app.services.xpath_cache_service import XPathCacheService
 from app.services.xpath_extractor import XPathExtractor
+from app.utils.three_uat_test_credentials import is_three_hk_uat_url
 
 logger = logging.getLogger(__name__)
 
@@ -434,6 +436,101 @@ class Tier2HybridExecutor:
 
         logger.warning("[Tier 2] ⚠️ Could not find clickable submit/pay control inside iframe")
         return False
+
+    def _is_three_hk_plan_selection_click(self, page_url: str, instruction: str, action: str) -> bool:
+        """True for Three HK UAT plan-selection clicks that can bounce back on preprod."""
+        if action != "click" or not is_three_hk_uat_url(page_url):
+            return False
+
+        instruction_lower = (instruction or "").lower()
+        return "plan" in instruction_lower and "select" in instruction_lower
+
+    def _extract_plan_price(self, instruction: str) -> Optional[str]:
+        """Extract the numeric plan price from instructions like 'Select a $338 plan'."""
+        match = re.search(r"\$\s*(\d{2,4})", instruction or "")
+        if not match:
+            return None
+        return match.group(1)
+
+    async def _looks_like_three_hk_plan_selection_page(self, page: Page) -> bool:
+        """Heuristic: the plan-selection page shows multiple visible 'Select' buttons."""
+        try:
+            select_buttons = page.locator("button:has-text('Select')")
+            return await select_buttons.count() >= 2
+        except Exception:
+            return False
+
+    async def _wait_for_three_hk_plan_transition(self, page: Page, current_url: str) -> bool:
+        """Wait briefly for the plan click to leave the selection page or complete the bounce."""
+        deadline = time.time() + (min(self.timeout_ms, 5000) / 1000.0)
+
+        while time.time() < deadline:
+            if page.url != current_url:
+                try:
+                    await page.wait_for_load_state("domcontentloaded", timeout=1000)
+                except Exception:
+                    pass
+
+            if not await self._looks_like_three_hk_plan_selection_page(page):
+                return True
+
+            await asyncio.sleep(0.25)
+
+        return False
+
+    async def _retry_three_hk_plan_click(self, page: Page, instruction: str) -> bool:
+        """Retry the plan click using a price-aware locator instead of the generic cached XPath."""
+        price = self._extract_plan_price(instruction)
+        xpath_candidates = []
+
+        if price:
+            price_text = f"${price}"
+            xpath_candidates.extend([
+                f"(//*[self::div or self::section or self::article or self::li][contains(., '{price_text}') or contains(., '{price}')]//button[normalize-space()='Select'])[1]",
+                f"(//*[contains(., '{price_text}') or contains(., '{price}')]/following::button[normalize-space()='Select'][1])[1]",
+            ])
+
+        xpath_candidates.append("(//button[normalize-space()='Select'])[1]")
+
+        for xpath_candidate in xpath_candidates:
+            try:
+                button = page.locator(f"xpath={xpath_candidate}").first
+                await button.wait_for(state="visible", timeout=2000)
+                await button.click(timeout=self.timeout_ms)
+                logger.info("[Tier 2] 🔁 Retried Three HK plan click using XPath: %s", xpath_candidate)
+                return True
+            except Exception:
+                continue
+
+        return False
+
+    async def _ensure_three_hk_plan_click_progressed(
+        self,
+        page: Page,
+        instruction: str,
+        current_url: str,
+    ) -> None:
+        """Ensure Three HK preprod plan clicks actually advance instead of silently bouncing back."""
+        if not self._is_three_hk_plan_selection_click(current_url, instruction, "click"):
+            return
+
+        if await self._wait_for_three_hk_plan_transition(page, current_url):
+            return
+
+        logger.warning(
+            "[Tier 2] ⚠️ Three HK plan click stayed on the selection page. Dismissing modal and retrying once..."
+        )
+
+        await auto_dismiss_blocking_modals(page, logger)
+
+        if await self._wait_for_three_hk_plan_transition(page, current_url):
+            return
+
+        retried = await self._retry_three_hk_plan_click(page, instruction)
+        if retried and await self._wait_for_three_hk_plan_transition(page, current_url):
+            return
+
+        raise ValueError("Three HK plan selection did not advance from the plan selection page")
     
     async def _execute_action_with_xpath(
         self,
@@ -505,6 +602,8 @@ class Tier2HybridExecutor:
                     logger.info(f"[Tier 2] ✅ Payment gateway ready")
                 else:
                     logger.warning(f"[Tier 2] ⚠️ No payment input fields detected (may be non-standard gateway)")
+
+            await self._ensure_three_hk_plan_click_progressed(page, instruction, current_url)
                     
         elif action in ["fill", "type", "input"]:
             await element.wait_for(state="visible", timeout=self.timeout_ms)

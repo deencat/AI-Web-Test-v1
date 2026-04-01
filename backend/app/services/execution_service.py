@@ -27,10 +27,19 @@ from app.crud import test_execution as crud_execution
 from app.crud import execution_feedback as crud_feedback
 from app.schemas.execution_feedback import ExecutionFeedbackCreate
 from app.services.three_tier_execution_service import ThreeTierExecutionService
+from app.services.post_click_readiness import auto_dismiss_blocking_modals
 from app.utils.http_auth_credentials import http_credentials_for_url
 from app.utils.test_data_generator import TestDataGenerator
 
 logger = logging.getLogger(__name__)
+
+# Chrome-like UA injected into every browser context to prevent preprod servers
+# from detecting HeadlessChrome automation and issuing a session redirect.
+# Mirrors DEFAULT_OBSERVATION_USER_AGENT in agents/observation_agent.py (ADR-002-19-B).
+STEALTH_USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+)
 
 
 class ExecutionConfig:
@@ -131,7 +140,10 @@ class ExecutionService:
                     slow_mo=self.config.slow_mo,
                     args=[
                         '--remote-debugging-port=9222',  # Fixed port for CDP
-                        '--disable-blink-features=AutomationControlled'
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-dev-shm-usage',
+                        '--no-first-run',
+                        '--no-default-browser-check',
                     ]
                 )
     
@@ -186,6 +198,9 @@ class ExecutionService:
         
         context_options = {
             "viewport": self.config.viewport,
+            # Inject a real Chrome UA so preprod servers don't detect HeadlessChrome
+            # and issue a session redirect (ADR-002-19-B).
+            "user_agent": STEALTH_USER_AGENT,
         }
         
         if record_video:
@@ -206,6 +221,13 @@ class ExecutionService:
             await self.create_context()
         
         self.page = await self.context.new_page()
+        # Override navigator.webdriver so preprod anti-automation checks don't fire.
+        # --disable-blink-features=AutomationControlled suppresses the Chrome flag but
+        # Playwright re-enables webdriver via CDP; addInitScript runs before any
+        # page script and permanently overrides the getter (ADR-002-19-C).
+        await self.page.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', {get: () => false})"
+        )
         return self.page
 
     async def _apply_profile_cookies(self, page: Page, profile_data: Dict[str, Any]) -> None:
@@ -398,6 +420,9 @@ class ExecutionService:
             
             # Navigate to base URL
             await page.goto(base_url)
+            # Auto-dismiss any preprod modals (e.g. Three HK "I understand" reminder)
+            # that block plan-selection. Mirrors ObservationAgent ADR-004-5 LLM instruction.
+            await auto_dismiss_blocking_modals(page, logger)
 
             # Apply localStorage/sessionStorage after navigation
             if browser_profile_data:
@@ -1110,6 +1135,8 @@ class ExecutionService:
                 
                 # Set a reasonable timeout (30 seconds)
                 await page.goto(url_to_navigate, timeout=30000)
+                # Auto-dismiss modals that appear after in-test navigation steps.
+                await auto_dismiss_blocking_modals(page, logger)
                 
                 return {
                     "success": True,

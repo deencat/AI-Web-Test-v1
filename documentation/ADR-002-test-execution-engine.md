@@ -46,6 +46,9 @@
 16. [ADR-002-16: Autopay Page URL Path Detection for Extended Readiness Wait](#adr-002-16-autopay-page-url-path-detection-for-extended-readiness-wait)
 17. [ADR-002-17: Split Payment Host Detection — Separate Readiness Wait from Probe Timeout](#adr-002-17-split-payment-host-detection--separate-readiness-wait-from-probe-timeout)
 18. [ADR-002-18: Quote-Aware Expiry Month/Year Value Extraction + `select` Guard for `value=None`](#adr-002-18-quote-aware-expiry-monthyear-value-extraction--select-guard-for-valuenone)
+19. [ADR-002-19: URL-Change-Triggered Navigation Upgrade in Post-Click Readiness](#adr-002-19-url-change-triggered-navigation-upgrade-in-post-click-readiness)
+20. [ADR-002-20: Auto-Dismiss Blocking Modals After Navigation](#adr-002-20-auto-dismiss-blocking-modals-after-navigation)
+21. [ADR-002-21: Three HK Plan-Selection Progress Validation and Single Retry](#adr-002-21-three-hk-plan-selection-progress-validation-and-single-retry)
 
 ---
 
@@ -740,8 +743,11 @@ Key properties:
 | 002-16 | Autopay URL path/query detection: extend 8000ms readiness wait to `?step=autopay` pages | Accepted | Low |
 | 002-17 | Split host detection: `_is_cross_origin_payment_host()` for per-selector probe timeout; add `"Credit Card No."` label | Accepted | Low |
 | 002-18 | Quote-aware expiry month/year value extraction; `select` guard for `value=None` in payment direct handler | Accepted | Low |
+| 002-19 | URL-change-triggered navigation upgrade; Chrome UA injection for execution context | Accepted | Medium |
+| 002-20 | Auto-dismiss blocking modals after navigation; override `navigator.webdriver` | Accepted | Medium |
+| 002-21 | Validate Three HK plan click progression; retry once with price-aware `Select` locator | Accepted | Medium |
 
-ADR-002-7 and ADR-002-8 carry medium risk because their heuristics (navigation-button keyword list, iframe frame enumeration) depend on real-world page structure diversity. ADR-002-11 carries medium risk due to process-global `os.environ` mutation — safe for single-worker deployments but must be revisited when parallel test execution is introduced. All three should be monitored via tier-level execution metrics and LLM provider error rates across test runs.
+ADR-002-7, ADR-002-8, ADR-002-19, ADR-002-20, and ADR-002-21 carry medium risk because their heuristics depend on real-world page structure diversity and environment-specific flow behavior. ADR-002-11 carries medium risk due to process-global `os.environ` mutation — safe for single-worker deployments but must be revisited when parallel test execution is introduced. These decisions should be monitored via tier-level execution metrics and environment-specific failure rates across test runs.
 
 ---
 
@@ -951,3 +957,347 @@ This mirrors the existing fill guard (`if action in ["fill", "type", "input"] an
 - If `value=None` for a `select` step (e.g. due to a future extraction gap), the direct handler returns early and the step escalates to Stagehand `observe()` faster. The underlying extraction failure must be fixed rather than relying on `observe()` to somehow pick a value from the instruction.
 
 **Tests added (TDD):** 8 new parametrized cases in `TestExecutionServiceValueExtraction.test_dropdown_value_extraction` in `tests/test_execution_service_value_extraction.py` covering both quoted/unquoted variants and the `Step N:` prefix format.
+
+---
+
+## ADR-002-19: URL-Change-Triggered Navigation Upgrade in Post-Click Readiness
+
+**Date:** March 31, 2026
+
+### Context
+
+On the Three HK preprod site (`wwwuat.three.com.hk`), Step 7 — *"Select a $338 plan from the available plans"* — clicked a plan card "Select" button via Tier 2 (cache hit, XPath ending in `button[1]`). The 3-tier engine reported `success: True`, but the browser immediately returned to the original plan-selection page instead of advancing.
+
+Two root causes were identified:
+
+1. **`NAVIGATION_KEYWORDS` gap** — `post_click_readiness.py → classify_click_transition()` tests instruction + element text against a keyword list (`next`, `continue`, `submit`, `proceed`, `checkout`, etc.). Neither the instruction (`"Select a $338 plan..."`) nor the button text (`"Select"`) matched any keyword → `is_navigation_click = False`. The code then entered the non-navigation branch: tried `wait_for_load_state("networkidle")` (which never resolves on SPA route changes), fell back to `domcontentloaded`, and returned **without waiting for loading indicators to clear**. The next test step executed before the SPA had rendered the new page.
+
+2. **Preprod session state gap (mirror of ADR-004-5)** — On Three HK preprod, the plan-selection flow requires session cookies/localStorage to be present. When the execution service runs in a fresh browser context (no saved browser profile), the preprod server detects the missing state after the plan click and redirects back to the plan-selection page. This is the same loop-back behavior documented in ADR-004-5 for the ObservationAgent; it also affects the 3-tier execution engine.
+
+### Decisions
+
+#### ADR-002-19-A: Upgrade Classification to Navigation When URL Already Changed
+
+**File:** `backend/app/services/post_click_readiness.py`
+
+When the browser URL has already changed within 0.2 s of the click, this is definitive evidence of a page navigation — regardless of whether any keyword in the instruction or button text matches `NAVIGATION_KEYWORDS`. The classification is upgraded:
+
+```python
+url_changed = page.url != current_url
+if url_changed:
+    logger.info("URL changed from %s to %s after click", current_url, page.url)
+    # URL already changed → treat as navigation regardless of keyword classification.
+    # Covers "Select plan" buttons on SPAs (e.g. Three HK preprod) where the button
+    # text never matches NAVIGATION_KEYWORDS but a full page transition occurs.
+    classification["is_navigation_click"] = True
+    try:
+        await page.wait_for_load_state("load", timeout=wait_timeout)
+    except PlaywrightTimeout:
+        logger.warning("Timed out waiting for page load after click")
+```
+
+As a result, once a URL change is observed, the full readiness path runs: loading indicators are waited on and a 0.4 s bounded settle is applied — the same treatment already used by keyword-matched navigation clicks.
+
+#### ADR-002-19-B: Inject Chrome-Like User Agent into Every Browser Context
+
+**File:** `backend/app/services/execution_service.py`
+
+The `ExecutionService` was creating Playwright browser contexts without a `user_agent` option. Playwright's headless Chromium sends `HeadlessChrome/...` in the UA string by default, which many preprod/UAT servers (including Three HK) detect as automation and respond to with a session redirect/loop-back instead of the expected page transition.
+
+The same pattern is used in `ObservationAgent` (`DEFAULT_OBSERVATION_USER_AGENT`, `DEFAULT_OBSERVATION_BROWSER_ARGS`) and was already confirmed to eliminate the loop-back on `wwwuat.three.com.hk` (ADR-004-5). Since browser profiles are no longer used (removed by ADR-002-14) and HTTP credentials are injected automatically (ADR-002-12/13), identical browser context hardening is the only remaining delta.
+
+**Implementation:**
+
+```python
+# New module-level constant in execution_service.py
+STEALTH_USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+)
+```
+
+`create_context()` — unconditionally includes `user_agent` in `context_options`:
+
+```python
+context_options = {
+    "viewport": self.config.viewport,
+    "user_agent": STEALTH_USER_AGENT,  # prevent HeadlessChrome UA detection
+}
+```
+
+Chromium `launch()` args extended to match `DEFAULT_OBSERVATION_BROWSER_ARGS`:
+
+```python
+args=[
+    '--remote-debugging-port=9222',
+    '--disable-blink-features=AutomationControlled',
+    '--disable-dev-shm-usage',    # new: prevents /dev/shm OOM in containers
+    '--no-first-run',             # new: suppress first-run setup UI
+    '--no-default-browser-check', # new: suppress browser check UI
+]
+```
+
+**Why not browser profile:** Browser profiles were removed from the saved-test run flow (ADR-002-14) in Sprint 10.7 for user-friendliness. HTTP Basic Auth was already auto-injected (ADR-002-12/13). The user agent was the remaining fingerprint difference between the ObservationAgent (which works on preprod) and the execution engine (which looped back).
+
+**Tests added (TDD):**
+- `test_execute_test_injects_chrome_user_agent` — verifies `new_context()` called with `user_agent=STEALTH_USER_AGENT` containing `"Chrome"` but not `"HeadlessChrome"`.
+- `test_execute_test_chromium_launch_has_anti_automation_args` — verifies `chromium.launch()` called with `--disable-blink-features=AutomationControlled` and `--disable-dev-shm-usage` in `args`.
+
+### Consequences
+
+**Positive (ADR-002-19-A)**
+- "Select plan" clicks on SPAs now correctly receive the full navigation readiness treatment.
+- No keyword list maintenance required for future plan/option/select-style navigation buttons.
+- Existing behaviour for non-navigating clicks (where URL stays the same) is unchanged.
+
+**Positive (ADR-002-19-B)**
+- Eliminates the `HeadlessChrome` UA fingerprint that preprod servers use to detect automation and issue session redirects.
+- Matches the ObservationAgent's existing hardened browser defaults (confirmed to work on the same site via ADR-004-5).
+- No browser profile required — consistent with the direction set in ADR-002-14 (profile picker removed) and ADR-002-12/13 (credentials auto-injected).
+- `--disable-dev-shm-usage` prevents container OOM crashes on Linux under memory pressure (separate but related hardening benefit).
+
+**Negative**
+- `STEALTH_USER_AGENT` is pinned to Chrome 133. Must be updated periodically to stay current with real browser UA strings, or server UA checks will eventually re-detect it as stale.
+- The UA string alone is not sufficient when the server enforces a **business-logic gate** (e.g. a mandatory modal click) independently of browser identity. See ADR-002-20 for the modal auto-dismissal fix that addresses this remaining gap.
+
+**Alternatives Considered**
+- **Add `"select"` to `NAVIGATION_KEYWORDS`**: Would create false positives on every `<select>` dropdown step that is genuinely not a navigation. Rejected.
+- **Post-click URL polling loop (N × 200 ms)**: More latency per step; the 0.2 s window has proven sufficient in practice because SPA route changes are near-instantaneous.
+- **Detect redirect loop and re-inject session**: Out of scope for the execution engine; the UA fix addresses the root cause instead.
+- **Require a saved browser profile for preprod**: This was the original ADR-002-19-B conclusion, but browser profiles were removed by ADR-002-14 and are no longer used. UA injection is the correct no-profile equivalent.
+- **Use Playwright's `stealth` plugin**: Not available in the Playwright Python package without external patching; `user_agent` + `--disable-blink-features` covers the same detection vectors for this site.
+
+---
+
+## ADR-002-20: Auto-Dismiss Blocking Modals After Navigation
+
+**Date:** April 1, 2026
+
+### Context
+
+After applying the Chrome UA and anti-automation flag hardening from ADR-002-19-B, the preprod loop-back on Three HK (`wwwuat.three.com.hk`) persisted. The UA fix alone was insufficient because the root cause was not UA-based detection — it was a **mandatory modal gate**.
+
+**What happens on preprod:**
+The plan-selection page shows a "Reminder" modal with an "I understand" button before the user can select a plan. This modal is not present on the production site. Clicking "I understand" sets a server-side session marker (cookie/storage) that permits the "Select plan" click to advance to the next page. Without it, the server's plan-selection handler finds no gate marker and returns a redirect back to the plan-selection page.
+
+**Why the existing test doesn't include a modal step:**
+Test cases are generated by the ObservationAgent or from the production site where the modal does not exist. The generated steps go directly from "Navigate to URL" to "Select a $338 plan" with no intermediate "click I understand" step.
+
+**How the ObservationAgent handles this (ADR-004-5):**
+The ObservationAgent's LLM task instruction includes:
+> *"If a reminder, confirmation, or informational modal appears, click the close, confirm, or I understand button and continue from the current step"*
+
+The LLM sees the modal and clicks it autonomously. The execution engine has no such intelligence.
+
+**Why ADR-002-19-B (`navigator.webdriver` override + Chrome UA) are insufficient alone:**
+Both reduce automation fingerprinting. The modal itself is a *business-logic gate*, not a bot-detection mechanism. Even a real human browser with no automation flags would be redirected if they somehow bypassed the modal click. The session marker set by the modal dismissal is required regardless of browser identity.
+
+### Decision
+
+#### ADR-002-20-A: `auto_dismiss_blocking_modals()` in `post_click_readiness.py`
+
+Add a deterministic modal detection and dismissal function as the execution-engine equivalent of the ObservationAgent LLM instruction.
+
+**Implementation in `backend/app/services/post_click_readiness.py`:**
+
+```python
+MODAL_CONTAINER_SELECTORS = [
+    ".modal.show",
+    "[role='dialog']",
+    "[aria-modal='true']",
+]
+
+MODAL_DISMISS_BUTTON_TEXTS = [
+    "I understand", "I Understand", "OK", "Ok",
+    "Close", "Dismiss", "Got it",
+    "Accept", "Agree", "Confirm", "Continue", "Done",
+]
+
+async def auto_dismiss_blocking_modals(page, logger) -> bool:
+    for container_sel in MODAL_CONTAINER_SELECTORS:
+        modal = page.locator(container_sel).first
+        if await modal.count() == 0 or not await modal.is_visible():
+            continue
+        for btn_text in MODAL_DISMISS_BUTTON_TEXTS:
+            btn = modal.get_by_role("button", name=btn_text, exact=False)
+            if await btn.count() > 0:
+                await btn.first.click(timeout=3000)
+                await asyncio.sleep(0.5)
+                return True
+    return False
+```
+
+**Called in three places:**
+
+| Call site | When | Why |
+|---|---|---|
+| `execution_service.py` after `page.goto(base_url)` | Initial navigation | The preprod modal appears on first page load |
+| `execution_service.py` after navigate-action `page.goto()` | In-test navigate steps | Any navigation step may land on a modal-gated page |
+| `wait_for_post_click_readiness()` after loading-indicators clear, for `is_navigation_click=True` | After navigation clicks (plan select, continue, etc.) | If server redirects back to modal page, modal is auto-dismissed before next step runs |
+
+#### ADR-002-20-B: `navigator.webdriver` Override via `addInitScript`
+
+The `--disable-blink-features=AutomationControlled` Chromium flag suppresses the Chrome-level webdriver flag, but Playwright re-enables `navigator.webdriver = true` via CDP's `Runtime.enable` after context creation. Pages that check `window.navigator.webdriver` via JavaScript will still detect automation.
+
+**Fix in `execution_service.py → create_page()`:**
+
+```python
+await self.page.add_init_script(
+    "Object.defineProperty(navigator, 'webdriver', {get: () => false})"
+)
+```
+
+`add_init_script` registers a script that runs in the page before any web content, so `navigator.webdriver` is already `false` when the page's own JavaScript executes. This is the correct Playwright mechanism for this override (equivalent to Puppeteer's `page.evaluateOnNewDocument`).
+
+### Consequences
+
+**Positive**
+- Modal auto-dismissal is deterministic and general — works for any Bootstrap `.modal.show` or ARIA `[role="dialog"]` pattern, not just Three HK.
+- The three call sites ensure modals are cleared at initial load, navigate-step loads, and post-click navigation landings — covering the full execution flow.
+- `navigator.webdriver=false` eliminates a secondary fingerprint vector independent of UA strings.
+- Zero cost for sites without modals — `count() == 0` exits immediately.
+
+**Negative**
+- `auto_dismiss_blocking_modals` is opportunistic: it tries a fixed list of button texts. An unusual dismiss label (e.g. a locale-specific text not in `MODAL_DISMISS_BUTTON_TEXTS`) will not be recognised and the modal will block the next step.
+- Called after every navigation click — adds one full `MODAL_CONTAINER_SELECTORS` iteration (~3 locator queries) to every navigation step. Latency impact is negligible (< 50ms for empty modals) but measurable at scale.
+- `navigator.webdriver` override via `addInitScript` does not survive cross-origin navigations in Playwright — each new page requires the script to be added again. The current approach adds it once in `create_page()`, which covers the single `Page` object used throughout a test execution.
+
+**Alternatives Considered**
+- **Add `navigator.webdriver` to all future test-generated steps**: Requires every test generation to output a JS-evaluate step; impractical.
+- **Inject the modal-dismissal step into test generation**: Would require the AI to know about preprod-specific steps at generation time; breaks test portability.
+- **Detect loop-back by comparing landing URL to expected URL**: More complex; requires knowing the expected URL for each step. The modal dismissal approach fixes the root cause directly.
+- **Use a `playwright-stealth` library**: Not available for Playwright's Python API; workaround via `addInitScript` achieves the same effect.
+
+**Tests added (TDD):** 6 new tests in `backend/tests/test_post_click_modal_dismiss.py`:
+- `test_no_modal_returns_false` — no visible modal → returns False, no click
+- `test_modal_show_i_understand_clicked` — `.modal.show` + "I understand" button → clicked, returns True
+- `test_aria_dialog_no_button_returns_false` — `[role="dialog"]` but no matching button → returns False
+- `test_modal_ok_button_clicked` — modal with "OK" → clicked, returns True
+- `test_hidden_modal_not_dismissed` — modal in DOM but `is_visible=False` → skipped, returns False
+- `test_auto_dismiss_is_exported` — import smoke test
+
+**Total tests impacted: 11 passing** (6 new modal tests + 5 existing ADR-002-19 tests).
+
+---
+
+## ADR-002-21: Three HK Plan-Selection Progress Validation and Single Retry
+
+**Date:** April 1, 2026
+
+### Context
+
+After ADR-002-19 and ADR-002-20, Step 7 on Three HK preprod still showed a specific failure mode:
+
+```text
+Step 7: Select a $338 plan from the available plans
+cache_hit: True
+xpath: .../button[1]
+success: True
+```
+
+The Tier 2 click technically succeeded — Playwright clicked a visible `Select` button and no timeout occurred — but the browser remained on, or quickly returned to, the same plan-selection page. The next step then executed against the wrong page.
+
+The key gap was that Tier 2 treated this as a **generic cached click**:
+
+1. `XPathCacheService` keys entries by `page_url + instruction` only.
+2. `_validate_cached_xpath_for_step()` in `tier2_hybrid.py` performs semantic validation only for `fill` / `type` / `input` actions.
+3. For `click` actions it returns `True` as soon as the element is attached, so a cached `button[1]` remains valid even if the business outcome is wrong.
+4. `_execute_action_with_xpath()` considered the step successful once the click and bounded readiness waits completed; it did not verify that the flow had actually left the plan-selection screen.
+
+This is different from the ObservationAgent path in ADR-004-5. The agent has flow-level reasoning instructions: if the site returns to an earlier plan-selection step, it reselects the same plan and continues. Tier 2 had no equivalent recovery logic.
+
+### Decision
+
+#### ADR-002-21-A: Detect Three HK plan-selection clicks explicitly
+
+Add `_is_three_hk_plan_selection_click(page_url, instruction, action)` in `tier2_hybrid.py`.
+
+The guard is intentionally narrow:
+- `action == "click"`
+- `is_three_hk_uat_url(page_url) == True`
+- instruction contains both `"plan"` and `"select"`
+
+This limits the recovery path to the known preprod plan-selection screen and avoids affecting unrelated clicks.
+
+#### ADR-002-21-B: Validate that the plan click actually progressed
+
+Add `_wait_for_three_hk_plan_transition(page, current_url)`.
+
+The helper does **not** rely only on URL change. It repeatedly checks for up to 5 seconds whether the page still "looks like" the plan-selection screen by counting visible `Select` buttons:
+
+```python
+select_buttons = page.locator("button:has-text('Select')")
+return await select_buttons.count() >= 2
+```
+
+If the page no longer looks like the plan-selection grid, the transition is treated as successful even if the URL is unchanged (SPA case). If it still looks like the plan-selection grid after the bounded wait, the step is considered not progressed.
+
+#### ADR-002-21-C: Retry once with a price-aware locator instead of the cached generic XPath
+
+When progress validation fails:
+
+1. Call `auto_dismiss_blocking_modals(page, logger)` again.
+2. Retry the click **once** using a price-aware locator derived from the step instruction.
+
+`_extract_plan_price()` parses the price from instructions like:
+
+```text
+Step 7: Select a $338 plan from the available plans
+```
+
+Then `_retry_three_hk_plan_click()` tries price-aware XPaths before falling back to the first `Select` button:
+
+```python
+(//*[contains(., '$338') or contains(., '338')]//button[normalize-space()='Select'])[1]
+(//*[contains(., '$338') or contains(., '338')]/following::button[normalize-space()='Select'][1])[1]
+(//button[normalize-space()='Select'])[1]
+```
+
+If the retry also fails to move the flow off the plan-selection screen, Tier 2 raises:
+
+```python
+ValueError("Three HK plan selection did not advance from the plan selection page")
+```
+
+That causes the cached XPath to be invalidated through the existing failure path and prevents the step from being falsely reported as success.
+
+#### ADR-002-21-D: Wire the validation into `_execute_action_with_xpath()` after click readiness
+
+The new call is placed after `wait_for_post_click_readiness(...)` and after payment-click waits, so the normal readiness path still runs first. Only then does Tier 2 verify business progress for this specific class of click:
+
+```python
+await self._ensure_three_hk_plan_click_progressed(page, instruction, current_url)
+```
+
+### Consequences
+
+**Positive**
+- Prevents false-positive success on Three HK preprod plan-selection clicks.
+- Converts a silent bounce-back into deterministic recovery or an explicit failure.
+- Invalidates stale/generic click cache entries through the existing failure path when the business outcome is wrong.
+- The retry is bounded to one attempt and only runs for the narrow Three HK UAT plan-selection case.
+
+**Negative**
+- The recovery logic uses page-shape heuristics (`button:has-text('Select')`, price text extraction from instruction). If the site changes its labeling significantly, the helper may need updating.
+- The bounded plan-transition check adds up to 5 seconds only for matching Three HK preprod plan-selection clicks.
+- Price-aware XPath retry depends on the instruction containing the plan price. If the instruction becomes generic (`Select the first plan`), the fallback is less precise.
+
+**Alternatives Considered**
+- **Disable XPath cache for all click steps**: Too expensive; would remove one of Tier 2's main benefits for every site and flow.
+- **Add full semantic validation for every click action**: Too broad and difficult to generalize; most clicks have no reliable business-success oracle.
+- **Escalate immediately to Tier 3 when the page still shows plan cards**: Higher LLM cost and slower than a single deterministic retry.
+- **Encode Three HK-specific modal and reselect steps into all generated tests**: Breaks portability between production and preprod and couples generation to one environment.
+
+**Tests added (TDD):** 6 new tests in `backend/tests/test_tier2_plan_selection.py`:
+- `test_is_three_hk_plan_selection_click_true_for_uat_plan_step`
+- `test_is_three_hk_plan_selection_click_false_for_non_plan_click`
+- `test_ensure_plan_click_progressed_returns_when_transition_confirms`
+- `test_ensure_plan_click_progressed_retries_once_after_bounce`
+- `test_ensure_plan_click_progressed_raises_when_still_on_plan_page`
+- `test_execute_action_with_xpath_calls_plan_progress_guard`
+
+**Total tests impacted:** 18 targeted tests passing for the affected area:
+- 6 new Three HK plan-selection tests
+- 1 existing post-click readiness test
+- 6 modal auto-dismiss tests
+- 5 execution-service UAT credential/browser hardening tests

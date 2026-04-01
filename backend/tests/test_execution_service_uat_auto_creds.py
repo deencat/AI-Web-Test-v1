@@ -227,3 +227,107 @@ async def test_execute_test_uat_url_in_step_injects_creds_when_base_url_is_non_u
     assert kwargs.get("http_credentials") == UAT_HTTP_CREDENTIALS, (
         f"Expected UAT creds injected from step URL, but got {kwargs.get('http_credentials')}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Test 4 — Chrome-like user agent is always injected into new_context()
+#           Expected: new_context() receives user_agent matching Chrome UA string
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_execute_test_injects_chrome_user_agent():
+    """
+    Sprint 10.9 — Preprod loop-back fix (ADR-002-19-B):
+    ExecutionService must inject a Chrome-like user_agent into new_context() so the
+    preprod server does not detect HeadlessChrome automation and redirect the session.
+    """
+    from app.services.execution_service import STEALTH_USER_AGENT
+
+    test_case = _make_test_case(steps=["Navigate to https://www.example.com"])
+    db = MagicMock()
+
+    mock_browser, _mock_context, _mock_page = _make_browser_page_context()
+    mock_pw_instance = _make_playwright_instance(mock_browser)
+
+    with (
+        patch("app.services.execution_service.crud_execution") as mock_crud,
+        patch("app.services.execution_service.ThreeTierExecutionService") as mock_3tier,
+    ):
+        _configure_crud(mock_crud, execution_id=40)
+        _configure_3tier(mock_3tier)
+
+        service = ExecutionService(ExecutionConfig(headless=True))
+        service.playwright = mock_pw_instance
+        service.browser = mock_browser
+
+        await service.execute_test(
+            db=db,
+            test_case=test_case,
+            user_id=1,
+            base_url="https://www.example.com",
+            environment="dev",
+            execution_id=40,
+            http_credentials=None,
+        )
+
+    mock_browser.new_context.assert_awaited_once()
+    _, kwargs = mock_browser.new_context.call_args
+    actual_ua = kwargs.get("user_agent", "")
+    assert "Chrome" in actual_ua and "HeadlessChrome" not in actual_ua, (
+        f"Expected a real Chrome UA string (without 'HeadlessChrome'), got: {actual_ua!r}"
+    )
+    assert actual_ua == STEALTH_USER_AGENT, (
+        f"Expected STEALTH_USER_AGENT={STEALTH_USER_AGENT!r}, got {actual_ua!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 5 — Chromium is launched with anti-automation args
+#           Expected: launch() called with --disable-blink-features=AutomationControlled
+#           and --disable-dev-shm-usage (Linux crash prevention)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_execute_test_chromium_launch_has_anti_automation_args():
+    """
+    Sprint 10.9 — Anti-automation flag hardening (ADR-002-19-B):
+    Chromium launch must include --disable-blink-features=AutomationControlled and
+    --disable-dev-shm-usage to mirror the ObservationAgent's hardened browser defaults.
+    """
+    test_case = _make_test_case(steps=["Navigate to https://www.example.com"])
+    db = MagicMock()
+
+    mock_browser, _mock_context, _mock_page = _make_browser_page_context()
+    mock_pw_instance = _make_playwright_instance(mock_browser)
+
+    with (
+        patch("app.services.execution_service.crud_execution") as mock_crud,
+        patch("app.services.execution_service.ThreeTierExecutionService") as mock_3tier,
+    ):
+        _configure_crud(mock_crud, execution_id=50)
+        _configure_3tier(mock_3tier)
+
+        service = ExecutionService(ExecutionConfig(headless=True))
+        service.playwright = mock_pw_instance
+        # Do NOT pre-set service.browser so initialize() is called and launch() is invoked
+        service.browser = None
+
+        await service.execute_test(
+            db=db,
+            test_case=test_case,
+            user_id=1,
+            base_url="https://www.example.com",
+            environment="dev",
+            execution_id=50,
+            http_credentials=None,
+        )
+
+    mock_pw_instance.chromium.launch.assert_awaited_once()
+    _, launch_kwargs = mock_pw_instance.chromium.launch.call_args
+    launch_args = launch_kwargs.get("args", [])
+    assert "--disable-blink-features=AutomationControlled" in launch_args, (
+        f"Expected --disable-blink-features=AutomationControlled in launch args: {launch_args}"
+    )
+    assert "--disable-dev-shm-usage" in launch_args, (
+        f"Expected --disable-dev-shm-usage in launch args: {launch_args}"
+    )

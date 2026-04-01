@@ -46,6 +46,30 @@ NAVIGATION_KEYWORDS = [
 PAYMENT_KEYWORDS = ["checkout", "payment", "pay"]
 AUTH_KEYWORDS = ["login", "log in", "log-in", "sign in", "sign-in", "signin", "authenticate"]
 
+# Modal/dialog container selectors checked in order for auto-dismissal.
+MODAL_CONTAINER_SELECTORS = [
+    ".modal.show",
+    "[role='dialog']",
+    "[aria-modal='true']",
+]
+
+# Button label texts tried in order when dismissing a detected modal.
+# Matching is case-insensitive via Playwright's get_by_role name= parameter.
+MODAL_DISMISS_BUTTON_TEXTS = [
+    "I understand",
+    "I Understand",
+    "OK",
+    "Ok",
+    "Close",
+    "Dismiss",
+    "Got it",
+    "Accept",
+    "Agree",
+    "Confirm",
+    "Continue",
+    "Done",
+]
+
 
 def _combined_click_text(instruction: str, element_text: str) -> str:
     return " ".join(part for part in [instruction or "", element_text or ""] if part).lower()
@@ -64,6 +88,45 @@ def classify_click_transition(instruction: str, element_text: str) -> Dict[str, 
         "is_navigation_click": is_navigation_click or is_auth_click or is_payment_click,
         "is_payment_click": is_payment_click,
     }
+
+
+async def auto_dismiss_blocking_modals(page, logger) -> bool:
+    """
+    Detect visible modal/dialog overlays and auto-click their dismiss button.
+
+    Called after page navigation to clear mandatory modals (e.g. Three HK preprod
+    "I understand" reminder) before the next test step executes.  This is the
+    deterministic equivalent of the ObservationAgent LLM instruction:
+    "If a reminder, confirmation, or informational modal appears, click the
+    close, confirm, or I understand button" (ADR-004-5 / ADR-002-19-C).
+
+    Returns True if at least one modal was dismissed, False if no modal was present.
+    """
+    for container_sel in MODAL_CONTAINER_SELECTORS:
+        try:
+            modal = page.locator(container_sel).first
+            if await modal.count() == 0:
+                continue
+            if not await modal.is_visible():
+                continue
+
+            logger.info("[Modal] Visible overlay detected via '%s' — attempting auto-dismiss", container_sel)
+
+            for btn_text in MODAL_DISMISS_BUTTON_TEXTS:
+                try:
+                    btn = modal.get_by_role("button", name=btn_text, exact=False)
+                    if await btn.count() == 0:
+                        continue
+                    await btn.first.click(timeout=3000)
+                    logger.info("[Modal] Auto-dismissed with button '%s'", btn_text)
+                    await asyncio.sleep(0.5)
+                    return True
+                except Exception:
+                    continue
+        except Exception:
+            continue
+
+    return False
 
 
 async def wait_for_loading_indicators_to_clear(page, logger, timeout_ms: int) -> None:
@@ -97,6 +160,10 @@ async def wait_for_post_click_readiness(
     url_changed = page.url != current_url
     if url_changed:
         logger.info("URL changed from %s to %s after click", current_url, page.url)
+        # URL already changed → treat as navigation regardless of keyword classification.
+        # Covers "Select plan" buttons on SPAs (e.g. Three HK preprod) where the button
+        # text never matches NAVIGATION_KEYWORDS but a full page transition occurs.
+        classification["is_navigation_click"] = True
         try:
             await page.wait_for_load_state("load", timeout=wait_timeout)
         except PlaywrightTimeout:
@@ -127,5 +194,11 @@ async def wait_for_post_click_readiness(
     loading_timeout = 15000 if classification["is_payment_click"] else min(timeout_ms, 8000)
     await wait_for_loading_indicators_to_clear(page, logger, loading_timeout)
     await asyncio.sleep(0.4)
+
+    # After a navigation click (including plan-selection redirects), auto-dismiss any
+    # modal that appeared on the landing page.  This mirrors the ObservationAgent LLM
+    # instruction "If a reminder/modal appears, click I understand" (ADR-002-19-C).
+    if classification["is_navigation_click"]:
+        await auto_dismiss_blocking_modals(page, logger)
 
     return classification
