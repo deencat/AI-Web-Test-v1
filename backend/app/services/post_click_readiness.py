@@ -45,6 +45,7 @@ NAVIGATION_KEYWORDS = [
 
 PAYMENT_KEYWORDS = ["checkout", "payment", "pay"]
 AUTH_KEYWORDS = ["login", "log in", "log-in", "sign in", "sign-in", "signin", "authenticate"]
+STEP_BOUNDARY_LOADING_TIMEOUT_MS = 15000
 
 # Modal/dialog container selectors checked in order for auto-dismissal.
 MODAL_CONTAINER_SELECTORS = [
@@ -140,6 +141,13 @@ async def wait_for_loading_indicators_to_clear(page, logger, timeout_ms: int) ->
                 logger.info("Loading indicator cleared: %s", selector)
         except Exception:
             continue
+
+
+async def wait_for_step_boundary_readiness(page, logger, timeout_ms: int) -> None:
+    """Wait for active loading indicators to clear before starting the next step."""
+    wait_timeout = min(timeout_ms, STEP_BOUNDARY_LOADING_TIMEOUT_MS)
+    await wait_for_loading_indicators_to_clear(page, logger, wait_timeout)
+    await asyncio.sleep(0.2)
 
 
 async def wait_for_post_click_readiness(

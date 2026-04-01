@@ -14,6 +14,7 @@ import logging
 from app.services.tier1_playwright import Tier1PlaywrightExecutor
 from app.services.tier2_hybrid import Tier2HybridExecutor
 from app.services.tier3_stagehand import Tier3StagehandExecutor
+from app.services.post_click_readiness import wait_for_step_boundary_readiness
 from app.services.xpath_extractor import XPathExtractor
 from app.models.execution_settings import ExecutionSettings, TierExecutionLog
 from app.schemas.execution_settings import FallbackStrategy
@@ -146,11 +147,20 @@ class ThreeTierExecutionService:
         overall_start_time = time.time()
         
         strategy = self.user_settings.fallback_strategy
+        action = (step.get("action") or "").lower()
+        timeout_ms = self.user_settings.timeout_per_tier_seconds * 1000
         
         logger.info(
             f"[3-Tier] Executing step with strategy {strategy}: "
             f"{step.get('action')} - {step.get('instruction')}"
         )
+
+        if action != "navigate":
+            await wait_for_step_boundary_readiness(
+                page=self.page,
+                timeout_ms=timeout_ms,
+                logger=logger,
+            )
         
         # TIER 1: Always attempt Playwright Direct first
         tier1_result = await self._execute_tier1(step)

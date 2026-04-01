@@ -14,6 +14,7 @@
 - `backend/app/services/xpath_cache_service.py`
 - `backend/app/services/stagehand_service.py`
 - `backend/app/services/execution_service.py`
+- `backend/app/services/post_click_readiness.py`
 - `backend/app/api/v1/endpoints/executions.py`
 - `backend/app/utils/http_auth_credentials.py`
 - `frontend/src/components/RunTestButton.tsx`
@@ -21,6 +22,8 @@
 - `backend/tests/test_execution_service_uat_auto_creds.py`
 - `frontend/src/components/__tests__/RunTestButton.test.tsx`
 - `backend/tests/test_tier2_payment_helpers.py`
+- `backend/tests/test_post_click_readiness.py`
+- `backend/tests/test_three_tier_execution_service.py`
 - `backend/tests/test_stagehand_service_azure_cdp.py`
 - `backend/tests/unit/test_universal_llm_azure.py`
 
@@ -50,6 +53,7 @@
 20. [ADR-002-20: Auto-Dismiss Blocking Modals After Navigation](#adr-002-20-auto-dismiss-blocking-modals-after-navigation)
 21. [ADR-002-21: Three HK Plan-Selection Progress Validation and Single Retry](#adr-002-21-three-hk-plan-selection-progress-validation-and-single-retry)
 22. [ADR-002-22: Initial Bootstrap Navigation Uses First Step URL, Not Placeholder `base_url`](#adr-002-22-initial-bootstrap-navigation-uses-first-step-url-not-placeholder-base_url)
+23. [ADR-002-23: Shared Step-Boundary Loading Wait Before Tier Execution](#adr-002-23-shared-step-boundary-loading-wait-before-tier-execution)
 
 ---
 
@@ -748,8 +752,9 @@ Key properties:
 | 002-20 | Auto-dismiss blocking modals after navigation; override `navigator.webdriver` | Accepted | Medium |
 | 002-21 | Validate Three HK plan click progression; retry once with price-aware `Select` locator | Accepted | Medium |
 | 002-22 | Resolve initial navigation URL from test steps; bootstrap with `domcontentloaded` | Accepted | Low |
+| 002-23 | Wait for shared loading indicators before each non-navigate step begins | Accepted | Low |
 
-ADR-002-7, ADR-002-8, ADR-002-19, ADR-002-20, and ADR-002-21 carry medium risk because their heuristics depend on real-world page structure diversity and environment-specific flow behavior. ADR-002-11 carries medium risk due to process-global `os.environ` mutation — safe for single-worker deployments but must be revisited when parallel test execution is introduced. ADR-002-22 is low risk because it reuses the existing step URL extraction pattern and only changes the bootstrap target selection. These decisions should be monitored via tier-level execution metrics and environment-specific failure rates across test runs.
+ADR-002-7, ADR-002-8, ADR-002-19, ADR-002-20, and ADR-002-21 carry medium risk because their heuristics depend on real-world page structure diversity and environment-specific flow behavior. ADR-002-11 carries medium risk due to process-global `os.environ` mutation — safe for single-worker deployments but must be revisited when parallel test execution is introduced. ADR-002-22 and ADR-002-23 are low risk because they reuse existing URL extraction and loading-indicator mechanisms rather than introducing new tier logic. These decisions should be monitored via tier-level execution metrics and environment-specific failure rates across test runs.
 
 ---
 
@@ -1413,3 +1418,62 @@ Reasoning:
 - 6 new Three HK plan-selection tests
 - 1 existing post-click readiness test
 - 6 modal auto-dismiss tests
+
+---
+
+## ADR-002-23: Shared Step-Boundary Loading Wait Before Tier Execution
+
+**Date:** April 1, 2026
+
+### Context
+
+The execution engine already waited for loading indicators in post-click readiness flows, but that protection only ran when a tier-specific action path explicitly called the helper.
+
+This left a gap at the boundary between steps:
+
+1. A prior step could trigger a same-page async refresh or a long-running SPA render.
+2. The application displayed the Bootstrap loading indicator:
+
+```html
+<div role="status" class="spinner-border text-primary"><span class="visually-hidden">Loading...</span></div>
+```
+
+3. The next step started immediately because `ThreeTierExecutionService.execute_step()` had no shared readiness gate before dispatching Tier 1.
+4. Tier 1, Tier 2, and Tier 3 could all begin against a page that was still visibly loading, leading to false selector misses and avoidable fallbacks.
+
+### Decision
+
+Add `wait_for_step_boundary_readiness(page, logger, timeout_ms)` in `post_click_readiness.py` and call it once at the start of `ThreeTierExecutionService.execute_step()` for every non-`navigate` step.
+
+Implementation details:
+
+- The helper reuses the shared loading-indicator selector set, including `div[role='status'].spinner-border` and `[role='status'].spinner-border`.
+- The wait is bounded to 15000 ms per step boundary, followed by a 0.2 s settle.
+- The wait runs **once per step**, before Tier 1, not once per tier. This prevents duplicate readiness waits when Tier 1 falls back to Tier 2 or Tier 3.
+- `navigate` steps are excluded because the current page does not need to stabilize before a fresh navigation replaces it.
+
+### Consequences
+
+**Positive**
+- The Bootstrap spinner now blocks the next non-navigate step until it disappears or the bounded wait is exhausted.
+- All fallback strategies benefit because the wait is in the shared orchestrator, not duplicated in per-tier executors.
+- Selector misses caused by stepping into a still-loading SPA transition are reduced before any tier is attempted.
+
+**Negative**
+- Every non-navigate step now performs a quick loading-indicator probe, adding a small amount of locator overhead even when the page is already idle.
+- If an application leaves a matched loading indicator visible for an extended period, step start can now be delayed by up to 15000 ms.
+- The mechanism is still selector-based; applications with non-standard loaders require additional selectors.
+
+**Alternatives Considered**
+- **Keep the wait only in post-click helpers**: Rejected — not all step-to-step transitions pass through those helpers.
+- **Add the wait separately in Tier 1, Tier 2, and Tier 3**: Rejected — duplicates logic and can triple the delay during fallbacks.
+- **Run the wait before `navigate` steps as well**: Rejected — the current page's loader does not matter when the next action is a fresh navigation.
+
+**Tests added (TDD):** 3 new targeted tests:
+- `backend/tests/test_post_click_readiness.py::test_wait_for_step_boundary_readiness_waits_for_bootstrap_spinner_before_next_step`
+- `backend/tests/test_three_tier_execution_service.py::test_execute_step_waits_for_step_boundary_readiness_before_tier1`
+- `backend/tests/test_three_tier_execution_service.py::test_execute_step_waits_once_before_fallbacks`
+
+**Total tests impacted:** 4 targeted tests passing for the affected area:
+- 2 post-click readiness tests
+- 2 three-tier orchestration tests
