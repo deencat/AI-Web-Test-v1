@@ -331,3 +331,58 @@ async def test_execute_test_chromium_launch_has_anti_automation_args():
     assert "--disable-dev-shm-usage" in launch_args, (
         f"Expected --disable-dev-shm-usage in launch args: {launch_args}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Test 6 — Initial bootstrap navigation uses real step URL, not placeholder base_url
+#           Expected: first page.goto() call uses the URL embedded in test steps
+#           and waits only for domcontentloaded to avoid long marketing-page load stalls
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_execute_test_initial_navigation_uses_step_url_when_base_url_is_placeholder():
+    """
+    Sprint 10.9 — Initial navigation bug:
+    SavedTestsPage intentionally sends base_url='https://web.three.com.hk' as a placeholder,
+    expecting ExecutionService to extract the actual URL from the test steps. The initial
+    bootstrap page.goto() must therefore use the first step URL, not the placeholder.
+    """
+    placeholder_base_url = "https://web.three.com.hk"
+    actual_step_url = "https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/"
+    test_case = _make_test_case(steps=[f"Navigate to {actual_step_url} in a web browser"])
+    db = MagicMock()
+
+    mock_browser, _mock_context, mock_page = _make_browser_page_context()
+    mock_pw_instance = _make_playwright_instance(mock_browser)
+
+    with (
+        patch("app.services.execution_service.crud_execution") as mock_crud,
+        patch("app.services.execution_service.ThreeTierExecutionService") as mock_3tier,
+        patch("app.services.execution_service.auto_dismiss_blocking_modals", AsyncMock(return_value=False)),
+    ):
+        _configure_crud(mock_crud, execution_id=60)
+        _configure_3tier(mock_3tier)
+
+        service = ExecutionService(ExecutionConfig(headless=True))
+        service.playwright = mock_pw_instance
+        service.browser = mock_browser
+
+        await service.execute_test(
+            db=db,
+            test_case=test_case,
+            user_id=1,
+            base_url=placeholder_base_url,
+            environment="dev",
+            execution_id=60,
+            http_credentials=None,
+        )
+
+    assert mock_page.goto.await_count >= 1, "Expected at least one bootstrap page.goto() call"
+    first_call = mock_page.goto.await_args_list[0]
+    first_args, first_kwargs = first_call.args, first_call.kwargs
+    assert first_args[0] == actual_step_url, (
+        f"Expected initial navigation to use step URL {actual_step_url!r}, got {first_args[0]!r}"
+    )
+    assert first_kwargs.get("wait_until") == "domcontentloaded", (
+        f"Expected initial navigation wait_until='domcontentloaded', got {first_kwargs.get('wait_until')!r}"
+    )

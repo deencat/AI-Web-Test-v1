@@ -309,6 +309,94 @@ class ExecutionService:
             "sessionStorage": session_storage,
             "exported_at": datetime.utcnow().isoformat()
         }
+
+    def _normalize_test_steps(self, raw_steps: Any) -> List[Any]:
+        """Return test steps as a list regardless of DB storage format."""
+        if not raw_steps:
+            return []
+        if isinstance(raw_steps, list):
+            return raw_steps
+        try:
+            parsed = json.loads(raw_steps)
+            return parsed if isinstance(parsed, list) else [parsed]
+        except Exception:
+            return [str(raw_steps)]
+
+    def _extract_urls_from_step(self, step: Any) -> List[str]:
+        """Extract literal URLs from a single step string or dict."""
+        candidate_texts: List[str] = []
+
+        if isinstance(step, dict):
+            for key in ["value", "instruction", "url", "description", "step"]:
+                value = step.get(key)
+                if value:
+                    candidate_texts.append(str(value))
+        else:
+            candidate_texts.append(str(step))
+
+        urls: List[str] = []
+        for text in candidate_texts:
+            for url in re.findall(r'https?://\S+', text):
+                urls.append(url.rstrip('.,;)"\''))
+        return urls
+
+    def _extract_urls_from_steps(self, steps: List[Any]) -> List[str]:
+        """Extract literal URLs from ordered steps."""
+        urls: List[str] = []
+        for step in steps:
+            urls.extend(self._extract_urls_from_step(step))
+        return urls
+
+    def _resolve_http_credentials_from_steps(
+        self,
+        base_url: str,
+        steps: List[Any],
+        explicit_credentials: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """Resolve HTTP auth from explicit creds, base_url, or any embedded step URL."""
+        if explicit_credentials:
+            return explicit_credentials
+
+        credentials = http_credentials_for_url(base_url)
+        if credentials:
+            return credentials
+
+        for url in self._extract_urls_from_steps(steps):
+            credentials = http_credentials_for_url(url)
+            if credentials:
+                return credentials
+
+        return None
+
+    def _resolve_initial_navigation_url(
+        self,
+        base_url: str,
+        steps: List[Any],
+        detailed_steps: Optional[List[Dict[str, Any]]] = None,
+    ) -> str:
+        """Resolve the first real bootstrap URL for execution.
+
+        SavedTestsPage intentionally sends a placeholder base_url and expects the
+        actual starting URL to be extracted from the generated steps.
+        """
+        for detailed_step in detailed_steps or []:
+            action = (detailed_step.get("action") or "").lower()
+            if action != "navigate":
+                continue
+
+            value = detailed_step.get("value")
+            if isinstance(value, str) and value.startswith(("http://", "https://")):
+                return value
+
+            detailed_urls = self._extract_urls_from_step(detailed_step)
+            if detailed_urls:
+                return detailed_urls[0]
+
+        step_urls = self._extract_urls_from_steps(steps)
+        if step_urls:
+            return step_urls[0]
+
+        return base_url
     
     async def execute_test(
         self,
@@ -364,22 +452,22 @@ class ExecutionService:
                     "status": "running",
                     "message": "Starting test execution..."
                 })
+
+            steps = self._normalize_test_steps(test_case.steps)
+            detailed_steps = None
+            loop_blocks = []
+            if test_case.test_data:
+                test_data = test_case.test_data if isinstance(test_case.test_data, dict) else json.loads(test_case.test_data)
+                detailed_steps = test_data.get('detailed_steps', [])
+                loop_blocks = test_data.get('loop_blocks', [])
             
             # Initialize browser
             await self.initialize()
-            # Auto-inject UAT credentials if none explicitly supplied (Sprint 10.7)
-            if not http_credentials:
-                http_credentials = http_credentials_for_url(base_url)
-            # Fallback: scan test steps for navigate URLs when base_url is generic (Sprint 10.7)
-            if not http_credentials and test_case.steps:
-                for step in test_case.steps:
-                    for url in re.findall(r'https?://\S+', str(step)):
-                        creds = http_credentials_for_url(url.rstrip('.,;)"\"'))
-                        if creds:
-                            http_credentials = creds
-                            break
-                    if http_credentials:
-                        break
+            http_credentials = self._resolve_http_credentials_from_steps(
+                base_url=base_url,
+                steps=steps,
+                explicit_credentials=http_credentials,
+            )
             await self.create_context(record_video=True, http_credentials=http_credentials)
             page = await self.create_page()
 
@@ -417,9 +505,21 @@ class ExecutionService:
                 cdp_endpoint=cdp_endpoint,  # Pass CDP endpoint for shared browser context
                 user_ai_config=user_ai_config  # Pass user's AI provider settings
             )
-            
-            # Navigate to base URL
-            await page.goto(base_url)
+
+            initial_navigation_url = self._resolve_initial_navigation_url(
+                base_url=base_url,
+                steps=steps,
+                detailed_steps=detailed_steps,
+            )
+            logger.info(
+                "[DEBUG] Initial navigation URL resolved to %s (requested base_url=%s)",
+                initial_navigation_url,
+                base_url,
+            )
+
+            # Bootstrap on the real target URL, not the placeholder base_url.
+            # Use domcontentloaded so heavy marketing pages don't block for the full load event.
+            await page.goto(initial_navigation_url, timeout=30000, wait_until="domcontentloaded")
             # Auto-dismiss any preprod modals (e.g. Three HK "I understand" reminder)
             # that block plan-selection. Mirrors ObservationAgent ADR-004-5 LLM instruction.
             await auto_dismiss_blocking_modals(page, logger)
@@ -428,17 +528,7 @@ class ExecutionService:
             if browser_profile_data:
                 await self._apply_profile_storage(page, browser_profile_data)
             
-            # Execute steps - Get detailed steps from test_data if available
-            steps = test_case.steps if isinstance(test_case.steps, list) else json.loads(test_case.steps)
-            
-            # Try to get detailed steps with selectors from test_data
-            detailed_steps = None
-            loop_blocks = []
-            if test_case.test_data:
-                test_data = test_case.test_data if isinstance(test_case.test_data, dict) else json.loads(test_case.test_data)
-                detailed_steps = test_data.get('detailed_steps', [])
-                loop_blocks = test_data.get('loop_blocks', [])
-            
+            # Execute steps - steps/detailed_steps/loop_blocks were normalized above
             # Validate and log loop blocks
             if loop_blocks:
                 logger.info(f"[LOOP] Found {len(loop_blocks)} loop block(s): {loop_blocks}")

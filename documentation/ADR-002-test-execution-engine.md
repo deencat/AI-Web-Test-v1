@@ -49,6 +49,7 @@
 19. [ADR-002-19: URL-Change-Triggered Navigation Upgrade in Post-Click Readiness](#adr-002-19-url-change-triggered-navigation-upgrade-in-post-click-readiness)
 20. [ADR-002-20: Auto-Dismiss Blocking Modals After Navigation](#adr-002-20-auto-dismiss-blocking-modals-after-navigation)
 21. [ADR-002-21: Three HK Plan-Selection Progress Validation and Single Retry](#adr-002-21-three-hk-plan-selection-progress-validation-and-single-retry)
+22. [ADR-002-22: Initial Bootstrap Navigation Uses First Step URL, Not Placeholder `base_url`](#adr-002-22-initial-bootstrap-navigation-uses-first-step-url-not-placeholder-base_url)
 
 ---
 
@@ -746,8 +747,9 @@ Key properties:
 | 002-19 | URL-change-triggered navigation upgrade; Chrome UA injection for execution context | Accepted | Medium |
 | 002-20 | Auto-dismiss blocking modals after navigation; override `navigator.webdriver` | Accepted | Medium |
 | 002-21 | Validate Three HK plan click progression; retry once with price-aware `Select` locator | Accepted | Medium |
+| 002-22 | Resolve initial navigation URL from test steps; bootstrap with `domcontentloaded` | Accepted | Low |
 
-ADR-002-7, ADR-002-8, ADR-002-19, ADR-002-20, and ADR-002-21 carry medium risk because their heuristics depend on real-world page structure diversity and environment-specific flow behavior. ADR-002-11 carries medium risk due to process-global `os.environ` mutation — safe for single-worker deployments but must be revisited when parallel test execution is introduced. These decisions should be monitored via tier-level execution metrics and environment-specific failure rates across test runs.
+ADR-002-7, ADR-002-8, ADR-002-19, ADR-002-20, and ADR-002-21 carry medium risk because their heuristics depend on real-world page structure diversity and environment-specific flow behavior. ADR-002-11 carries medium risk due to process-global `os.environ` mutation — safe for single-worker deployments but must be revisited when parallel test execution is introduced. ADR-002-22 is low risk because it reuses the existing step URL extraction pattern and only changes the bootstrap target selection. These decisions should be monitored via tier-level execution metrics and environment-specific failure rates across test runs.
 
 ---
 
@@ -1301,3 +1303,113 @@ await self._ensure_three_hk_plan_click_progressed(page, instruction, current_url
 - 1 existing post-click readiness test
 - 6 modal auto-dismiss tests
 - 5 execution-service UAT credential/browser hardening tests
+
+---
+
+## ADR-002-22: Initial Bootstrap Navigation Uses First Step URL, Not Placeholder `base_url`
+
+**Date:** April 1, 2026
+
+### Context
+
+Saved test execution still performed one unconditional bootstrap navigation before step execution:
+
+```python
+await page.goto(base_url)
+```
+
+This conflicted with the Saved Tests frontend contract in `frontend/src/pages/SavedTestsPage.tsx`, which intentionally sends:
+
+```typescript
+base_url: 'https://web.three.com.hk' // Base domain (actual URL comes from test steps)
+```
+
+The placeholder `base_url` is not the real target page for the generated test. The actual URL lives in the first navigate step, for example:
+
+```text
+Navigate to https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/
+```
+
+This created a separate failure mode from the Three HK plan-selection issue:
+
+1. `execute_test()` created the browser context correctly.
+2. It immediately navigated to `https://web.three.com.hk/` instead of the first real step URL.
+3. Playwright waited for the default `load` event.
+4. The marketing homepage did not reach `load` within 30000 ms, producing:
+
+```text
+Page.goto: Timeout 30000ms exceeded.
+Call log:
+    - navigating to "https://web.three.com.hk/", waiting until "load"
+```
+
+The test then failed **before** it ever reached Step 1, even though the real URL was already present in the generated steps. This is the same placeholder-vs-real-URL gap already identified in ADR-002-13 for HTTP credential injection, but it also affected the initial navigation path.
+
+### Decision
+
+#### ADR-002-22-A: Normalize steps once and reuse them for both credential lookup and initial navigation
+
+Add helper methods in `execution_service.py`:
+
+```python
+_normalize_test_steps(raw_steps)
+_extract_urls_from_step(step)
+_extract_urls_from_steps(steps)
+_resolve_http_credentials_from_steps(base_url, steps, explicit_credentials)
+_resolve_initial_navigation_url(base_url, steps, detailed_steps)
+```
+
+This removes duplicated URL-scanning logic and ensures the same ordered step list is used consistently for:
+- UAT credential detection
+- initial bootstrap navigation URL resolution
+
+#### ADR-002-22-B: Bootstrap navigation uses the first real URL from `detailed_steps` or `steps`
+
+`_resolve_initial_navigation_url(...)` selects the first real URL in this order:
+
+1. First `detailed_step` where `action == "navigate"` and `value` is a literal HTTP(S) URL
+2. First literal HTTP(S) URL embedded anywhere in `detailed_steps`
+3. First literal HTTP(S) URL found in ordered `steps`
+4. Fallback to `base_url`
+
+This preserves existing behavior for tests that genuinely rely on `base_url`, while fixing Saved Tests runs where `base_url` is intentionally a placeholder.
+
+#### ADR-002-22-C: Initial bootstrap navigation waits for `domcontentloaded`, not full `load`
+
+The initial navigation now uses:
+
+```python
+await page.goto(initial_navigation_url, timeout=30000, wait_until="domcontentloaded")
+```
+
+Reasoning:
+- The bootstrap navigation exists only to land the browser on the correct starting page.
+- Later readiness logic already handles loading indicators, modal dismissal, and step-level waits.
+- Marketing pages and SPA shells often delay or never complete the full `load` event due to long-tail analytics, ads, or third-party tags.
+- `domcontentloaded` is sufficient for the execution engine to start its own readiness logic without the 30 s stall.
+
+### Consequences
+
+**Positive**
+- Fixes the `Page.goto("https://web.three.com.hk/") timeout waiting until load` failure.
+- Aligns backend behavior with the Saved Tests frontend contract.
+- Reuses one consistent URL extraction path for both credentials and navigation.
+- Reduces startup latency on heavy landing pages by using `domcontentloaded` for bootstrap navigation.
+
+**Negative**
+- URL extraction still relies on literal URLs in generated steps. Variable-only placeholders such as `{{base_url}}` are not resolved here.
+- If the first literal URL in the steps is not actually the intended starting page, bootstrap navigation may choose the wrong target. This is acceptable because generated tests are expected to start with a navigate step.
+
+**Alternatives Considered**
+- **Keep using `base_url` and rely on Step 1 to navigate later**: Rejected — the execution can fail before Step 1, which is exactly what happened.
+- **Require frontend to send the exact URL in `base_url`**: Correct long-term shape, but the existing Saved Tests contract intentionally sends a placeholder and already depends on backend URL extraction.
+- **Use `wait_until="load"` on the real step URL**: Still vulnerable to slow marketing/analytics assets and unnecessary for bootstrap.
+
+**Tests added (TDD):** 1 new regression test in `backend/tests/test_execution_service_uat_auto_creds.py`:
+- `test_execute_test_initial_navigation_uses_step_url_when_base_url_is_placeholder`
+
+**Total tests impacted:** 19 targeted tests passing for the affected area:
+- 7 execution-service UAT credential/bootstrap/browser hardening tests
+- 6 new Three HK plan-selection tests
+- 1 existing post-click readiness test
+- 6 modal auto-dismiss tests
