@@ -409,37 +409,36 @@ Clicking the `<iframe>` element itself does nothing — the click must be dispat
 **`_xpath_targets_iframe(xpath) -> bool`**  
 Returns `True` if `"/iframe["` or `"/iframe"` (case-insensitive) appears in the XPath.
 
-**`_try_click_inside_iframe(page, instruction) -> bool`**  
-Iterates `page.frames` (excluding `page.main_frame`). For each frame, tries a prioritized list of CSS selectors for submit/pay controls:
+**`_try_click_inside_iframe(page, instruction, iframe_xpath) -> bool`**  
+First resolves the specific iframe returned by `observe()` via `page.locator(f"xpath={iframe_xpath}").first.element_handle().content_frame()`. If the target frame cannot be resolved, Tier 2 only falls back to generic frame enumeration when there is exactly one non-main frame; it refuses to guess across multiple frames.
+
+Inside the resolved frame, Tier 2 derives button keywords from the instruction (`submit`, `pay`, `continue`, `confirm`, `login`) and tries role-based button lookup before CSS selectors. A plain `submit` instruction stays `submit`; it no longer expands to `pay` unless the instruction explicitly mentions payment/checkout semantics.
 
 ```python
 selector_candidates = [
-    "button[type='submit']", "input[type='submit']",
+    "button[type='submit']", "input[type='submit']", "input[type='image']",
     "button[name*='submit' i]", "button[id*='submit' i]",
-    "[role='button'][name*='submit' i]",
-]
-# If instruction contains "pay" / "payment":
-selector_candidates += [
-    "button[id*='pay' i]", "button[name*='pay' i]",
-    "[role='button'][id*='pay' i]", "[role='button'][name*='pay' i]",
-    "input[value*='pay' i]",
+    "input[value*='submit' i]", "input[type='button'][value*='submit' i]",
+    "[aria-label*='submit' i]", "[title*='submit' i]",
+    # plus the same pattern for pay / continue / confirm / login keywords
 ]
 ```
 
-For each candidate: `wait_for(state="visible", timeout=1200)` then `click()`. Returns `True` on first success.
+For each candidate: `wait_for(state="visible", timeout=1200)`, verify that the control's readable label (`textContent`, `value`, `aria-label`, `title`, `name`, `id`) matches the step keywords, wait briefly for the control to become enabled, click it, then run the shared `wait_for_post_click_readiness()` flow. Mismatched visible controls are skipped and search continues. If the click looks like a navigation/submit action but the URL does not change and the clicked control remains visible, the attempt is treated as unverified and returns `False` instead of reporting success.
 
-**Intercept in `execute_step()`:** When action is `"click"` and `_xpath_targets_iframe()` is True, route to `_try_click_inside_iframe()` before calling `_execute_action_with_xpath()`. On success, return immediately without caching the iframe XPath.
+**Intercept in `execute_step()`:** When action is `"click"` and `_xpath_targets_iframe()` is True, route to `_try_click_inside_iframe()` before calling `_execute_action_with_xpath()`. On success, return immediately without caching the iframe XPath. On failure, raise a `ValueError` and stop the Tier 2 path instead of clicking the iframe container element itself.
 
 ### Consequences
 
 **Positive**
 - Handles the most common embedded payment gateway pattern without requiring explicit selectors in test definitions.
-- Works for any frame on the page, not just the first one.
-- 1200ms per-selector timeout keeps total fallback time bounded (~12s worst case for 10 selectors × 2 frames).
+- Uses the exact iframe identified by `observe()` when available, which avoids cross-frame false positives.
+- Reuses the shared post-click readiness logic so iframe clicks are validated the same way as normal Tier 2 clicks.
+- Prevents a generic `submit` step from drifting onto a `pay` control or another visible button whose label does not match the instruction.
 
 **Negative**
-- Frame enumeration order is non-deterministic — if multiple frames exist, the wrong frame may be tried first.
 - Selector list is heuristic — unusual payment button markup (e.g., `<div onclick>`) is not covered.
+- If `observe()` returns an iframe XPath that cannot be resolved and multiple frames exist, Tier 2 now fails instead of guessing.
 - Iframe XPath is not cached (correct: next run should also use the in-frame fallback).
 
 **Alternatives Considered**

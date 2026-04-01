@@ -206,7 +206,7 @@ class Tier2HybridExecutor:
 
                 if action == "click" and self._xpath_targets_iframe(xpath):
                     logger.info("[Tier 2] 🧭 XPath points to iframe container. Trying in-frame click fallback...")
-                    clicked_inside_iframe = await self._try_click_inside_iframe(page, instruction)
+                    clicked_inside_iframe = await self._try_click_inside_iframe(page, instruction, xpath)
                     if clicked_inside_iframe:
                         playwright_time_ms = 0
                         total_time_ms = (time.time() - start_time) * 1000
@@ -220,6 +220,8 @@ class Tier2HybridExecutor:
                             "xpath": xpath,
                             "error": None
                         }
+
+                    raise ValueError(f"Could not verify iframe click fallback for step: {instruction}")
 
                 logger.info(f"[Tier 2] ✅ Extracted XPath in {extraction_time_ms:.2f}ms: {xpath}")
                 
@@ -352,6 +354,163 @@ class Tier2HybridExecutor:
             return xpath[: -len("/option")]
         return xpath
 
+    def _iframe_button_keywords(self, instruction: str) -> list[str]:
+        """Infer likely button labels for iframe fallback clicks from the step text."""
+        instruction_lower = (instruction or "").lower()
+        keywords = []
+
+        if "submit" in instruction_lower:
+            keywords.append("submit")
+
+        if any(keyword in instruction_lower for keyword in ["pay", "payment", "checkout"]):
+            keywords.append("pay")
+
+        if any(keyword in instruction_lower for keyword in ["continue", "next"]):
+            keywords.append("continue")
+
+        if any(keyword in instruction_lower for keyword in ["confirm", "proceed"]):
+            keywords.append("confirm")
+
+        if any(keyword in instruction_lower for keyword in ["login", "log in", "log-in", "sign in", "sign-in", "signin"]):
+            keywords.append("login")
+
+        if not keywords:
+            keywords.extend(["submit", "pay"])
+
+        return list(dict.fromkeys(keywords))
+
+    def _normalize_iframe_label_text(self, raw_value: Any) -> str:
+        """Normalize locator text/attribute values for iframe button matching."""
+        if not isinstance(raw_value, str):
+            return ""
+        return raw_value.strip().lower()
+
+    async def _iframe_locator_matches_instruction(self, locator, instruction: str) -> bool:
+        """Return True when a visible iframe candidate's label matches the click instruction."""
+        target_keywords = self._iframe_button_keywords(instruction)
+        if not target_keywords:
+            return True
+
+        metadata_parts = []
+
+        try:
+            text_content = self._normalize_iframe_label_text(await locator.text_content())
+            if text_content:
+                metadata_parts.append(text_content)
+        except Exception:
+            pass
+
+        for attr_name in ["value", "aria-label", "title", "name", "id"]:
+            try:
+                attr_value = self._normalize_iframe_label_text(await locator.get_attribute(attr_name))
+                if attr_value:
+                    metadata_parts.append(attr_value)
+            except Exception:
+                continue
+
+        if not metadata_parts:
+            logger.info("[Tier 2] Skipping iframe candidate with no readable label for instruction: %s", instruction)
+            return False
+
+        candidate_text = " ".join(dict.fromkeys(metadata_parts))
+        return any(keyword in candidate_text for keyword in target_keywords)
+
+    def _iframe_click_selector_candidates(self, instruction: str) -> list[str]:
+        """Build resilient selector candidates for generic in-frame button clicks."""
+        selectors = [
+            "button[type='submit']",
+            "input[type='submit']",
+            "input[type='image']",
+        ]
+
+        for keyword in self._iframe_button_keywords(instruction):
+            selectors.extend([
+                f"button[name*='{keyword}' i]",
+                f"button[id*='{keyword}' i]",
+                f"input[value*='{keyword}' i]",
+                f"input[type='button'][value*='{keyword}' i]",
+                f"[aria-label*='{keyword}' i]",
+                f"[title*='{keyword}' i]",
+                f"[role='button'][name*='{keyword}' i]",
+            ])
+
+        return selectors
+
+    async def _resolve_iframe_target_frame(self, page: Page, iframe_xpath: Optional[str]):
+        """Resolve the concrete Frame for an iframe XPath returned by observe()."""
+        if not iframe_xpath:
+            return None
+
+        try:
+            iframe_locator = page.locator(f"xpath={iframe_xpath}").first
+            iframe_handle = await iframe_locator.element_handle()
+            if not iframe_handle:
+                logger.warning("[Tier 2] ⚠️ Could not resolve iframe element handle for XPath: %s", iframe_xpath)
+                return None
+
+            target_frame = await iframe_handle.content_frame()
+            if not target_frame:
+                logger.warning("[Tier 2] ⚠️ Could not resolve content frame for XPath: %s", iframe_xpath)
+                return None
+
+            return target_frame
+        except Exception as exc:
+            logger.warning("[Tier 2] ⚠️ Failed to resolve iframe frame for XPath %s: %s", iframe_xpath, exc)
+            return None
+
+    async def _click_iframe_locator_and_verify(
+        self,
+        page: Page,
+        locator,
+        instruction: str,
+        log_label: str,
+    ) -> Optional[bool]:
+        """Click a locator inside an iframe and verify the click progressed the page."""
+        try:
+            await locator.wait_for(state="visible", timeout=1200)
+        except Exception:
+            return None
+
+        if not await self._iframe_locator_matches_instruction(locator, instruction):
+            logger.info("[Tier 2] Skipping iframe candidate via %s because its label does not match '%s'", log_label, instruction)
+            return None
+
+        try:
+            await self._wait_for_element_enabled_before_click(locator, instruction)
+            element_text = await locator.text_content() or ""
+            current_url = page.url
+            await locator.click(timeout=self.timeout_ms)
+            click_state = await wait_for_post_click_readiness(
+                page=page,
+                clicked_element=locator,
+                instruction=instruction,
+                element_text=element_text,
+                current_url=current_url,
+                timeout_ms=self.timeout_ms,
+                logger=logger,
+            )
+
+            if click_state.get("is_navigation_click") and page.url == current_url:
+                try:
+                    if await locator.is_visible():
+                        logger.warning(
+                            "[Tier 2] ⚠️ In-frame click left navigation control visible with no URL change: %s",
+                            instruction,
+                        )
+                        return False
+                except Exception:
+                    logger.warning(
+                        "[Tier 2] ⚠️ In-frame click produced no URL change for navigation instruction: %s",
+                        instruction,
+                    )
+                    return False
+
+            logger.info("[Tier 2] ✅ Clicked iframe element using %s", log_label)
+            return True
+        except Exception as exc:
+            logger.warning("[Tier 2] ⚠️ In-frame click attempt failed via %s: %s", log_label, exc)
+            return False
+
     async def _wait_for_page_interactable_for_observe(self, page: Page) -> None:
         """Wait for common loading/skeleton blockers to clear before running observe()."""
         try:
@@ -392,49 +551,60 @@ class Tier2HybridExecutor:
 
         await asyncio.sleep(0.4)
 
-    async def _try_click_inside_iframe(self, page: Page, instruction: str) -> bool:
-        """Try clicking actionable controls inside page iframes for generic click instructions."""
-        instruction_lower = (instruction or "").lower()
+    async def _try_click_inside_iframe(
+        self,
+        page: Page,
+        instruction: str,
+        iframe_xpath: Optional[str] = None,
+    ) -> bool:
+        """Try clicking actionable controls inside the specific iframe identified by observe()."""
+        target_frame = await self._resolve_iframe_target_frame(page, iframe_xpath)
+        if target_frame:
+            frames_to_try = [target_frame]
+        else:
+            frames_to_try = [frame for frame in page.frames if frame != page.main_frame]
+            if len(frames_to_try) > 1:
+                logger.warning(
+                    "[Tier 2] ⚠️ Refusing generic iframe fallback across %s frames without a resolved target iframe",
+                    len(frames_to_try),
+                )
+                return False
 
-        selector_candidates = [
-            "button[type='submit']",
-            "input[type='submit']",
-            "button[name*='submit' i]",
-            "button[id*='submit' i]",
-            "[role='button'][name*='submit' i]",
-        ]
+        if not frames_to_try:
+            logger.warning("[Tier 2] ⚠️ Could not find any candidate iframe to inspect for step: %s", instruction)
+            return False
 
-        if any(keyword in instruction_lower for keyword in ["pay", "payment"]):
-            selector_candidates = selector_candidates + [
-                "button[id*='pay' i]",
-                "button[name*='pay' i]",
-                "input[type='button'][value*='pay' i]",
-            ]
+        selector_candidates = self._iframe_click_selector_candidates(instruction)
+        role_candidates = self._iframe_button_keywords(instruction)
 
-        for frame in page.frames:
-            if frame == page.main_frame:
-                continue
+        for frame in frames_to_try:
+            for role_name in role_candidates:
+                button = frame.get_by_role("button", name=role_name, exact=False).first
+                click_result = await self._click_iframe_locator_and_verify(
+                    page,
+                    button,
+                    instruction,
+                    f"role button '{role_name}'",
+                )
+                if click_result is True:
+                    return True
+                if click_result is False:
+                    return False
 
             for selector in selector_candidates:
-                try:
-                    locator = frame.locator(selector).first
-                    await locator.wait_for(state="visible", timeout=1200)
-                    await locator.click(timeout=self.timeout_ms)
-                    logger.info(f"[Tier 2] ✅ Clicked iframe element using selector: {selector}")
+                locator = frame.locator(selector).first
+                click_result = await self._click_iframe_locator_and_verify(
+                    page,
+                    locator,
+                    instruction,
+                    f"selector {selector}",
+                )
+                if click_result is True:
                     return True
-                except Exception:
-                    continue
+                if click_result is False:
+                    return False
 
-            try:
-                button = frame.get_by_role("button", name="submit", exact=False).first
-                await button.wait_for(state="visible", timeout=1200)
-                await button.click(timeout=self.timeout_ms)
-                logger.info("[Tier 2] ✅ Clicked iframe button by role name 'submit'")
-                return True
-            except Exception:
-                pass
-
-        logger.warning("[Tier 2] ⚠️ Could not find clickable submit/pay control inside iframe")
+        logger.warning("[Tier 2] ⚠️ Could not find a verified clickable control inside iframe for step: %s", instruction)
         return False
 
     def _is_three_hk_plan_selection_click(self, page_url: str, instruction: str, action: str) -> bool:

@@ -2,7 +2,7 @@
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, patch
 
 import pytest
 
@@ -51,6 +51,9 @@ class TestTier2PaymentHelpers:
     def test_xpath_targets_iframe(self):
         assert self.executor._xpath_targets_iframe("/html/body/div/iframe[1]") is True
         assert self.executor._xpath_targets_iframe("/html/body/div/button[1]") is False
+
+    def test_iframe_button_keywords_does_not_expand_submit_to_pay_without_payment_context(self):
+        assert self.executor._iframe_button_keywords("Step 48: Click the submit button") == ["submit"]
 
     @pytest.mark.asyncio
     async def test_maybe_wait_for_payment_gateway_skips_when_ready(self):
@@ -196,8 +199,243 @@ class TestTier2PaymentHelpers:
         result = await self.executor.execute_step(page, step)
 
         assert result["success"] is True
-        self.executor._try_click_inside_iframe.assert_awaited_once_with(page, "click submit button")
+        self.executor._try_click_inside_iframe.assert_awaited_once_with(
+            page,
+            "click submit button",
+            "/html/body[1]/div[1]/iframe[1]",
+        )
         self.executor._execute_action_with_xpath.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_execute_step_click_fails_when_iframe_fallback_cannot_verify_click(self):
+        page = MagicMock()
+        page.url = "https://example.com/checkout"
+
+        self.executor.cache_service.get_cached_xpath = MagicMock(return_value=None)
+        self.executor.cache_service.cache_xpath = MagicMock()
+        self.executor._execute_action_with_xpath = AsyncMock(return_value=None)
+        self.executor._try_click_inside_iframe = AsyncMock(return_value=False)
+
+        self.executor.xpath_extractor.extract_xpath_with_page = AsyncMock(return_value={
+            "success": True,
+            "xpath": "/html/body[1]/div[1]/iframe[1]",
+            "page_title": "Checkout",
+            "element_text": "",
+        })
+
+        step = {
+            "action": "click",
+            "selector": None,
+            "instruction": "click submit button",
+            "value": None,
+        }
+
+        result = await self.executor.execute_step(page, step)
+
+        assert result["success"] is False
+        assert result["error_type"] == "ValueError"
+        assert "iframe" in result["error"].lower()
+        self.executor._try_click_inside_iframe.assert_awaited_once_with(
+            page,
+            "click submit button",
+            "/html/body[1]/div[1]/iframe[1]",
+        )
+        self.executor._execute_action_with_xpath.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_try_click_inside_iframe_targets_observed_frame_and_waits_for_readiness(self):
+        page = MagicMock()
+        page.url = "https://example.com/checkout"
+
+        main_frame = MagicMock()
+        other_frame = MagicMock()
+        target_frame = MagicMock()
+        page.main_frame = main_frame
+        page.frames = [main_frame, other_frame, target_frame]
+
+        iframe_handle = MagicMock()
+        iframe_handle.content_frame = AsyncMock(return_value=target_frame)
+
+        iframe_locator_first = MagicMock()
+        iframe_locator_first.element_handle = AsyncMock(return_value=iframe_handle)
+        iframe_locator = MagicMock()
+        iframe_locator.first = iframe_locator_first
+
+        clicked_element = AsyncMock()
+        clicked_element.wait_for = AsyncMock(return_value=None)
+        clicked_element.is_enabled = AsyncMock(return_value=True)
+        clicked_element.text_content = AsyncMock(return_value="Submit")
+        clicked_element.click = AsyncMock(return_value=None)
+
+        clicked_locator = MagicMock()
+        clicked_locator.first = clicked_element
+
+        page.locator = MagicMock(return_value=iframe_locator)
+        target_frame.locator = MagicMock(return_value=clicked_locator)
+        other_frame.locator = MagicMock()
+
+        self.executor._wait_for_element_enabled_before_click = AsyncMock(return_value=None)
+
+        with patch(
+            "app.services.tier2_hybrid.wait_for_post_click_readiness",
+            AsyncMock(return_value={"is_payment_click": False}),
+        ) as readiness_mock:
+            result = await self.executor._try_click_inside_iframe(
+                page,
+                "click submit button",
+                "/html/body[1]/div[1]/iframe[1]",
+            )
+
+        assert result is True
+        page.locator.assert_called_once_with("xpath=/html/body[1]/div[1]/iframe[1]")
+        other_frame.locator.assert_not_called()
+        target_frame.locator.assert_called()
+        readiness_mock.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_try_click_inside_iframe_returns_false_when_post_click_readiness_fails(self):
+        page = MagicMock()
+        page.url = "https://example.com/checkout"
+
+        main_frame = MagicMock()
+        target_frame = MagicMock()
+        page.main_frame = main_frame
+        page.frames = [main_frame, target_frame]
+
+        iframe_handle = MagicMock()
+        iframe_handle.content_frame = AsyncMock(return_value=target_frame)
+
+        iframe_locator_first = MagicMock()
+        iframe_locator_first.element_handle = AsyncMock(return_value=iframe_handle)
+        iframe_locator = MagicMock()
+        iframe_locator.first = iframe_locator_first
+
+        clicked_element = AsyncMock()
+        clicked_element.wait_for = AsyncMock(return_value=None)
+        clicked_element.is_enabled = AsyncMock(return_value=True)
+        clicked_element.text_content = AsyncMock(return_value="Submit")
+        clicked_element.click = AsyncMock(return_value=None)
+
+        clicked_locator = MagicMock()
+        clicked_locator.first = clicked_element
+
+        page.locator = MagicMock(return_value=iframe_locator)
+        target_frame.locator = MagicMock(return_value=clicked_locator)
+
+        self.executor._wait_for_element_enabled_before_click = AsyncMock(return_value=None)
+
+        with patch(
+            "app.services.tier2_hybrid.wait_for_post_click_readiness",
+            AsyncMock(side_effect=RuntimeError("no verified transition")),
+        ):
+            result = await self.executor._try_click_inside_iframe(
+                page,
+                "click submit button",
+                "/html/body[1]/div[1]/iframe[1]",
+            )
+
+        assert result is False
+        clicked_element.click.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_try_click_inside_iframe_skips_visible_button_with_wrong_label(self):
+        page = MagicMock()
+        page.url = "https://example.com/checkout"
+
+        main_frame = MagicMock()
+        target_frame = MagicMock()
+        page.main_frame = main_frame
+        page.frames = [main_frame, target_frame]
+
+        iframe_handle = MagicMock()
+        iframe_handle.content_frame = AsyncMock(return_value=target_frame)
+
+        iframe_locator_first = MagicMock()
+        iframe_locator_first.element_handle = AsyncMock(return_value=iframe_handle)
+        iframe_locator = MagicMock()
+        iframe_locator.first = iframe_locator_first
+
+        cancel_button = AsyncMock()
+        cancel_button.wait_for = AsyncMock(return_value=None)
+        cancel_button.is_enabled = AsyncMock(return_value=True)
+        cancel_button.text_content = AsyncMock(return_value="Cancel")
+        cancel_button.click = AsyncMock(return_value=None)
+
+        async def _cancel_attr(name):
+            attrs = {
+                "value": "Cancel",
+                "aria-label": "Cancel",
+                "title": "",
+                "name": "cancel",
+                "id": "cancel-button",
+                "type": "submit",
+            }
+            return attrs.get(name)
+
+        cancel_button.get_attribute = AsyncMock(side_effect=_cancel_attr)
+        cancel_locator = MagicMock()
+        cancel_locator.first = cancel_button
+
+        submit_button = AsyncMock()
+        submit_button.wait_for = AsyncMock(return_value=None)
+        submit_button.is_enabled = AsyncMock(return_value=True)
+        submit_button.text_content = AsyncMock(return_value="")
+        submit_button.click = AsyncMock(return_value=None)
+
+        async def _submit_attr(name):
+            attrs = {
+                "value": "Submit",
+                "aria-label": "Submit",
+                "title": "",
+                "name": "submit",
+                "id": "submit-button",
+                "type": "submit",
+            }
+            return attrs.get(name)
+
+        submit_button.get_attribute = AsyncMock(side_effect=_submit_attr)
+        submit_locator = MagicMock()
+        submit_locator.first = submit_button
+
+        missing_button = AsyncMock()
+        missing_button.wait_for = AsyncMock(side_effect=Exception("not found"))
+        missing_button.text_content = AsyncMock(return_value="")
+        missing_button.click = AsyncMock(return_value=None)
+        missing_button.get_attribute = AsyncMock(return_value=None)
+        missing_locator = MagicMock()
+        missing_locator.first = missing_button
+
+        def _locator_side_effect(selector):
+            if selector == "button[type='submit']":
+                return cancel_locator
+            if selector == "input[type='submit']":
+                return submit_locator
+            return missing_locator
+
+        def _role_side_effect(role, name=None, exact=False):
+            if role == "button" and name == "submit":
+                return submit_locator
+            return missing_locator
+
+        page.locator = MagicMock(return_value=iframe_locator)
+        target_frame.locator = MagicMock(side_effect=_locator_side_effect)
+        target_frame.get_by_role = MagicMock(side_effect=_role_side_effect)
+
+        self.executor._wait_for_element_enabled_before_click = AsyncMock(return_value=None)
+
+        with patch(
+            "app.services.tier2_hybrid.wait_for_post_click_readiness",
+            AsyncMock(return_value={"is_payment_click": False, "is_navigation_click": False}),
+        ):
+            result = await self.executor._try_click_inside_iframe(
+                page,
+                "Step 48: Click the submit button",
+                "/html/body[1]/div[1]/iframe[1]",
+            )
+
+        assert result is True
+        cancel_button.click.assert_not_awaited()
+        submit_button.click.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_validate_cached_xpath_for_step_rejects_email_field_for_password_instruction(self):
