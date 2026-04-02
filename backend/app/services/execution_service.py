@@ -1168,7 +1168,7 @@ class ExecutionService:
                 # Execute with 3-tier service
                 result = await self.three_tier_service.execute_step(
                     step=step_data,
-                    execution_id=None,  # Will add execution_id later if needed
+                    execution_id=execution_id,
                     step_index=step_number - 1
                 )
                 

@@ -26,6 +26,8 @@
 - `backend/tests/test_three_tier_execution_service.py`
 - `backend/tests/test_stagehand_service_azure_cdp.py`
 - `backend/tests/unit/test_universal_llm_azure.py`
+- `backend/tests/test_post_click_readiness.py` (extended)
+- `backend/tests/test_execution_service_three_tier_logging.py`
 
 ---
 
@@ -54,6 +56,9 @@
 21. [ADR-002-21: Three HK Plan-Selection Progress Validation and Single Retry](#adr-002-21-three-hk-plan-selection-progress-validation-and-single-retry)
 22. [ADR-002-22: Initial Bootstrap Navigation Uses First Step URL, Not Placeholder `base_url`](#adr-002-22-initial-bootstrap-navigation-uses-first-step-url-not-placeholder-base_url)
 23. [ADR-002-23: Shared Step-Boundary Loading Wait Before Tier Execution](#adr-002-23-shared-step-boundary-loading-wait-before-tier-execution)
+24. [ADR-002-24: Modal Backdrop Exclusion from Boundary Loading Detection](#adr-002-24-modal-backdrop-exclusion-from-boundary-loading-detection)
+25. [ADR-002-25: Auth-Modal Interactable Fast-Path in Post-Click Readiness](#adr-002-25-auth-modal-interactable-fast-path-in-post-click-readiness)
+26. [ADR-002-26: Forward Real Execution ID into ThreeTierExecutionService for Tier Logging](#adr-002-26-forward-real-execution-id-into-threetierexecutionservice-for-tier-logging)
 
 ---
 
@@ -752,6 +757,11 @@ Key properties:
 | 002-21 | Validate Three HK plan click progression; retry once with price-aware `Select` locator | Accepted | Medium |
 | 002-22 | Resolve initial navigation URL from test steps; bootstrap with `domcontentloaded` | Accepted | Low |
 | 002-23 | Wait for shared loading indicators before each non-navigate step begins | Accepted | Low |
+| 002-24 | Exclude modal backdrops from loading detection; `_overlay_has_loading_signal` guard | Accepted | Low |
+| 002-25 | Auth-modal interactable fast-path; skip `hidden`/`networkidle` waits when modal stays open | Accepted | Low |
+| 002-26 | Forward real `execution_id` into `ThreeTierExecutionService` so `tier_execution_logs` is populated | Accepted | Low |
+
+ADR-002-24 and ADR-002-25 are low risk: ADR-002-24's overlay guard only fires for the two generic overlay selectors, leaving all other loading indicators unchanged; ADR-002-25's fast-path requires both conditions — URL unchanged and interactive modal visible — to be true simultaneously, which is conservative. ADR-002-26 is a one-line wiring fix with no behavioural change to step execution. All three were applied together to fix the repeated 10–20 s per-step stals in Execution #637 and to restore tier-level diagnostics.
 
 ADR-002-7, ADR-002-8, ADR-002-19, ADR-002-20, and ADR-002-21 carry medium risk because their heuristics depend on real-world page structure diversity and environment-specific flow behavior. ADR-002-11 carries medium risk due to process-global `os.environ` mutation — safe for single-worker deployments but must be revisited when parallel test execution is introduced. ADR-002-22 and ADR-002-23 are low risk because they reuse existing URL extraction and loading-indicator mechanisms rather than introducing new tier logic. These decisions should be monitored via tier-level execution metrics and environment-specific failure rates across test runs.
 
@@ -1476,3 +1486,205 @@ Implementation details:
 **Total tests impacted:** 4 targeted tests passing for the affected area:
 - 2 post-click readiness tests
 - 2 three-tier orchestration tests
+
+---
+
+## ADR-002-24: Modal Backdrop Exclusion from Boundary Loading Detection
+
+**Date:** April 2, 2026
+
+### Context
+
+Root-cause analysis of Execution #637 (Three HK login flow) identified that the `wait_for_step_boundary_readiness()` gate introduced in ADR-002-23 caused 15-second stalls before every non-navigate step in the login sequence.
+
+The login modal in Three HK's preprod site keeps a semi-transparent backdrop element in the DOM while the modal is open. That backdrop matches the generic overlay selector `[class*='overlay']` and `.overlay` from `LOADING_SELECTORS`. Because the backdrop is a permanent modal decoration, not a transient loading overlay, it never disappears — so every fill or click step inside the modal blocked for the full `STEP_BOUNDARY_LOADING_TIMEOUT_MS = 15000 ms` before timing out and continuing.
+
+Steps 3, 5 in Execution #637 each showed exactly 15.6 seconds, matching the hard cap. The page was fully interactable throughout; there was no actual loading in progress.
+
+### Decision
+
+Generic overlay selectors (`[class*='overlay']` and `.overlay`) are treated as loading blockers **only** when the element also exhibits at least one real loading signal:
+
+- `aria-busy="true"` attribute on the element, **or**
+- A class or id hint containing one of `loading`, `spinner`, `skeleton`, `shimmer`, **or**
+- A descendant matching `[role='status']`, `[aria-busy='true']`, `[class*='spinner']`, `[class*='loading']`, `.spinner`, or `.loading`.
+
+**Implementation in `post_click_readiness.py`:**
+
+Two module-level constants are added:
+
+```python
+GENERIC_OVERLAY_SELECTORS = {"[class*='overlay']", ".overlay"}
+LOADING_SIGNAL_TOKENS = ("loading", "spinner", "skeleton", "shimmer")
+```
+
+A new async helper `_overlay_has_loading_signal(locator) -> bool` checks the three signal categories above.
+
+Inside `wait_for_loading_indicators_to_clear()`, a guard is inserted before any wait is issued for generic overlays:
+
+```python
+if selector in GENERIC_OVERLAY_SELECTORS and not await _overlay_has_loading_signal(loading_element):
+    logger.debug("Ignoring non-loading overlay while checking readiness: %s", selector)
+    continue
+```
+
+All other selectors in `LOADING_SELECTORS` (spinners, skeletons, specific loading classes, `aria-busy`) are unaffected.
+
+### Consequences
+
+**Positive**
+- Steps 3 and 5 of the Three HK login flow no longer stall for 15 seconds; the modal backdrop is correctly skipped.
+- The fix is minimal and contained inside one helper — all other loading-indicator detection is unchanged.
+- `aria-busy`, spinner, and skeleton selectors continue to block correctly.
+
+**Negative**
+- An overlay element that genuinely blocks UI but uses none of the standard loading signal attributes or classes will no longer be waited on. This scenario is atypical (non-standard loader), and Tier 2/observe retry logic already handles transient page availability issues.
+- `_overlay_has_loading_signal` performs up to nine additional locator queries per visible overlay hit. In practice, the boundary wait is fast when no overlay is present (count check exits immediately).
+
+**Alternatives Considered**
+- **Remove overlay selectors from `LOADING_SELECTORS` entirely**: Would miss real loading overlays on other sites that rely on `[class*='overlay']` without a spinner child.
+- **Use stricter overlay selectors (e.g. `[class*='loading-overlay']`)**: Reduces false positives but misses sites with custom class naming.
+- **Rename selectors with a combined rule**: Combining `[class*='overlay'][aria-busy='true']` into `LOADING_SELECTORS` is cleaner but doesn't handle the descendant spinner signal case.
+
+**Tests added (TDD):**
+- `backend/tests/test_post_click_readiness.py::test_wait_for_step_boundary_readiness_ignores_modal_backdrop_overlays` — overlay present, no loading signals → `wait_for` NOT called.
+- `backend/tests/test_post_click_readiness.py::test_wait_for_loading_indicators_waits_for_busy_overlay` — overlay present with `aria-busy=true` → `wait_for` IS called.
+
+---
+
+## ADR-002-25: Auth-Modal Interactable Fast-Path in Post-Click Readiness
+
+**Date:** April 2, 2026
+
+### Context
+
+The same Execution #637 analysis showed that click steps inside the Three HK login modal (Steps 4 and 6 — the "Login" button submissions) each consumed 24–30 seconds.
+
+The login flow uses a **same-URL popup modal**: clicking the Login button inside the modal does not navigate away; instead the modal's content changes (e.g., from email entry to password entry). The URL remains unchanged.
+
+Because the button instruction and element text both matched `AUTH_KEYWORDS` (`login`), `wait_for_post_click_readiness()` entered the auth-click path in `post_click_readiness.py`:
+
+1. `clicked_element.wait_for(state="hidden", timeout=5000)` — waited 5 s because the Login button is replaced by the password form but the locator remains "visible" from Playwright's perspective until garbage-collected.
+2. `page.wait_for_load_state("networkidle", timeout=5000)` — waited up to 5 s; a modal content swap does not trigger a full network idle.
+3. `wait_for_loading_indicators_to_clear(page, timeout=8000)` — ran the full selector scan before the 0.4 s settle.
+
+The modal remained open and its fields were immediately interactable after the click; there was no actual page transition or network activity requiring these waits.
+
+### Decision
+
+Add a fast-path check **before** the auth-click hidden/networkidle waits: if the URL has not changed and a modal/dialog with interactive child elements is still visible and interactable, skip directly to the caller without issuing any hidden or networkidle wait.
+
+**New async helper `_visible_interactable_modal_present(page) -> bool`:**
+
+Iterates `MODAL_CONTAINER_SELECTORS` (`.modal.show`, `[role='dialog']`, `[aria-modal='true']`). For each visible container, checks whether it has at least one descendant matching:
+
+```python
+INTERACTABLE_MODAL_CHILD_SELECTOR = (
+    "input, button, textarea, select, "
+    "[contenteditable='true'], [role='button']"
+)
+```
+
+Returns `True` if any visible container has interactive children, `False` otherwise.
+
+**Fast-path guard inserted in `wait_for_post_click_readiness()`** immediately before the auth wait block:
+
+```python
+if classification["is_auth_click"] and not url_changed:
+    if await _visible_interactable_modal_present(page):
+        logger.info(
+            "Auth modal remained interactable after click; "
+            "skipping hidden/networkidle waits"
+        )
+        return classification
+```
+
+When this condition fires: no `wait_for(state="hidden")`, no `wait_for_load_state("networkidle")`, no loading-indicator scan. The step completes as soon as the fast-path returns.
+
+### Consequences
+
+**Positive**
+- Steps 4 and 6 in the Three HK login modal flow no longer incur 10–15 seconds of redundant waits; the fast path returns within milliseconds of the modal content update.
+- The logic is conservative: it only short-circuits when both conditions hold simultaneously — URL unchanged AND interactable modal still visible. A real page transition (URL changes) or a dismissing modal (becomes invisible) will still run the full auth-click readiness path.
+- No change to non-auth clicks or to auth clicks that do trigger a page navigation.
+
+**Negative**
+- If a site's login button both closes the modal AND then immediately shows a new modal in the same pass, the fast-path may return too early. This is an edge case; the call to `wait_for_loading_indicators_to_clear` that follows would normally catch any subsequent spinner.
+- The selector `INTERACTABLE_MODAL_CHILD_SELECTOR` is broad. An informational modal with a button counts as "interactable". The guard is further protected by the `not url_changed` condition, which ensures no navigation occurred.
+
+**Alternatives Considered**
+- **Detect modal content change via MutationObserver JS**: Accurate but requires JS injection into every page, crosses Playwright API boundaries, and is harder to unit-test.
+- **Lower `auth_timeout` from 5000ms to 500ms**: Reduces the wait but still adds 500 ms per auth step unnecessarily; does not fix the root cause.
+- **Remove `wait_for(state="hidden")` for auth clicks entirely**: Regresses other flows where the modal does close after login (e.g. correct full-page login flows that navigate away). The fast-path condition is safer.
+
+**Tests added (TDD):**
+- `backend/tests/test_post_click_readiness.py::test_wait_for_post_click_readiness_skips_auth_wait_for_interactable_modal_transition` — auth click, URL unchanged, visible modal with interactive child → `clicked_element.wait_for` NOT awaited, `page.wait_for_load_state` NOT awaited.
+
+---
+
+## ADR-002-26: Forward Real Execution ID into ThreeTierExecutionService for Tier Logging
+
+**Date:** April 2, 2026
+
+### Context
+
+Post-execution diagnosis of Execution #637 revealed that the `tier_execution_logs` table was empty for that run. The schema and `_log_tier_execution()` implementation in `ThreeTierExecutionService` were both correct; the problem was the call site in `execution_service.py`:
+
+```python
+# execution_service.py line 1171 (before fix)
+result = await self.three_tier_service.execute_step(
+    step=step_data,
+    execution_id=None,  # Will add execution_id later if needed
+    step_index=step_number - 1
+)
+```
+
+`ThreeTierExecutionService.execute_step()` only calls `_log_tier_execution()` when **both** `execution_id is not None` and `step_index is not None`. Because `execution_id=None` was always passed, no log rows were ever written — regardless of how many tiers were attempted. This made post-run tier analysis and performance diagnosis impossible from the database.
+
+The comment `# Will add execution_id later if needed` indicates the wiring was intentionally deferred and never followed up.
+
+### Decision
+
+Pass the real `execution_id` parameter received by `_execute_step()` directly to `three_tier_service.execute_step()`. No new infrastructure is required; the plumbing was already correct end-to-end.
+
+**Change in `execution_service.py`:**
+
+```python
+# Before
+result = await self.three_tier_service.execute_step(
+    step=step_data,
+    execution_id=None,  # Will add execution_id later if needed
+    step_index=step_number - 1
+)
+
+# After
+result = await self.three_tier_service.execute_step(
+    step=step_data,
+    execution_id=execution_id,
+    step_index=step_number - 1
+)
+```
+
+`_execute_step()` already receives `execution_id` as a parameter (set correctly by both the main step loop and the loop-step path in `execute_test()`), so no signature changes are needed elsewhere.
+
+### Consequences
+
+**Positive**
+- `tier_execution_logs` is now populated for every step of every execution, enabling:
+  - Per-step tier breakdown (`tier1_time_ms`, `tier2_time_ms`, `tier3_time_ms`).
+  - Tier fallback reason analysis (`tier1_error`, `tier2_error`).
+  - Strategy effectiveness tracking over time.
+- Supports the `track_strategy_effectiveness` and `track_fallback_reasons` flags already present in `ExecutionSettings`.
+- Zero behavioural change to step execution — the log write is async fire-and-forget inside `_log_tier_execution()`.
+
+**Negative**
+- Adds one database INSERT per step per execution. For a 47-step test like Execution #637, this is 47 extra rows per run — negligible overhead.
+- Historical executions (before this fix) have no tier log rows and cannot be retroactively populated.
+
+**Alternatives Considered**
+- **Add a post-execution batch log-write**: Would reconstruct tier data from in-memory history at execution end rather than per step. More fragile (requires keeping history in memory for the full run) and loses timing precision.
+- **Log tiers in `execution_service` rather than `three_tier_service`**: Duplicates logging logic; the 3-tier service already owns `_log_tier_execution()` and the per-tier timing data.
+- **Keep `execution_id=None` and use a separate logging decorator**: Over-engineering a one-line fix.
+
+**Tests added (TDD):**
+- `backend/tests/test_execution_service_three_tier_logging.py::test_execute_step_passes_execution_id_to_three_tier_service` — verifies `three_tier_service.execute_step` is awaited with `execution_id=637` (not `None`) when `_execute_step(execution_id=637)` is called.
