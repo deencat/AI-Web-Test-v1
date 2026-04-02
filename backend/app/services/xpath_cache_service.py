@@ -5,9 +5,11 @@ Sprint 5.5: 3-Tier Execution Engine
 """
 import hashlib
 import json
+import re
 import time
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
+from urllib.parse import urlparse, urlunparse
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 import logging
@@ -48,8 +50,27 @@ class XPathCacheService:
         Returns:
             SHA256 hash of the URL and instruction
         """
-        key_string = f"{page_url}::{instruction}"
+        normalized_page_url = XPathCacheService.normalize_cacheable_url(page_url)
+        key_string = f"{normalized_page_url}::{instruction}"
         return hashlib.sha256(key_string.encode()).hexdigest()
+
+    @staticmethod
+    def normalize_cacheable_url(page_url: str) -> str:
+        """Collapse sessionized payment-gateway URLs so cache entries can be reused."""
+        if not page_url:
+            return page_url
+
+        parsed = urlparse(page_url)
+        path = parsed.path or ""
+
+        path = re.sub(
+            r"(/checkout/pay/)session[^/?#]+",
+            r"\1SESSION",
+            path,
+            flags=re.IGNORECASE,
+        )
+
+        return urlunparse((parsed.scheme, parsed.netloc, path, "", parsed.query, ""))
     
     def get_cached_xpath(
         self,

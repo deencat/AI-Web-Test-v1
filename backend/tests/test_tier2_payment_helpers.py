@@ -504,6 +504,43 @@ class TestTier2PaymentHelpers:
         self.executor._execute_action_with_xpath.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_execute_step_prefers_cached_xpath_before_payment_probes(self):
+        page = MagicMock()
+        page.url = "https://three.com.hk/postpaid/en/checkout/checkout?promotionId=HPPRM0000000187&step=autopay"
+
+        self.executor.cache_service.get_cached_xpath = MagicMock(return_value={"xpath": "/html/body/form/input[1]"})
+        self.executor.cache_service.invalidate_cache = MagicMock()
+        self.executor.cache_service.cache_xpath = MagicMock()
+        self.executor.cache_service.validate_and_update = MagicMock()
+
+        self.executor._validate_cached_xpath_for_step = AsyncMock(return_value=True)
+        self.executor._execute_action_with_xpath = AsyncMock(return_value=None)
+        self.executor._maybe_wait_for_payment_gateway = AsyncMock(return_value=None)
+        self.executor._try_payment_field_action = AsyncMock(return_value=None)
+        self.executor.xpath_extractor.extract_xpath_with_page = AsyncMock()
+
+        result = await self.executor.execute_step(
+            page,
+            {
+                "action": "fill",
+                "instruction": "Step 32: Input card holder name test",
+                "value": "test",
+            },
+        )
+
+        assert result["success"] is True
+        self.executor._maybe_wait_for_payment_gateway.assert_not_awaited()
+        self.executor._try_payment_field_action.assert_not_awaited()
+        self.executor.xpath_extractor.extract_xpath_with_page.assert_not_awaited()
+        self.executor._execute_action_with_xpath.assert_awaited_once_with(
+            page,
+            "fill",
+            "/html/body/form/input[1]",
+            "test",
+            "Step 32: Input card holder name test",
+        )
+
+    @pytest.mark.asyncio
     async def test_execute_action_with_xpath_waits_for_popup_login_loading_to_clear(self):
         page = MagicMock()
         page.url = "https://example.com/account"
@@ -649,6 +686,141 @@ class TestCombinedExpiryFill:
         )
 
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_combined_expiry_fill_uses_page_label_fallback_before_iframe_probes(self):
+        page = MagicMock()
+        page.url = "https://gphk.gateway.mastercard.com/checkout/pay/SESSION123"
+
+        self.executor.payment_gateway_ready = True
+        self.executor.payment_gateway_url = page.url
+
+        mock_fail_element = AsyncMock()
+        mock_fail_element.wait_for = AsyncMock(side_effect=Exception("not found"))
+        mock_fail_locator = MagicMock()
+        mock_fail_locator.first = mock_fail_element
+
+        tried_labels = []
+
+        mock_success_element = AsyncMock()
+        mock_success_element.wait_for = AsyncMock(return_value=None)
+        mock_success_element.fill = AsyncMock(return_value=None)
+
+        def get_by_label_side_effect(label, exact=False):
+            tried_labels.append(label)
+            if label == "Exp. Date (MM/YY)":
+                return mock_success_element
+            fail = AsyncMock()
+            fail.wait_for = AsyncMock(side_effect=Exception("not found"))
+            return fail
+
+        page.locator = MagicMock(return_value=mock_fail_locator)
+        page.get_by_label = MagicMock(side_effect=get_by_label_side_effect)
+        page.frame_locator = MagicMock(side_effect=AssertionError("iframe probes should not run before page labels"))
+
+        result = await self.executor._try_payment_field_action(
+            page=page,
+            action="fill",
+            instruction="Step 33: Input exp. Date. 01/39",
+            value="01/39",
+            start_time=__import__("time").time(),
+        )
+
+        assert result is not None and result["success"] is True
+        assert "Exp. Date (MM/YY)" in tried_labels
+        page.frame_locator.assert_not_called()
+
+
+class TestPaymentFieldProbeOrdering:
+    """Payment helpers should prefer page-local matches before iframe fan-out."""
+
+    def setup_method(self):
+        self.executor = Tier2HybridExecutor(db=MagicMock(), xpath_extractor=MagicMock(), timeout_ms=30000)
+
+    @pytest.mark.asyncio
+    async def test_page_labels_are_tried_before_iframe_probes(self):
+        page = MagicMock()
+        page.url = "https://gphk.gateway.mastercard.com/checkout/pay/SESSION123"
+
+        self.executor.payment_gateway_ready = True
+        self.executor.payment_gateway_url = page.url
+
+        mock_fail_element = AsyncMock()
+        mock_fail_element.wait_for = AsyncMock(side_effect=Exception("not found"))
+        mock_fail_locator = MagicMock()
+        mock_fail_locator.first = mock_fail_element
+
+        tried_labels = []
+
+        mock_success_element = AsyncMock()
+        mock_success_element.wait_for = AsyncMock(return_value=None)
+        mock_success_element.fill = AsyncMock(return_value=None)
+
+        def get_by_label_side_effect(label, exact=False):
+            tried_labels.append(label)
+            if label == "Cardholder name":
+                return mock_success_element
+            fail = AsyncMock()
+            fail.wait_for = AsyncMock(side_effect=Exception("not found"))
+            return fail
+
+        page.locator = MagicMock(return_value=mock_fail_locator)
+        page.get_by_label = MagicMock(side_effect=get_by_label_side_effect)
+        page.frame_locator = MagicMock(side_effect=AssertionError("iframe probes should not run before page labels"))
+
+        result = await self.executor._try_payment_field_action(
+            page=page,
+            action="fill",
+            instruction="Step 45: Input card holder name test",
+            value="test input",
+            start_time=__import__("time").time(),
+        )
+
+        assert result is not None and result["success"] is True
+        assert "Cardholder name" in tried_labels
+        page.frame_locator.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_iframe_probes_are_skipped_when_no_payment_iframe_exists(self):
+        page = MagicMock()
+        page.url = "https://gphk.gateway.mastercard.com/checkout/pay/SESSION123"
+
+        self.executor.payment_gateway_ready = True
+        self.executor.payment_gateway_url = page.url
+
+        mock_fail_element = AsyncMock()
+        mock_fail_element.wait_for = AsyncMock(side_effect=Exception("not found"))
+        mock_fail_locator = MagicMock()
+        mock_fail_locator.first = mock_fail_element
+
+        absent_iframe_first = AsyncMock()
+        absent_iframe_first.count = AsyncMock(return_value=0)
+        absent_iframe_locator = MagicMock()
+        absent_iframe_locator.count = AsyncMock(return_value=0)
+        absent_iframe_locator.first = absent_iframe_first
+
+        def locator_side_effect(selector):
+            if selector.startswith("iframe"):
+                return absent_iframe_locator
+            return mock_fail_locator
+
+        label_fail = AsyncMock()
+        label_fail.wait_for = AsyncMock(side_effect=Exception("not found"))
+
+        page.locator = MagicMock(side_effect=locator_side_effect)
+        page.get_by_label = MagicMock(return_value=label_fail)
+        page.frame_locator = MagicMock(side_effect=AssertionError("iframe fan-out should be skipped when no matching iframe exists"))
+
+        result = await self.executor._try_payment_field_action(
+            page=page,
+            action="fill",
+            instruction="Step 45: Input card holder name test",
+            value="test input",
+            start_time=__import__("time").time(),
+        )
+
+        assert result is None
+        page.frame_locator.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

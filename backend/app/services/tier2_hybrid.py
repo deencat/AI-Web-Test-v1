@@ -120,30 +120,6 @@ class Tier2HybridExecutor:
             # For upload_file actions, use file_path instead of value
             if action == "upload_file":
                 value = file_path or value
-
-            # Payment gateway readiness and direct field handling
-            if self._is_payment_instruction(instruction, action):
-                selector = step.get("selector")
-                if selector:
-                    try:
-                        await page.locator(selector).first.wait_for(state="visible", timeout=1500)
-                        self.payment_gateway_ready = True
-                        self.payment_gateway_url = page.url
-                    except Exception:
-                        await self._maybe_wait_for_payment_gateway(page)
-                else:
-                    await self._maybe_wait_for_payment_gateway(page)
-
-                if self.payment_direct_enabled:
-                    direct_result = await self._try_payment_field_action(
-                        page,
-                        action,
-                        instruction,
-                        value,
-                        start_time
-                    )
-                    if direct_result:
-                        return direct_result
             
             # Step 1: Try to get XPath from cache
             cached_xpath = self.cache_service.get_cached_xpath(page_url, instruction)
@@ -173,6 +149,30 @@ class Tier2HybridExecutor:
                     self.cache_service.invalidate_cache(page_url, instruction, "Element not found on page")
                     cache_hit = False
                     cached_xpath = None
+
+            # Payment gateway readiness and direct field handling
+            if not cached_xpath and self._is_payment_instruction(instruction, action):
+                selector = step.get("selector")
+                if selector:
+                    try:
+                        await page.locator(selector).first.wait_for(state="visible", timeout=1500)
+                        self.payment_gateway_ready = True
+                        self.payment_gateway_url = page.url
+                    except Exception:
+                        await self._maybe_wait_for_payment_gateway(page)
+                else:
+                    await self._maybe_wait_for_payment_gateway(page)
+
+                if self.payment_direct_enabled:
+                    direct_result = await self._try_payment_field_action(
+                        page,
+                        action,
+                        instruction,
+                        value,
+                        start_time
+                    )
+                    if direct_result:
+                        return direct_result
             
             if not cached_xpath:
                 # Step 2: Extract XPath using Stagehand observe()
@@ -1135,6 +1135,29 @@ class Tier2HybridExecutor:
             "iframe[src*='payment']",
         ]
 
+        label_candidates = []
+        if "card number" in instruction_lower or "credit card" in instruction_lower:
+            label_candidates = ["Card number", "Card Number", "Card no", "Card No", "Credit Card No.", "Credit Card Number"]
+        elif "cvv" in instruction_lower or "cvc" in instruction_lower or "security code" in instruction_lower:
+            label_candidates = ["CVV", "CVC", "Security code", "Security Code"]
+        elif "cardholder" in instruction_lower or "card holder" in instruction_lower:
+            label_candidates = ["Cardholder name", "Card Holder Name", "Cardholder", "Name on card"]
+        elif action in ["fill", "type", "input"] and (
+            "exp. date" in instruction_lower or "exp date" in instruction_lower or "expiry" in instruction_lower or "expiration" in instruction_lower
+        ):
+            label_candidates = [
+                "Exp. Date (MM/YY)",
+                "Exp. Date (MM/YYYY)",
+                "Exp. Date",
+                "Expiry date",
+                "Expiration date",
+                "Exp date",
+            ]
+        elif "month" in instruction_lower:
+            label_candidates = ["Expiry month", "Expiration month", "Exp month", "Month"]
+        elif "year" in instruction_lower:
+            label_candidates = ["Expiry year", "Expiration year", "Exp year", "Year"]
+
         async def _try_fill(locator):
             await locator.wait_for(state="visible", timeout=wait_timeout)
             await locator.fill(value, timeout=self.timeout_ms)
@@ -1155,6 +1178,17 @@ class Tier2HybridExecutor:
                     await locator.select_option(label=value, timeout=self.timeout_ms)
             else:
                 await locator.fill(value, timeout=self.timeout_ms)
+
+        async def _existing_payment_frames():
+            existing_frames = []
+            for iframe_selector in frame_selectors:
+                try:
+                    iframe_locator = page.locator(iframe_selector)
+                    if await iframe_locator.count() > 0:
+                        existing_frames.append((iframe_selector, page.frame_locator(iframe_selector)))
+                except Exception:
+                    continue
+            return existing_frames
 
         try:
             if input_selectors:
@@ -1199,8 +1233,29 @@ class Tier2HybridExecutor:
                     except Exception:
                         continue
 
-            for iframe_selector in frame_selectors:
-                frame_locator = page.frame_locator(iframe_selector)
+            for label in label_candidates:
+                try:
+                    locator = page.get_by_label(label, exact=False)
+                    await _try_label(locator)
+                    execution_time_ms = (time.time() - start_time) * 1000
+                    logger.info(f"[Tier 2] ✅ Payment field set using label: {label}")
+                    self.payment_gateway_ready = True
+                    self.payment_gateway_url = page.url
+                    return {
+                        "success": True,
+                        "tier": 2,
+                        "execution_time_ms": execution_time_ms,
+                        "extraction_time_ms": 0,
+                        "cache_hit": False,
+                        "xpath": None,
+                        "error": None
+                    }
+                except Exception:
+                    continue
+
+            existing_frames = await _existing_payment_frames()
+
+            for iframe_selector, frame_locator in existing_frames:
                 if input_selectors:
                     for selector in input_selectors:
                         locator = frame_locator.locator(selector).first
@@ -1242,40 +1297,8 @@ class Tier2HybridExecutor:
                             }
                         except Exception:
                             continue
-            label_candidates = []
-            if "card number" in instruction_lower or "credit card" in instruction_lower:
-                label_candidates = ["Card number", "Card Number", "Card no", "Card No", "Credit Card No.", "Credit Card Number"]
-            elif "cvv" in instruction_lower or "cvc" in instruction_lower or "security code" in instruction_lower:
-                label_candidates = ["CVV", "CVC", "Security code", "Security Code"]
-            elif "cardholder" in instruction_lower or "card holder" in instruction_lower:
-                label_candidates = ["Cardholder name", "Cardholder", "Name on card"]
-            elif "month" in instruction_lower:
-                label_candidates = ["Expiry month", "Expiration month", "Exp month", "Month"]
-            elif "year" in instruction_lower:
-                label_candidates = ["Expiry year", "Expiration year", "Exp year", "Year"]
 
-            for label in label_candidates:
-                try:
-                    locator = page.get_by_label(label, exact=False)
-                    await _try_label(locator)
-                    execution_time_ms = (time.time() - start_time) * 1000
-                    logger.info(f"[Tier 2] ✅ Payment field set using label: {label}")
-                    self.payment_gateway_ready = True
-                    self.payment_gateway_url = page.url
-                    return {
-                        "success": True,
-                        "tier": 2,
-                        "execution_time_ms": execution_time_ms,
-                        "extraction_time_ms": 0,
-                        "cache_hit": False,
-                        "xpath": None,
-                        "error": None
-                    }
-                except Exception:
-                    continue
-
-            for iframe_selector in frame_selectors:
-                frame_locator = page.frame_locator(iframe_selector)
+            for iframe_selector, frame_locator in existing_frames:
                 for label in label_candidates:
                     try:
                         locator = frame_locator.get_by_label(label, exact=False)

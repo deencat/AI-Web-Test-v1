@@ -28,6 +28,7 @@
 - `backend/tests/unit/test_universal_llm_azure.py`
 - `backend/tests/test_post_click_readiness.py` (extended)
 - `backend/tests/test_execution_service_three_tier_logging.py`
+- `backend/tests/test_xpath_cache_service.py`
 
 ---
 
@@ -59,6 +60,7 @@
 24. [ADR-002-24: Modal Backdrop Exclusion from Boundary Loading Detection](#adr-002-24-modal-backdrop-exclusion-from-boundary-loading-detection)
 25. [ADR-002-25: Auth-Modal Interactable Fast-Path in Post-Click Readiness](#adr-002-25-auth-modal-interactable-fast-path-in-post-click-readiness)
 26. [ADR-002-26: Forward Real Execution ID into ThreeTierExecutionService for Tier Logging](#adr-002-26-forward-real-execution-id-into-threetierexecutionservice-for-tier-logging)
+27. [ADR-002-27: Cache-First Payment Field Handling and Session-Normalized Gateway Cache Keys](#adr-002-27-cache-first-payment-field-handling-and-session-normalized-gateway-cache-keys)
 
 ---
 
@@ -760,10 +762,13 @@ Key properties:
 | 002-24 | Exclude modal backdrops from loading detection; `_overlay_has_loading_signal` guard | Accepted | Low |
 | 002-25 | Auth-modal interactable fast-path; skip `hidden`/`networkidle` waits when modal stays open | Accepted | Low |
 | 002-26 | Forward real `execution_id` into `ThreeTierExecutionService` so `tier_execution_logs` is populated | Accepted | Low |
+| 002-27 | Validate cached XPath before payment probes; try page labels before iframe fan-out; normalize sessionized gateway cache keys | Accepted | Low |
 
 ADR-002-24 and ADR-002-25 are low risk: ADR-002-24's overlay guard only fires for the two generic overlay selectors, leaving all other loading indicators unchanged; ADR-002-25's fast-path requires both conditions — URL unchanged and interactive modal visible — to be true simultaneously, which is conservative. ADR-002-26 is a one-line wiring fix with no behavioural change to step execution. All three were applied together to fix the repeated 10–20 s per-step stals in Execution #637 and to restore tier-level diagnostics.
 
-ADR-002-7, ADR-002-8, ADR-002-19, ADR-002-20, and ADR-002-21 carry medium risk because their heuristics depend on real-world page structure diversity and environment-specific flow behavior. ADR-002-11 carries medium risk due to process-global `os.environ` mutation — safe for single-worker deployments but must be revisited when parallel test execution is introduced. ADR-002-22 and ADR-002-23 are low risk because they reuse existing URL extraction and loading-indicator mechanisms rather than introducing new tier logic. These decisions should be monitored via tier-level execution metrics and environment-specific failure rates across test runs.
+ADR-002-27 is also low risk: it reorders existing Tier 2 fallbacks rather than introducing new ones, only skips iframe fan-out when no matching payment iframe exists in the DOM, and normalizes only the sessionized gateway path segment for XPath cache keys. Non-payment steps and non-sessionized URLs are unchanged.
+
+ADR-002-7, ADR-002-8, ADR-002-19, ADR-002-20, and ADR-002-21 carry medium risk because their heuristics depend on real-world page structure diversity and environment-specific flow behavior. ADR-002-11 carries medium risk due to process-global `os.environ` mutation — safe for single-worker deployments but must be revisited when parallel test execution is introduced. ADR-002-22, ADR-002-23, and ADR-002-27 are low risk because they reuse existing URL extraction, loading-indicator, and Tier 2 fallback mechanisms rather than introducing new execution tiers or unbounded waits. These decisions should be monitored via tier-level execution metrics and environment-specific failure rates across test runs.
 
 ---
 
@@ -1688,3 +1693,111 @@ result = await self.three_tier_service.execute_step(
 
 **Tests added (TDD):**
 - `backend/tests/test_execution_service_three_tier_logging.py::test_execute_step_passes_execution_id_to_three_tier_service` — verifies `three_tier_service.execute_step` is awaited with `execution_id=637` (not `None`) when `_execute_step(execution_id=637)` is called.
+
+---
+
+## ADR-002-27: Cache-First Payment Field Handling and Session-Normalized Gateway Cache Keys
+
+**Date:** April 2, 2026
+
+### Context
+
+Follow-up analysis of Execution #637 showed that the worst remaining payment/autopay stalls were no longer caused by page rendering delays. The target fields were already visible and interactable, but Tier 2 still spent 36–78 seconds inside its own payment helper before reporting success.
+
+Four gaps were identified in the Tier 2 flow:
+
+1. **Validated cache hits still paid the payment-probe cost** — `Tier2HybridExecutor.execute_step()` ran payment readiness and `_try_payment_field_action()` before checking the XPath cache. For known instructions on stable pages, this meant the executor spent time probing CSS selectors and labels even though a valid cached XPath already existed.
+
+2. **Page labels were tried after iframe fan-out** — `_try_payment_field_action()` tried page CSS selectors, then iframe CSS selectors, and only then attempted page labels. On the Mastercard gateway page, the correct field was often found by a simple page label such as `Cardholder name` or `Security code`, but only after multiple failed 3-second iframe probes.
+
+3. **Single-field expiry inputs had no label fallback** — combined expiry fill steps such as `Input exp. Date. 01/39` had CSS selector support, but no label candidates. When the selectors missed, the helper fell through to cached XPath or `observe()` only after the full probe loop.
+
+4. **Sessionized gateway URLs fragmented the XPath cache** — `XPathCacheService.generate_cache_key()` used the full payment gateway URL. Mastercard gateway paths include a unique session token (`/checkout/pay/SESSION...`), so each run created a new cache key and historical gateway XPath entries accumulated with `hit_count=0`.
+
+### Decision
+
+#### ADR-002-27-A: Check validated cache entries before payment direct handling
+
+In `Tier2HybridExecutor.execute_step()`, the XPath cache lookup and validation now run before payment readiness and `_try_payment_field_action()`. Payment direct handling only runs when there is no validated cache hit.
+
+This preserves the existing self-healing path: stale cache entries are still invalidated and re-extracted, but stable payment/autopay instructions no longer pay the direct-probe cost on every run.
+
+#### ADR-002-27-B: Prefer page labels before iframe fan-out
+
+Within `_try_payment_field_action()`, page-local labels are now attempted before any iframe probing. The helper still tries page CSS selectors first, but if those miss it moves directly to `page.get_by_label(...)` instead of enumerating iframe selectors first.
+
+This reorders existing fallback logic rather than adding a new tier. The goal is to take the cheapest high-signal match first and only inspect iframe contents when page-local strategies have failed.
+
+#### ADR-002-27-C: Add label fallback for single Exp. Date inputs
+
+For combined expiry fill instructions (`fill` / `type` / `input` with `exp. date`, `exp date`, `expiry`, or `expiration`), page-label candidates are added:
+
+```python
+[
+    "Exp. Date (MM/YY)",
+    "Exp. Date (MM/YYYY)",
+    "Exp. Date",
+    "Expiry date",
+    "Expiration date",
+    "Exp date",
+]
+```
+
+This lets the helper resolve standard labeled expiry inputs without falling back to iframe probing or `observe()`.
+
+#### ADR-002-27-D: Only inspect iframe candidates that actually exist
+
+Before building frame-locator probes, Tier 2 now checks whether each payment iframe selector exists in the DOM. If no matching iframe is present, iframe fan-out is skipped entirely.
+
+This avoids paying iframe probe time on same-document payment forms and on gateway pages where the target fields are not actually inside one of the known iframe patterns.
+
+#### ADR-002-27-E: Normalize sessionized gateway URLs before hashing XPath cache keys
+
+`XPathCacheService` now normalizes cacheable URLs before computing the SHA256 cache key. For payment gateway paths matching:
+
+```text
+/checkout/pay/SESSION<token>
+```
+
+the session token is collapsed to a stable placeholder:
+
+```text
+/checkout/pay/SESSION
+```
+
+The normalized URL is then combined with the instruction:
+
+```python
+normalized_page_url = XPathCacheService.normalize_cacheable_url(page_url)
+key_string = f"{normalized_page_url}::{instruction}"
+```
+
+This preserves instruction-level specificity while allowing successive Mastercard sessions to reuse the same XPath cache entry.
+
+### Consequences
+
+**Positive**
+- Stable cached payment/autopay steps now bypass the slow direct payment probe loop entirely.
+- Cardholder, CVV, and combined expiry fields resolve faster on pages where labels are more reliable than attribute-based selectors.
+- Same-page payment forms no longer pay iframe fan-out costs when no matching iframe exists.
+- Gateway XPath cache entries can now accumulate real reuse (`hit_count`) across different sessionized Mastercard URLs instead of staying fragmented at zero hits.
+
+**Negative**
+- Reordering the helper means a stale but still semantically valid cached XPath will be preferred over a potentially simpler direct selector until that cache entry fails and is invalidated.
+- The new expiry label list is heuristic; uncommon localized labels still require selector or `observe()` fallback.
+- URL normalization is intentionally narrow. It covers the known `/checkout/pay/SESSION...` pattern only; other providers with different sessionized path shapes still need explicit normalization rules if reuse becomes important.
+
+**Alternatives Considered**
+- **Keep payment probes ahead of cache lookup**: Rejected because validated cache hits would continue to pay unnecessary 36–78 second probe costs.
+- **Skip iframe probing entirely for payment helpers**: Rejected because real cross-origin iframe-hosted payment widgets still need this fallback.
+- **Normalize the entire payment gateway URL to hostname-only**: Rejected because it risks merging unrelated gateway flows that share a host but not a page shape.
+- **Add Three-HK-specific hardcoded selectors only**: Rejected because the observed issue was about fallback ordering and cache fragmentation, not the absence of site-specific selectors.
+
+**Tests added (TDD):**
+- `backend/tests/test_tier2_payment_helpers.py::TestTier2PaymentHelpers::test_execute_step_prefers_cached_xpath_before_payment_probes`
+- `backend/tests/test_tier2_payment_helpers.py::TestCombinedExpiryFill::test_combined_expiry_fill_uses_page_label_fallback_before_iframe_probes`
+- `backend/tests/test_tier2_payment_helpers.py::TestPaymentFieldProbeOrdering::test_page_labels_are_tried_before_iframe_probes`
+- `backend/tests/test_tier2_payment_helpers.py::TestPaymentFieldProbeOrdering::test_iframe_probes_are_skipped_when_no_payment_iframe_exists`
+- `backend/tests/test_xpath_cache_service.py::test_generate_cache_key_normalizes_mastercard_session_urls`
+- `backend/tests/test_xpath_cache_service.py::test_generate_cache_key_keeps_instruction_specificity_after_gateway_normalization`
+- `backend/tests/test_xpath_cache_service.py::test_generate_cache_key_does_not_merge_gateway_and_autopay_pages`
