@@ -15,6 +15,7 @@
 - `backend/app/services/stagehand_service.py`
 - `backend/app/services/execution_service.py`
 - `backend/app/services/post_click_readiness.py`
+- `backend/app/services/step_progress_guard.py`
 - `backend/app/api/v1/endpoints/executions.py`
 - `backend/app/utils/http_auth_credentials.py`
 - `frontend/src/components/RunTestButton.tsx`
@@ -24,6 +25,7 @@
 - `backend/tests/test_tier2_payment_helpers.py`
 - `backend/tests/test_post_click_readiness.py`
 - `backend/tests/test_three_tier_execution_service.py`
+- `backend/tests/test_step_progress_guard.py`
 - `backend/tests/test_stagehand_service_azure_cdp.py`
 - `backend/tests/unit/test_universal_llm_azure.py`
 - `backend/tests/test_post_click_readiness.py` (extended)
@@ -61,6 +63,8 @@
 25. [ADR-002-25: Auth-Modal Interactable Fast-Path in Post-Click Readiness](#adr-002-25-auth-modal-interactable-fast-path-in-post-click-readiness)
 26. [ADR-002-26: Forward Real Execution ID into ThreeTierExecutionService for Tier Logging](#adr-002-26-forward-real-execution-id-into-threetierexecutionservice-for-tier-logging)
 27. [ADR-002-27: Cache-First Payment Field Handling and Session-Normalized Gateway Cache Keys](#adr-002-27-cache-first-payment-field-handling-and-session-normalized-gateway-cache-keys)
+28. [ADR-002-28: Scope Business-Action Modal Auto-Dismiss to Nuisance Dialogs](#adr-002-28-scope-business-action-modal-auto-dismiss-to-nuisance-dialogs)
+29. [ADR-002-29: Visible Progress Guard for Repeated Confirm Steps](#adr-002-29-visible-progress-guard-for-repeated-confirm-steps)
 
 ---
 
@@ -763,12 +767,18 @@ Key properties:
 | 002-25 | Auth-modal interactable fast-path; skip `hidden`/`networkidle` waits when modal stays open | Accepted | Low |
 | 002-26 | Forward real `execution_id` into `ThreeTierExecutionService` so `tier_execution_logs` is populated | Accepted | Low |
 | 002-27 | Validate cached XPath before payment probes; try page labels before iframe fan-out; normalize sessionized gateway cache keys | Accepted | Low |
+| 002-28 | Scope `Confirm` / `Continue` / `Done` auto-dismiss to nuisance/info dialogs only | Accepted | Medium |
+| 002-29 | Downgrade repeated confirm clicks to `no_progress` when URL/modal/body state does not advance | Accepted | Medium |
 
-ADR-002-24 and ADR-002-25 are low risk: ADR-002-24's overlay guard only fires for the two generic overlay selectors, leaving all other loading indicators unchanged; ADR-002-25's fast-path requires both conditions — URL unchanged and interactive modal visible — to be true simultaneously, which is conservative. ADR-002-26 is a one-line wiring fix with no behavioural change to step execution. All three were applied together to fix the repeated 10–20 s per-step stals in Execution #637 and to restore tier-level diagnostics.
+ADR-002-24 and ADR-002-25 are low risk: ADR-002-24's overlay guard only fires for the two generic overlay selectors, leaving all other loading indicators unchanged; ADR-002-25's fast-path requires both conditions — URL unchanged and interactive modal visible — to be true simultaneously, which is conservative. ADR-002-26 is a one-line wiring fix with no behavioural change to step execution. All three were applied together to fix the repeated 10–20 s per-step stalls in Execution #637 and to restore tier-level diagnostics.
 
 ADR-002-27 is also low risk: it reorders existing Tier 2 fallbacks rather than introducing new ones, only skips iframe fan-out when no matching payment iframe exists in the DOM, and normalizes only the sessionized gateway path segment for XPath cache keys. Non-payment steps and non-sessionized URLs are unchanged.
 
-ADR-002-7, ADR-002-8, ADR-002-19, ADR-002-20, and ADR-002-21 carry medium risk because their heuristics depend on real-world page structure diversity and environment-specific flow behavior. ADR-002-11 carries medium risk due to process-global `os.environ` mutation — safe for single-worker deployments but must be revisited when parallel test execution is introduced. ADR-002-22, ADR-002-23, and ADR-002-27 are low risk because they reuse existing URL extraction, loading-indicator, and Tier 2 fallback mechanisms rather than introducing new execution tiers or unbounded waits. These decisions should be monitored via tier-level execution metrics and environment-specific failure rates across test runs.
+ADR-002-28 narrows ADR-002-20's original modal helper by splitting dismiss buttons into a safe list and a business-action list. `Confirm`, `Continue`, and `Done` are now auto-clicked only when the dialog text matches nuisance/info tokens such as reminder, notice, session-timeout, or maintenance messaging. This preserves the Three HK reminder-modal fix while avoiding silent consumption of business confirmation chains.
+
+ADR-002-29 adds a shared confirm-step progress guard in `ThreeTierExecutionService`. For `click` steps whose instruction contains `confirm`, a small pre/post snapshot of URL, visible modal text, and page-body text is compared after any apparent tier success. If the UI did not visibly advance, the result is downgraded to `error_type=no_progress` and normal fallback continues.
+
+ADR-002-7, ADR-002-8, ADR-002-19, ADR-002-20, ADR-002-21, ADR-002-28, and ADR-002-29 carry medium risk because their heuristics depend on real-world page structure diversity and environment-specific flow behavior. ADR-002-11 carries medium risk due to process-global `os.environ` mutation — safe for single-worker deployments but must be revisited when parallel test execution is introduced. ADR-002-22, ADR-002-23, and ADR-002-27 are low risk because they reuse existing URL extraction, loading-indicator, and Tier 2 fallback mechanisms rather than introducing new execution tiers or unbounded waits. These decisions should be monitored via tier-level execution metrics and environment-specific failure rates across test runs.
 
 ---
 
@@ -1094,6 +1104,8 @@ args=[
 
 **Date:** April 1, 2026
 
+> Note: ADR-002-20 records the baseline modal auto-dismiss mechanism introduced for Three HK preprod gating dialogs. The original broad `Confirm` / `Continue` / `Done` allowlist later proved too permissive for repeated business confirmation chains and was narrowed by ADR-002-28.
+
 ### Context
 
 After applying the Chrome UA and anti-automation flag hardening from ADR-002-19-B, the preprod loop-back on Three HK (`wwwuat.three.com.hk`) persisted. The UA fix alone was insufficient because the root cause was not UA-based detection — it was a **mandatory modal gate**.
@@ -1182,6 +1194,7 @@ await self.page.add_init_script(
 - `auto_dismiss_blocking_modals` is opportunistic: it tries a fixed list of button texts. An unusual dismiss label (e.g. a locale-specific text not in `MODAL_DISMISS_BUTTON_TEXTS`) will not be recognised and the modal will block the next step.
 - Called after every navigation click — adds one full `MODAL_CONTAINER_SELECTORS` iteration (~3 locator queries) to every navigation step. Latency impact is negligible (< 50ms for empty modals) but measurable at scale.
 - `navigator.webdriver` override via `addInitScript` does not survive cross-origin navigations in Playwright — each new page requires the script to be added again. The current approach adds it once in `create_page()`, which covers the single `Page` object used throughout a test execution.
+- The original broad dismiss-button list can consume later business-flow confirmation buttons that happen to be labeled `Confirm`, `Continue`, or `Done`. This exact failure mode was observed in Execution #637 and is narrowed by ADR-002-28.
 
 **Alternatives Considered**
 - **Add `navigator.webdriver` to all future test-generated steps**: Requires every test generation to output a JS-evaluate step; impractical.
@@ -1801,3 +1814,191 @@ This preserves instruction-level specificity while allowing successive Mastercar
 - `backend/tests/test_xpath_cache_service.py::test_generate_cache_key_normalizes_mastercard_session_urls`
 - `backend/tests/test_xpath_cache_service.py::test_generate_cache_key_keeps_instruction_specificity_after_gateway_normalization`
 - `backend/tests/test_xpath_cache_service.py::test_generate_cache_key_does_not_merge_gateway_and_autopay_pages`
+
+---
+
+## ADR-002-28: Scope Business-Action Modal Auto-Dismiss to Nuisance Dialogs
+
+**Date:** April 2, 2026
+
+### Context
+
+Execution #637 on the Three HK flow exposed a second-order effect of ADR-002-20's broad modal helper. The system did not have an outer "retry the same step three times" loop. Instead, repeated plain-text confirm steps were vulnerable to being collapsed because one logical step could both:
+
+1. Click a business `Confirm` button as intended, then
+2. Enter post-click readiness where `confirm` still classified the action as navigation-like, and
+3. Opportunistically auto-dismiss the next visible modal because `auto_dismiss_blocking_modals()` treated `Confirm`, `Continue`, and `Done` as universal dismiss labels.
+
+That behavior was correct for nuisance gates such as the Three HK reminder dialog introduced by ADR-002-20, but too permissive for business dialogs where the product flow genuinely requires multiple sequential confirmations. In those cases, the readiness helper could silently consume the next required confirmation before the next test step started.
+
+### Decision
+
+Keep the existing modal auto-dismiss call sites from ADR-002-20, but narrow what counts as safe to auto-click.
+
+#### ADR-002-28-A: Split dismiss buttons into always-safe and conditional groups
+
+`post_click_readiness.py` now defines:
+
+```python
+SAFE_MODAL_DISMISS_BUTTON_TEXTS = [
+    "I understand",
+    "I Understand",
+    "OK",
+    "Ok",
+    "Close",
+    "Dismiss",
+    "Got it",
+    "Accept",
+    "Agree",
+]
+
+CONDITIONAL_MODAL_DISMISS_BUTTON_TEXTS = [
+    "Confirm",
+    "Continue",
+    "Done",
+]
+```
+
+`auto_dismiss_blocking_modals()` always tries the safe list. It only considers the conditional list when the modal itself looks like a nuisance/info blocker rather than business flow UI.
+
+#### ADR-002-28-B: Gate business-action auto-dismiss behind nuisance-modal text detection
+
+The helper now inspects normalized modal text through `_modal_allows_business_autodismiss(modal)` and only unlocks the conditional button list when the dialog text contains one of:
+
+```python
+NUISANCE_MODAL_TEXT_TOKENS = (
+    "reminder",
+    "notice",
+    "informational",
+    "information",
+    "session expired",
+    "session timeout",
+    "timed out",
+    "maintenance",
+    "security reminder",
+    "i understand",
+    "got it",
+)
+```
+
+This preserves the original Three HK reminder-modal behavior while preventing generic business `Confirm` / `Continue` / `Done` buttons from being auto-clicked by default.
+
+#### ADR-002-28-C: Do not remove `confirm` from navigation readiness classification
+
+`confirm` remains part of `NAVIGATION_KEYWORDS`. The goal of this change is not to skip readiness logic for confirm-like actions, because some confirm buttons genuinely trigger page transitions or server round-trips. The change is intentionally scoped to the auto-dismiss side effect only.
+
+### Consequences
+
+**Positive**
+- Preserves the original nuisance-modal recovery from ADR-002-20 for reminder/info dialogs that gate entry into a flow.
+- Prevents post-click readiness from silently consuming business confirmation chains by default.
+- Keeps the same call sites and readiness sequencing, so the behavior change is isolated to one helper.
+
+**Negative**
+- Nuisance detection is text-heuristic based. A real reminder/info modal with unusual wording may no longer auto-dismiss if its text does not match `NUISANCE_MODAL_TEXT_TOKENS`.
+- Localized or redesigned dialogs may require token-list maintenance over time.
+- Because `confirm` remains a navigation keyword, confirm steps still go through post-click readiness; they are simply no longer allowed to auto-click the next business dialog unless the modal looks informational.
+
+**Alternatives Considered**
+- **Remove `confirm` / `continue` from `NAVIGATION_KEYWORDS` entirely**: Rejected. This would suppress legitimate readiness waits for real confirmation submits and navigation steps.
+- **Disable modal auto-dismiss globally**: Rejected. That would regress the original Three HK reminder-modal fix from ADR-002-20.
+- **Encode every nuisance modal as an explicit generated test step**: Rejected. These dialogs are environment-specific and would make tests less portable between production and preprod.
+
+**Tests added (TDD):**
+- `backend/tests/test_post_click_modal_dismiss.py::test_business_confirm_modal_is_not_auto_dismissed`
+- `backend/tests/test_post_click_modal_dismiss.py::test_reminder_confirm_modal_can_still_be_auto_dismissed`
+
+---
+
+## ADR-002-29: Visible Progress Guard for Repeated Confirm Steps
+
+**Date:** April 2, 2026
+
+### Context
+
+Narrowing modal auto-dismiss fixed the most aggressive collapse path, but it did not solve the more general ambiguity of repeated selectorless confirm steps.
+
+In Execution #637, the test case contained multiple business steps that were effectively variations of `Click Confirm`. For those steps, Tier 1 / Tier 2 / Tier 3 success criteria were action-level rather than business-level:
+
+- Tier 1 considered the step successful if it could click the selector supplied by the test data.
+- Tier 2 and Tier 3 considered the step successful if the inferred click completed without throwing and the usual readiness waits settled.
+
+That was insufficient for repeated confirm chains because the engine had no shared post-condition proving that confirm #1, confirm #2, and confirm #3 each advanced the UI. A click could technically succeed while leaving the browser on the same modal or same page state, causing the step to be recorded as `PASS` and letting later business confirmations drift out of sync.
+
+### Decision
+
+Add a small, tier-agnostic visible-progress check for repeated confirm clicks and enforce it in the shared 3-tier orchestrator.
+
+#### ADR-002-29-A: Add `step_progress_guard.py` with compact UI snapshots
+
+New helper module: `backend/app/services/step_progress_guard.py`
+
+```python
+@dataclass(frozen=True)
+class StepProgressSnapshot:
+    url: str
+    modal_signature: str
+    body_signature: str
+```
+
+`capture_step_progress_snapshot(page)` records:
+- Current `page.url`
+- Normalized text from the first visible modal/dialog, if one exists
+- Otherwise, a trimmed normalized body-text signature
+
+The snapshot is intentionally small and text-based so it can be captured cheaply and compared across tiers.
+
+#### ADR-002-29-B: Only enforce the guard for repeated confirm clicks
+
+`should_enforce_confirm_progress(step)` is intentionally narrow:
+
+```python
+action == "click" and "confirm" in instruction.lower()
+```
+
+This avoids changing the success contract for unrelated clicks. The guard targets the specific failure mode observed in Three HK: multiple business confirmations with near-identical natural-language instructions and no selector-level disambiguation.
+
+#### ADR-002-29-C: Apply the guard once in `ThreeTierExecutionService`, not separately in each tier
+
+`ThreeTierExecutionService.execute_step()` now captures one pre-step snapshot after the shared step-boundary readiness wait. Whenever Tier 1, Tier 2, or Tier 3 reports success, `_step_made_expected_progress()` captures a second snapshot and calls `has_confirm_step_progress(...)`.
+
+Progress is accepted when any of the following is true:
+- URL changed
+- Visible modal signature changed
+- No modal was present and the body signature changed
+
+When none of those conditions is true, `_mark_no_progress_failure()` converts the apparent success into:
+
+```python
+{
+    "success": False,
+    "error_type": "no_progress",
+    ...
+}
+```
+
+Fallback then continues normally according to Option A / B / C, and if no tier produces visible progress the final step result is a real failure instead of a false-positive pass.
+
+### Consequences
+
+**Positive**
+- Prevents repeated confirm steps from being marked successful when the UI did not visibly advance.
+- Covers Tier 1, Tier 2, and Tier 3 uniformly because the check lives in the shared orchestrator.
+- Preserves the existing fallback strategy semantics: a no-progress result is treated like any other tier failure and can escalate to the next tier.
+
+**Negative**
+- The guard is heuristic. Purely visual changes with identical text and unchanged URL may still look like "no progress" to the snapshot comparison.
+- A legitimate confirm step that intentionally keeps the same visible text may escalate unnecessarily.
+- The scope is currently limited to instructions containing `confirm`. Similar repeated chains based on `continue` or `next` are not covered until there is evidence that they need the same protection.
+
+**Alternatives Considered**
+- **Add a generic three-times retry loop around every step**: Rejected. That would mask root causes and make it easier for one logical step to consume multiple downstream actions.
+- **Implement site-specific confirm counters for Three HK only**: Rejected. The failure mode is structural and should be handled at the shared orchestration layer.
+- **Require every generated confirm step to include selectors or explicit post-conditions**: Long-term desirable, but not sufficient for existing tests and not something the runtime executor can assume today.
+
+**Tests added (TDD):**
+- `backend/tests/test_step_progress_guard.py::test_has_confirm_step_progress_returns_false_when_modal_state_is_unchanged`
+- `backend/tests/test_step_progress_guard.py::test_has_confirm_step_progress_returns_true_when_modal_changes`
+- `backend/tests/test_three_tier_execution_service.py::test_execute_step_escalates_when_confirm_click_makes_no_progress`
+
+**Targeted validation:** 18 impacted tests passed across `test_post_click_modal_dismiss.py`, `test_step_progress_guard.py`, `test_three_tier_execution_service.py`, and adjacent readiness/orchestration suites.

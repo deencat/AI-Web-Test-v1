@@ -57,7 +57,7 @@ MODAL_CONTAINER_SELECTORS = [
 
 # Button label texts tried in order when dismissing a detected modal.
 # Matching is case-insensitive via Playwright's get_by_role name= parameter.
-MODAL_DISMISS_BUTTON_TEXTS = [
+SAFE_MODAL_DISMISS_BUTTON_TEXTS = [
     "I understand",
     "I Understand",
     "OK",
@@ -67,10 +67,27 @@ MODAL_DISMISS_BUTTON_TEXTS = [
     "Got it",
     "Accept",
     "Agree",
+]
+
+CONDITIONAL_MODAL_DISMISS_BUTTON_TEXTS = [
     "Confirm",
     "Continue",
     "Done",
 ]
+
+NUISANCE_MODAL_TEXT_TOKENS = (
+    "reminder",
+    "notice",
+    "informational",
+    "information",
+    "session expired",
+    "session timeout",
+    "timed out",
+    "maintenance",
+    "security reminder",
+    "i understand",
+    "got it",
+)
 
 GENERIC_OVERLAY_SELECTORS = {"[class*='overlay']", ".overlay"}
 LOADING_SIGNAL_TOKENS = ("loading", "spinner", "skeleton", "shimmer")
@@ -90,6 +107,23 @@ async def _locator_attribute(locator, name: str) -> str:
         return ""
 
     return raw_value.lower() if isinstance(raw_value, str) else ""
+
+
+async def _locator_text(locator) -> str:
+    for method_name in ("inner_text", "text_content"):
+        method = getattr(locator, method_name, None)
+        if not callable(method):
+            continue
+
+        try:
+            value = await method()
+        except Exception:
+            continue
+
+        if isinstance(value, str) and value.strip():
+            return " ".join(value.split()).strip().lower()
+
+    return ""
 
 
 def _call_sync_locator_method(locator, method_name: str, *args, **kwargs):
@@ -164,6 +198,12 @@ async def _visible_interactable_modal_present(page) -> bool:
     return False
 
 
+async def _modal_allows_business_autodismiss(modal) -> bool:
+    """Return True when a modal looks like a nuisance/info blocker, not business flow UI."""
+    modal_text = await _locator_text(modal)
+    return any(token in modal_text for token in NUISANCE_MODAL_TEXT_TOKENS)
+
+
 def classify_click_transition(instruction: str, element_text: str) -> Dict[str, bool]:
     """Classify whether a click is likely to trigger a page or modal transition."""
     combined_text = _combined_click_text(instruction, element_text)
@@ -201,7 +241,11 @@ async def auto_dismiss_blocking_modals(page, logger) -> bool:
 
             logger.info("[Modal] Visible overlay detected via '%s' — attempting auto-dismiss", container_sel)
 
-            for btn_text in MODAL_DISMISS_BUTTON_TEXTS:
+            button_texts = list(SAFE_MODAL_DISMISS_BUTTON_TEXTS)
+            if await _modal_allows_business_autodismiss(modal):
+                button_texts.extend(CONDITIONAL_MODAL_DISMISS_BUTTON_TEXTS)
+
+            for btn_text in button_texts:
                 try:
                     btn = _call_sync_locator_method(
                         modal,

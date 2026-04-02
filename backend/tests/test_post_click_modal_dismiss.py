@@ -22,17 +22,24 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def _make_locator(count=0, visible=False):
+def _make_locator(count=0, visible=False, text=""):
     """Return a minimal Playwright-like locator mock."""
     loc = AsyncMock()
     loc.count = AsyncMock(return_value=count)
     loc.is_visible = AsyncMock(return_value=visible)
     loc.click = AsyncMock()
+    loc.inner_text = AsyncMock(return_value=text)
+    loc.text_content = AsyncMock(return_value=text)
     loc.first = loc  # .first returns self
     return loc
 
 
-def _make_page(modal_visible=False, modal_selector=".modal.show", button_text_matched=None):
+def _make_page(
+    modal_visible=False,
+    modal_selector=".modal.show",
+    button_text_matched=None,
+    modal_text="",
+):
     """
     Build a mock page whose locator() returns modals/buttons according to params.
 
@@ -42,7 +49,11 @@ def _make_page(modal_visible=False, modal_selector=".modal.show", button_text_ma
     page = MagicMock()
 
     no_result = _make_locator(count=0, visible=False)
-    modal_loc = _make_locator(count=1 if modal_visible else 0, visible=modal_visible)
+    modal_loc = _make_locator(
+        count=1 if modal_visible else 0,
+        visible=modal_visible,
+        text=modal_text,
+    )
 
     # btn_mock – found (count=1) and visible only when text matches button_text_matched
     btn_matched = _make_locator(count=1, visible=True)
@@ -175,3 +186,39 @@ def test_auto_dismiss_is_exported():
     """auto_dismiss_blocking_modals is importable from post_click_readiness."""
     from app.services.post_click_readiness import auto_dismiss_blocking_modals  # noqa: F401
     assert callable(auto_dismiss_blocking_modals)
+
+
+@pytest.mark.asyncio
+async def test_business_confirm_modal_is_not_auto_dismissed():
+    """Business dialogs with Confirm should not be auto-dismissed."""
+    from app.services.post_click_readiness import auto_dismiss_blocking_modals
+
+    page, btn = _make_page(
+        modal_visible=True,
+        modal_selector=".modal.show",
+        button_text_matched="confirm",
+        modal_text="Select Mobile Number Confirm the subscription details before proceeding",
+    )
+
+    result = await auto_dismiss_blocking_modals(page, logger)
+
+    assert result is False
+    btn.click.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_reminder_confirm_modal_can_still_be_auto_dismissed():
+    """Reminder dialogs may still auto-dismiss via Confirm when they are non-business blockers."""
+    from app.services.post_click_readiness import auto_dismiss_blocking_modals
+
+    page, btn = _make_page(
+        modal_visible=True,
+        modal_selector=".modal.show",
+        button_text_matched="confirm",
+        modal_text="Reminder Please confirm you understand this informational notice",
+    )
+
+    result = await auto_dismiss_blocking_modals(page, logger)
+
+    assert result is True
+    btn.click.assert_awaited_once()

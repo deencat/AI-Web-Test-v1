@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.models.execution_settings import ExecutionSettings
+from app.services.step_progress_guard import StepProgressSnapshot
 from app.services.three_tier_execution_service import ThreeTierExecutionService
 
 
@@ -103,3 +104,70 @@ async def test_execute_step_waits_once_before_fallbacks():
     assert result["success"] is True
     assert result["tier"] == 2
     wait_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_step_escalates_when_confirm_click_makes_no_progress():
+    service = ThreeTierExecutionService(
+        db=MagicMock(),
+        page=MagicMock(),
+        user_settings=_make_settings(strategy="option_c"),
+    )
+
+    service.tier1_executor.execute_step = AsyncMock(
+        return_value={
+            "success": False,
+            "tier": 1,
+            "execution_time_ms": 5,
+            "error": "selector not found",
+            "error_type": "ValueError",
+        }
+    )
+    service.tier2_executor = MagicMock()
+    service.tier2_executor.execute_step = AsyncMock(
+        return_value={
+            "success": True,
+            "tier": 2,
+            "execution_time_ms": 10,
+            "error": None,
+        }
+    )
+    service.tier3_executor = MagicMock()
+    service.tier3_executor.execute_step = AsyncMock(
+        return_value={
+            "success": False,
+            "tier": 3,
+            "execution_time_ms": 12,
+            "error": "stagehand could not find the follow-up confirm",
+            "error_type": "ValueError",
+        }
+    )
+    service._ensure_tier2_initialized = AsyncMock(return_value=None)
+    service._ensure_tier3_initialized = AsyncMock(return_value=None)
+
+    unchanged_snapshot = StepProgressSnapshot(
+        url="https://web.three.com.hk/subscribe",
+        modal_signature="enter the referrer mobile number to earn rewards next",
+        body_signature="",
+    )
+
+    with patch(
+        "app.services.three_tier_execution_service.wait_for_step_boundary_readiness",
+        AsyncMock(return_value=None),
+    ), patch(
+        "app.services.three_tier_execution_service.capture_step_progress_snapshot",
+        AsyncMock(return_value=unchanged_snapshot),
+    ), patch(
+        "app.services.three_tier_execution_service.has_confirm_step_progress",
+        return_value=False,
+    ):
+        result = await service.execute_step(
+            {
+                "action": "click",
+                "instruction": "Step 14: Click the 'Confirm' button to confirm the subscription again",
+            }
+        )
+
+    assert result["success"] is False
+    assert service.tier3_executor.execute_step.await_count == 1
+    assert result["execution_history"][1]["error_type"] == "no_progress"

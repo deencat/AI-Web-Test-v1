@@ -15,6 +15,11 @@ from app.services.tier1_playwright import Tier1PlaywrightExecutor
 from app.services.tier2_hybrid import Tier2HybridExecutor
 from app.services.tier3_stagehand import Tier3StagehandExecutor
 from app.services.post_click_readiness import wait_for_step_boundary_readiness
+from app.services.step_progress_guard import (
+    capture_step_progress_snapshot,
+    has_confirm_step_progress,
+    should_enforce_confirm_progress,
+)
 from app.services.xpath_extractor import XPathExtractor
 from app.models.execution_settings import ExecutionSettings, TierExecutionLog
 from app.schemas.execution_settings import FallbackStrategy
@@ -155,16 +160,25 @@ class ThreeTierExecutionService:
             f"{step.get('action')} - {step.get('instruction')}"
         )
 
+        confirm_progress_snapshot = None
+
         if action != "navigate":
             await wait_for_step_boundary_readiness(
                 page=self.page,
                 timeout_ms=timeout_ms,
                 logger=logger,
             )
+
+        if should_enforce_confirm_progress(step):
+            confirm_progress_snapshot = await capture_step_progress_snapshot(self.page)
         
         # TIER 1: Always attempt Playwright Direct first
         tier1_result = await self._execute_tier1(step)
         execution_history.append(tier1_result)
+
+        if tier1_result["success"] and not await self._step_made_expected_progress(step, confirm_progress_snapshot):
+            tier1_result = self._mark_no_progress_failure(tier1_result, step)
+            execution_history[-1] = tier1_result
         
         if tier1_result["success"]:
             # Success at Tier 1!
@@ -196,11 +210,11 @@ class ThreeTierExecutionService:
         
         try:
             if strategy == "option_a":
-                result = await self._execute_option_a(step, execution_history)
+                result = await self._execute_option_a(step, execution_history, confirm_progress_snapshot)
             elif strategy == "option_b":
-                result = await self._execute_option_b(step, execution_history)
+                result = await self._execute_option_b(step, execution_history, confirm_progress_snapshot)
             elif strategy == "option_c":
-                result = await self._execute_option_c(step, execution_history)
+                result = await self._execute_option_c(step, execution_history, confirm_progress_snapshot)
             else:
                 raise ValueError(f"Unknown fallback strategy: {strategy}")
             
@@ -269,7 +283,8 @@ class ThreeTierExecutionService:
     async def _execute_option_a(
         self,
         step: Dict[str, Any],
-        execution_history: List[Dict[str, Any]]
+        execution_history: List[Dict[str, Any]],
+        confirm_progress_snapshot=None,
     ) -> Dict[str, Any]:
         """
         Option A: Tier 1 → Tier 2
@@ -279,6 +294,10 @@ class ThreeTierExecutionService:
         
         tier2_result = await self.tier2_executor.execute_step(self.page, step)
         execution_history.append(tier2_result)
+
+        if tier2_result["success"] and not await self._step_made_expected_progress(step, confirm_progress_snapshot):
+            tier2_result = self._mark_no_progress_failure(tier2_result, step)
+            execution_history[-1] = tier2_result
         
         if tier2_result["success"]:
             logger.info(f"[3-Tier] ✅ Option A succeeded at Tier 2")
@@ -292,7 +311,8 @@ class ThreeTierExecutionService:
     async def _execute_option_b(
         self,
         step: Dict[str, Any],
-        execution_history: List[Dict[str, Any]]
+        execution_history: List[Dict[str, Any]],
+        confirm_progress_snapshot=None,
     ) -> Dict[str, Any]:
         """
         Option B: Tier 1 → Tier 3 (skip Tier 2)
@@ -302,6 +322,10 @@ class ThreeTierExecutionService:
         
         tier3_result = await self.tier3_executor.execute_step(step)
         execution_history.append(tier3_result)
+
+        if tier3_result["success"] and not await self._step_made_expected_progress(step, confirm_progress_snapshot):
+            tier3_result = self._mark_no_progress_failure(tier3_result, step)
+            execution_history[-1] = tier3_result
         
         if tier3_result["success"]:
             logger.info(f"[3-Tier] ✅ Option B succeeded at Tier 3")
@@ -315,7 +339,8 @@ class ThreeTierExecutionService:
     async def _execute_option_c(
         self,
         step: Dict[str, Any],
-        execution_history: List[Dict[str, Any]]
+        execution_history: List[Dict[str, Any]],
+        confirm_progress_snapshot=None,
     ) -> Dict[str, Any]:
         """
         Option C: Tier 1 → Tier 2 → Tier 3 (full cascade)
@@ -326,6 +351,10 @@ class ThreeTierExecutionService:
         
         tier2_result = await self.tier2_executor.execute_step(self.page, step)
         execution_history.append(tier2_result)
+
+        if tier2_result["success"] and not await self._step_made_expected_progress(step, confirm_progress_snapshot):
+            tier2_result = self._mark_no_progress_failure(tier2_result, step)
+            execution_history[-1] = tier2_result
         
         if tier2_result["success"]:
             logger.info(f"[3-Tier] ✅ Option C succeeded at Tier 2")
@@ -338,6 +367,10 @@ class ThreeTierExecutionService:
         
         tier3_result = await self.tier3_executor.execute_step(step)
         execution_history.append(tier3_result)
+
+        if tier3_result["success"] and not await self._step_made_expected_progress(step, confirm_progress_snapshot):
+            tier3_result = self._mark_no_progress_failure(tier3_result, step)
+            execution_history[-1] = tier3_result
         
         if tier3_result["success"]:
             logger.info(f"[3-Tier] ✅ Option C succeeded at Tier 3")
@@ -347,6 +380,38 @@ class ThreeTierExecutionService:
             message="Option C failed: All tiers exhausted (Tier 1, 2, 3)",
             execution_history=execution_history
         )
+
+    async def _step_made_expected_progress(self, step: Dict[str, Any], before_snapshot) -> bool:
+        """Validate that repeated confirm clicks visibly advanced the UI."""
+        if before_snapshot is None:
+            return True
+
+        after_snapshot = await capture_step_progress_snapshot(self.page)
+        progressed = has_confirm_step_progress(
+            before_snapshot,
+            after_snapshot,
+            step.get("instruction", ""),
+        )
+
+        if not progressed:
+            logger.warning(
+                "[3-Tier] ⚠️ No visible progress detected for confirm step: %s",
+                step.get("instruction"),
+            )
+
+        return progressed
+
+    def _mark_no_progress_failure(self, result: Dict[str, Any], step: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert an apparent success into an explicit no-progress failure."""
+        return {
+            **result,
+            "success": False,
+            "error": (
+                "No visible progress detected for repeated confirm step; "
+                "the confirmation chain may have already been consumed by a previous action"
+            ),
+            "error_type": "no_progress",
+        }
     
     async def _log_tier_execution(
         self,
