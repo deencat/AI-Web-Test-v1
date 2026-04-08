@@ -388,9 +388,8 @@ export interface ExecutionSettings {
   fallback_strategy: FallbackStrategy;
   timeout_per_tier_seconds: number;
   max_retry_per_tier: number;
-  track_token_usage: boolean;
-  track_execution_time: boolean;
-  track_success_rate: boolean;
+  track_fallback_reasons: boolean;
+  track_strategy_effectiveness: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -399,9 +398,8 @@ export interface ExecutionSettingsUpdate {
   fallback_strategy?: FallbackStrategy;
   timeout_per_tier_seconds?: number;
   max_retry_per_tier?: number;
-  track_token_usage?: boolean;
-  track_execution_time?: boolean;
-  track_success_rate?: boolean;
+  track_fallback_reasons?: boolean;
+  track_strategy_effectiveness?: boolean;
 }
 
 export interface StrategyInfo {

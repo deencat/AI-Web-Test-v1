@@ -3,6 +3,7 @@ import { Card } from './common/Card';
 import { Button } from './common/Button';
 import { Input } from './common/Input';
 import settingsService from '../services/settingsService';
+import { normalizeExecutionSettings } from '../utils/settingsApiAdapters';
 import type {
   ExecutionSettings,
   ExecutionSettingsUpdate,
@@ -22,7 +23,6 @@ export const ExecutionSettingsPanel: React.FC<ExecutionSettingsPanelProps> = ({
   onFormStateChange,
 }) => {
   // State
-  const [settings, setSettings] = useState<ExecutionSettings | null>(null);
   const [strategies, setStrategies] = useState<StrategyInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -35,9 +35,8 @@ export const ExecutionSettingsPanel: React.FC<ExecutionSettingsPanelProps> = ({
   const [selectedStrategy, setSelectedStrategy] = useState<FallbackStrategy>('option_c');
   const [timeoutPerTier, setTimeoutPerTier] = useState<number>(30);
   const [maxRetryPerTier, setMaxRetryPerTier] = useState<number>(1);
-  const [trackTokenUsage, setTrackTokenUsage] = useState<boolean>(true);
-  const [trackExecutionTime, setTrackExecutionTime] = useState<boolean>(true);
-  const [trackSuccessRate, setTrackSuccessRate] = useState<boolean>(true);
+  const [trackFallbackReasons, setTrackFallbackReasons] = useState<boolean>(true);
+  const [trackStrategyEffectiveness, setTrackStrategyEffectiveness] = useState<boolean>(true);
 
   // Load settings on mount
   useEffect(() => {
@@ -52,27 +51,31 @@ export const ExecutionSettingsPanel: React.FC<ExecutionSettingsPanelProps> = ({
         fallback_strategy: selectedStrategy,
         timeout_per_tier_seconds: timeoutPerTier,
         max_retry_per_tier: maxRetryPerTier,
-        track_token_usage: trackTokenUsage,
-        track_execution_time: trackExecutionTime,
-        track_success_rate: trackSuccessRate,
+        track_fallback_reasons: trackFallbackReasons,
+        track_strategy_effectiveness: trackStrategyEffectiveness,
       };
       onFormStateChange(formState);
     }
-  }, [selectedStrategy, timeoutPerTier, maxRetryPerTier, trackTokenUsage, trackExecutionTime, trackSuccessRate, onFormStateChange]);
+  }, [
+    selectedStrategy,
+    timeoutPerTier,
+    maxRetryPerTier,
+    trackFallbackReasons,
+    trackStrategyEffectiveness,
+    onFormStateChange,
+  ]);
 
   const loadSettings = async () => {
     setIsLoading(true);
     try {
-      const data = await settingsService.getExecutionSettings();
-      setSettings(data);
+      const data = normalizeExecutionSettings(await settingsService.getExecutionSettings());
 
       // Update form state
       setSelectedStrategy(data.fallback_strategy);
       setTimeoutPerTier(data.timeout_per_tier_seconds);
       setMaxRetryPerTier(data.max_retry_per_tier);
-      setTrackTokenUsage(data.track_token_usage);
-      setTrackExecutionTime(data.track_execution_time);
-      setTrackSuccessRate(data.track_success_rate);
+      setTrackFallbackReasons(data.track_fallback_reasons);
+      setTrackStrategyEffectiveness(data.track_strategy_effectiveness);
     } catch (error: any) {
       console.error('Failed to load execution settings:', error);
       setSaveMessage({
@@ -103,13 +106,13 @@ export const ExecutionSettingsPanel: React.FC<ExecutionSettingsPanelProps> = ({
         fallback_strategy: selectedStrategy,
         timeout_per_tier_seconds: timeoutPerTier,
         max_retry_per_tier: maxRetryPerTier,
-        track_token_usage: trackTokenUsage,
-        track_execution_time: trackExecutionTime,
-        track_success_rate: trackSuccessRate,
+        track_fallback_reasons: trackFallbackReasons,
+        track_strategy_effectiveness: trackStrategyEffectiveness,
       };
 
-      const updated = await settingsService.updateExecutionSettings(updateData);
-      setSettings(updated);
+      const updated = normalizeExecutionSettings(
+        await settingsService.updateExecutionSettings(updateData),
+      );
 
       setSaveMessage({
         type: 'success',
@@ -347,29 +350,20 @@ export const ExecutionSettingsPanel: React.FC<ExecutionSettingsPanelProps> = ({
             <label className="flex items-center gap-3 cursor-pointer">
               <input
                 type="checkbox"
-                checked={trackTokenUsage}
-                onChange={(e) => setTrackTokenUsage(e.target.checked)}
+                checked={trackFallbackReasons}
+                onChange={(e) => setTrackFallbackReasons(e.target.checked)}
                 className="h-4 w-4 text-blue-700 focus:ring-blue-700 border-gray-300 rounded"
               />
-              <span className="text-sm font-medium text-gray-700">Track Token Usage</span>
+              <span className="text-sm font-medium text-gray-700">Track Fallback Reasons</span>
             </label>
             <label className="flex items-center gap-3 cursor-pointer">
               <input
                 type="checkbox"
-                checked={trackExecutionTime}
-                onChange={(e) => setTrackExecutionTime(e.target.checked)}
+                checked={trackStrategyEffectiveness}
+                onChange={(e) => setTrackStrategyEffectiveness(e.target.checked)}
                 className="h-4 w-4 text-blue-700 focus:ring-blue-700 border-gray-300 rounded"
               />
-              <span className="text-sm font-medium text-gray-700">Track Execution Time</span>
-            </label>
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={trackSuccessRate}
-                onChange={(e) => setTrackSuccessRate(e.target.checked)}
-                className="h-4 w-4 text-blue-700 focus:ring-blue-700 border-gray-300 rounded"
-              />
-              <span className="text-sm font-medium text-gray-700">Track Success Rate</span>
+              <span className="text-sm font-medium text-gray-700">Track Strategy Effectiveness</span>
             </label>
           </div>
         </div>

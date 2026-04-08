@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Card } from './common/Card';
 import settingsService from '../services/settingsService';
 import type { TierDistributionStats, StrategyEffectivenessStats } from '../types/api';
+import {
+  normalizeStrategyEffectivenessStats,
+  normalizeTierDistributionStats,
+} from '../utils/settingsApiAdapters';
 
 export const TierAnalyticsPanel: React.FC = () => {
   const [tierStats, setTierStats] = useState<TierDistributionStats | null>(null);
@@ -21,8 +25,8 @@ export const TierAnalyticsPanel: React.FC = () => {
         settingsService.getTierDistribution(),
         settingsService.getStrategyEffectiveness(),
       ]);
-      setTierStats(tierData);
-      setStrategyStats(strategyData.strategies || []);
+      setTierStats(normalizeTierDistributionStats(tierData));
+      setStrategyStats(normalizeStrategyEffectivenessStats(strategyData));
     } catch (err: any) {
       console.error('Failed to load analytics:', err);
       setError(err.message || 'Failed to load analytics');

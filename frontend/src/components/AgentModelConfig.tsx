@@ -61,6 +61,8 @@ export const AgentModelConfig: React.FC<AgentModelConfigProps> = ({
 }) => {
   // The provider whose models to list in the model dropdown.
   const activeProviderData = providers.find((p) => p.name === provider) ?? null;
+  const hasUnavailableProvider = provider != null && activeProviderData == null;
+  const modelOptions = activeProviderData?.models ?? (model ? [model] : []);
 
   // ── Handlers ─────────────────────────────────────────────────────────────
 
@@ -118,6 +120,11 @@ export const AgentModelConfig: React.FC<AgentModelConfigProps> = ({
             className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
             <option value={DEFAULT_VALUE}>{DEFAULT_LABEL}</option>
+            {hasUnavailableProvider && (
+              <option value={provider}>
+                {provider} (current setting)
+              </option>
+            )}
             {providers.map((p) => (
               <option
                 key={p.name}
@@ -132,7 +139,7 @@ export const AgentModelConfig: React.FC<AgentModelConfigProps> = ({
         </div>
 
         {/* Model dropdown — only visible when a non-default provider is chosen */}
-        {activeProviderData != null && (
+        {(activeProviderData != null || modelOptions.length > 0) && (
           <div className="flex flex-col gap-0.5">
             <label
               htmlFor={`model-${label}`}
@@ -148,7 +155,7 @@ export const AgentModelConfig: React.FC<AgentModelConfigProps> = ({
               className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
               <option value={DEFAULT_VALUE}>— select model —</option>
-              {activeProviderData.models.map((m) => (
+              {modelOptions.map((m) => (
                 <option key={m} value={m}>
                   {m}
                 </option>

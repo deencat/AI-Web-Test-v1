@@ -8,7 +8,7 @@ import { ExecutionSettingsPanel } from '../components/ExecutionSettingsPanel';
 import { TierAnalyticsPanel } from '../components/TierAnalyticsPanel';
 import { AgentWorkflowSettings } from '../components/AgentWorkflowSettings';
 import settingsService from '../services/settingsService';
-import type { AvailableProvider, ModelOption, UserSettings, ExecutionSettingsUpdate } from '../types/api';
+import type { AvailableProvider, ModelOption, ExecutionSettingsUpdate } from '../types/api';
 
 export const SettingsPage: React.FC = () => {
   const [projectName, setProjectName] = useState('Agentic QA v1.0');
@@ -19,7 +19,6 @@ export const SettingsPage: React.FC = () => {
   
   // AI Provider Settings (Dynamic from API)
   const [availableProviders, setAvailableProviders] = useState<AvailableProvider[]>([]);
-  const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
@@ -137,7 +136,6 @@ export const SettingsPage: React.FC = () => {
       
       // Load user settings
       const settings = await settingsService.getUserProviderSettings();
-      setUserSettings(settings);
       
       // Update form state
       setGenerationProvider(settings.generation_provider);
@@ -192,8 +190,7 @@ export const SettingsPage: React.FC = () => {
         evolution_model: evolutionModel,
       };
       
-      const updated = await settingsService.updateUserProviderSettings(updateData);
-      setUserSettings(updated);
+      await settingsService.updateUserProviderSettings(updateData);
       
       // Save 3-Tier Execution Settings (if form state is available)
       if (executionSettingsFormState) {
@@ -251,12 +248,6 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
-  // Get models for selected provider (legacy flat list)
-  const getModelsForProvider = (providerName: string): string[] => {
-    const provider = availableProviders.find(p => p.name === providerName);
-    return provider?.models || [];
-  };
-
   /**
    * Sprint 10.5: Return rich ModelOption list for a provider.
    * Prefers model_options from the API; falls back to constructing entries from
@@ -264,23 +255,42 @@ export const SettingsPage: React.FC = () => {
    */
   const getModelOptionsForProvider = (providerName: string): ModelOption[] => {
     const provider = availableProviders.find(p => p.name === providerName);
-    if (!provider) return [];
+    if (!provider) {
+      return [];
+    }
     if (provider.model_options && provider.model_options.length > 0) {
       return provider.model_options;
     }
     // Fallback: build from plain string list
-    return provider.models.map((id) => ({
+    return (provider.models || []).map((id) => ({
       id,
       display_name: id,
       is_free: id.endsWith(':free'),
     }));
   };
 
-  // Check if provider is configured
-  const isProviderConfigured = (providerName: string): boolean => {
-    const provider = availableProviders.find(p => p.name === providerName);
-    return provider?.is_configured || false;
+  const getSafeModelOptionsForProvider = (
+    providerName: string,
+    currentModel: string | null,
+  ): ModelOption[] => {
+    const options = getModelOptionsForProvider(providerName);
+    if (options.length > 0) {
+      return options;
+    }
+
+    if (!currentModel) {
+      return [];
+    }
+
+    return [{
+      id: currentModel,
+      display_name: currentModel,
+      is_free: currentModel.endsWith(':free'),
+    }];
   };
+
+  const isAvailableProvider = (providerName: string): boolean =>
+    availableProviders.some((provider) => provider.name === providerName);
 
   if (isLoading) {
     return (
@@ -411,6 +421,11 @@ export const SettingsPage: React.FC = () => {
 
           <div className="space-y-4">
             {/* Provider Selection */}
+            {!isAvailableProvider(generationProvider) && generationProvider && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                Current provider "{generationProvider}" is not available from this server. Switch to one of the configured providers below to update this setting.
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Select Provider
@@ -421,7 +436,7 @@ export const SettingsPage: React.FC = () => {
                     key={provider.name}
                     onClick={() => {
                       setGenerationProvider(provider.name);
-                      setGenerationModel(provider.recommended_model || provider.models[0]);
+                      setGenerationModel(provider.recommended_model || provider.models[0] || generationModel);
                     }}
                     disabled={!provider.is_configured}
                     className={`p-4 rounded-lg border-2 transition-all ${
@@ -455,7 +470,7 @@ export const SettingsPage: React.FC = () => {
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
               >
                 {(() => {
-                  const opts = getModelOptionsForProvider(generationProvider);
+                  const opts = getSafeModelOptionsForProvider(generationProvider, generationModel);
                   const free = opts.filter(m => m.is_free);
                   const paid = opts.filter(m => !m.is_free);
                   return (
@@ -531,6 +546,11 @@ export const SettingsPage: React.FC = () => {
 
           <div className="space-y-4">
             {/* Provider Selection */}
+            {!isAvailableProvider(executionProvider) && executionProvider && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                Current provider "{executionProvider}" is not available from this server. Switch to one of the configured providers below to update this setting.
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Select Provider
@@ -541,7 +561,7 @@ export const SettingsPage: React.FC = () => {
                     key={provider.name}
                     onClick={() => {
                       setExecutionProvider(provider.name);
-                      setExecutionModel(provider.recommended_model || provider.models[0]);
+                      setExecutionModel(provider.recommended_model || provider.models[0] || executionModel);
                     }}
                     disabled={!provider.is_configured}
                     className={`p-4 rounded-lg border-2 transition-all ${
@@ -575,7 +595,7 @@ export const SettingsPage: React.FC = () => {
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
               >
                 {(() => {
-                  const opts = getModelOptionsForProvider(executionProvider);
+                  const opts = getSafeModelOptionsForProvider(executionProvider, executionModel);
                   const free = opts.filter(m => m.is_free);
                   const paid = opts.filter(m => !m.is_free);
                   return (
