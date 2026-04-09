@@ -1025,45 +1025,30 @@ class ExecutionService:
                     # Detect file upload actions
                     elif "upload" in desc_lower:
                         step_data["action"] = "upload_file"
-                        # Auto-detect file path from description ONLY if not already provided
-                        if not step_data.get("file_path"):
-                            # First, try to extract explicit file path from description
-                            # Pattern: /path/to/file.ext or path/to/file.ext
-                            file_path_pattern = r'(/[\w\-/.]+\.(pdf|jpg|jpeg|png|gif|doc|docx|xls|xlsx|txt|csv))\b'
-                            file_path_match = re.search(file_path_pattern, step_description, re.IGNORECASE)
-                            
-                            if file_path_match:
-                                # User specified explicit file path in description
-                                step_data["file_path"] = file_path_match.group(1)
-                                logger.info(f"[Extracted from description] File path: {step_data['file_path']}")
-                            else:
-                                # Fallback to keyword-based auto-detection
-                                # Determine base path: /app/test_files/ (Docker) or backend/test_files/ (host)
-                                if os.path.exists("/app/test_files"):
-                                    base_path = "/app/test_files"
-                                else:
-                                    # Running on host - use absolute path from backend directory
-                                    backend_dir = Path(__file__).parent.parent.parent
-                                    base_path = str(backend_dir / "test_files")
-                                
-                                # Default to passport_sample.jpg for uploads (jpg/png accepted by most webapps)
-                                if "passport" in desc_lower:
-                                    step_data["file_path"] = f"{base_path}/passport_sample.jpg"
-                                elif "hkid" in desc_lower:
-                                    step_data["file_path"] = f"{base_path}/hkid_sample.pdf"
-                                elif "address" in desc_lower or "proof" in desc_lower:
-                                    step_data["file_path"] = f"{base_path}/address_proof.pdf"
-                                else:
-                                    # Default to jpg file for generic uploads (most widely accepted)
-                                    step_data["file_path"] = f"{base_path}/passport_sample.jpg"
-                                
-                                logger.info(f"[Auto-detected from keywords] File upload with file_path: {step_data.get('file_path')}")
+
+                if step_data["action"] == "upload_file":
+                    if not step_data.get("file_path"):
+                        extracted_file_path = self._extract_upload_file_path_from_description(
+                            step_description
+                        )
+
+                        if extracted_file_path:
+                            step_data["file_path"] = extracted_file_path
+                            logger.info(f"[Extracted from description] File path: {step_data['file_path']}")
                         else:
-                            logger.info(f"[User-specified in detailed_step] File upload with file_path: {step_data.get('file_path')}")
-                        
-                        # Default file input selector for upload actions
-                        if not step_data["selector"]:
-                            step_data["selector"] = "input[type='file']"
+                            step_data["file_path"] = self._get_default_upload_file_path(
+                                step_description
+                            )
+                            logger.info(
+                                f"[Auto-detected from keywords] File upload with file_path: {step_data.get('file_path')}"
+                            )
+                    else:
+                        logger.info(
+                            f"[User-specified in detailed_step] File upload with file_path: {step_data.get('file_path')}"
+                        )
+
+                    if not step_data["selector"]:
+                        step_data["selector"] = "input[type='file']"
                 
                 # Extract XPath/CSS selector from instruction text if not already provided
                 # Skip selector extraction for navigate actions (to avoid matching URLs)
@@ -1522,6 +1507,50 @@ class ExecutionService:
         result = re.sub(pattern, replace_pattern, text)
         
         return result
+
+    def _extract_upload_file_path_from_description(self, step_description: str) -> Optional[str]:
+        """Extract an explicit upload file path from a natural-language step."""
+        if not step_description or not isinstance(step_description, str):
+            return None
+
+        allowed_extensions = "pdf|jpg|jpeg|png|gif|doc|docx|xls|xlsx|txt|csv"
+        absolute_path_pattern = rf'^(?:[A-Za-z]:[\\/]|/).+\.(?:{allowed_extensions})$'
+        quoted_candidates = re.findall(r'["\']([^"\']+)["\']', step_description)
+
+        for candidate in quoted_candidates:
+            candidate = candidate.strip()
+            if re.match(absolute_path_pattern, candidate, re.IGNORECASE):
+                return candidate
+
+        unquoted_patterns = [
+            rf'([A-Za-z]:[\\/][^"\r\n]+?\.(?:{allowed_extensions}))(?=[\s"\',.;:!?)]|$)',
+            rf'(/[^"\r\n]+?\.(?:{allowed_extensions}))(?=[\s"\',.;:!?)]|$)',
+        ]
+
+        for pattern in unquoted_patterns:
+            match = re.search(pattern, step_description, re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+
+        return None
+
+    def _get_default_upload_file_path(self, step_description: str) -> str:
+        """Resolve the built-in sample file used when no explicit upload path is given."""
+        desc_lower = step_description.lower()
+
+        if os.path.exists("/app/test_files"):
+            base_path = "/app/test_files"
+        else:
+            backend_dir = Path(__file__).parent.parent.parent
+            base_path = str(backend_dir / "test_files")
+
+        if "passport" in desc_lower:
+            return f"{base_path}/passport_sample.jpg"
+        if "hkid" in desc_lower:
+            return f"{base_path}/hkid_sample.pdf"
+        if "address" in desc_lower or "proof" in desc_lower:
+            return f"{base_path}/address_proof.pdf"
+        return f"{base_path}/passport_sample.jpg"
 
     def _extract_value_from_description(self, step_description: str) -> Optional[str]:
         """Extract a value from the step description using common patterns."""
