@@ -31,6 +31,7 @@
 - `backend/tests/test_post_click_readiness.py` (extended)
 - `backend/tests/test_execution_service_three_tier_logging.py`
 - `backend/tests/test_xpath_cache_service.py`
+- `backend/tests/test_file_upload.py`
 
 ---
 
@@ -65,6 +66,7 @@
 27. [ADR-002-27: Cache-First Payment Field Handling and Session-Normalized Gateway Cache Keys](#adr-002-27-cache-first-payment-field-handling-and-session-normalized-gateway-cache-keys)
 28. [ADR-002-28: Scope Business-Action Modal Auto-Dismiss to Nuisance Dialogs](#adr-002-28-scope-business-action-modal-auto-dismiss-to-nuisance-dialogs)
 29. [ADR-002-29: Visible Progress Guard for Repeated Confirm Steps](#adr-002-29-visible-progress-guard-for-repeated-confirm-steps)
+30. [ADR-002-30: Cross-Platform Upload File Path Extraction from Free-Text Step Descriptions](#adr-002-30-cross-platform-upload-file-path-extraction-from-free-text-step-descriptions)
 
 ---
 
@@ -769,6 +771,7 @@ Key properties:
 | 002-27 | Validate cached XPath before payment probes; try page labels before iframe fan-out; normalize sessionized gateway cache keys | Accepted | Low |
 | 002-28 | Scope `Confirm` / `Continue` / `Done` auto-dismiss to nuisance/info dialogs only | Accepted | Medium |
 | 002-29 | Downgrade repeated confirm clicks to `no_progress` when URL/modal/body state does not advance | Accepted | Medium |
+| 002-30 | Extract explicit Windows and POSIX upload paths from free-text step descriptions before falling back to built-in sample files | Accepted | Low |
 
 ADR-002-24 and ADR-002-25 are low risk: ADR-002-24's overlay guard only fires for the two generic overlay selectors, leaving all other loading indicators unchanged; ADR-002-25's fast-path requires both conditions — URL unchanged and interactive modal visible — to be true simultaneously, which is conservative. ADR-002-26 is a one-line wiring fix with no behavioural change to step execution. All three were applied together to fix the repeated 10–20 s per-step stalls in Execution #637 and to restore tier-level diagnostics.
 
@@ -777,6 +780,8 @@ ADR-002-27 is also low risk: it reorders existing Tier 2 fallbacks rather than i
 ADR-002-28 narrows ADR-002-20's original modal helper by splitting dismiss buttons into a safe list and a business-action list. `Confirm`, `Continue`, and `Done` are now auto-clicked only when the dialog text matches nuisance/info tokens such as reminder, notice, session-timeout, or maintenance messaging. This preserves the Three HK reminder-modal fix while avoiding silent consumption of business confirmation chains.
 
 ADR-002-29 adds a shared confirm-step progress guard in `ThreeTierExecutionService`. For `click` steps whose instruction contains `confirm`, a small pre/post snapshot of URL, visible modal text, and page-body text is compared after any apparent tier success. If the UI did not visibly advance, the result is downgraded to `error_type=no_progress` and normal fallback continues.
+
+ADR-002-30 is low risk: the two new helpers only replace a narrower regex that missed Windows paths; POSIX paths and structured `file_path` fields in `detailed_steps` are unaffected. The keyword-based sample-file fallback is preserved as the last resort when no explicit path is present in the step text.
 
 ADR-002-7, ADR-002-8, ADR-002-19, ADR-002-20, ADR-002-21, ADR-002-28, and ADR-002-29 carry medium risk because their heuristics depend on real-world page structure diversity and environment-specific flow behavior. ADR-002-11 carries medium risk due to process-global `os.environ` mutation — safe for single-worker deployments but must be revisited when parallel test execution is introduced. ADR-002-22, ADR-002-23, and ADR-002-27 are low risk because they reuse existing URL extraction, loading-indicator, and Tier 2 fallback mechanisms rather than introducing new execution tiers or unbounded waits. These decisions should be monitored via tier-level execution metrics and environment-specific failure rates across test runs.
 
@@ -2002,3 +2007,139 @@ Fallback then continues normally according to Option A / B / C, and if no tier p
 - `backend/tests/test_three_tier_execution_service.py::test_execute_step_escalates_when_confirm_click_makes_no_progress`
 
 **Targeted validation:** 18 impacted tests passed across `test_post_click_modal_dismiss.py`, `test_step_progress_guard.py`, `test_three_tier_execution_service.py`, and adjacent readiness/orchestration suites.
+
+---
+
+## ADR-002-30: Cross-Platform Upload File Path Extraction from Free-Text Step Descriptions
+
+**Date:** April 9, 2026
+
+### Context
+
+When a test step description contains a natural-language instruction such as:
+
+```
+Upload the HKID document from the local file system C:\test_RNR\HKID-Sample.jpeg
+```
+
+`ExecutionService._execute_step()` must resolve a `file_path` value before the step is forwarded to the 3-tier engine. The original logic attempted extraction with a single regex before falling back to built-in keyword-based sample files:
+
+```python
+file_path_pattern = r'(/[\w\-/.]+\.(pdf|jpg|jpeg|png|gif|doc|docx|xls|xlsx|txt|csv))\b'
+file_path_match = re.search(file_path_pattern, step_description, re.IGNORECASE)
+```
+
+This pattern only matched POSIX-style absolute paths starting with `/`, using word characters, hyphens, forward slashes, and periods. A Windows absolute path fails to match because it uses:
+
+- A drive letter and colon prefix (`C:`)
+- Backslash directory separators (`\`)
+- Spaces in directory or file names (e.g. `My Documents\HKID Sample.jpg`)
+- Filenames with hyphens not immediately preceded by a `/` (e.g. `HKID-Sample-Blank.jpeg`)
+
+When the match failed, the fallback keyword scan saw `"hkid"` in the description and silently substituted the built-in sample file:
+
+```
+file_path: '/home/dt-qa/.../backend/test_files/hkid_sample.pdf'
+```
+
+The debug log revealed the mismatch:
+
+```
+[DEBUG] Calling 3-Tier with {
+  'action': 'upload_file',
+  'selector': "input[type='file']",
+  'value': None,
+  'file_path': 'C:\\AI-Web-Test-v1\\backend\\test_files/hkid_sample.pdf'
+}
+```
+
+The step's explicitly stated path was discarded. The test was uploading a backend sample file instead of the user's test file.
+
+**Scope:** this only affects natural-language upload steps where `file_path` is absent from the structured `detailed_steps` payload. Structured steps with an explicit `file_path` field bypass extraction entirely and are unaffected.
+
+### Decision
+
+Replace the single inline regex with two focused private helpers and move the upload resolution block outside the action-detection `elif` chain so it applies unconditionally whenever `step_data["action"] == "upload_file"`.
+
+#### `_extract_upload_file_path_from_description(step_description) -> Optional[str]`
+
+Extracts an explicit file path from natural-language step text. Priority order:
+
+1. **Quoted candidates first** — extract all text inside `"..."` or `'...'` and accept the first one that matches the absolute-path pattern. Handles paths with spaces or special characters:
+   ```
+   "C:\Test User\My Documents\passport sample.jpg"
+   ```
+
+2. **Unquoted Windows absolute path** — matches `[A-Za-z]:\...` followed by a supported extension, terminated by whitespace, punctuation, or end of string:
+   ```
+   C:\old_Drive\RNR\test_RNR\HKID-Sample-Blank-66.jpeg
+   ```
+
+3. **Unquoted POSIX absolute path** — matches `/...` followed by a supported extension. Preserves the original regex intent for Linux/Docker paths:
+   ```
+   /app/test_files/hkid_sample.pdf
+   ```
+
+Returns `None` when no explicit path is found, triggering the keyword fallback.
+
+#### `_get_default_upload_file_path(step_description) -> str`
+
+Isolates the keyword-based sample-file fallback that previously lived inline. Unchanged behavior:
+
+| Keyword in description | Default file |
+|---|---|
+| `passport` | `{base_path}/passport_sample.jpg` |
+| `hkid` | `{base_path}/hkid_sample.pdf` |
+| `address` or `proof` | `{base_path}/address_proof.pdf` |
+| _(any other)_ | `{base_path}/passport_sample.jpg` |
+
+`base_path` is `/app/test_files` when running inside Docker, otherwise the absolute path of `backend/test_files/` on the host.
+
+#### Dispatch in `_execute_step()`
+
+```python
+if step_data["action"] == "upload_file":
+    if not step_data.get("file_path"):
+        extracted = self._extract_upload_file_path_from_description(step_description)
+        if extracted:
+            step_data["file_path"] = extracted
+            logger.info(f"[Extracted from description] File path: {step_data['file_path']}")
+        else:
+            step_data["file_path"] = self._get_default_upload_file_path(step_description)
+            logger.info(f"[Auto-detected from keywords] File upload with file_path: ...")
+    else:
+        logger.info(f"[User-specified in detailed_step] File upload with file_path: ...")
+
+    if not step_data["selector"]:
+        step_data["selector"] = "input[type='file']"
+```
+
+The block is placed after the `elif "upload" in desc_lower:` action-detection branch and guards on `action == "upload_file"`, so existing detection for both free-text upload descriptions and pre-classified structured steps uses the same path.
+
+### Consequences
+
+**Positive**
+- Windows absolute paths in free-text step descriptions are now preserved and forwarded to the 3-tier engine unchanged.
+- Quoted paths with spaces (e.g. `"C:\Test User\My Docs\file.jpg"`) are handled correctly.
+- Existing POSIX absolute paths (e.g. `/app/test_files/hkid_sample.pdf`) continue to work exactly as before.
+- Structured `detailed_steps` entries with an explicit `file_path` are not affected — the upload block only runs when `file_path` is absent or empty.
+- The keyword-based sample-file fallback is preserved as a last resort when no explicit path appears anywhere in the step text.
+- Both helpers are small, independently testable, and have no side effects.
+
+**Negative**
+- Tier executors (`Tier1PlaywrightExecutor`, `Tier2HybridExecutor`, `Tier3StagehandExecutor`) validate the resolved path with `os.path.exists()` at execution time. A Windows path forwarded to a Linux backend runtime will still fail at that point because the path does not exist on the server. This is a deployment concern, not a parsing concern, and cannot be fixed in the parser.
+- Unquoted Windows paths containing characters outside `[^\r\n]` stop matching at the first line break — acceptable because step descriptions are never multi-line.
+- A step description that contains two valid-looking absolute paths (e.g. `"Move file from /source/file.pdf to /dest/file.pdf"`) returns the first match. This is unlikely in practice because upload steps are single-purpose.
+
+**Alternatives Considered**
+- **Extend the original inline regex to also handle Windows paths**: A single regex covering both POSIX and Windows paths with optional quoting becomes long and hard to reason about. Splitting into two helpers keeps each case readable.
+- **Require users to always put the path in `detailed_steps.file_path`**: Correct long-term contract; the extraction is a convenience layer for test steps generated without a structured `file_path`. Removing it would break all existing upload steps written as plain natural language.
+- **Normalise Windows paths to POSIX before storing**: Path normalisation on the backend cannot work because cross-OS path semantics differ — a Windows drive letter has no POSIX equivalent on the server filesystem.
+
+**Tests added (TDD):**  
+3 new tests in `backend/tests/test_execution_service_three_tier_logging.py`:
+- `test_execute_step_extracts_windows_upload_path_from_step_description` — unquoted Windows path in description is forwarded unchanged to `three_tier_service.execute_step`.
+- `test_execute_step_extracts_quoted_windows_upload_path_with_spaces` — quoted Windows path with spaces in directory name is extracted without the surrounding quotes.
+- `test_execute_step_preserves_posix_upload_path_from_step_description` — existing POSIX absolute path continues to be extracted correctly (regression guard).
+
+**Total tests impacted:** 4 passed in `test_execution_service_three_tier_logging.py`, 11 passed in `test_file_upload.py` (no regressions).
