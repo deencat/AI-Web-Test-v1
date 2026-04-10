@@ -24,26 +24,27 @@ slowapi==0.1.9
 
 # File handling (Day 4 - KB system)
 PyPDF2==3.0.1
-python-docx==1.1.0
-aiofiles==23.2.1
+python-docx==1.2.0
+aiofiles==25.1.0
 
 # Data Generation
 faker>=18.0.0
 
 # Browser Automation (Sprint 3 - Test Execution)
 playwright==1.56.0
-stagehand==0.5.7
+stagehand==0.5.6
 websockets==15.0.1
 # Browser-Use for LLM-guided flow navigation (Sprint 10)
 browser-use>=0.12.1,<0.13.0
 
 # LLM Integration (Phase 3 - Multi-Agent System)
 cerebras-cloud-sdk>=1.0.0
+openai==2.16.0
 
 # Environment & Configuration
 python-dotenv==1.2.1
 
 # HTTP Client (for API calls)
-requests==2.31.0
+requests==2.32.5
 
-cerebras-cloud-sdk>=1.0.0
+litellm==1.74.15.post2
