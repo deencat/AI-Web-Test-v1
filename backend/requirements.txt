@@ -25,7 +25,7 @@ slowapi==0.1.9
 # File handling (Day 4 - KB system)
 PyPDF2==3.0.1
 python-docx==1.2.0
-aiofiles==25.1.0
+aiofiles>=23.2.1
 
 # Data Generation
 faker>=18.0.0
@@ -47,4 +47,4 @@ python-dotenv==1.2.1
 # HTTP Client (for API calls)
 requests==2.32.5
 
-litellm==1.74.15.post2
+litellm>=1.72.0,<=1.80.0
