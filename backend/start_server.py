@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent / ".env")
 import os  # noqa: E402
 _ENABLE_FILE_LOGGING = os.getenv("ENABLE_SERVER_FILE_LOGGING", "false").lower() in ("true", "1", "yes")
+from app.utils.server_logging import suppress_noisy_file_loggers  # noqa: E402
 
 # CRITICAL: Set Windows event loop policy BEFORE any async operations
 # This must be done before importing any Playwright/Stagehand code
@@ -33,6 +34,7 @@ if _ENABLE_FILE_LOGGING:
     _file_handler.setLevel(logging.DEBUG)
     logging.getLogger().addHandler(_file_handler)
     logging.getLogger().setLevel(logging.INFO)
+    suppress_noisy_file_loggers()
     # Tee stdout/stderr to log file from the very start (so start_server prints and all later print() go to file)
     class _Tee:
         def __init__(self, stream, fpath):
