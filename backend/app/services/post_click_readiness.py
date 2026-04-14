@@ -57,36 +57,43 @@ MODAL_CONTAINER_SELECTORS = [
 
 # Button label texts tried in order when dismissing a detected modal.
 # Matching is case-insensitive via Playwright's get_by_role name= parameter.
+# SAFE: tried on every visible modal unconditionally — must only contain labels that
+# are unambiguously non-business-flow (OK, Close, etc.).
 SAFE_MODAL_DISMISS_BUTTON_TEXTS = [
-    "I understand",
-    "I Understand",
     "OK",
     "Ok",
-    "Close",
     "Dismiss",
     "Got it",
     "Accept",
     "Agree",
 ]
 
+# CONDITIONAL: only used when _modal_allows_business_autodismiss() confirms the
+# modal is a nuisance/informational blocker, not a business-flow step.
+# 'I understand' and 'Close' live here because they also appear as primary/dismiss
+# buttons on business-flow modals (e.g. the Three HK T&C purchase modal).
 CONDITIONAL_MODAL_DISMISS_BUTTON_TEXTS = [
+    "I understand",
+    "I Understand",
+    "Close",
     "Confirm",
     "Continue",
     "Done",
 ]
 
+# Tokens that identify a modal as a nuisance/informational blocker (not business flow).
+# Only include tokens that describe the modal's PURPOSE — never button labels such
+# as 'i understand' or 'got it', because those labels also appear on business-flow
+# T&C modals and their presence would defeat the business-flow guard.
 NUISANCE_MODAL_TEXT_TOKENS = (
     "reminder",
     "notice",
     "informational",
-    "information",
     "session expired",
     "session timeout",
     "timed out",
     "maintenance",
     "security reminder",
-    "i understand",
-    "got it",
 )
 
 GENERIC_OVERLAY_SELECTORS = {"[class*='overlay']", ".overlay"}
