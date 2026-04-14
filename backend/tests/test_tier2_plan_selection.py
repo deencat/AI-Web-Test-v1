@@ -1,4 +1,4 @@
-"""Tests for Three HK preprod plan-selection recovery in Tier 2."""
+"""Tests for Three HK preprod plan-selection recovery and performance in Tier 2."""
 
 import sys
 from pathlib import Path
@@ -10,6 +10,48 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT_DIR))
 
 from app.services.tier2_hybrid import Tier2HybridExecutor
+
+
+class TestTier2NavigatePerformance:
+    """Regression guards for navigate-step performance (RC-PERF-1)."""
+
+    def setup_method(self):
+        self.executor = Tier2HybridExecutor(
+            db=MagicMock(),
+            xpath_extractor=MagicMock(),
+            timeout_ms=30000,
+        )
+
+    @pytest.mark.asyncio
+    async def test_navigate_uses_domcontentloaded_not_networkidle(self):
+        """navigate action must use wait_until='domcontentloaded', not 'networkidle'.
+
+        Regression guard: Three HK UAT never reaches networkidle.  Using
+        'networkidle' caused every navigate step to time out at 30 s per tier
+        (90 s total for 3-tier fallback).  'domcontentloaded' resolves in ~1-3 s.
+        """
+        page = MagicMock()
+        page.goto = AsyncMock(return_value=None)
+        page.url = "about:blank"
+
+        with patch.object(self.executor, "_verify_and_clear_pending_tab_check", AsyncMock()):
+            result = await self.executor.execute_step(
+                page=page,
+                step={
+                    "instruction": "Step 1: Navigate to the Three HK plan page",
+                    "action": "navigate",
+                    "value": "https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en",
+                    "element_text": "",
+                },
+            )
+
+        assert result["success"] is True
+        page.goto.assert_awaited_once()
+        _, call_kwargs = page.goto.await_args
+        assert call_kwargs.get("wait_until") == "domcontentloaded", (
+            f"navigate called page.goto with wait_until={call_kwargs.get('wait_until')!r}; "
+            "must use 'domcontentloaded' to avoid 30 s networkidle timeout on Three HK UAT"
+        )
 
 
 class TestThreeHkPlanSelectionRecovery:

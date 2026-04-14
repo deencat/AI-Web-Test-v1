@@ -324,7 +324,8 @@ async def wait_for_post_click_readiness(
 
     if not classification["is_navigation_click"]:
         try:
-            await page.wait_for_load_state("networkidle", timeout=wait_timeout)
+            non_nav_idle_timeout = min(timeout_ms, 3000)
+            await page.wait_for_load_state("networkidle", timeout=non_nav_idle_timeout)
         except PlaywrightTimeout:
             try:
                 await page.wait_for_load_state("domcontentloaded", timeout=5000)
@@ -349,7 +350,7 @@ async def wait_for_post_click_readiness(
         except PlaywrightTimeout:
             logger.debug("Auth click did not reach networkidle within %sms", auth_timeout)
 
-    loading_timeout = 15000 if classification["is_payment_click"] else min(timeout_ms, 8000)
+    loading_timeout = 15000 if classification["is_payment_click"] else min(timeout_ms, 20000)
     await wait_for_loading_indicators_to_clear(page, logger, loading_timeout)
     await asyncio.sleep(0.4)
 

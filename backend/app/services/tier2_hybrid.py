@@ -137,7 +137,7 @@ class Tier2HybridExecutor:
 
             # Special handling for navigate action (no XPath needed)
             if action == "navigate":
-                await page.goto(value or instruction, timeout=self.timeout_ms, wait_until="networkidle")
+                await page.goto(value or instruction, timeout=self.timeout_ms, wait_until="domcontentloaded")
                 execution_time_ms = (time.time() - start_time) * 1000
                 
                 logger.info(f"[Tier 2] ✅ Navigate succeeded in {execution_time_ms:.2f}ms")
