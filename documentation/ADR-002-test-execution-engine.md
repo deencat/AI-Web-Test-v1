@@ -71,6 +71,7 @@
 32. [ADR-002-32: Post-Settle Tab State Re-Verification and Recovery Re-Click](#adr-002-32-post-settle-tab-state-re-verification-and-recovery-re-click)
 33. [ADR-002-33: T&C Checkbox Post-Check Verification and Subscribe Now Fast-Fail Guard](#adr-002-33-tc-checkbox-post-check-verification-and-subscribe-now-fast-fail-guard)
 34. [ADR-002-34: Bounded Navigate and Loading-Indicator Timeouts to Eliminate SPA Stalls](#adr-002-34-bounded-navigate-and-loading-indicator-timeouts-to-eliminate-spa-stalls)
+35. [ADR-002-35: Further Narrow Modal Auto-Dismiss — Move 'I understand' and 'Close' to Conditional, Purge Button-Label Tokens from Nuisance Detector](#adr-002-35-further-narrow-modal-auto-dismiss--move-i-understand-and-close-to-conditional-purge-button-label-tokens-from-nuisance-detector)
 
 ---
 
@@ -780,6 +781,7 @@ Key properties:
 | 002-32 | Step-boundary pending-tab-key re-verification after ADR-002-23 spinner clears; recovery re-click when tab has reverted | Accepted | Low |
 | 002-33 | Post-check `is_checked()` verification for `check` actions; immediate `ValueError` when Subscribe Now button stays permanently disabled | Accepted | Low |
 | 002-34 | Change navigate Tier 2 `wait_until` from `networkidle` to `domcontentloaded`; raise nav-click loading timeout to 20 s; cap non-nav networkidle wait at 3 s | Accepted | Low |
+| 002-35 | Move `'I understand'`, `'I Understand'`, and `'Close'` from `SAFE` to `CONDITIONAL` dismiss list; remove button-label tokens (`'i understand'`, `'got it'`, `'information'`) from `NUISANCE_MODAL_TEXT_TOKENS` | Accepted | Low |
 
 ADR-002-24 and ADR-002-25 are low risk: ADR-002-24's overlay guard only fires for the two generic overlay selectors, leaving all other loading indicators unchanged; ADR-002-25's fast-path requires both conditions — URL unchanged and interactive modal visible — to be true simultaneously, which is conservative. ADR-002-26 is a one-line wiring fix with no behavioural change to step execution. All three were applied together to fix the repeated 10–20 s per-step stalls in Execution #637 and to restore tier-level diagnostics.
 
@@ -792,6 +794,8 @@ ADR-002-29 adds a shared confirm-step progress guard in `ThreeTierExecutionServi
 ADR-002-30 is low risk: the two new helpers only replace a narrower regex that missed Windows paths; POSIX paths and structured `file_path` fields in `detailed_steps` are unaffected. The keyword-based sample-file fallback is preserved as the last resort when no explicit path is present in the step text.
 
 ADR-002-32 is low risk: the pending-key mechanism only activates when a Three HK UAT tab-click step has previously been recorded, and the recovery re-click is bounded to one attempt with `_wait_for_spa_spinner_settle` afterwards. Non-Three-HK steps are entirely unaffected. ADR-002-33 is also low risk: the `is_checked()` post-verification adds one Playwright API call after every `check` action (fast path skips if already checked); the Subscribe Now guard replaces a silent disabled-button wait loop with an immediate failure, which surfaces bugs earlier without affecting any other button type. ADR-002-34 is low risk: `domcontentloaded` resolves correctly on all sites tested; the higher nav-click loading timeout gives slow post-click spinners (like Three HK document-upload) more room without affecting fast pages (they complete well under 20 s); the shorter non-nav networkidle cap does not affect pages that reach networkidle quickly (they resolve before 3 s in practice).
+
+ADR-002-35 is low risk: the change only tightens when dismissal fires — it never removes the ability to dismiss nuisance modals. The Three HK preprod reminder ("Reminder" or "Notice" in body text) still passes `_modal_allows_business_autodismiss` and is dismissed as before. The risk of a nuisance modal that truly requires an unconditional `Close` or `I understand` click being missed is accepted; such modals should instead have their text adjusted or an explicit test step added.
 
 ADR-002-7, ADR-002-8, ADR-002-19, ADR-002-20, ADR-002-21, ADR-002-28, and ADR-002-29 carry medium risk because their heuristics depend on real-world page structure diversity and environment-specific flow behavior. ADR-002-11 carries medium risk due to process-global `os.environ` mutation — safe for single-worker deployments but must be revisited when parallel test execution is introduced. ADR-002-22, ADR-002-23, and ADR-002-27 are low risk because they reuse existing URL extraction, loading-indicator, and Tier 2 fallback mechanisms rather than introducing new execution tiers or unbounded waits. These decisions should be monitored via tier-level execution metrics and environment-specific failure rates across test runs.
 
@@ -1836,6 +1840,8 @@ This preserves instruction-level specificity while allowing successive Mastercar
 
 **Date:** April 2, 2026
 
+> Note: ADR-002-28 records the first round of narrowing applied to ADR-002-20's original broad dismiss-button list. Two further narrowings — moving `'I understand'`/`'Close'` to CONDITIONAL and purging button-label tokens from `NUISANCE_MODAL_TEXT_TOKENS` — were made in response to Executions #689 and #692 and are recorded in ADR-002-35.
+
 ### Context
 
 Execution #637 on the Three HK flow exposed a second-order effect of ADR-002-20's broad modal helper. The system did not have an outer "retry the same step three times" loop. Instead, repeated plain-text confirm steps were vulnerable to being collapsed because one logical step could both:
@@ -1852,7 +1858,7 @@ Keep the existing modal auto-dismiss call sites from ADR-002-20, but narrow what
 
 #### ADR-002-28-A: Split dismiss buttons into always-safe and conditional groups
 
-`post_click_readiness.py` now defines:
+`post_click_readiness.py` defines (as of this ADR; see ADR-002-35 for subsequent narrowing):
 
 ```python
 SAFE_MODAL_DISMISS_BUTTON_TEXTS = [
@@ -1897,6 +1903,8 @@ NUISANCE_MODAL_TEXT_TOKENS = (
 ```
 
 This preserves the original Three HK reminder-modal behavior while preventing generic business `Confirm` / `Continue` / `Done` buttons from being auto-clicked by default.
+
+> Note: `NUISANCE_MODAL_TEXT_TOKENS` as defined in this ADR included `"i understand"` and `"got it"` as tokens. Those were later removed by ADR-002-35 because they are button labels, not modal-purpose indicators.
 
 #### ADR-002-28-C: Do not remove `confirm` from navigation readiness classification
 
@@ -2464,3 +2472,109 @@ New class `TestTier2NavigatePerformance` (1 test) in `backend/tests/test_tier2_p
 - `test_non_nav_click_networkidle_timeout_is_short` — non-nav networkidle timeout ≤ 3 000 ms
 
 **Total tests:** 45 passed across `test_tier2_plan_selection.py` and `test_post_click_readiness.py` (no regressions).
+
+---
+
+## ADR-002-35: Further Narrow Modal Auto-Dismiss — Move 'I understand' and 'Close' to Conditional, Purge Button-Label Tokens from Nuisance Detector
+
+**Date:** April 14, 2026
+
+### Context
+
+Two consecutive production executions of Test Case 101 on the Three HK flow revealed that ADR-002-28's SAFE list was still too broad:
+
+**Execution #689 — 'I understand' pre-empted by post-click readiness after Step 8 'Click Next'**
+
+Step 8 (*"Click the 'Next' button to proceed to the terms and conditions page"*) matched `"next"` in `NAVIGATION_KEYWORDS`, so `wait_for_post_click_readiness()` classified it as a navigation click and called `auto_dismiss_blocking_modals()` after loading indicators cleared. The T&C purchase modal appeared on the landing page. `"I understand"` was in `SAFE_MODAL_DISMISS_BUTTON_TEXTS` and was clicked unconditionally — consuming the modal before Step 9 (*"Click the 'I understand' button"*) could execute.
+
+Secondary root cause: `_modal_allows_business_autodismiss()` returned `True` even for the T&C modal because `"i understand"` was in `NUISANCE_MODAL_TEXT_TOKENS`, meaning the modal's own button label was used as evidence that it was a nuisance dialog. Any modal containing an "I understand" button therefore passed the nuisance check, defeating the business-flow guard.
+
+**Execution #692 — 'Close' pre-empted the same modal after 'I understand' was moved to CONDITIONAL**
+
+After ADR-002-35-A was applied (moving `"I understand"` to CONDITIONAL), the same Three HK account/purchase page T&C modal continued to be auto-dismissed via its Bootstrap close (×) button (`"Close"`), which remained in `SAFE_MODAL_DISMISS_BUTTON_TEXTS`. Log evidence: `[Modal] Auto-dismissed with button 'Close'` at 15:54:00 during Step 8's post-click readiness, immediately before Step 9 started.
+
+The URL at the time of dismissal was `https://www.three.com.hk/postpaid/en/account/purchase`, confirming the modal was on the purchase checkout page — a business-flow screen, not a preprod gate.
+
+### Decision
+
+#### ADR-002-35-A: Move 'I understand' / 'I Understand' from SAFE to CONDITIONAL
+
+`"I understand"` and `"I Understand"` are moved from `SAFE_MODAL_DISMISS_BUTTON_TEXTS` to `CONDITIONAL_MODAL_DISMISS_BUTTON_TEXTS`. They now fire only when `_modal_allows_business_autodismiss()` confirms the modal is a nuisance/informational blocker.
+
+**Rationale:** "I understand" is a common acknowledgment button on both preprod environment reminder dialogs *and* production T&C/terms modals. Treating it as safe-to-click on any visible modal is incorrect. The Three HK UAT preprod reminder modal (which contains `"reminder"` in its text) still passes the nuisance check and is dismissed. The T&C purchase modal does not contain any nuisance token and is correctly left alone.
+
+#### ADR-002-35-B: Move 'Close' from SAFE to CONDITIONAL
+
+`"Close"` is moved from `SAFE_MODAL_DISMISS_BUTTON_TEXTS` to `CONDITIONAL_MODAL_DISMISS_BUTTON_TEXTS` for the same reason.
+
+**Rationale:** Bootstrap modals universally include a dismiss button labeled "Close" (the × icon). On nuisance/reminder overlays this is appropriate to auto-click. On business-flow dialogs (payment confirmations, T&C modals, subscription overlays) clicking `"Close"` dismisses the dialog without completing the required business action, silently breaking the flow.
+
+#### ADR-002-35-C: Remove button-label tokens from NUISANCE_MODAL_TEXT_TOKENS
+
+`"i understand"`, `"got it"`, and `"information"` are removed from `NUISANCE_MODAL_TEXT_TOKENS`.
+
+**Rationale:**
+- `"i understand"` and `"got it"` are button labels. A modal containing a button labeled "I understand" is not inherently informational — it could be a T&C agreement, a warning, or any required action step. Including them caused `_modal_allows_business_autodismiss()` to return `True` for any modal with either button, making the guard circular: a button previously in the SAFE list was also used to classify modals as safe to auto-dismiss regardless of content.
+- `"information"` is too generic. Production pages routinely render informational UI sections (e.g. plan details, help text) inside modal containers. Matching this token would incorrectly classify business-flow dialogs as nuisance blockers.
+
+**Final state of the lists after ADR-002-35:**
+
+```python
+SAFE_MODAL_DISMISS_BUTTON_TEXTS = [
+    "OK",
+    "Ok",
+    "Dismiss",
+    "Got it",
+    "Accept",
+    "Agree",
+]
+
+CONDITIONAL_MODAL_DISMISS_BUTTON_TEXTS = [
+    "I understand",
+    "I Understand",
+    "Close",
+    "Confirm",
+    "Continue",
+    "Done",
+]
+
+NUISANCE_MODAL_TEXT_TOKENS = (
+    "reminder",
+    "notice",
+    "informational",
+    "session expired",
+    "session timeout",
+    "timed out",
+    "maintenance",
+    "security reminder",
+)
+```
+
+### Consequences
+
+**Positive**
+- The Three HK T&C purchase modal (`account/purchase`, `step=offer`) is no longer consumed by `auto_dismiss_blocking_modals()` during Step 8's post-click readiness. Step 9's explicit interaction with the "I understand" button proceeds as designed.
+- The preprod UAT reminder modal (`"reminder"` in body text with "I understand" button) still passes the nuisance guard and is auto-dismissed as before.
+- Session-expired dialogs (`"session expired"` token) with a "Close" button are still auto-dismissed.
+- `_modal_allows_business_autodismiss()` is now based purely on modal purpose tokens, not button labels — making the guard logically coherent.
+
+**Negative**
+- A nuisance modal that only has a "Close" or "I understand" dismiss option and whose body text does not contain any `NUISANCE_MODAL_TEXT_TOKENS` will no longer be auto-dismissed. If such a modal is encountered, either its token should be added to `NUISANCE_MODAL_TEXT_TOKENS` or an explicit test step should dismiss it.
+- `"Got it"` remains in `SAFE` because it is used exclusively as a nuisance/onboarding acknowledgment in practice. If a business-flow modal is ever observed using "Got it", it should be moved to CONDITIONAL.
+
+**Alternatives Considered**
+- **Keep "I understand" in SAFE, add URL exclusion for purchase pages**: Too brittle — would require maintaining a URL-pattern list alongside the button list and would break for other sites.
+- **Add lookahead into upcoming steps before auto-dismissing**: If the next step's instruction contains a button label that auto-dismiss would click, skip. Viable but adds coupling between `auto_dismiss_blocking_modals()` and the step-execution context it has no access to.
+- **Remove `auto_dismiss_blocking_modals()` from `wait_for_post_click_readiness()`**: Would regress the original ADR-002-20 fix for Three HK preprod gating; the preprod reminder must be dismissed automatically after plan selection or the flow cannot advance.
+
+**Tests added (TDD, `backend/tests/test_post_click_modal_dismiss.py`):**
+- `test_modal_show_i_understand_clicked_for_nuisance_reminder` — nuisance reminder modal with "I understand" button → dismissed (replaces original `test_modal_show_i_understand_clicked`)
+- `test_tnc_business_modal_i_understand_not_auto_dismissed` — T&C modal without nuisance tokens → NOT dismissed
+- `test_nuisance_modal_text_tokens_does_not_contain_i_understand` — regression guard: `"i understand"` must not be in `NUISANCE_MODAL_TEXT_TOKENS`
+- `test_nuisance_modal_text_tokens_does_not_contain_got_it` — regression guard: `"got it"` must not be in `NUISANCE_MODAL_TEXT_TOKENS`
+- `test_i_understand_is_in_conditional_not_safe_list` — regression guard: `"I understand"` must be in CONDITIONAL, not SAFE
+- `test_close_is_in_conditional_not_safe_list` — regression guard: `"Close"` must be in CONDITIONAL, not SAFE
+- `test_tnc_modal_close_button_not_auto_dismissed` — purchase-page T&C modal with Close button → NOT dismissed
+- `test_session_expired_modal_close_button_is_auto_dismissed` — session-expired modal with Close button → dismissed
+
+**Total tests after ADR-002-35: 22 passed** in `test_post_click_modal_dismiss.py` + 7 in `test_post_click_readiness.py` (no regressions).
