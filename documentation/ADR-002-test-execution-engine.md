@@ -67,6 +67,7 @@
 28. [ADR-002-28: Scope Business-Action Modal Auto-Dismiss to Nuisance Dialogs](#adr-002-28-scope-business-action-modal-auto-dismiss-to-nuisance-dialogs)
 29. [ADR-002-29: Visible Progress Guard for Repeated Confirm Steps](#adr-002-29-visible-progress-guard-for-repeated-confirm-steps)
 30. [ADR-002-30: Cross-Platform Upload File Path Extraction from Free-Text Step Descriptions](#adr-002-30-cross-platform-upload-file-path-extraction-from-free-text-step-descriptions)
+31. [ADR-002-31: Three HK Plan-Tab SPA Spinner-Settle Before Tab-State Verification](#adr-002-31-three-hk-plan-tab-spa-spinner-settle-before-tab-state-verification)
 
 ---
 
@@ -772,6 +773,7 @@ Key properties:
 | 002-28 | Scope `Confirm` / `Continue` / `Done` auto-dismiss to nuisance/info dialogs only | Accepted | Medium |
 | 002-29 | Downgrade repeated confirm clicks to `no_progress` when URL/modal/body state does not advance | Accepted | Medium |
 | 002-30 | Extract explicit Windows and POSIX upload paths from free-text step descriptions before falling back to built-in sample files | Accepted | Low |
+| 002-31 | Wait for Three HK SPA spinner-border lifecycle to complete before verifying plan-tab state; fixes RC1 (verify-before-settle) and RC2 (non-navigation short-circuit) | Accepted | Low |
 
 ADR-002-24 and ADR-002-25 are low risk: ADR-002-24's overlay guard only fires for the two generic overlay selectors, leaving all other loading indicators unchanged; ADR-002-25's fast-path requires both conditions — URL unchanged and interactive modal visible — to be true simultaneously, which is conservative. ADR-002-26 is a one-line wiring fix with no behavioural change to step execution. All three were applied together to fix the repeated 10–20 s per-step stalls in Execution #637 and to restore tier-level diagnostics.
 
@@ -2143,3 +2145,62 @@ The block is placed after the `elif "upload" in desc_lower:` action-detection br
 - `test_execute_step_preserves_posix_upload_path_from_step_description` — existing POSIX absolute path continues to be extracted correctly (regression guard).
 
 **Total tests impacted:** 4 passed in `test_execution_service_three_tier_logging.py`, 11 passed in `test_file_upload.py` (no regressions).
+
+---
+
+## ADR-002-31: Three HK Plan-Tab SPA Spinner-Settle Before Tab-State Verification
+
+**Date:** April 14, 2026
+
+### Context
+
+Execution #669 (test case 149, "Successful Navigation to Preprod Voucher Plan") showed the same PASS-on-wrong-branch symptom as #668. The previous fix (ADR introduced with the tab-click guard system) verified tab state within ~416 ms of the click — during the immediate DOM-event window — but the Three HK SPA mounts a Bootstrap spinner (`div[role='status'].spinner-border`) ~200 ms after the click and takes ~3 seconds to clear while fetching plan data. When the fetch completes, React reconciles the plan section and overwrites the active-tab class, reverting to the default tab (World Plan). The tab-state check had already passed before this reversion.
+
+Two compounding root causes were identified from execution #669 logs:
+
+**RC1 — Tab-state verified before the SPA data-fetch cycle completes (ADR-002-23 gap):**  
+`_ensure_three_hk_plan_tab_click_progressed` confirmed `aria-selected=true` on the voucher tab within the immediate DOM-event window. The SPA then triggered a fetch, the spinner mounted at `10:06:22,939` and cleared at `10:06:25,745` (~3 s later). React reconciliation after the fetch reverted the active tab to World Plan. The verification had run against the pre-settle DOM.
+
+**RC2 — `wait_for_post_click_readiness` exits early for non-navigation tab clicks (ADR-002-7 + ADR-002-19 gap):**  
+Because the tab click does not change the URL, `wait_for_post_click_readiness` classifies it as a non-navigation click and returns early without the spinner-lifecycle wait that is applied to URL-changing navigation clicks. The SPA spinner cycle therefore happened entirely outside any wait boundary owned by the tab-click step.
+
+### Decision
+
+Add `_wait_for_spa_spinner_settle(page)` to `tier2_hybrid.py` and call it at two points in the tab-click flow:
+
+**`_wait_for_spa_spinner_settle()` logic:**
+1. Probe for `div[role='status'].spinner-border, [role='status'].spinner-border` with a 600 ms appearance window.
+2. If the spinner never mounts, return immediately (zero overhead for tab clicks on non-SPA pages).
+3. If the spinner mounts, call `wait_for(state="hidden", timeout=min(timeout_ms, 8000))` to block until the data-fetch cycle completes.
+
+**Call site 1 — `_try_three_hk_plan_tab_click()` after `wait_for_post_click_readiness`:**  
+Inserted between the `wait_for_post_click_readiness` call and `_ensure_three_hk_plan_tab_click_progressed`. This ensures the progress check always sees the settled DOM state (RC1 + RC2).
+
+**Call site 2 — `_ensure_three_hk_plan_tab_click_progressed()` retry path:**  
+Called after `auto_dismiss_blocking_modals` (in case modal dismissal itself triggers a data-fetch) and after `_retry_three_hk_plan_tab_click` (in case the retry click triggers a fresh data-fetch cycle).
+
+### Consequences
+
+**Positive**
+- Tab-state verification now always occurs after the SPA data-fetch cycle, not before it.
+- The fix adds at most 600 ms overhead when no spinner mounts (appearance-window timeout), and no overhead at all when the page has no Bootstrap spinner.
+- Reuses the already-present spinner CSS shared with ADR-002-23 (`div[role='status'].spinner-border`) — consistent with step-boundary loading detection elsewhere.
+- Covers the retry path too: each re-click also settles before re-checking.
+
+**Negative**
+- The 600 ms appearance window is a heuristic. If the Three HK SPA delays spinner mount beyond 600 ms (e.g. under heavy load), the settle is skipped and the old symptom may recur. This is narrowly unlikely given observed ~200 ms mount time.
+- `_wait_for_spa_spinner_settle` is Three HK-specific only in its call sites; the implementation is general enough to reuse anywhere the Bootstrap spinner pattern is present.
+
+**Alternatives Considered**
+- **Add `"tab"` to `NAVIGATION_KEYWORDS`**: Would force `wait_for_post_click_readiness` to enter the navigation path for all tab clicks everywhere, including cases where no URL change ever occurs. Risk of false `wait_for_load_state("load")` calls on other sites. Rejected.
+- **Increase `_wait_for_three_hk_plan_tab_transition` deadline from 5 s to 8 s**: The transition deadline polls for tab attributes, not spinner state. Even with a longer deadline, if the spinner clears and React reconciliation reverts the tab, the check still sees the wrong state. This does not fix RC1.
+- **Re-read snapshot inside `_wait_for_three_hk_plan_tab_transition` after detecting a spinner**: More complex; requires detecting the spinner inside the transition poller. An explicit separate settle call before the check is simpler and easier to test.
+
+**Tests added (TDD):**  
+4 new tests in `backend/tests/test_tier2_plan_selection.py` — `TestThreeHkPlanTabSpinnerSettle` class:
+- `test_try_tab_click_waits_for_spinner_before_progress_check` — call order: `spinner` then `ensure` (RC1 + RC2)
+- `test_spinner_settle_waits_for_spinner_appear_then_hide` — spinner mounts → `wait_for(state="hidden")` is called
+- `test_spinner_settle_is_noop_when_no_spinner_present` — spinner never mounts → `wait_for` never called
+- `test_spinner_settle_in_retry_path` — spinner settle invoked in the `_ensure_three_hk_plan_tab_click_progressed` retry branch
+
+**Total tests:** 14 passed in `test_tier2_plan_selection.py`; 22 passed across `test_tier2_plan_selection.py`, `test_three_tier_execution_service.py`, `test_post_click_readiness.py` (no regressions).

@@ -31,6 +31,29 @@ class Tier2HybridExecutor:
     Expected success rate: 90-95% (when Tier 1 fails)
     Cost: Low-Medium (uses caching to minimize LLM calls)
     """
+
+    THREE_HK_PLAN_TAB_LABELS = {
+        "voucher monthly plan": "Voucher Monthly Plan",
+        "world plan": "World Plan",
+        "5g monthly sim plan": "5G Monthly SIM Plan",
+        "diy plan": "DIY Plan",
+        "multi-sim plan": "Multi-SIM Plan",
+        "roam like home monthly plan": "Roam Like Home Monthly Plan",
+    }
+
+    THREE_HK_PLAN_TAB_CONTENT_TOKENS = {
+        "voucher monthly plan": (
+            "5g handset voucher monthly plan",
+            "handset voucher",
+            "voucher amount",
+        ),
+        "world plan": (
+            "world plan",
+            "global data",
+        ),
+    }
+
+    THREE_HK_TAB_ACTIVE_HINTS = ("active", "selected", "current")
     
     def __init__(
         self,
@@ -53,6 +76,11 @@ class Tier2HybridExecutor:
         self.payment_direct_enabled = os.getenv("ENABLE_PAYMENT_DIRECT_HANDLING", "true").lower() != "false"
         self.payment_gateway_ready = False
         self.payment_gateway_url = None
+        # RC2 guard: set by _try_three_hk_plan_tab_click on success so the
+        # NEXT execute_step re-verifies the tab is still selected after the
+        # ADR-002-23 step-boundary spinner-settle (spinner may fire *after*
+        # the tab-click step returns and reset the active tab to the default).
+        self._pending_three_hk_tab_key: Optional[str] = None
     
     async def execute_step(
         self,
@@ -99,7 +127,14 @@ class Tier2HybridExecutor:
             page_url = page.url
             
             logger.info(f"[Tier 2] Executing step: {action} - {instruction}")
-            
+
+            # RC2: if the previous step was a Three HK plan-tab click, the SPA
+            # spinner may have fired *after* that step returned and silently
+            # reset the active tab.  ADR-002-23's step-boundary spinner wait
+            # (in ThreeTierExecutionService) clears the spinner before we reach
+            # here, so this is the correct place to re-verify tab state.
+            await self._verify_and_clear_pending_tab_check(page)
+
             # Special handling for navigate action (no XPath needed)
             if action == "navigate":
                 await page.goto(value or instruction, timeout=self.timeout_ms, wait_until="networkidle")
@@ -120,6 +155,16 @@ class Tier2HybridExecutor:
             # For upload_file actions, use file_path instead of value
             if action == "upload_file":
                 value = file_path or value
+
+            if self._is_three_hk_plan_tab_click(page_url, instruction, action):
+                tab_click_result = await self._try_three_hk_plan_tab_click(
+                    page,
+                    instruction,
+                    extraction_time_ms,
+                )
+                if tab_click_result:
+                    return tab_click_result
+                raise ValueError(f"Could not verify Three HK plan tab click for step: {instruction}")
             
             # Step 1: Try to get XPath from cache
             cached_xpath = self.cache_service.get_cached_xpath(page_url, instruction)
@@ -606,6 +651,362 @@ class Tier2HybridExecutor:
 
         logger.warning("[Tier 2] ⚠️ Could not find a verified clickable control inside iframe for step: %s", instruction)
         return False
+
+    def _extract_three_hk_plan_tab_key(self, instruction: str) -> Optional[str]:
+        """Return the canonical Three HK plan-tab key referenced by the instruction."""
+        instruction_lower = (instruction or "").lower()
+        for tab_key in sorted(self.THREE_HK_PLAN_TAB_LABELS, key=len, reverse=True):
+            if tab_key in instruction_lower:
+                return tab_key
+        return None
+
+    def _is_three_hk_plan_tab_click(self, page_url: str, instruction: str, action: str) -> bool:
+        """True for same-page Three HK plan-tab clicks that need explicit tab-state validation."""
+        if action != "click" or not is_three_hk_uat_url(page_url):
+            return False
+
+        instruction_lower = (instruction or "").lower()
+        if "tab" not in instruction_lower:
+            return False
+
+        return self._extract_three_hk_plan_tab_key(instruction) is not None
+
+    def _expected_three_hk_plan_tab_tokens(self, tab_key: str) -> tuple[str, ...]:
+        return self.THREE_HK_PLAN_TAB_CONTENT_TOKENS.get(tab_key, (tab_key,))
+
+    async def _find_three_hk_plan_tab_locator(self, page: Page, instruction: str):
+        """Find the target Three HK plan-tab control using role/text locators instead of cached XPath."""
+        tab_key = self._extract_three_hk_plan_tab_key(instruction)
+        if not tab_key:
+            return None, None, None
+
+        label = self.THREE_HK_PLAN_TAB_LABELS[tab_key]
+        locator_candidates = [
+            ("role 'tab'", page.get_by_role("tab", name=label, exact=False).first),
+            ("role 'button'", page.get_by_role("button", name=label, exact=False).first),
+            ("text", page.get_by_text(label, exact=False).first),
+        ]
+
+        for strategy, locator in locator_candidates:
+            try:
+                if await locator.count() == 0:
+                    continue
+                if not await locator.is_visible():
+                    continue
+                return locator, label, strategy
+            except Exception:
+                continue
+
+        return None, label, None
+
+    async def _is_three_hk_plan_tab_selected(self, page: Page, tab_key: str) -> bool:
+        """Heuristic selected-state check for the visible plan tab matching the target label."""
+        label = self.THREE_HK_PLAN_TAB_LABELS.get(tab_key)
+        if not label:
+            return False
+
+        locator_candidates = [
+            page.get_by_role("tab", name=label, exact=False).first,
+            page.get_by_role("button", name=label, exact=False).first,
+            page.get_by_text(label, exact=False).first,
+        ]
+
+        for locator in locator_candidates:
+            try:
+                if await locator.count() == 0 or not await locator.is_visible():
+                    continue
+
+                aria_selected = (await locator.get_attribute("aria-selected") or "").lower()
+                aria_current = (await locator.get_attribute("aria-current") or "").lower()
+                data_state = (await locator.get_attribute("data-state") or "").lower()
+                class_name = (await locator.get_attribute("class") or "").lower()
+
+                if aria_selected == "true":
+                    return True
+                if aria_current in {"true", "page", "step", "location"}:
+                    return True
+                if data_state in self.THREE_HK_TAB_ACTIVE_HINTS:
+                    return True
+                if any(token in class_name for token in self.THREE_HK_TAB_ACTIVE_HINTS):
+                    return True
+            except Exception:
+                continue
+
+        return False
+
+    async def _capture_three_hk_plan_tab_snapshot(self, page: Page, instruction: str) -> Optional[Dict[str, Any]]:
+        """Capture a compact target-tab snapshot so same-url tab clicks can prove visible progress."""
+        tab_key = self._extract_three_hk_plan_tab_key(instruction)
+        if not tab_key:
+            return None
+
+        body_text = ""
+        try:
+            body_text = ((await page.locator("body").first.text_content()) or "").lower()
+        except Exception:
+            body_text = ""
+
+        matching_tokens = tuple(
+            token for token in self._expected_three_hk_plan_tab_tokens(tab_key)
+            if token in body_text
+        )
+        target_selected = await self._is_three_hk_plan_tab_selected(page, tab_key)
+
+        return {
+            "tab_key": tab_key,
+            "target_selected": target_selected,
+            "matching_tokens": matching_tokens,
+            "signature": (page.url, target_selected, matching_tokens),
+        }
+
+    def _has_three_hk_plan_tab_progress(
+        self,
+        before_snapshot: Optional[Dict[str, Any]],
+        after_snapshot: Optional[Dict[str, Any]],
+    ) -> bool:
+        """Return True only when the target tab is now visibly active and the snapshot changed."""
+        if not after_snapshot:
+            return False
+
+        if not after_snapshot["target_selected"] and not after_snapshot["matching_tokens"]:
+            return False
+
+        if before_snapshot is None:
+            return True
+
+        return after_snapshot["signature"] != before_snapshot["signature"]
+
+    async def _wait_for_three_hk_plan_tab_transition(
+        self,
+        page: Page,
+        current_url: str,
+        instruction: str,
+        before_snapshot: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Wait briefly for a same-url Three HK tab click to surface the requested tab content."""
+        deadline = time.time() + (min(self.timeout_ms, 5000) / 1000.0)
+
+        while time.time() < deadline:
+            if page.url != current_url:
+                try:
+                    await page.wait_for_load_state("domcontentloaded", timeout=1000)
+                except Exception:
+                    pass
+
+            after_snapshot = await self._capture_three_hk_plan_tab_snapshot(page, instruction)
+            if self._has_three_hk_plan_tab_progress(before_snapshot, after_snapshot):
+                return True
+
+            await asyncio.sleep(0.25)
+
+        return False
+
+    async def _retry_three_hk_plan_tab_click(self, page: Page, instruction: str) -> bool:
+        """Retry a Three HK tab click using the tab label instead of a generic cached container."""
+        locator, label, strategy = await self._find_three_hk_plan_tab_locator(page, instruction)
+        if locator is None:
+            return False
+
+        try:
+            await locator.wait_for(state="visible", timeout=2000)
+            await locator.click(timeout=self.timeout_ms)
+            logger.info("[Tier 2] 🎯 Clicked Three HK tab using %s '%s'", strategy, label)
+            return True
+        except Exception:
+            return False
+
+    async def _ensure_three_hk_plan_tab_click_progressed(
+        self,
+        page: Page,
+        instruction: str,
+        current_url: str,
+        before_snapshot: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Ensure a Three HK tab click actually leaves the page on the requested tab."""
+        if not self._is_three_hk_plan_tab_click(current_url, instruction, "click"):
+            return
+
+        if await self._wait_for_three_hk_plan_tab_transition(page, current_url, instruction, before_snapshot):
+            return
+
+        logger.warning(
+            "[Tier 2] ⚠️ Three HK plan tab click was not verified. Dismissing modal and retrying once..."
+        )
+
+        await auto_dismiss_blocking_modals(page, logger)
+        # Settle any spinner triggered by the modal dismiss before re-checking tab state
+        await self._wait_for_spa_spinner_settle(page)
+
+        if await self._wait_for_three_hk_plan_tab_transition(page, current_url, instruction, before_snapshot):
+            return
+
+        retried = await self._retry_three_hk_plan_tab_click(page, instruction)
+        if retried:
+            await self._wait_for_spa_spinner_settle(page)
+        if retried and await self._wait_for_three_hk_plan_tab_transition(page, current_url, instruction, before_snapshot):
+            return
+
+        raise ValueError("Three HK plan tab did not stay on the requested tab")
+
+    async def _wait_for_spa_spinner_settle(self, page: Page) -> None:
+        """Wait for the Three HK SPA spinner-border lifecycle to complete after a tab click.
+
+        The SPA mounts a Bootstrap spinner when it fetches plan data after a tab switch.
+        The spinner may appear up to ~500 ms after the click and takes ~3 s to clear.
+        Verifying tab state before this cycle completes gives a false positive because
+        React overwrites the active-tab class when the data fetch resolves (RC1 / RC2).
+        """
+        _SPINNER_CSS = "div[role='status'].spinner-border, [role='status'].spinner-border"
+        _APPEAR_TIMEOUT_MS = 1500  # how long to wait for spinner to mount (SPA mounts ~1170ms after click)
+        _SETTLE_TIMEOUT_MS = min(self.timeout_ms, 8000)  # how long to wait for it to clear
+
+        try:
+            spinner = page.locator(_SPINNER_CSS)
+            # Probe whether the spinner appears within the appear window
+            try:
+                await spinner.first.wait_for(state="visible", timeout=_APPEAR_TIMEOUT_MS)
+            except Exception:
+                # Spinner never mounted — tab click had no fetch cycle; nothing to wait for
+                return
+
+            # Spinner is visible — wait for it to clear before checking tab state
+            count = await spinner.count()
+            if count > 0:
+                await spinner.wait_for(state="hidden", timeout=_SETTLE_TIMEOUT_MS)
+                logger.info("[Tier 2] ⌛ Three HK SPA spinner cleared after tab click")
+        except Exception as exc:
+            logger.debug("[Tier 2] _wait_for_spa_spinner_settle: %s", exc)
+
+    async def _recovery_click_three_hk_tab(self, page: Page, tab_key: str) -> bool:
+        """One-shot recovery: re-click the tab by tab_key and wait for spinner settle.
+
+        Called by _verify_and_clear_pending_tab_check when the tab has already
+        reverted.  Returns True if the tab is selected after the recovery click,
+        False otherwise (including locator-not-found and click exceptions).
+        """
+        recovery_instruction = f"click {tab_key} tab"
+        locator, label, strategy = await self._find_three_hk_plan_tab_locator(page, recovery_instruction)
+        if locator is None:
+            logger.warning(
+                "[Tier 2] ❌ Recovery re-click: locator not found for tab key '%s'", tab_key
+            )
+            return False
+        try:
+            await locator.click(timeout=min(self.timeout_ms, 5000))
+            logger.info("[Tier 2] 🔄 Recovery re-click: clicked '%s' tab via %s", tab_key, strategy)
+            await self._wait_for_spa_spinner_settle(page)
+            recovered = await self._is_three_hk_plan_tab_selected(page, tab_key)
+            if recovered:
+                logger.info("[Tier 2] ✅ Recovery re-click: '%s' tab is now selected", tab_key)
+            else:
+                logger.warning("[Tier 2] ❌ Recovery re-click: '%s' tab still not selected", tab_key)
+            return recovered
+        except Exception as exc:
+            logger.warning("[Tier 2] ❌ Recovery re-click raised: %s", exc)
+            return False
+
+    async def _verify_and_clear_pending_tab_check(self, page: Page) -> None:
+        """RC2 guard + RC3 recovery: re-verify the previously-clicked Three HK plan tab.
+
+        Called at the start of execute_step *after* the ADR-002-23 step-boundary
+        spinner-settle has already cleared.  If the spinner fired after the
+        tab-click step returned and the SPA silently reset the active tab to its
+        default (World Plan), a single recovery re-click is attempted before
+        raising ValueError so executions are not unnecessarily failed.
+        """
+        if self._pending_three_hk_tab_key is None:
+            return
+
+        tab_key = self._pending_three_hk_tab_key
+        self._pending_three_hk_tab_key = None  # clear regardless of outcome
+
+        still_selected = await self._is_three_hk_plan_tab_selected(page, tab_key)
+        if still_selected:
+            logger.info(
+                "[Tier 2] \u2705 Post-settle tab re-check: '%s' tab is still selected", tab_key
+            )
+            return
+
+        logger.warning(
+            "[Tier 2] \u26a0\ufe0f Post-settle tab re-check: '%s' tab reverted after SPA spinner. "
+            "Attempting recovery re-click.",
+            tab_key,
+        )
+        recovered = await self._recovery_click_three_hk_tab(page, tab_key)
+        if recovered:
+            return
+
+        logger.warning(
+            "[Tier 2] \u274c Post-settle tab re-check: '%s' tab reverted and recovery failed. "
+            "Raising ValueError so the plan-tab step is retried.",
+            tab_key,
+        )
+        raise ValueError(
+            f"Three HK plan tab '{tab_key}' reverted to default after SPA spinner-settle. "
+            "The tab-click step must be retried."
+        )
+
+    async def _try_three_hk_plan_tab_click(
+        self,
+        page: Page,
+        instruction: str,
+        extraction_time_ms: float = 0,
+    ) -> Optional[Dict[str, Any]]:
+        """Execute Three HK plan-tab clicks via label-first locators and require visible tab-state progress."""
+        direct_click_start = time.time()
+        before_snapshot = await self._capture_three_hk_plan_tab_snapshot(page, instruction)
+        locator, label, strategy = await self._find_three_hk_plan_tab_locator(page, instruction)
+        if locator is None:
+            logger.warning("[Tier 2] ⚠️ Could not find a direct Three HK tab locator for step: %s", instruction)
+            return None
+
+        current_url = page.url
+
+        await locator.wait_for(state="visible", timeout=self.timeout_ms)
+        await locator.click(timeout=self.timeout_ms)
+        logger.info("[Tier 2] 🎯 Clicked Three HK tab using %s '%s'", strategy, label)
+
+        await wait_for_post_click_readiness(
+            page=page,
+            clicked_element=locator,
+            instruction=instruction,
+            element_text=label,
+            current_url=current_url,
+            timeout_ms=self.timeout_ms,
+            logger=logger,
+        )
+
+        # RC1/RC2: wait_for_post_click_readiness exits early for same-URL tab clicks
+        # (non-navigation). Explicitly settle the SPA data-fetch spinner so the
+        # progress check runs against the final DOM state, not the immediate DOM event.
+        await self._wait_for_spa_spinner_settle(page)
+
+        await self._ensure_three_hk_plan_tab_click_progressed(
+            page,
+            instruction,
+            current_url,
+            before_snapshot,
+        )
+
+        # RC2: store the tab key so the NEXT execute_step can re-verify
+        # after the ADR-002-23 step-boundary spinner clears (the spinner
+        # may mount *after* this step returns, resetting the active tab).
+        tab_key = self._extract_three_hk_plan_tab_key(instruction)
+        if tab_key:
+            self._pending_three_hk_tab_key = tab_key
+            logger.info("[Tier 2] 📌 Registered pending tab re-check for key: %s", tab_key)
+
+        execution_time_ms = (time.time() - direct_click_start) * 1000
+        return {
+            "success": True,
+            "tier": 2,
+            "execution_time_ms": execution_time_ms,
+            "extraction_time_ms": extraction_time_ms,
+            "playwright_time_ms": execution_time_ms,
+            "cache_hit": False,
+            "xpath": None,
+            "error": None,
+        }
 
     def _is_three_hk_plan_selection_click(self, page_url: str, instruction: str, action: str) -> bool:
         """True for Three HK UAT plan-selection clicks that can bounce back on preprod."""
