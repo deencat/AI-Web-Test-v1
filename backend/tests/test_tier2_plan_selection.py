@@ -564,3 +564,165 @@ class TestPostSettleTabRecheckRecovery:
         await self.executor._verify_and_clear_pending_tab_check(page)
 
         self.executor._recovery_click_three_hk_tab.assert_not_awaited()
+
+
+# ======================================================================== #
+# Checkbox state verification and Subscribe Now disabled-button fast-fail  #
+# ======================================================================== #
+
+class TestCheckboxStateVerification:
+    """Tests for RC1 (observe retry for check), RC2 (post-check is_checked),
+    and RC3 (Subscribe Now disabled fast-fail) from execution #683."""
+
+    def setup_method(self):
+        self.executor = Tier2HybridExecutor(
+            db=MagicMock(),
+            xpath_extractor=MagicMock(),
+            timeout_ms=30000,
+        )
+
+    # ------------------------------------------------------------------ #
+    # RC1: observe() retry for check action                               #
+    # ------------------------------------------------------------------ #
+
+    def test_should_retry_observe_for_check_action_with_no_results(self):
+        """observe() returning no results for a check action should trigger retry."""
+        result = self.executor._should_retry_observe_extraction(
+            extraction_result={"success": False, "error": "observe() returned no results for: Check the T&C checkbox"},
+            action="check",
+            selector=None,
+            instruction="Check the 'T&C' checkbox to agree to the terms and conditions",
+        )
+        assert result is True
+
+    def test_should_not_retry_observe_for_check_action_when_success(self):
+        """No retry when extraction already succeeded for a check action."""
+        result = self.executor._should_retry_observe_extraction(
+            extraction_result={"success": True, "xpath": "//input[@type='checkbox']"},
+            action="check",
+            selector=None,
+            instruction="Check the 'T&C' checkbox",
+        )
+        assert result is False
+
+    def test_should_not_retry_observe_for_check_action_with_selector(self):
+        """No retry when a selector is already provided (selector bypasses observe)."""
+        result = self.executor._should_retry_observe_extraction(
+            extraction_result={"success": False, "error": "observe() returned no results"},
+            action="check",
+            selector="//input[@type='checkbox']",
+            instruction="Check the 'T&C' checkbox",
+        )
+        assert result is False
+
+    def test_should_not_retry_observe_for_uncheck_action_with_no_results(self):
+        """Uncheck action does NOT get the observe retry (only check does)."""
+        result = self.executor._should_retry_observe_extraction(
+            extraction_result={"success": False, "error": "observe() returned no results"},
+            action="uncheck",
+            selector=None,
+            instruction="Uncheck the newsletter checkbox",
+        )
+        assert result is False
+
+    # ------------------------------------------------------------------ #
+    # RC2: post-check is_checked() validation                             #
+    # ------------------------------------------------------------------ #
+
+    @pytest.mark.asyncio
+    async def test_check_action_raises_when_still_unchecked_after_element_check(self):
+        """After element.check() succeeds, if is_checked() is False, raise ValueError."""
+        page = MagicMock()
+        element = AsyncMock()
+        element.wait_for = AsyncMock()
+        element.is_checked = AsyncMock(side_effect=[False, False])  # before + after check()
+        element.check = AsyncMock()
+        page.locator.return_value.first = element
+
+        with pytest.raises(ValueError, match="still unchecked"):
+            await self.executor._execute_action_with_xpath(
+                page=page,
+                xpath="//input[@type='checkbox']",
+                action="check",
+                value=None,
+                instruction="Check the T&C checkbox",
+            )
+
+    @pytest.mark.asyncio
+    async def test_check_action_passes_when_is_checked_after_element_check(self):
+        """After element.check(), is_checked() returns True → no exception."""
+        page = MagicMock()
+        element = AsyncMock()
+        element.wait_for = AsyncMock()
+        element.is_checked = AsyncMock(side_effect=[False, True])  # not checked, then checked
+        element.check = AsyncMock()
+        page.locator.return_value.first = element
+
+        # Should complete without exception
+        await self.executor._execute_action_with_xpath(
+            page=page,
+            xpath="//input[@type='checkbox']",
+            action="check",
+            value=None,
+            instruction="Check the T&C checkbox",
+        )
+        element.check.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_check_action_skips_element_check_when_already_checked(self):
+        """If element.is_checked() is True initially, element.check() is never called."""
+        page = MagicMock()
+        element = AsyncMock()
+        element.wait_for = AsyncMock()
+        element.is_checked = AsyncMock(return_value=True)
+        element.check = AsyncMock()
+        page.locator.return_value.first = element
+
+        await self.executor._execute_action_with_xpath(
+            page=page,
+            xpath="//input[@type='checkbox']",
+            action="check",
+            value=None,
+            instruction="Check the T&C checkbox",
+        )
+        element.check.assert_not_awaited()
+
+    # ------------------------------------------------------------------ #
+    # RC3: Subscribe Now disabled-button fast-fail                        #
+    # ------------------------------------------------------------------ #
+
+    @pytest.mark.asyncio
+    async def test_subscribe_now_button_disabled_raises_value_error(self):
+        """When 'Subscribe Now' button stays disabled, raise ValueError immediately."""
+        element = AsyncMock()
+        element.is_enabled = AsyncMock(return_value=False)
+
+        with pytest.raises(ValueError, match="Subscribe Now"):
+            await self.executor._wait_for_element_enabled_before_click(
+                element=element,
+                instruction="Step 12: Click the 'Subscribe Now' button to initiate the subscription process",
+            )
+
+    @pytest.mark.asyncio
+    async def test_subscribe_now_button_enabled_no_raise(self):
+        """When 'Subscribe Now' button is enabled from the start, no exception."""
+        element = AsyncMock()
+        element.is_enabled = AsyncMock(return_value=True)
+
+        # Should not raise
+        await self.executor._wait_for_element_enabled_before_click(
+            element=element,
+            instruction="Step 12: Click the 'Subscribe Now' button",
+        )
+
+    @pytest.mark.asyncio
+    async def test_other_button_disabled_only_logs_warning_not_raises(self):
+        """Other disabled buttons (not Subscribe Now) still just log warning, not raise."""
+        element = AsyncMock()
+        element.is_enabled = AsyncMock(return_value=False)
+
+        # Should NOT raise — legacy behaviour preserved for non-Subscribe-Now buttons
+        await self.executor._wait_for_element_enabled_before_click(
+            element=element,
+            instruction="Click the Next button to continue",
+        )

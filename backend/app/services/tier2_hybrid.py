@@ -373,7 +373,7 @@ class Tier2HybridExecutor:
         if "observe() returned no results" not in error_text:
             return False
 
-        if action == "click":
+        if action in ("click", "check"):
             return True
 
         return self._is_payment_instruction(instruction, action)
@@ -1201,6 +1201,11 @@ class Tier2HybridExecutor:
             if not await element.is_checked():
                 await element.check(timeout=self.timeout_ms)
                 await asyncio.sleep(0.3)
+                if not await element.is_checked():
+                    raise ValueError(
+                        "Checkbox is still unchecked after check() — "
+                        "element may not be a native checkbox or the click did not register"
+                    )
                 
         elif action == "uncheck":
             await element.wait_for(state="visible", timeout=self.timeout_ms)
@@ -1275,6 +1280,14 @@ class Tier2HybridExecutor:
                 "[Tier 2] ⚠️ Click target still disabled after wait (instruction=%s)",
                 instruction,
             )
+            instruction_lower = (instruction or "").lower()
+            if "subscribe now" in instruction_lower:
+                raise ValueError(
+                    "Subscribe Now button is still disabled after wait — "
+                    "prerequisite (e.g., T&C checkbox) may not have been completed"
+                )
+        except ValueError:
+            raise
         except Exception:
             # Ignore pre-check issues and let Playwright click handling raise if needed.
             return
