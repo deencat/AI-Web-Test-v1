@@ -146,6 +146,81 @@ class TestIsThreeHkPlanTabClickRouting:
         ) is False
 
 
+class TestFindTabLocatorDOMReadyWait:
+    """_find_three_hk_plan_tab_locator must wait for the tab row when it has not yet
+    rendered after a cross-category navigation (ADR-002-37 Root Cause 1).
+
+    Exec #714: '4.5G Monthly Plans' was clicked in Step 7; the SPA began hydrating
+    the 4.5G tab row while Step 8 started.  _find_three_hk_plan_tab_locator saw
+    count()==0, returned None immediately, Tier 2 raised, Tier 3 took over
+    without spinner-settle or tab-state verification.
+    """
+
+    def setup_method(self):
+        self.executor = _make_executor()
+
+    @pytest.mark.asyncio
+    async def test_returns_immediately_when_tab_already_visible(self):
+        """Fast path: tab is already rendered → locator returned, wait_for NOT called."""
+        locator = AsyncMock()
+        locator.count = AsyncMock(return_value=1)
+        locator.is_visible = AsyncMock(return_value=True)
+        locator.wait_for = AsyncMock()
+
+        page = MagicMock()
+        role_mock = MagicMock()
+        role_mock.first = locator
+        page.get_by_role = MagicMock(return_value=role_mock)
+        page.get_by_text = MagicMock(return_value=role_mock)
+
+        result_locator, label, strategy = await self.executor._find_three_hk_plan_tab_locator(
+            page, "Click 'Greater China Pro Monthly Plan' tab"
+        )
+
+        assert result_locator is locator
+        locator.wait_for.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_waits_for_tab_row_when_not_yet_rendered(self):
+        """Tab count==0 on first pass → wait_for called on second pass → locator returned."""
+        locator = AsyncMock()
+        locator.count = AsyncMock(return_value=0)
+        locator.wait_for = AsyncMock(return_value=None)
+
+        page = MagicMock()
+        role_mock = MagicMock()
+        role_mock.first = locator
+        page.get_by_role = MagicMock(return_value=role_mock)
+        page.get_by_text = MagicMock(return_value=role_mock)
+
+        result_locator, label, strategy = await self.executor._find_three_hk_plan_tab_locator(
+            page, "Click 'Greater China Pro Monthly Plan' tab"
+        )
+
+        assert result_locator is locator, "Should return locator after wait_for succeeds"
+        locator.wait_for.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_tab_never_appears(self):
+        """All wait_for attempts time out → (None, label, None) returned."""
+        locator = AsyncMock()
+        locator.count = AsyncMock(return_value=0)
+        locator.wait_for = AsyncMock(side_effect=Exception("Timeout"))
+
+        page = MagicMock()
+        role_mock = MagicMock()
+        role_mock.first = locator
+        page.get_by_role = MagicMock(return_value=role_mock)
+        page.get_by_text = MagicMock(return_value=role_mock)
+
+        result_locator, label, strategy = await self.executor._find_three_hk_plan_tab_locator(
+            page, "Click 'Greater China Pro Monthly Plan' tab"
+        )
+
+        assert result_locator is None
+        assert label == "Greater China Pro Monthly Plan"
+
+
 class TestExecuteStepRoutesNewTabsToSpecialistPath:
     """execute_step must invoke _try_three_hk_plan_tab_click (not the cache/XPath
     path) for 4.5G Monthly Plans and 5G Broadband tab instructions."""

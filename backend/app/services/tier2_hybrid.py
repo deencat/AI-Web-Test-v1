@@ -715,7 +715,14 @@ class Tier2HybridExecutor:
         return self.THREE_HK_PLAN_TAB_CONTENT_TOKENS.get(tab_key, (tab_key,))
 
     async def _find_three_hk_plan_tab_locator(self, page: Page, instruction: str):
-        """Find the target Three HK plan-tab control using role/text locators instead of cached XPath."""
+        """Find the target Three HK plan-tab control using role/text locators instead of cached XPath.
+
+        After a cross-category navigation the SPA may not have hydrated the new tab
+        row yet when this is called from _try_three_hk_plan_tab_click.  If every
+        candidate reports count()==0 we do one bounded wait_for(state='visible') on
+        the role='tab' candidate before giving up, so the tab row has time to render
+        (ADR-002-37 Root Cause 1).
+        """
         tab_key = self._extract_three_hk_plan_tab_key(instruction)
         if not tab_key:
             return None, None, None
@@ -727,15 +734,34 @@ class Tier2HybridExecutor:
             ("text", page.get_by_text(label, exact=False).first),
         ]
 
+        # First pass: instant check for already-rendered tab row
+        first_candidate_locator = None
         for strategy, locator in locator_candidates:
             try:
                 if await locator.count() == 0:
+                    if first_candidate_locator is None:
+                        first_candidate_locator = locator
                     continue
                 if not await locator.is_visible():
                     continue
                 return locator, label, strategy
             except Exception:
                 continue
+
+        # Second pass: tab row not yet rendered — wait for the first candidate to appear
+        if first_candidate_locator is not None:
+            _TAB_ROW_APPEAR_TIMEOUT_MS = min(self.timeout_ms, 5000)
+            try:
+                await first_candidate_locator.wait_for(
+                    state="visible", timeout=_TAB_ROW_APPEAR_TIMEOUT_MS
+                )
+                logger.info(
+                    "[Tier 2] ⌛ Tab row appeared after bounded wait (%dms) for '%s'",
+                    _TAB_ROW_APPEAR_TIMEOUT_MS, label,
+                )
+                return first_candidate_locator, label, "role 'tab' (waited)"
+            except Exception:
+                pass
 
         return None, label, None
 

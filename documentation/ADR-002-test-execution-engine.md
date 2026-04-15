@@ -73,6 +73,7 @@
 34. [ADR-002-34: Bounded Navigate and Loading-Indicator Timeouts to Eliminate SPA Stalls](#adr-002-34-bounded-navigate-and-loading-indicator-timeouts-to-eliminate-spa-stalls)
 35. [ADR-002-35: Further Narrow Modal Auto-Dismiss — Move 'I understand' and 'Close' to Conditional, Purge Button-Label Tokens from Nuisance Detector](#adr-002-35-further-narrow-modal-auto-dismiss--move-i-understand-and-close-to-conditional-purge-button-label-tokens-from-nuisance-detector)
 36. [ADR-002-36: Expand THREE_HK_PLAN_TAB_LABELS to Cover 4.5G Monthly Plans and 5G Broadband Categories](#adr-002-36-expand-three_hk_plan_tab_labels-to-cover-45g-monthly-plans-and-5g-broadband-categories)
+37. [ADR-002-37: Tab Locator DOM-Ready Wait and Post-Tier-3 Tab-State Verification](#adr-002-37-tab-locator-dom-ready-wait-and-post-tier-3-tab-state-verification)
 
 ---
 
@@ -2644,3 +2645,80 @@ No changes to the specialist click path — adding entries to the registry is su
 - `TestExecuteStepRoutesNewTabsToSpecialistPath` — 2 integration-level tests verifying `execute_step` calls `_try_three_hk_plan_tab_click` (not the XPath/cache path) for the two categories broken in Executions #705 and #707.
 
 **Total: 57 passed** across `test_tier2_plan_tab_registry.py` (19) + `test_tier2_plan_selection.py` (38), no regressions.
+
+---
+
+## ADR-002-37: Tab Locator DOM-Ready Wait and Post-Tier-3 Tab-State Verification
+
+**Date:** April 15, 2026
+
+### Context
+
+After ADR-002-36 added the missing tab labels, Execution #714 (Test Case 1079, "Greater China Pro Monthly Plan") still failed to remain on the correct tab. Two new root causes were identified by comparing #714 against #713 (working, voucher plan tab):
+
+**Root Cause 1 — `_find_three_hk_plan_tab_locator` returns `None` immediately after a cross-category navigation.**
+
+Exec #714: Step 7 clicked "4.5G Monthly Plans" (category-level navigation). The SPA started hydrating the 4.5G tab row but had not yet committed it to the DOM when Step 8 began. The `wait_for_step_boundary_readiness` (ADR-002-23) clears the Bootstrap spinner — but the spinner disappears while React is still computing the tab-row elements. `_find_three_hk_plan_tab_locator` ran immediately after, found `count()==0` for all three locator candidates, and returned `(None, label, None)` without any wait. `_try_three_hk_plan_tab_click` interpreted `None` as failure, raised `ValueError`, and Tier 2 was abandoned. Tier 3 (Stagehand `act()`) took over.
+
+This timing gap does not occur for tabs within the home-page category (e.g. voucher tab in #713) because those tabs are pre-rendered on initial load — `count() > 0` on the first instant check.
+
+**Root Cause 2 — Tier 3 (`Stagehand act()`) has no spinner-settle or tab-state verification.**
+
+After Tier 3 clicked "Greater China Pro Monthly Plan", `act()` returned immediately after the DOM click event. The SPA data-fetch spinner mounted ~1170 ms later and reset the active-tab class to "4.5G SIM Monthly Plan" (page default) when it resolved. No `_wait_for_spa_spinner_settle` or `_is_three_hk_plan_tab_selected` check ran. The step was marked PASS. `_pending_three_hk_tab_key` was never set, so the RC2 cross-step guard (ADR-002-32) also skipped.
+
+exec_714_step_8_pass.png confirms: after Step 8 PASS, "4.5G SIM Monthly Plan" tab is active with skeleton content — proving the tab switched back.
+
+### Decision
+
+#### ADR-002-37-A: Bounded DOM-ready wait in `_find_three_hk_plan_tab_locator`
+
+After the first-pass instant check finds `count()==0` for all candidates, attempt `wait_for(state="visible", timeout=min(timeout_ms, 5000))` on the first candidate (the `role='tab'` locator). If it becomes visible within the window, return it. If it times out, return `(None, label, None)` as before.
+
+This covers the SPA hydration window between spinner-clear and tab-row render without adding latency to the common case (tab already rendered → instant check succeeds and no wait is attempted).
+
+#### ADR-002-37-B: `_apply_tab_verification_after_tier3` in `ThreeTierExecutionService`
+
+Add a new method that runs after Tier 3 reports success on a Three HK plan-tab click step:
+
+```python
+async def _apply_tab_verification_after_tier3(self, step, tier3_result):
+    # guards: tier2_executor must exist, step must be a Three HK plan-tab click
+    await self.tier2_executor._wait_for_spa_spinner_settle(self.page)
+    selected = await self.tier2_executor._is_three_hk_plan_tab_selected(self.page, tab_key)
+    if not selected:
+        recovered = await self.tier2_executor._recovery_click_three_hk_tab(self.page, tab_key)
+        if not recovered:
+            tier3_result["success"] = False
+            tier3_result["error_type"] = "tab_state_verification_failed"
+            return
+    self.tier2_executor._pending_three_hk_tab_key = tab_key  # register for RC2
+```
+
+Called in `_execute_option_b` and `_execute_option_c` immediately after Tier 3 reports success and before the final progress check. If verification fails and recovery fails, `tier3_result["success"]` is downgraded to `False` — causing the step to be re-tried or reported as a genuine failure rather than a silent false positive.
+
+### Consequences
+
+**Positive (ADR-002-37-A)**
+- Cross-category tab steps now succeed in Tier 2 instead of falling to Tier 3, as long as the tab row appears within 5 s of the spinner clearing.
+- Zero latency added when the tab is already visible (first-pass instant check still short-circuits).
+- The 5 s cap is bounded — stale DOM states do not cause infinite waits.
+
+**Positive (ADR-002-37-B)**
+- Tier 3 tab-click success is now validated with the same spinner-settle + tab-state chain as Tier 2.
+- `_pending_three_hk_tab_key` is set after Tier 3 success, enabling the RC2 cross-step re-check (ADR-002-32) to fire on the next step.
+- No changes to Tier 3 itself — `_apply_tab_verification_after_tier3` is a post-execution wrapper in the orchestrator.
+- If `tier2_executor` is `None` (step never needed Tier 2), verification is skipped silently — no regression for non-tab steps or strategies that skip Tier 2.
+
+**Negative**
+- ADR-002-37-A: If the category navigation takes more than 5 s to hydrate the tab row, the locator still returns `None` and falls to Tier 3. In practice React hydrates the tab row within ~2 s of spinner-clear.
+- ADR-002-37-B: `_apply_tab_verification_after_tier3` only runs when `tier2_executor` has been initialized (Option C). Option B (Tier 1 → Tier 3 without Tier 2) also calls it now but `tier2_executor` will be `None` in a pure Option B run — the guard skips safely. To fully protect Option B a dedicated init would be needed (deferred).
+
+**Related files changed:**
+- `backend/app/services/tier2_hybrid.py` — `_find_three_hk_plan_tab_locator` (DOM-ready wait second pass)
+- `backend/app/services/three_tier_execution_service.py` — `_apply_tab_verification_after_tier3` (new method), `_execute_option_b` and `_execute_option_c` (call site)
+
+**Tests added (TDD):**
+- `backend/tests/test_tier2_plan_tab_registry.py` — `TestFindTabLocatorDOMReadyWait` (3 tests): immediate return when visible, wait_for called when count==0, returns None on timeout.
+- `backend/tests/test_three_tier_tab_verification.py` — `TestApplyTabVerificationAfterTier3` (6 tests) + `TestOptionCAppliesTabVerificationAfterTier3` (1 test).
+
+**Total: 67 passed** across `test_tier2_plan_tab_registry.py` (22) + `test_three_tier_tab_verification.py` (7) + `test_tier2_plan_selection.py` (38), no regressions.
