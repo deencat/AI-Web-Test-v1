@@ -33,12 +33,22 @@ class Tier2HybridExecutor:
     """
 
     THREE_HK_PLAN_TAB_LABELS = {
+        # 5G Monthly SIM Plans category
         "voucher monthly plan": "Voucher Monthly Plan",
         "world plan": "World Plan",
         "5g monthly sim plan": "5G Monthly SIM Plan",
         "diy plan": "DIY Plan",
         "multi-sim plan": "Multi-SIM Plan",
         "roam like home monthly plan": "Roam Like Home Monthly Plan",
+        # 4.5G Monthly Plans category
+        "4.5g sim monthly plan": "4.5G SIM Monthly Plan",
+        "hk-uk pro sharing monthly plan": "HK-UK Pro Sharing Monthly Plan",
+        "greater china pro monthly plan": "Greater China Pro Monthly Plan",
+        # 5G Broadband category
+        "hsbc credit card offer": "HSBC credit card offer",
+        "tertiary students and staff offer": "Tertiary students and staff offer",
+        "wi-fi 6 monthly plan": "Wi-Fi 6 Monthly Plan",
+        "wi-fi 7 monthly plan": "Wi-Fi 7 Monthly Plan",
     }
 
     THREE_HK_PLAN_TAB_CONTENT_TOKENS = {
@@ -50,6 +60,36 @@ class Tier2HybridExecutor:
         "world plan": (
             "world plan",
             "global data",
+        ),
+        # 4.5G Monthly Plans
+        "hk-uk pro sharing monthly plan": (
+            "hk-uk pro sharing",
+            "pro sharing",
+        ),
+        "greater china pro monthly plan": (
+            "greater china pro",
+            "greater china",
+        ),
+        "4.5g sim monthly plan": (
+            "4.5g sim monthly plan",
+            "4.5g",
+        ),
+        # 5G Broadband
+        "hsbc credit card offer": (
+            "hsbc credit card",
+            "hsbc",
+        ),
+        "tertiary students and staff offer": (
+            "tertiary students",
+            "staff offer",
+        ),
+        "wi-fi 6 monthly plan": (
+            "wi-fi 6",
+            "wi-fi 6 monthly plan",
+        ),
+        "wi-fi 7 monthly plan": (
+            "wi-fi 7",
+            "wi-fi 7 monthly plan",
         ),
     }
 

@@ -72,6 +72,7 @@
 33. [ADR-002-33: T&C Checkbox Post-Check Verification and Subscribe Now Fast-Fail Guard](#adr-002-33-tc-checkbox-post-check-verification-and-subscribe-now-fast-fail-guard)
 34. [ADR-002-34: Bounded Navigate and Loading-Indicator Timeouts to Eliminate SPA Stalls](#adr-002-34-bounded-navigate-and-loading-indicator-timeouts-to-eliminate-spa-stalls)
 35. [ADR-002-35: Further Narrow Modal Auto-Dismiss — Move 'I understand' and 'Close' to Conditional, Purge Button-Label Tokens from Nuisance Detector](#adr-002-35-further-narrow-modal-auto-dismiss--move-i-understand-and-close-to-conditional-purge-button-label-tokens-from-nuisance-detector)
+36. [ADR-002-36: Expand THREE_HK_PLAN_TAB_LABELS to Cover 4.5G Monthly Plans and 5G Broadband Categories](#adr-002-36-expand-three_hk_plan_tab_labels-to-cover-45g-monthly-plans-and-5g-broadband-categories)
 
 ---
 
@@ -2578,3 +2579,68 @@ NUISANCE_MODAL_TEXT_TOKENS = (
 - `test_session_expired_modal_close_button_is_auto_dismissed` — session-expired modal with Close button → dismissed
 
 **Total tests after ADR-002-35: 22 passed** in `test_post_click_modal_dismiss.py` + 7 in `test_post_click_readiness.py` (no regressions).
+
+---
+
+## ADR-002-36: Expand THREE_HK_PLAN_TAB_LABELS to Cover 4.5G Monthly Plans and 5G Broadband Categories
+
+### Context
+
+`THREE_HK_PLAN_TAB_LABELS` in `Tier2HybridExecutor` gates the specialist tab-click path (`_try_three_hk_plan_tab_click`), which applies SPA spinner-settle and tab-state verification (ADR-002-31/32). At the time of those ADRs only the 5G Monthly SIM Plans category was tested, so the registry only contained its six tab labels.
+
+Executions #705 (Test Case 1078, 5G Broadband) and #707 (Test Case 1078, 4.5G Monthly Plans) both PASS all steps yet show the wrong tab active in screenshots:
+
+- Exec #705 Step 3: "Click 'Wi-Fi 6 Monthly Plan' tab" → screenshot shows default "HSBC credit card offer" tab still active with content in skeleton state.
+- Exec #707 Step 3: "Click 'HK-UK Pro Sharing Monthly Plan' tab" → screenshot shows default "4.5G SIM Monthly Plan" tab still active.
+
+Root cause chain:
+1. `_extract_three_hk_plan_tab_key()` returns `None` for all 4.5G Monthly Plans and 5G Broadband tab labels → `_is_three_hk_plan_tab_click()` returns `False`.
+2. The step falls into the generic Tier 2 `observe()`/XPath path which calls `.click()` then returns in < 100 ms with no spinner-settle and no tab-state check.
+3. The SPA data-fetch spinner mounts ~1170 ms after the click and resets the active-tab class to the page default when it resolves (~3–5 s total). The step has already been marked PASS.
+4. `_pending_three_hk_tab_key` is never set, so the RC2 inter-step re-verification (ADR-002-32) also fires no check at the next step.
+
+### Decision
+
+Add all tabs from the two affected categories to `THREE_HK_PLAN_TAB_LABELS` and their corresponding content tokens to `THREE_HK_PLAN_TAB_CONTENT_TOKENS`:
+
+**4.5G Monthly Plans:**
+| Key | Display label |
+|---|---|
+| `4.5g sim monthly plan` | `4.5G SIM Monthly Plan` |
+| `hk-uk pro sharing monthly plan` | `HK-UK Pro Sharing Monthly Plan` |
+| `greater china pro monthly plan` | `Greater China Pro Monthly Plan` |
+
+**5G Broadband:**
+| Key | Display label |
+|---|---|
+| `hsbc credit card offer` | `HSBC credit card offer` |
+| `tertiary students and staff offer` | `Tertiary students and staff offer` |
+| `wi-fi 6 monthly plan` | `Wi-Fi 6 Monthly Plan` |
+| `wi-fi 7 monthly plan` | `Wi-Fi 7 Monthly Plan` |
+
+No changes to the specialist click path — adding entries to the registry is sufficient to route these tab instructions through the existing spinner-settle + tab-state verification that 5G Monthly SIM Plans already uses.
+
+### Consequences
+
+**Positive**
+- All Three HK plan-tab categories now go through spinner-settle + `_is_three_hk_plan_tab_selected` verification and the RC2 pending-key re-check.
+- No code path changes — risk is confined to a data-only addition to two class-level dictionaries.
+- `THREE_HK_PLAN_TAB_CONTENT_TOKENS` fallback (`(tab_key,)`) would also work for these tabs; explicit tokens are added for clarity and earlier body-text matching.
+
+**Negative**
+- Registry requires manual maintenance as Three HK adds or renames plan categories. No automatic discovery.
+- `_is_three_hk_plan_tab_selected` uses ARIA attributes and CSS class heuristics. If a new category renders active-tab state differently (e.g., only via inline style), `target_selected` may remain `False` and the verification step relies on body-text token matching alone.
+
+**Alternatives Considered**
+- **Generic tab-click detection** (any `"tab"` in instruction on Three HK UAT): Would bypass the registry entirely but risks routes non-tab instructions through the specialist path if instructions incidentally contain the word "tab".
+- **Content-only progress verification without tab-label registry**: Would require body-text tokens for every possible tab, and `_has_three_hk_plan_tab_progress` already falls back to body-text tokens if ARIA selection check fails.
+
+**Related files changed:**
+- `backend/app/services/tier2_hybrid.py` — `THREE_HK_PLAN_TAB_LABELS` and `THREE_HK_PLAN_TAB_CONTENT_TOKENS` class constants
+
+**Tests added (TDD, `backend/tests/test_tier2_plan_tab_registry.py`):**
+- `TestTabLabelRegistry` — 9 tests verifying `_extract_three_hk_plan_tab_key` matches all new and existing labels.
+- `TestIsThreeHkPlanTabClickRouting` — 8 parametrized tests verifying `_is_three_hk_plan_tab_click` returns `True` for all new tab instructions.
+- `TestExecuteStepRoutesNewTabsToSpecialistPath` — 2 integration-level tests verifying `execute_step` calls `_try_three_hk_plan_tab_click` (not the XPath/cache path) for the two categories broken in Executions #705 and #707.
+
+**Total: 57 passed** across `test_tier2_plan_tab_registry.py` (19) + `test_tier2_plan_selection.py` (38), no regressions.
