@@ -155,6 +155,101 @@ async def test_wait_for_loading_indicators_waits_for_busy_overlay():
 
 
 @pytest.mark.asyncio
+async def test_navigation_click_loading_timeout_allows_slow_spinners():
+    """Navigation click should use a large enough per-selector timeout to cover slow page loads.
+
+    Regression guard: loading_timeout must be >= 20000ms so a spinner that takes ~18s
+    to clear (observed on Three HK document-upload page after 'Next' click) resolves on
+    the FIRST selector instead of timing out three times at 8s each (24s total).
+    """
+    page = MagicMock()
+    logger = MagicMock()
+    current_url = "https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/confirm"
+    page.url = current_url
+    page.wait_for_load_state = AsyncMock(return_value=None)
+
+    clicked_element = AsyncMock()
+    clicked_element.wait_for = AsyncMock(return_value=None)
+
+    # Spinner visible — should be waited for with a permissive timeout
+    spinner_element = AsyncMock()
+    spinner_element.count = AsyncMock(return_value=1)
+    spinner_element.wait_for = AsyncMock(return_value=None)
+    spinner_locator = MagicMock()
+    spinner_locator.first = spinner_element
+
+    default_locator = _make_locator(count=0)
+
+    def locator_side_effect(selector):
+        if selector == "div[role='status'].spinner-border":
+            return spinner_locator
+        return default_locator
+
+    page.locator = MagicMock(side_effect=locator_side_effect)
+
+    with patch("app.services.post_click_readiness.asyncio.sleep", AsyncMock(return_value=None)):
+        with patch("app.services.post_click_readiness.auto_dismiss_blocking_modals", AsyncMock(return_value=False)):
+            await wait_for_post_click_readiness(
+                page=page,
+                clicked_element=clicked_element,
+                instruction="Step 14: Click the 'Next' button to proceed to the document upload page",
+                element_text="Next",
+                current_url=current_url,
+                timeout_ms=30000,
+                logger=logger,
+            )
+
+    _, call_kwargs = spinner_element.wait_for.await_args
+    assert call_kwargs["timeout"] >= 20000, (
+        f"Navigation click loading timeout {call_kwargs['timeout']}ms is too small; "
+        "must be >= 20000ms to cover slow-loading pages (e.g. Three HK document upload ~18s spinner)"
+    )
+
+
+@pytest.mark.asyncio
+async def test_non_nav_click_networkidle_timeout_is_short():
+    """Non-navigation clicks must use a short networkidle timeout (<=3 s).
+
+    Regression guard: Three HK SPA never reaches networkidle on any page.  Using the
+    old 10 s cap caused every non-nav click (checkbox, fill, etc.) to waste 10 s.
+    """
+    page = MagicMock()
+    logger = MagicMock()
+    current_url = "https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/plan"
+    page.url = current_url
+
+    timeout_error = __import__("playwright.async_api", fromlist=["TimeoutError"]).TimeoutError
+
+    networkidle_timeout_used = []
+
+    async def fake_wait_for_load_state(state, timeout=None):
+        if state == "networkidle":
+            networkidle_timeout_used.append(timeout)
+            raise timeout_error("Simulated networkidle never reached")
+
+    page.wait_for_load_state = fake_wait_for_load_state
+    clicked_element = AsyncMock()
+
+    with patch("app.services.post_click_readiness.asyncio.sleep", AsyncMock(return_value=None)):
+        await wait_for_post_click_readiness(
+            page=page,
+            clicked_element=clicked_element,
+            instruction="Step 5: Check the Terms and Conditions checkbox to agree",
+            element_text="checkbox",
+            current_url=current_url,
+            timeout_ms=30000,
+            logger=logger,
+        )
+
+    assert networkidle_timeout_used, "wait_for_load_state('networkidle') was never called"
+    used = networkidle_timeout_used[0]
+    assert used <= 3000, (
+        f"Non-nav click networkidle timeout {used}ms is too large; "
+        "Three HK SPA never reaches networkidle, so a high timeout wastes time on every click"
+    )
+
+
+@pytest.mark.asyncio
 async def test_wait_for_post_click_readiness_skips_auth_wait_for_interactable_modal_transition():
     page = MagicMock()
     logger = MagicMock()

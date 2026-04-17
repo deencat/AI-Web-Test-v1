@@ -67,6 +67,13 @@
 28. [ADR-002-28: Scope Business-Action Modal Auto-Dismiss to Nuisance Dialogs](#adr-002-28-scope-business-action-modal-auto-dismiss-to-nuisance-dialogs)
 29. [ADR-002-29: Visible Progress Guard for Repeated Confirm Steps](#adr-002-29-visible-progress-guard-for-repeated-confirm-steps)
 30. [ADR-002-30: Cross-Platform Upload File Path Extraction from Free-Text Step Descriptions](#adr-002-30-cross-platform-upload-file-path-extraction-from-free-text-step-descriptions)
+31. [ADR-002-31: Three HK Plan-Tab SPA Spinner-Settle Before Tab-State Verification](#adr-002-31-three-hk-plan-tab-spa-spinner-settle-before-tab-state-verification)
+32. [ADR-002-32: Post-Settle Tab State Re-Verification and Recovery Re-Click](#adr-002-32-post-settle-tab-state-re-verification-and-recovery-re-click)
+33. [ADR-002-33: T&C Checkbox Post-Check Verification and Subscribe Now Fast-Fail Guard](#adr-002-33-tc-checkbox-post-check-verification-and-subscribe-now-fast-fail-guard)
+34. [ADR-002-34: Bounded Navigate and Loading-Indicator Timeouts to Eliminate SPA Stalls](#adr-002-34-bounded-navigate-and-loading-indicator-timeouts-to-eliminate-spa-stalls)
+35. [ADR-002-35: Further Narrow Modal Auto-Dismiss — Move 'I understand' and 'Close' to Conditional, Purge Button-Label Tokens from Nuisance Detector](#adr-002-35-further-narrow-modal-auto-dismiss--move-i-understand-and-close-to-conditional-purge-button-label-tokens-from-nuisance-detector)
+36. [ADR-002-36: Expand THREE_HK_PLAN_TAB_LABELS to Cover 4.5G Monthly Plans and 5G Broadband Categories](#adr-002-36-expand-three_hk_plan_tab_labels-to-cover-45g-monthly-plans-and-5g-broadband-categories)
+37. [ADR-002-37: Tab Locator DOM-Ready Wait and Post-Tier-3 Tab-State Verification](#adr-002-37-tab-locator-dom-ready-wait-and-post-tier-3-tab-state-verification)
 
 ---
 
@@ -772,6 +779,11 @@ Key properties:
 | 002-28 | Scope `Confirm` / `Continue` / `Done` auto-dismiss to nuisance/info dialogs only | Accepted | Medium |
 | 002-29 | Downgrade repeated confirm clicks to `no_progress` when URL/modal/body state does not advance | Accepted | Medium |
 | 002-30 | Extract explicit Windows and POSIX upload paths from free-text step descriptions before falling back to built-in sample files | Accepted | Low |
+| 002-31 | Wait for Three HK SPA spinner-border lifecycle to complete before verifying plan-tab state; fixes RC1 (verify-before-settle) and RC2 (non-navigation short-circuit) | Accepted | Low |
+| 002-32 | Step-boundary pending-tab-key re-verification after ADR-002-23 spinner clears; recovery re-click when tab has reverted | Accepted | Low |
+| 002-33 | Post-check `is_checked()` verification for `check` actions; immediate `ValueError` when Subscribe Now button stays permanently disabled | Accepted | Low |
+| 002-34 | Change navigate Tier 2 `wait_until` from `networkidle` to `domcontentloaded`; raise nav-click loading timeout to 20 s; cap non-nav networkidle wait at 3 s | Accepted | Low |
+| 002-35 | Move `'I understand'`, `'I Understand'`, and `'Close'` from `SAFE` to `CONDITIONAL` dismiss list; remove button-label tokens (`'i understand'`, `'got it'`, `'information'`) from `NUISANCE_MODAL_TEXT_TOKENS` | Accepted | Low |
 
 ADR-002-24 and ADR-002-25 are low risk: ADR-002-24's overlay guard only fires for the two generic overlay selectors, leaving all other loading indicators unchanged; ADR-002-25's fast-path requires both conditions — URL unchanged and interactive modal visible — to be true simultaneously, which is conservative. ADR-002-26 is a one-line wiring fix with no behavioural change to step execution. All three were applied together to fix the repeated 10–20 s per-step stalls in Execution #637 and to restore tier-level diagnostics.
 
@@ -782,6 +794,10 @@ ADR-002-28 narrows ADR-002-20's original modal helper by splitting dismiss butto
 ADR-002-29 adds a shared confirm-step progress guard in `ThreeTierExecutionService`. For `click` steps whose instruction contains `confirm`, a small pre/post snapshot of URL, visible modal text, and page-body text is compared after any apparent tier success. If the UI did not visibly advance, the result is downgraded to `error_type=no_progress` and normal fallback continues.
 
 ADR-002-30 is low risk: the two new helpers only replace a narrower regex that missed Windows paths; POSIX paths and structured `file_path` fields in `detailed_steps` are unaffected. The keyword-based sample-file fallback is preserved as the last resort when no explicit path is present in the step text.
+
+ADR-002-32 is low risk: the pending-key mechanism only activates when a Three HK UAT tab-click step has previously been recorded, and the recovery re-click is bounded to one attempt with `_wait_for_spa_spinner_settle` afterwards. Non-Three-HK steps are entirely unaffected. ADR-002-33 is also low risk: the `is_checked()` post-verification adds one Playwright API call after every `check` action (fast path skips if already checked); the Subscribe Now guard replaces a silent disabled-button wait loop with an immediate failure, which surfaces bugs earlier without affecting any other button type. ADR-002-34 is low risk: `domcontentloaded` resolves correctly on all sites tested; the higher nav-click loading timeout gives slow post-click spinners (like Three HK document-upload) more room without affecting fast pages (they complete well under 20 s); the shorter non-nav networkidle cap does not affect pages that reach networkidle quickly (they resolve before 3 s in practice).
+
+ADR-002-35 is low risk: the change only tightens when dismissal fires — it never removes the ability to dismiss nuisance modals. The Three HK preprod reminder ("Reminder" or "Notice" in body text) still passes `_modal_allows_business_autodismiss` and is dismissed as before. The risk of a nuisance modal that truly requires an unconditional `Close` or `I understand` click being missed is accepted; such modals should instead have their text adjusted or an explicit test step added.
 
 ADR-002-7, ADR-002-8, ADR-002-19, ADR-002-20, ADR-002-21, ADR-002-28, and ADR-002-29 carry medium risk because their heuristics depend on real-world page structure diversity and environment-specific flow behavior. ADR-002-11 carries medium risk due to process-global `os.environ` mutation — safe for single-worker deployments but must be revisited when parallel test execution is introduced. ADR-002-22, ADR-002-23, and ADR-002-27 are low risk because they reuse existing URL extraction, loading-indicator, and Tier 2 fallback mechanisms rather than introducing new execution tiers or unbounded waits. These decisions should be monitored via tier-level execution metrics and environment-specific failure rates across test runs.
 
@@ -1826,6 +1842,8 @@ This preserves instruction-level specificity while allowing successive Mastercar
 
 **Date:** April 2, 2026
 
+> Note: ADR-002-28 records the first round of narrowing applied to ADR-002-20's original broad dismiss-button list. Two further narrowings — moving `'I understand'`/`'Close'` to CONDITIONAL and purging button-label tokens from `NUISANCE_MODAL_TEXT_TOKENS` — were made in response to Executions #689 and #692 and are recorded in ADR-002-35.
+
 ### Context
 
 Execution #637 on the Three HK flow exposed a second-order effect of ADR-002-20's broad modal helper. The system did not have an outer "retry the same step three times" loop. Instead, repeated plain-text confirm steps were vulnerable to being collapsed because one logical step could both:
@@ -1842,7 +1860,7 @@ Keep the existing modal auto-dismiss call sites from ADR-002-20, but narrow what
 
 #### ADR-002-28-A: Split dismiss buttons into always-safe and conditional groups
 
-`post_click_readiness.py` now defines:
+`post_click_readiness.py` defines (as of this ADR; see ADR-002-35 for subsequent narrowing):
 
 ```python
 SAFE_MODAL_DISMISS_BUTTON_TEXTS = [
@@ -1887,6 +1905,8 @@ NUISANCE_MODAL_TEXT_TOKENS = (
 ```
 
 This preserves the original Three HK reminder-modal behavior while preventing generic business `Confirm` / `Continue` / `Done` buttons from being auto-clicked by default.
+
+> Note: `NUISANCE_MODAL_TEXT_TOKENS` as defined in this ADR included `"i understand"` and `"got it"` as tokens. Those were later removed by ADR-002-35 because they are button labels, not modal-purpose indicators.
 
 #### ADR-002-28-C: Do not remove `confirm` from navigation readiness classification
 
@@ -2143,3 +2163,562 @@ The block is placed after the `elif "upload" in desc_lower:` action-detection br
 - `test_execute_step_preserves_posix_upload_path_from_step_description` — existing POSIX absolute path continues to be extracted correctly (regression guard).
 
 **Total tests impacted:** 4 passed in `test_execution_service_three_tier_logging.py`, 11 passed in `test_file_upload.py` (no regressions).
+
+---
+
+## ADR-002-31: Three HK Plan-Tab SPA Spinner-Settle Before Tab-State Verification
+
+**Date:** April 14, 2026
+
+### Context
+
+Execution #669 (test case 149, "Successful Navigation to Preprod Voucher Plan") showed the same PASS-on-wrong-branch symptom as #668. The previous fix (ADR introduced with the tab-click guard system) verified tab state within ~416 ms of the click — during the immediate DOM-event window — but the Three HK SPA mounts a Bootstrap spinner (`div[role='status'].spinner-border`) ~200 ms after the click and takes ~3 seconds to clear while fetching plan data. When the fetch completes, React reconciles the plan section and overwrites the active-tab class, reverting to the default tab (World Plan). The tab-state check had already passed before this reversion.
+
+Two compounding root causes were identified from execution #669 logs:
+
+**RC1 — Tab-state verified before the SPA data-fetch cycle completes (ADR-002-23 gap):**  
+`_ensure_three_hk_plan_tab_click_progressed` confirmed `aria-selected=true` on the voucher tab within the immediate DOM-event window. The SPA then triggered a fetch, the spinner mounted at `10:06:22,939` and cleared at `10:06:25,745` (~3 s later). React reconciliation after the fetch reverted the active tab to World Plan. The verification had run against the pre-settle DOM.
+
+**RC2 — `wait_for_post_click_readiness` exits early for non-navigation tab clicks (ADR-002-7 + ADR-002-19 gap):**  
+Because the tab click does not change the URL, `wait_for_post_click_readiness` classifies it as a non-navigation click and returns early without the spinner-lifecycle wait that is applied to URL-changing navigation clicks. The SPA spinner cycle therefore happened entirely outside any wait boundary owned by the tab-click step.
+
+### Decision
+
+Add `_wait_for_spa_spinner_settle(page)` to `tier2_hybrid.py` and call it at two points in the tab-click flow:
+
+**`_wait_for_spa_spinner_settle()` logic:**
+1. Probe for `div[role='status'].spinner-border, [role='status'].spinner-border` with a 600 ms appearance window.
+2. If the spinner never mounts, return immediately (zero overhead for tab clicks on non-SPA pages).
+3. If the spinner mounts, call `wait_for(state="hidden", timeout=min(timeout_ms, 8000))` to block until the data-fetch cycle completes.
+
+**Call site 1 — `_try_three_hk_plan_tab_click()` after `wait_for_post_click_readiness`:**  
+Inserted between the `wait_for_post_click_readiness` call and `_ensure_three_hk_plan_tab_click_progressed`. This ensures the progress check always sees the settled DOM state (RC1 + RC2).
+
+**Call site 2 — `_ensure_three_hk_plan_tab_click_progressed()` retry path:**  
+Called after `auto_dismiss_blocking_modals` (in case modal dismissal itself triggers a data-fetch) and after `_retry_three_hk_plan_tab_click` (in case the retry click triggers a fresh data-fetch cycle).
+
+### Consequences
+
+**Positive**
+- Tab-state verification now always occurs after the SPA data-fetch cycle, not before it.
+- The fix adds at most 600 ms overhead when no spinner mounts (appearance-window timeout), and no overhead at all when the page has no Bootstrap spinner.
+- Reuses the already-present spinner CSS shared with ADR-002-23 (`div[role='status'].spinner-border`) — consistent with step-boundary loading detection elsewhere.
+- Covers the retry path too: each re-click also settles before re-checking.
+
+**Negative**
+- The 600 ms appearance window is a heuristic. If the Three HK SPA delays spinner mount beyond 600 ms (e.g. under heavy load), the settle is skipped and the old symptom may recur. This is narrowly unlikely given observed ~200 ms mount time.
+- `_wait_for_spa_spinner_settle` is Three HK-specific only in its call sites; the implementation is general enough to reuse anywhere the Bootstrap spinner pattern is present.
+
+**Alternatives Considered**
+- **Add `"tab"` to `NAVIGATION_KEYWORDS`**: Would force `wait_for_post_click_readiness` to enter the navigation path for all tab clicks everywhere, including cases where no URL change ever occurs. Risk of false `wait_for_load_state("load")` calls on other sites. Rejected.
+- **Increase `_wait_for_three_hk_plan_tab_transition` deadline from 5 s to 8 s**: The transition deadline polls for tab attributes, not spinner state. Even with a longer deadline, if the spinner clears and React reconciliation reverts the tab, the check still sees the wrong state. This does not fix RC1.
+- **Re-read snapshot inside `_wait_for_three_hk_plan_tab_transition` after detecting a spinner**: More complex; requires detecting the spinner inside the transition poller. An explicit separate settle call before the check is simpler and easier to test.
+
+**Tests added (TDD):**  
+4 new tests in `backend/tests/test_tier2_plan_selection.py` — `TestThreeHkPlanTabSpinnerSettle` class:
+- `test_try_tab_click_waits_for_spinner_before_progress_check` — call order: `spinner` then `ensure` (RC1 + RC2)
+- `test_spinner_settle_waits_for_spinner_appear_then_hide` — spinner mounts → `wait_for(state="hidden")` is called
+- `test_spinner_settle_is_noop_when_no_spinner_present` — spinner never mounts → `wait_for` never called
+- `test_spinner_settle_in_retry_path` — spinner settle invoked in the `_ensure_three_hk_plan_tab_click_progressed` retry branch
+
+- `test_spinner_settle_waits_for_spinner_appear_then_hide` — spinner mounts → `wait_for(state="hidden")` is called
+- `test_spinner_settle_is_noop_when_no_spinner_present` — spinner never mounts → `wait_for` never called
+- `test_spinner_settle_in_retry_path` — spinner settle invoked in the `_ensure_three_hk_plan_tab_click_progressed` retry branch
+
+**Total tests:** 14 passed in `test_tier2_plan_selection.py`; 22 passed across `test_tier2_plan_selection.py`, `test_three_tier_execution_service.py`, `test_post_click_readiness.py` (no regressions).
+
+---
+
+## ADR-002-32: Post-Settle Tab State Re-Verification and Recovery Re-Click
+
+**Date:** April 14, 2026
+
+### Context
+
+ADR-002-31 extended the tab-click path so that `_wait_for_spa_spinner_settle` blocks until the Three HK SPA Bootstrap spinner clears before `_ensure_three_hk_plan_tab_click_progressed` reads the tab's `aria-selected` attribute. This eliminated the verify-before-settle race (RC1).
+
+However, Executions #675 and #676 exposed a second independent race: the ADR-002-23 **step-boundary loading wait** in `ThreeTierExecutionService` runs before every non-navigate tier call, and it also waits for `div[role='status'].spinner-border` to become hidden. If the SPA spinner mounts in the gap between the tab-click step returning and the *next* step starting, ADR-002-23 clears it at the step boundary — but by then the tab had already been reset to World Plan without any guard seeing it.
+
+Execution #675 shows the happy path: the pending tab key was set and re-verified successfully before step 3 ran. Execution #676 shows the failure path: the revert was detected but the step still failed because the guard raised immediately without attempting recovery.
+
+Two root causes:
+
+**RC-PSR-1 — No post-settle tab re-verification at the step boundary:**  
+The `execute_step` entry point for the *next* step had no mechanism to re-check whether the previously confirmed tab was still selected after ADR-002-23's spinner-boundary wait. Once any spinner had cleared, the step executed against whatever DOM state existed — which could be the wrong tab.
+
+**RC-PSR-2 — Revert detection raised immediately without attempting recovery:**  
+Once the pending tab re-check detected a revert it raised `ValueError`, failing the current step. A single recovery re-click was already known to succeed (the tab click itself had worked once) but was never attempted before the raise.
+
+### Decision
+
+#### ADR-002-32-A: `_pending_three_hk_tab_key` instance variable
+
+Add `_pending_three_hk_tab_key: Optional[str] = None` to `Tier2HybridExecutor.__init__`. After a successful Three HK plan-tab click, `_try_three_hk_plan_tab_click` sets this to the confirmed `tab_key` string (e.g. `"handsetVoucher"`). The variable acts as a deferred intent: *"the previous step confirmed this tab; re-verify it before the next step touches the plan section."*
+
+#### ADR-002-32-B: `_verify_and_clear_pending_tab_check(page)` called at `execute_step` entry
+
+At the start of every `execute_step` call, before any other action, `_verify_and_clear_pending_tab_check` is called:
+
+```python
+await self._verify_and_clear_pending_tab_check(page)
+```
+
+**Logic:**
+1. If `_pending_three_hk_tab_key is None`, return immediately (zero overhead for all non-tab-click executions).
+2. Attempt to locate the pending tab by `role=tab` / `aria-label` / text.
+3. If the locator resolves and `aria-selected == "true"`: log, clear `_pending_three_hk_tab_key`, return (happy path, #675 scenario).
+4. If the tab is no longer selected (has reverted): call `_recovery_click_three_hk_tab` (see ADR-002-32-C) before raising.
+
+Clearing the key on success ensures no double-check on subsequent steps.
+
+#### ADR-002-32-C: `_recovery_click_three_hk_tab(page, tab_key)` — one recovery re-click
+
+When the pending-tab recheck detects a revert:
+1. Locate the tab element and click it.
+2. Call `_wait_for_spa_spinner_settle(page)` after the recovery click.
+3. Re-read `aria-selected`.
+4. If the tab is now selected: log recovery success, clear the pending key, return (step proceeds normally).
+5. If still not selected: raise `ValueError f"Three HK plan tab '{tab_key}' reverted to default after SPA spinner-settle and recovery re-click also failed."`
+
+The recovery is bounded to **one attempt** — it does not loop.
+
+### Consequences
+
+**Positive**
+- Execution #676 scenario (bounce detected, step 3 fails 4/5) now recovers silently: the recovery re-click succeeds, step 3 clicks the correct plan card, and the test passes.
+- ADR-002-23's step-boundary wait is no longer a gap — the pending-key mechanism fills the window between the tab-click step completing and the next `execute_step` call.
+- Zero overhead for non-Three-HK steps: `_pending_three_hk_tab_key` remains `None` throughout.
+
+**Negative**
+- Recovery re-click adds up to ~2 s latency on the rare execution where a revert is detected (spinner settle after re-click). This is acceptable: it avoids a full test failure.
+- If the tab reverts twice (initial click + recovery click both clear), the step raises `ValueError`. This is the correct outcome — it surfaces a persistent SPA state management issue rather than silently looping.
+
+**Alternatives Considered**
+- **Retry the full tab-click step from `ThreeTierExecutionService`**: Would cause duplicated step logging and step-counter issues. Recovery at the Tier 2 boundary is cleaner.
+- **Increase ADR-002-23 spinner-settle timeout to catch slower mounts**: Does not help because the core issue is the inter-step gap, not the spinner duration.
+- **Store the pending key in the step result dict**: Would require `ThreeTierExecutionService` to forward per-step state between iterations; violates the executor's stateless design.
+
+**Tests added (TDD):**  
+New classes `TestPostSettleTabRecheck` (6 tests) and `TestPostSettleTabRecheckRecovery` (7 tests) in `backend/tests/test_tier2_plan_selection.py`:
+- `test_executor_initialises_with_no_pending_tab_key`
+- `test_try_tab_click_sets_pending_key_on_success`
+- `test_verify_and_clear_pending_tab_check_is_noop_when_no_pending_key`
+- `test_verify_and_clear_passes_and_clears_when_tab_still_selected`
+- `test_verify_and_clear_raises_when_tab_has_reverted`
+- `test_execute_step_calls_pending_tab_check_before_processing_step`
+- `test_recovery_returns_true_when_tab_selected_after_reclick`
+- `test_recovery_returns_false_when_tab_still_not_selected_after_reclick`
+- `test_recovery_returns_false_when_locator_not_found`
+- `test_recovery_returns_false_when_click_raises`
+- `test_verify_calls_recovery_reclick_when_tab_reverted_and_succeeds`
+- `test_verify_raises_when_recovery_reclick_also_fails`
+- `test_verify_does_not_call_recovery_when_tab_still_selected`
+
+**Total tests:** 37 passed across `test_tier2_plan_selection.py` (no regressions).
+
+---
+
+## ADR-002-33: T&C Checkbox Post-Check Verification and Subscribe Now Fast-Fail Guard
+
+**Date:** April 14, 2026
+
+### Context
+
+Execution #683 (Test Case 1075) showed two independent failures in a longer subscription flow:
+
+**RC-CHK-1 — `check` action appears to succeed but element remains visually unchecked:**  
+The XPath cache key for the T&C checkbox was shared with a previously cached element on the same URL (earlier-loaded DOM). The cached XPath resolved and `element.check()` was called, but `is_checked()` returned `False` immediately after — the click had landed on a different element whose DOM index had shifted. The step returned `success: True` because no Playwright exception was raised; the actual checkbox state was never verified post-action.
+
+**RC-CHK-2 — Subscribe Now button stays permanently disabled, but the step polls for 8 s before failing:**  
+ADR-002-10's `_wait_for_element_enabled_before_click` polls `is_enabled()` in a loop capped at `min(timeout_ms, 8000)`. For a Subscribe Now button that is disabled because a required field upstream is unfilled (e.g. T&C checkbox from RC-CHK-1 was never checked), the button will *never* become enabled in the current step context. Waiting 8 s before logging a warning and proceeding wastes time and produces a misleading click on a disabled control.
+
+### Decision
+
+#### ADR-002-33-A: Post-check `is_checked()` verification for `check` actions
+
+After `element.check()` completes, read back the checkbox state:
+
+**Fast path:** If `is_checked()` returns `True` before `check()` is called (element already checked), skip the `check()` call entirely and return success immediately. This preserves idempotency for re-runs.
+
+**Post-check verification:** If `is_checked()` returns `False` after `check()`, `execute_step` raises `ValueError("Checkbox element is still unchecked after check() — possible XPath index shift")`. The existing cache-invalidation path on step failure (ADR-002-3) then marks the entry `is_valid=False`, so the next run extracts a fresh XPath via `observe()`. No separate retry loop is added — the same single-retry pattern used elsewhere in Tier 2 ensures overhead is bounded.
+
+#### ADR-002-33-B: Subscribe Now permanent-disable fast-fail in `_wait_for_element_enabled_before_click()`
+
+Keep the general 8-second polling loop for ordinary buttons (preserving ADR-002-10 behavior). Add an early-exit for Subscribe Now before the polling loop:
+
+```python
+if "subscribe now" in instruction.lower():
+    if not await element.is_enabled():
+        raise ValueError(
+            "Subscribe Now button is disabled — likely a required field (e.g. T&C checkbox) "
+            "was not completed in a previous step."
+        )
+```
+
+If the button is already enabled (normal path), the guard is a no-op. If it is disabled, the step fails immediately with a specific diagnostic message instead of polling for 8 s and then silently clicking a disabled control.
+
+The guard is intentionally scoped to `"subscribe now"` substring only. Other disabled buttons continue to use the 8-second polling loop (backward-compatible with ADR-002-10).
+
+### Consequences
+
+**Positive**
+- `check` actions now have a DOM-state proof: a mismatch between the cached XPath and the actual element is surfaced instead of silently passing.
+- Cache self-healing (ADR-002-3) is triggered by the `ValueError` on subsequent runs, so the stale XPath is automatically replaced.
+- Subscribe Now fast-fail converts an 8-second silent-wrong-click into an immediate, informative error that points to the upstream missed step.
+
+**Negative**
+- `is_checked()` post-verification adds one Playwright API call per `check` action. Small overhead (< 10 ms per call).
+- The Subscribe Now guard is instruction-text-based. Different labels (locale-specific text, or "Click Subscribe") do not trigger the fast-fail and continue using the 8-second poll.
+- On first `check` failure the cached XPath is bypassed and `observe()` is called. If the page has rendered correctly but the XPath is simply stale, Tier 3 may be reached. This is the intended self-healing path.
+
+**Alternatives Considered**
+- **Add `is_checked()` to cache-key validation (`_validate_cached_xpath_for_step`)**: Mixes cache validation with action verification; the post-check approach is simpler and consistent with how fill validation works.
+- **Use `force=True` in `element.check()`**: Bypasses Playwright's `is_checked` semantics and forces a click regardless. Masks the DOM index problem rather than surfacing it.
+- **Apply permanent-disable fast-fail to all buttons**: Would change the semantics of ADR-002-10 for every click, potentially breaking flows where a button is briefly disabled while JavaScript processes a prior input.
+
+**Tests added (TDD):**  
+New class `TestCheckboxStateVerification` (10 tests) in `backend/tests/test_tier2_plan_selection.py`:
+- `test_should_retry_observe_for_check_action_with_no_results`
+- `test_should_not_retry_observe_for_check_action_when_success`
+- `test_should_not_retry_observe_for_check_action_with_selector`
+- `test_should_not_retry_observe_for_uncheck_action_with_no_results`
+- `test_check_action_raises_when_still_unchecked_after_element_check`
+- `test_check_action_passes_when_is_checked_after_element_check`
+- `test_check_action_skips_element_check_when_already_checked`
+- `test_subscribe_now_button_disabled_raises_value_error`
+- `test_subscribe_now_button_enabled_no_raise`
+- `test_other_button_disabled_only_logs_warning_not_raises`
+
+**Total tests:** 45 passed across `test_tier2_plan_selection.py` and `test_post_click_readiness.py` (no regressions).
+
+---
+
+## ADR-002-34: Bounded Navigate and Loading-Indicator Timeouts to Eliminate SPA Stalls
+
+**Date:** April 14, 2026
+
+### Context
+
+Execution #688 (Test Case 1075) completed in ~8 minutes against an expected 2–3 minutes. Log analysis identified three hardcoded-timeout anti-patterns that compounded into multi-minute stalls on a Three HK SPA that never reaches `networkidle`:
+
+**RC-PERF-1 — `wait_until="networkidle"` in Tier 2 navigate action (`tier2_hybrid.py`):**  
+The Three HK UAT SPA (`wwwuat.three.com.hk`) continuously fires background XHR requests after page load and never reaches Playwright's `networkidle` state (≥ 500 ms with no pending network requests). With a 30 s `timeout_ms`, each navigate tier call stalled for 30 s before timing out. The 3-tier fallback retried all three tiers, producing `total_time_ms: 90373ms` for Step 1 in the #688 log (3 × 30 s = 90 s).
+
+**RC-PERF-2 — Navigation click loading indicator per-selector timeout too small (`post_click_readiness.py`):**  
+```python
+loading_timeout = min(timeout_ms, 8000)  # 8 s per selector
+```
+The Three HK document-upload landing page (`?step=documentUpload`) mounts a `div[role='status'].spinner-border` for ~18 s after "Next" is clicked. With an 8 s per-selector timeout, `wait_for_loading_indicators_to_clear` timed out and retried for each of the three overlapping spinner selectors in `LOADING_SELECTORS`. Execution #688 log shows three sequential "Waiting for loading indicator" entries exactly 8 s apart (14:24:50, 14:24:58, 14:25:06), producing a 24 s stall for Step 17 instead of one 18 s wait.
+
+**RC-PERF-3 — Non-navigation click networkidle timeout set at 10 s (`post_click_readiness.py`):**  
+Every non-navigation click (`check`, `fill`, `select`, etc.) waited up to 10 s for `networkidle`. On the Three HK SPA this always times out and falls back to `domcontentloaded`, adding 10 s to every non-nav click step. Steps 5, 6, 9, 10, 11 (T&C checkbox, field fills, selects) each incurred this 10 s penalty.
+
+### Decision
+
+#### ADR-002-34-A: Navigate action uses `wait_until="domcontentloaded"` (`tier2_hybrid.py`)
+
+```python
+# Before
+await page.goto(value or instruction, timeout=self.timeout_ms, wait_until="networkidle")
+# After
+await page.goto(value or instruction, timeout=self.timeout_ms, wait_until="domcontentloaded")
+```
+
+`domcontentloaded` fires as soon as the initial HTML document is parsed, without waiting for subresources or background XHR. Subsequent step-boundary waits (ADR-002-23) and tab-click spinner settle (ADR-002-31) handle SPA readiness at the point each step executes. This aligns the Tier 2 in-step navigate action with the bootstrap navigation in `ExecutionService` (ADR-002-22).
+
+#### ADR-002-34-B: Navigation click loading indicator timeout raised to 20 s (`post_click_readiness.py`)
+
+```python
+# Before
+loading_timeout = 15000 if classification["is_payment_click"] else min(timeout_ms, 8000)
+# After
+loading_timeout = 15000 if classification["is_payment_click"] else min(timeout_ms, 20000)
+```
+
+A 20 s timeout means an ~18 s spinner on a navigation-click landing page resolves on the **first** selector match rather than timing out and cycling through three overlapping CSS selectors. The net wall-clock wait is unchanged (~18 s), but only one `wait_for` call is made instead of three. Payment clicks retain their own `loading_timeout = 15000` cap.
+
+#### ADR-002-34-C: Non-navigation networkidle timeout capped at 3 s (`post_click_readiness.py`)
+
+```python
+# Before
+await page.wait_for_load_state("networkidle", timeout=wait_timeout)  # min(timeout_ms, 10000)
+# After
+non_nav_idle_timeout = min(timeout_ms, 3000)
+await page.wait_for_load_state("networkidle", timeout=non_nav_idle_timeout)
+```
+
+3 s is sufficient for pages that genuinely reach `networkidle`. For SPA pages that never reach it, the fallback to `domcontentloaded` is reached 7 s sooner than before, saving time on every non-navigation click on SPA-heavy sites.
+
+### Consequences
+
+**Positive**
+- RC-PERF-1: Step 1 (Navigate) drops from ~90 s (3 × 30 s networkidle timeout) to ~2–5 s (domcontentloaded resolve). Regression-tested via `test_navigate_uses_domcontentloaded_not_networkidle`.
+- RC-PERF-2: Step 17 (Next → document upload) stall drops from ~24 s (3 × 8 s per selector) to ~18 s (1 × up-to-20 s on the first matching selector). Regression-tested via `test_navigation_click_loading_timeout_allows_slow_spinners`.
+- RC-PERF-3: Each non-navigation click on the Three HK SPA saves ~7 s. For a 12-step form with non-nav clicks this is ~84 s of savings. Regression-tested via `test_non_nav_click_networkidle_timeout_is_short`.
+- Overall execution time for #688-equivalent flows estimated to drop from ~8 min to ~3–4 min.
+
+**Negative**
+- `domcontentloaded` for navigate resolves before all SPA components mount. Flows that immediately follow a navigate step and interact with a slow-mounting SPA component rely entirely on ADR-002-23 step-boundary waits and per-action waits for readiness.
+- 20 s navigation-click timeout means a stuck spinner (e.g. server error) stalls for 20 s before the step fails. Previously it stalled for 8 s (too short, causing false multi-selector retries); 20 s is the correct budget aligned with the actual observed duration.
+- 3 s non-nav networkidle cap may miss pages that fire a small number of background requests after load and do reach `networkidle` in 4–8 s. Those pages fall back to `domcontentloaded` (already resolves) rather than the cleaner `networkidle` signal. Functionally equivalent; diagnostically less precise.
+
+**Alternatives Considered**
+- **Remove `networkidle` wait for non-nav clicks entirely**: Would miss the brief settle period that prevents race conditions on reactive form frameworks. The 3 s cap is a safe middle ground.
+- **Use Playwright `network_idle_timeout` context option**: Per-context, not per-call. Changing it globally would affect all waits including navigation and payment readiness.
+- **Increase `_APPEAR_TIMEOUT_MS` in `_wait_for_spa_spinner_settle` to cover RC-PERF-2**: The document-upload spinner (RC-PERF-2) is in the generic `LOADING_SELECTORS` loop inside `wait_for_loading_indicators_to_clear`, not in `_wait_for_spa_spinner_settle`. They are separate mechanisms serving different call sites.
+
+**Tests added (TDD):**  
+New class `TestTier2NavigatePerformance` (1 test) in `backend/tests/test_tier2_plan_selection.py` and 2 new standalone tests in `backend/tests/test_post_click_readiness.py`:
+- `test_navigate_uses_domcontentloaded_not_networkidle` — `page.goto` called with `wait_until='domcontentloaded'`
+- `test_navigation_click_loading_timeout_allows_slow_spinners` — navigation-click spinner wait timeout ≥ 20 000 ms
+- `test_non_nav_click_networkidle_timeout_is_short` — non-nav networkidle timeout ≤ 3 000 ms
+
+**Total tests:** 45 passed across `test_tier2_plan_selection.py` and `test_post_click_readiness.py` (no regressions).
+
+---
+
+## ADR-002-35: Further Narrow Modal Auto-Dismiss — Move 'I understand' and 'Close' to Conditional, Purge Button-Label Tokens from Nuisance Detector
+
+**Date:** April 14, 2026
+
+### Context
+
+Two consecutive production executions of Test Case 101 on the Three HK flow revealed that ADR-002-28's SAFE list was still too broad:
+
+**Execution #689 — 'I understand' pre-empted by post-click readiness after Step 8 'Click Next'**
+
+Step 8 (*"Click the 'Next' button to proceed to the terms and conditions page"*) matched `"next"` in `NAVIGATION_KEYWORDS`, so `wait_for_post_click_readiness()` classified it as a navigation click and called `auto_dismiss_blocking_modals()` after loading indicators cleared. The T&C purchase modal appeared on the landing page. `"I understand"` was in `SAFE_MODAL_DISMISS_BUTTON_TEXTS` and was clicked unconditionally — consuming the modal before Step 9 (*"Click the 'I understand' button"*) could execute.
+
+Secondary root cause: `_modal_allows_business_autodismiss()` returned `True` even for the T&C modal because `"i understand"` was in `NUISANCE_MODAL_TEXT_TOKENS`, meaning the modal's own button label was used as evidence that it was a nuisance dialog. Any modal containing an "I understand" button therefore passed the nuisance check, defeating the business-flow guard.
+
+**Execution #692 — 'Close' pre-empted the same modal after 'I understand' was moved to CONDITIONAL**
+
+After ADR-002-35-A was applied (moving `"I understand"` to CONDITIONAL), the same Three HK account/purchase page T&C modal continued to be auto-dismissed via its Bootstrap close (×) button (`"Close"`), which remained in `SAFE_MODAL_DISMISS_BUTTON_TEXTS`. Log evidence: `[Modal] Auto-dismissed with button 'Close'` at 15:54:00 during Step 8's post-click readiness, immediately before Step 9 started.
+
+The URL at the time of dismissal was `https://www.three.com.hk/postpaid/en/account/purchase`, confirming the modal was on the purchase checkout page — a business-flow screen, not a preprod gate.
+
+### Decision
+
+#### ADR-002-35-A: Move 'I understand' / 'I Understand' from SAFE to CONDITIONAL
+
+`"I understand"` and `"I Understand"` are moved from `SAFE_MODAL_DISMISS_BUTTON_TEXTS` to `CONDITIONAL_MODAL_DISMISS_BUTTON_TEXTS`. They now fire only when `_modal_allows_business_autodismiss()` confirms the modal is a nuisance/informational blocker.
+
+**Rationale:** "I understand" is a common acknowledgment button on both preprod environment reminder dialogs *and* production T&C/terms modals. Treating it as safe-to-click on any visible modal is incorrect. The Three HK UAT preprod reminder modal (which contains `"reminder"` in its text) still passes the nuisance check and is dismissed. The T&C purchase modal does not contain any nuisance token and is correctly left alone.
+
+#### ADR-002-35-B: Move 'Close' from SAFE to CONDITIONAL
+
+`"Close"` is moved from `SAFE_MODAL_DISMISS_BUTTON_TEXTS` to `CONDITIONAL_MODAL_DISMISS_BUTTON_TEXTS` for the same reason.
+
+**Rationale:** Bootstrap modals universally include a dismiss button labeled "Close" (the × icon). On nuisance/reminder overlays this is appropriate to auto-click. On business-flow dialogs (payment confirmations, T&C modals, subscription overlays) clicking `"Close"` dismisses the dialog without completing the required business action, silently breaking the flow.
+
+#### ADR-002-35-C: Remove button-label tokens from NUISANCE_MODAL_TEXT_TOKENS
+
+`"i understand"`, `"got it"`, and `"information"` are removed from `NUISANCE_MODAL_TEXT_TOKENS`.
+
+**Rationale:**
+- `"i understand"` and `"got it"` are button labels. A modal containing a button labeled "I understand" is not inherently informational — it could be a T&C agreement, a warning, or any required action step. Including them caused `_modal_allows_business_autodismiss()` to return `True` for any modal with either button, making the guard circular: a button previously in the SAFE list was also used to classify modals as safe to auto-dismiss regardless of content.
+- `"information"` is too generic. Production pages routinely render informational UI sections (e.g. plan details, help text) inside modal containers. Matching this token would incorrectly classify business-flow dialogs as nuisance blockers.
+
+**Final state of the lists after ADR-002-35:**
+
+```python
+SAFE_MODAL_DISMISS_BUTTON_TEXTS = [
+    "OK",
+    "Ok",
+    "Dismiss",
+    "Got it",
+    "Accept",
+    "Agree",
+]
+
+CONDITIONAL_MODAL_DISMISS_BUTTON_TEXTS = [
+    "I understand",
+    "I Understand",
+    "Close",
+    "Confirm",
+    "Continue",
+    "Done",
+]
+
+NUISANCE_MODAL_TEXT_TOKENS = (
+    "reminder",
+    "notice",
+    "informational",
+    "session expired",
+    "session timeout",
+    "timed out",
+    "maintenance",
+    "security reminder",
+)
+```
+
+### Consequences
+
+**Positive**
+- The Three HK T&C purchase modal (`account/purchase`, `step=offer`) is no longer consumed by `auto_dismiss_blocking_modals()` during Step 8's post-click readiness. Step 9's explicit interaction with the "I understand" button proceeds as designed.
+- The preprod UAT reminder modal (`"reminder"` in body text with "I understand" button) still passes the nuisance guard and is auto-dismissed as before.
+- Session-expired dialogs (`"session expired"` token) with a "Close" button are still auto-dismissed.
+- `_modal_allows_business_autodismiss()` is now based purely on modal purpose tokens, not button labels — making the guard logically coherent.
+
+**Negative**
+- A nuisance modal that only has a "Close" or "I understand" dismiss option and whose body text does not contain any `NUISANCE_MODAL_TEXT_TOKENS` will no longer be auto-dismissed. If such a modal is encountered, either its token should be added to `NUISANCE_MODAL_TEXT_TOKENS` or an explicit test step should dismiss it.
+- `"Got it"` remains in `SAFE` because it is used exclusively as a nuisance/onboarding acknowledgment in practice. If a business-flow modal is ever observed using "Got it", it should be moved to CONDITIONAL.
+
+**Alternatives Considered**
+- **Keep "I understand" in SAFE, add URL exclusion for purchase pages**: Too brittle — would require maintaining a URL-pattern list alongside the button list and would break for other sites.
+- **Add lookahead into upcoming steps before auto-dismissing**: If the next step's instruction contains a button label that auto-dismiss would click, skip. Viable but adds coupling between `auto_dismiss_blocking_modals()` and the step-execution context it has no access to.
+- **Remove `auto_dismiss_blocking_modals()` from `wait_for_post_click_readiness()`**: Would regress the original ADR-002-20 fix for Three HK preprod gating; the preprod reminder must be dismissed automatically after plan selection or the flow cannot advance.
+
+**Tests added (TDD, `backend/tests/test_post_click_modal_dismiss.py`):**
+- `test_modal_show_i_understand_clicked_for_nuisance_reminder` — nuisance reminder modal with "I understand" button → dismissed (replaces original `test_modal_show_i_understand_clicked`)
+- `test_tnc_business_modal_i_understand_not_auto_dismissed` — T&C modal without nuisance tokens → NOT dismissed
+- `test_nuisance_modal_text_tokens_does_not_contain_i_understand` — regression guard: `"i understand"` must not be in `NUISANCE_MODAL_TEXT_TOKENS`
+- `test_nuisance_modal_text_tokens_does_not_contain_got_it` — regression guard: `"got it"` must not be in `NUISANCE_MODAL_TEXT_TOKENS`
+- `test_i_understand_is_in_conditional_not_safe_list` — regression guard: `"I understand"` must be in CONDITIONAL, not SAFE
+- `test_close_is_in_conditional_not_safe_list` — regression guard: `"Close"` must be in CONDITIONAL, not SAFE
+- `test_tnc_modal_close_button_not_auto_dismissed` — purchase-page T&C modal with Close button → NOT dismissed
+- `test_session_expired_modal_close_button_is_auto_dismissed` — session-expired modal with Close button → dismissed
+
+**Total tests after ADR-002-35: 22 passed** in `test_post_click_modal_dismiss.py` + 7 in `test_post_click_readiness.py` (no regressions).
+
+---
+
+## ADR-002-36: Expand THREE_HK_PLAN_TAB_LABELS to Cover 4.5G Monthly Plans and 5G Broadband Categories
+
+### Context
+
+`THREE_HK_PLAN_TAB_LABELS` in `Tier2HybridExecutor` gates the specialist tab-click path (`_try_three_hk_plan_tab_click`), which applies SPA spinner-settle and tab-state verification (ADR-002-31/32). At the time of those ADRs only the 5G Monthly SIM Plans category was tested, so the registry only contained its six tab labels.
+
+Executions #705 (Test Case 1078, 5G Broadband) and #707 (Test Case 1078, 4.5G Monthly Plans) both PASS all steps yet show the wrong tab active in screenshots:
+
+- Exec #705 Step 3: "Click 'Wi-Fi 6 Monthly Plan' tab" → screenshot shows default "HSBC credit card offer" tab still active with content in skeleton state.
+- Exec #707 Step 3: "Click 'HK-UK Pro Sharing Monthly Plan' tab" → screenshot shows default "4.5G SIM Monthly Plan" tab still active.
+
+Root cause chain:
+1. `_extract_three_hk_plan_tab_key()` returns `None` for all 4.5G Monthly Plans and 5G Broadband tab labels → `_is_three_hk_plan_tab_click()` returns `False`.
+2. The step falls into the generic Tier 2 `observe()`/XPath path which calls `.click()` then returns in < 100 ms with no spinner-settle and no tab-state check.
+3. The SPA data-fetch spinner mounts ~1170 ms after the click and resets the active-tab class to the page default when it resolves (~3–5 s total). The step has already been marked PASS.
+4. `_pending_three_hk_tab_key` is never set, so the RC2 inter-step re-verification (ADR-002-32) also fires no check at the next step.
+
+### Decision
+
+Add all tabs from the two affected categories to `THREE_HK_PLAN_TAB_LABELS` and their corresponding content tokens to `THREE_HK_PLAN_TAB_CONTENT_TOKENS`:
+
+**4.5G Monthly Plans:**
+| Key | Display label |
+|---|---|
+| `4.5g sim monthly plan` | `4.5G SIM Monthly Plan` |
+| `hk-uk pro sharing monthly plan` | `HK-UK Pro Sharing Monthly Plan` |
+| `greater china pro monthly plan` | `Greater China Pro Monthly Plan` |
+
+**5G Broadband:**
+| Key | Display label |
+|---|---|
+| `hsbc credit card offer` | `HSBC credit card offer` |
+| `tertiary students and staff offer` | `Tertiary students and staff offer` |
+| `wi-fi 6 monthly plan` | `Wi-Fi 6 Monthly Plan` |
+| `wi-fi 7 monthly plan` | `Wi-Fi 7 Monthly Plan` |
+
+No changes to the specialist click path — adding entries to the registry is sufficient to route these tab instructions through the existing spinner-settle + tab-state verification that 5G Monthly SIM Plans already uses.
+
+### Consequences
+
+**Positive**
+- All Three HK plan-tab categories now go through spinner-settle + `_is_three_hk_plan_tab_selected` verification and the RC2 pending-key re-check.
+- No code path changes — risk is confined to a data-only addition to two class-level dictionaries.
+- `THREE_HK_PLAN_TAB_CONTENT_TOKENS` fallback (`(tab_key,)`) would also work for these tabs; explicit tokens are added for clarity and earlier body-text matching.
+
+**Negative**
+- Registry requires manual maintenance as Three HK adds or renames plan categories. No automatic discovery.
+- `_is_three_hk_plan_tab_selected` uses ARIA attributes and CSS class heuristics. If a new category renders active-tab state differently (e.g., only via inline style), `target_selected` may remain `False` and the verification step relies on body-text token matching alone.
+
+**Alternatives Considered**
+- **Generic tab-click detection** (any `"tab"` in instruction on Three HK UAT): Would bypass the registry entirely but risks routes non-tab instructions through the specialist path if instructions incidentally contain the word "tab".
+- **Content-only progress verification without tab-label registry**: Would require body-text tokens for every possible tab, and `_has_three_hk_plan_tab_progress` already falls back to body-text tokens if ARIA selection check fails.
+
+**Related files changed:**
+- `backend/app/services/tier2_hybrid.py` — `THREE_HK_PLAN_TAB_LABELS` and `THREE_HK_PLAN_TAB_CONTENT_TOKENS` class constants
+
+**Tests added (TDD, `backend/tests/test_tier2_plan_tab_registry.py`):**
+- `TestTabLabelRegistry` — 9 tests verifying `_extract_three_hk_plan_tab_key` matches all new and existing labels.
+- `TestIsThreeHkPlanTabClickRouting` — 8 parametrized tests verifying `_is_three_hk_plan_tab_click` returns `True` for all new tab instructions.
+- `TestExecuteStepRoutesNewTabsToSpecialistPath` — 2 integration-level tests verifying `execute_step` calls `_try_three_hk_plan_tab_click` (not the XPath/cache path) for the two categories broken in Executions #705 and #707.
+
+**Total: 57 passed** across `test_tier2_plan_tab_registry.py` (19) + `test_tier2_plan_selection.py` (38), no regressions.
+
+---
+
+## ADR-002-37: Tab Locator DOM-Ready Wait and Post-Tier-3 Tab-State Verification
+
+**Date:** April 15, 2026
+
+### Context
+
+After ADR-002-36 added the missing tab labels, Execution #714 (Test Case 1079, "Greater China Pro Monthly Plan") still failed to remain on the correct tab. Two new root causes were identified by comparing #714 against #713 (working, voucher plan tab):
+
+**Root Cause 1 — `_find_three_hk_plan_tab_locator` returns `None` immediately after a cross-category navigation.**
+
+Exec #714: Step 7 clicked "4.5G Monthly Plans" (category-level navigation). The SPA started hydrating the 4.5G tab row but had not yet committed it to the DOM when Step 8 began. The `wait_for_step_boundary_readiness` (ADR-002-23) clears the Bootstrap spinner — but the spinner disappears while React is still computing the tab-row elements. `_find_three_hk_plan_tab_locator` ran immediately after, found `count()==0` for all three locator candidates, and returned `(None, label, None)` without any wait. `_try_three_hk_plan_tab_click` interpreted `None` as failure, raised `ValueError`, and Tier 2 was abandoned. Tier 3 (Stagehand `act()`) took over.
+
+This timing gap does not occur for tabs within the home-page category (e.g. voucher tab in #713) because those tabs are pre-rendered on initial load — `count() > 0` on the first instant check.
+
+**Root Cause 2 — Tier 3 (`Stagehand act()`) has no spinner-settle or tab-state verification.**
+
+After Tier 3 clicked "Greater China Pro Monthly Plan", `act()` returned immediately after the DOM click event. The SPA data-fetch spinner mounted ~1170 ms later and reset the active-tab class to "4.5G SIM Monthly Plan" (page default) when it resolved. No `_wait_for_spa_spinner_settle` or `_is_three_hk_plan_tab_selected` check ran. The step was marked PASS. `_pending_three_hk_tab_key` was never set, so the RC2 cross-step guard (ADR-002-32) also skipped.
+
+exec_714_step_8_pass.png confirms: after Step 8 PASS, "4.5G SIM Monthly Plan" tab is active with skeleton content — proving the tab switched back.
+
+### Decision
+
+#### ADR-002-37-A: Bounded DOM-ready wait in `_find_three_hk_plan_tab_locator`
+
+After the first-pass instant check finds `count()==0` for all candidates, attempt `wait_for(state="visible", timeout=min(timeout_ms, 5000))` on the first candidate (the `role='tab'` locator). If it becomes visible within the window, return it. If it times out, return `(None, label, None)` as before.
+
+This covers the SPA hydration window between spinner-clear and tab-row render without adding latency to the common case (tab already rendered → instant check succeeds and no wait is attempted).
+
+#### ADR-002-37-B: `_apply_tab_verification_after_tier3` in `ThreeTierExecutionService`
+
+Add a new method that runs after Tier 3 reports success on a Three HK plan-tab click step:
+
+```python
+async def _apply_tab_verification_after_tier3(self, step, tier3_result):
+    # guards: tier2_executor must exist, step must be a Three HK plan-tab click
+    await self.tier2_executor._wait_for_spa_spinner_settle(self.page)
+    selected = await self.tier2_executor._is_three_hk_plan_tab_selected(self.page, tab_key)
+    if not selected:
+        recovered = await self.tier2_executor._recovery_click_three_hk_tab(self.page, tab_key)
+        if not recovered:
+            tier3_result["success"] = False
+            tier3_result["error_type"] = "tab_state_verification_failed"
+            return
+    self.tier2_executor._pending_three_hk_tab_key = tab_key  # register for RC2
+```
+
+Called in `_execute_option_b` and `_execute_option_c` immediately after Tier 3 reports success and before the final progress check. If verification fails and recovery fails, `tier3_result["success"]` is downgraded to `False` — causing the step to be re-tried or reported as a genuine failure rather than a silent false positive.
+
+### Consequences
+
+**Positive (ADR-002-37-A)**
+- Cross-category tab steps now succeed in Tier 2 instead of falling to Tier 3, as long as the tab row appears within 5 s of the spinner clearing.
+- Zero latency added when the tab is already visible (first-pass instant check still short-circuits).
+- The 5 s cap is bounded — stale DOM states do not cause infinite waits.
+
+**Positive (ADR-002-37-B)**
+- Tier 3 tab-click success is now validated with the same spinner-settle + tab-state chain as Tier 2.
+- `_pending_three_hk_tab_key` is set after Tier 3 success, enabling the RC2 cross-step re-check (ADR-002-32) to fire on the next step.
+- No changes to Tier 3 itself — `_apply_tab_verification_after_tier3` is a post-execution wrapper in the orchestrator.
+- If `tier2_executor` is `None` (step never needed Tier 2), verification is skipped silently — no regression for non-tab steps or strategies that skip Tier 2.
+
+**Negative**
+- ADR-002-37-A: If the category navigation takes more than 5 s to hydrate the tab row, the locator still returns `None` and falls to Tier 3. In practice React hydrates the tab row within ~2 s of spinner-clear.
+- ADR-002-37-B: `_apply_tab_verification_after_tier3` only runs when `tier2_executor` has been initialized (Option C). Option B (Tier 1 → Tier 3 without Tier 2) also calls it now but `tier2_executor` will be `None` in a pure Option B run — the guard skips safely. To fully protect Option B a dedicated init would be needed (deferred).
+
+**Related files changed:**
+- `backend/app/services/tier2_hybrid.py` — `_find_three_hk_plan_tab_locator` (DOM-ready wait second pass)
+- `backend/app/services/three_tier_execution_service.py` — `_apply_tab_verification_after_tier3` (new method), `_execute_option_b` and `_execute_option_c` (call site)
+
+**Tests added (TDD):**
+- `backend/tests/test_tier2_plan_tab_registry.py` — `TestFindTabLocatorDOMReadyWait` (3 tests): immediate return when visible, wait_for called when count==0, returns None on timeout.
+- `backend/tests/test_three_tier_tab_verification.py` — `TestApplyTabVerificationAfterTier3` (6 tests) + `TestOptionCAppliesTabVerificationAfterTier3` (1 test).
+
+**Total: 67 passed** across `test_tier2_plan_tab_registry.py` (22) + `test_three_tier_tab_verification.py` (7) + `test_tier2_plan_selection.py` (38), no regressions.

@@ -326,7 +326,10 @@ class ThreeTierExecutionService:
         if tier3_result["success"] and not await self._step_made_expected_progress(step, confirm_progress_snapshot):
             tier3_result = self._mark_no_progress_failure(tier3_result, step)
             execution_history[-1] = tier3_result
-        
+
+        if tier3_result["success"]:
+            await self._apply_tab_verification_after_tier3(step=step, tier3_result=tier3_result)
+
         if tier3_result["success"]:
             logger.info(f"[3-Tier] ✅ Option B succeeded at Tier 3")
             return tier3_result
@@ -371,7 +374,10 @@ class ThreeTierExecutionService:
         if tier3_result["success"] and not await self._step_made_expected_progress(step, confirm_progress_snapshot):
             tier3_result = self._mark_no_progress_failure(tier3_result, step)
             execution_history[-1] = tier3_result
-        
+
+        if tier3_result["success"]:
+            await self._apply_tab_verification_after_tier3(step=step, tier3_result=tier3_result)
+
         if tier3_result["success"]:
             logger.info(f"[3-Tier] ✅ Option C succeeded at Tier 3")
             return tier3_result
@@ -379,6 +385,71 @@ class ThreeTierExecutionService:
         raise ExecutionFailedError(
             message="Option C failed: All tiers exhausted (Tier 1, 2, 3)",
             execution_history=execution_history
+        )
+
+    async def _apply_tab_verification_after_tier3(
+        self,
+        step: Dict[str, Any],
+        tier3_result: Dict[str, Any],
+    ) -> None:
+        """After Tier 3 succeeds on a Three HK plan-tab click, apply the same
+        spinner-settle + tab-state verification that Tier 2 uses (ADR-002-37).
+
+        Tier 3 (Stagehand act()) returns immediately after the DOM click event.
+        The SPA data-fetch spinner mounts ~1170ms later and resets the active-tab
+        class to the page default when it resolves.  Without this guard the step
+        is silently marked PASS while the wrong tab is shown.
+
+        If the tab is not selected after spinner-settle a single recovery re-click
+        is attempted.  If that also fails, tier3_result is downgraded to
+        success=False so the step is not falsely reported as passing.
+        """
+        if self.tier2_executor is None:
+            return
+
+        action = (step.get("action") or "").lower()
+        instruction = step.get("instruction", "")
+        if not self.tier2_executor._is_three_hk_plan_tab_click(
+            self.page.url, instruction, action
+        ):
+            return
+
+        tab_key = self.tier2_executor._extract_three_hk_plan_tab_key(instruction)
+        if not tab_key:
+            return
+
+        logger.info(
+            "[3-Tier] 🔍 Applying post-Tier3 tab verification for key: %s", tab_key
+        )
+        await self.tier2_executor._wait_for_spa_spinner_settle(self.page)
+
+        selected = await self.tier2_executor._is_three_hk_plan_tab_selected(self.page, tab_key)
+        if not selected:
+            logger.warning(
+                "[3-Tier] ⚠️ Tab '%s' not selected after Tier 3 + spinner-settle. "
+                "Attempting recovery re-click.",
+                tab_key,
+            )
+            recovered = await self.tier2_executor._recovery_click_three_hk_tab(
+                self.page, tab_key
+            )
+            if not recovered:
+                logger.warning(
+                    "[3-Tier] ❌ Tab '%s' recovery re-click failed. Downgrading Tier 3 result.",
+                    tab_key,
+                )
+                tier3_result["success"] = False
+                tier3_result["error"] = (
+                    f"Three HK tab '{tab_key}' not selected after Tier 3 act() and recovery re-click"
+                )
+                tier3_result["error_type"] = "tab_state_verification_failed"
+                return
+
+        # Tab confirmed selected — register for RC2 cross-step re-check
+        self.tier2_executor._pending_three_hk_tab_key = tab_key
+        logger.info(
+            "[3-Tier] ✅ Tab '%s' confirmed selected after Tier 3. RC2 key registered.",
+            tab_key,
         )
 
     async def _step_made_expected_progress(self, step: Dict[str, Any], before_snapshot) -> bool:
