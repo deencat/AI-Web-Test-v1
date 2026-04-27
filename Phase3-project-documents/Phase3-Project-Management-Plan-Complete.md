@@ -3,9 +3,9 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · 📋 Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31)  
-**Last Updated:** March 30, 2026 (Sprint 10.7 revised — browser profile picker removed for ALL saved test runs; UAT creds auto-injected; non-UAT URLs run directly with no profile required)  
-**Version:** 3.4
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · 📋 Sprint 10.10 Developer B IMAP-Based Email OTP Service — PLANNED (Apr 27)  
+**Last Updated:** April 27, 2026 (Sprint 10.10 added — IMAP-based EmailOTPService for OTP retrieval during 3-tier test execution; supports Gmail, Outlook, Yahoo, and corporate email via App Password)  
+**Version:** 3.5
 
 > **📖 When to Use This Document:**
 > - **Sprint Planning:** Task assignments, story point estimates, dependencies
@@ -81,6 +81,7 @@ For detailed analysis, strategies, and agent-specific documentation, see the [Su
       - Sprint 8: Analysis & Evolution Agents
       - Sprint 9: Orchestration & Reporting
       - Sprint 10: Phase 2 Integration & API
+      - Sprint 10.10: IMAP-Based Email OTP Service
       - Sprint 11: Learning System Activation
       - Sprint 12: Security & Production Readiness
 
@@ -2395,6 +2396,133 @@ AZURE_OPENAI_GPT52_API_KEY=<your-api-key>   # optional: defaults to AZURE_OPENAI
 - [x] Fallback: if `AZURE_OPENAI_GPT52_ENDPOINT` is not set, requests fall back to the default Azure endpoint
 - [x] `ChatGPT-UAT` continues to use the original endpoint without any change
 - [x] All new tests pass (TDD green); no regression in existing tests
+
+---
+
+### Sprint 10.10: Developer B IMAP-Based Email OTP Service (Apr 27, 2026)
+
+**Owner:** Developer B  
+**Status:** 📋 **PLANNED** (Apr 27, 2026)  
+**Story Points:** 13 points / 3 days  
+
+**Summary:** Implement an `EmailOTPService` that retrieves one-time passwords from a real email inbox during 3-tier test execution using IMAP over TLS. This enables test scenarios that involve email-based OTP (e.g. registration, password reset) on any external webapp — including client-hosted apps such as Three HK — where the platform has no control over the app's SMTP infrastructure. No changes are required to the application under test.
+
+**Why IMAP (not Gmail API or Mailtrap):**
+
+| Approach | Verdict | Reason |
+|---|---|---|
+| Stagehand navigates Gmail UI | ❌ Rejected | Bot detection, 30–60s overhead, multi-origin context switch, real credentials in config |
+| Gmail API (OAuth2) | ❌ Rejected | Requires Google Cloud project per account; only covers Gmail; OAuth token expiry toil |
+| Mailtrap Sandbox | ❌ Rejected for external apps | Requires SMTP on the **app under test** to be pointed at Mailtrap — impossible for client-hosted apps |
+| **IMAP over TLS** | ✅ Selected | Open standard; works for Gmail, Outlook, Yahoo, corporate email; no Google Cloud setup; uses App Password (16-char, generated in 30 seconds); one credential covers all `+alias` addresses |
+
+**How It Works:**
+
+```
+External webapp (e.g. Three HK UAT)
+    │ sends OTP email via their own SMTP (SendGrid etc.)
+    ▼
+Real inbox: abc@gmail.com  (controlled by QA team)
+    │
+    ▼  IMAP over TLS (port 993)
+EmailOTPService (backend)
+    │  SEARCH UNSEEN FROM "noreply@three.com.hk" SINCE today
+    │  polls every 3s, timeout 60s
+    ▼
+extracts OTP via regex r'\b\d{4,8}\b'
+    │
+    ▼
+step resolved: "Enter OTP: 483921"
+Stagehand / _execute_type_hybrid fills OTP field
+```
+
+**Gmail +Alias Trick (zero extra setup):** Gmail routes `abc+anything@gmail.com` to the same inbox as `abc@gmail.com`. One App Password credential covers unlimited test variations and parallel test runs — just filter by `to:` when searching.
+
+**Execution Engine Integration:**
+
+The OTP step is detected by pattern before being dispatched to the existing `_execute_step_hybrid`. No changes to Tier 1/2/3 execution logic.
+
+```python
+# Pattern detection in execution engine (pre-dispatch)
+OTP_PATTERNS = [
+    r'enter.*otp',
+    r'enter.*one.?time.*password',
+    r'enter.*verification.*code',
+    r'type.*otp',
+]
+# If matched → resolve email from test context → poll IMAP → inject OTP value
+```
+
+**Files Changed:**
+
+| File | Change |
+|------|--------|
+| `backend/app/services/email_otp_service.py` | New: IMAP client, `poll_otp()`, OTP regex extraction, credential lookup |
+| `backend/app/models/email_credential.py` | New: `EmailCredential` ORM model (label, imap_host, imap_port, email_address, encrypted app password) |
+| `backend/app/api/v2/endpoints/email_credentials.py` | New: CRUD endpoints for managing email credentials |
+| `backend/app/services/execution_service.py` | Add OTP step pattern detection + `EmailOTPService` dispatch before `_execute_step_hybrid` |
+| `backend/app/services/stagehand_service.py` | Add OTP step pattern detection + `EmailOTPService` dispatch before `_execute_step_hybrid` |
+| `frontend/src/features/settings/EmailCredentialsSection.tsx` | New: Settings UI — add/edit/delete IMAP credentials |
+| `backend/tests/unit/test_email_otp_service.py` | TDD: unit tests for `poll_otp`, OTP extraction, IMAP mocking |
+| `backend/tests/unit/test_email_credential_model.py` | TDD: encryption at rest, model validation |
+| `backend/tests/integration/test_email_otp_execution.py` | TDD: execution engine integration — OTP step detection, resolution, injection |
+
+**New Environment Variables (add to `backend/.env`):**
+```
+# Optional: default IMAP timeout (seconds)
+EMAIL_OTP_POLL_TIMEOUT=60
+EMAIL_OTP_POLL_INTERVAL=3
+```
+All per-account IMAP credentials (host, port, email, app password) are stored **encrypted at rest** in the `email_credentials` database table using the existing `CREDENTIAL_ENCRYPTION_KEY`.
+
+**Supported Email Providers (out of the box):**
+
+| Provider | IMAP Host | Auth |
+|---|---|---|
+| Gmail | `imap.gmail.com:993` | App Password (no Google Cloud required) |
+| Outlook / Hotmail | `outlook.office365.com:993` | App Password |
+| Yahoo | `imap.mail.yahoo.com:993` | App Password |
+| Corporate (O365) | `outlook.office365.com:993` | App Password or basic auth |
+| Any IMAP server | Configurable | Username + password |
+
+**User Setup (one-time per email account, ~5 minutes):**
+1. Generate a Gmail App Password: `myaccount.google.com` → Security → App Passwords
+2. Add to Settings page → Email Credentials section: label, IMAP host, email, app password
+3. No Google Cloud project. No OAuth. No changes to the app under test.
+
+**Limitations:**
+
+| Scenario | Handled? | Notes |
+|---|---|---|
+| External app (Three HK, any client app) | ✅ Yes | IMAP reads the real inbox regardless of who sent the email |
+| Gmail with App Password | ✅ Yes | 2-Step Verification must be enabled on the Gmail account |
+| Outlook / Yahoo / Corporate | ✅ Yes | Same code, different `imap_host` |
+| Production URL with real users | ⚠️ Caution | Use a dedicated QA account, never a real user's inbox |
+| Auth0 / Firebase OTP | ⚠️ Partial | Works if OTP is delivered to the Gmail/IMAP inbox; no special handling needed |
+| No IMAP access (e.g. locked-down corporate) | ❌ Not supported | Manual OTP entry only |
+
+**Task Table:**
+
+| Task | File | Description | Status |
+|------|------|-------------|--------|
+| **10.10-B1** | `test_email_otp_service.py` | TDD: `poll_otp`, regex extraction, IMAP mock (IMAP4_SSL patch) | 📋 |
+| **10.10-B2** | `test_email_credential_model.py` | TDD: AES encryption at rest, model field validation | 📋 |
+| **10.10-B3** | `test_email_otp_execution.py` | TDD: OTP step detection in execution engine, resolved value injection | 📋 |
+| **10.10-B4** | `email_otp_service.py` | Implement `EmailOTPService`: IMAP connect, SEARCH, FETCH, regex, poll loop | 📋 |
+| **10.10-B5** | `email_credential.py` | `EmailCredential` ORM model with encrypted `imap_password` column | 📋 |
+| **10.10-B6** | `email_credentials.py` (API) | CRUD endpoints: list, create, update, delete email credentials | 📋 |
+| **10.10-B7** | `execution_service.py` + `stagehand_service.py` | OTP step pattern detection → dispatch to `EmailOTPService` → inject resolved value | 📋 |
+| **10.10-B8** | `EmailCredentialsSection.tsx` | Settings UI: add/edit/delete labeled IMAP credentials | 📋 |
+
+**Success Criteria:**
+- [ ] OTP retrieved from Gmail inbox via IMAP within 15s of email arrival
+- [ ] Test step `"Enter the OTP sent to email"` resolves automatically with no user intervention
+- [ ] IMAP credentials stored AES-encrypted at rest using existing `CREDENTIAL_ENCRYPTION_KEY`
+- [ ] Supports Gmail, Outlook, Yahoo, and custom IMAP hosts via configurable `imap_host`
+- [ ] Settings UI allows adding, editing, and deleting multiple labeled IMAP credentials
+- [ ] Gmail `+alias` addresses (e.g. `abc+test1@gmail.com`) resolve to the same IMAP credential as the base address
+- [ ] Poll timeout (default 60s) is configurable via env var; graceful failure message on timeout
+- [ ] All TDD tests pass; no regression in existing 3-tier execution tests
 
 ---
 
