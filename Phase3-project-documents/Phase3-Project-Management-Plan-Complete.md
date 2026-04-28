@@ -3,8 +3,8 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · 📋 Sprint 10.10 Developer B IMAP-Based Email OTP Service — PLANNED (Apr 27)  
-**Last Updated:** April 27, 2026 (Sprint 10.10 added — IMAP-based EmailOTPService for OTP retrieval during 3-tier test execution; supports Gmail, Outlook, Yahoo, and corporate email via App Password)  
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials  
+**Last Updated:** April 28, 2026 (Sprint 10.10 COMPLETE — EmailOTPService with JIT IMAP polling and per-digit step expansion; ADR-002-38 through ADR-002-41 added)  
 **Version:** 3.5
 
 > **📖 When to Use This Document:**
@@ -2402,10 +2402,22 @@ AZURE_OPENAI_GPT52_API_KEY=<your-api-key>   # optional: defaults to AZURE_OPENAI
 ### Sprint 10.10: Developer B IMAP-Based Email OTP Service (Apr 27, 2026)
 
 **Owner:** Developer B  
-**Status:** 📋 **PLANNED** (Apr 27, 2026)  
-**Story Points:** 13 points / 3 days  
+**Status:** ✅ **COMPLETE** (Apr 28, 2026) — All planned tasks implemented; JIT OTP expansion and per-digit step format scope-expanded during implementation; 929 lines of TDD test coverage; no regression.  
+**Story Points:** 15 points / 3 days *(+2 points for JIT expansion and per-digit step format scope expansion)*  
 
-**Summary:** Implement an `EmailOTPService` that retrieves one-time passwords from a real email inbox during 3-tier test execution using IMAP over TLS. This enables test scenarios that involve email-based OTP (e.g. registration, password reset) on any external webapp — including client-hosted apps such as Three HK — where the platform has no control over the app's SMTP infrastructure. No changes are required to the application under test.
+**Summary:** Implemented `EmailOTPService` that retrieves one-time passwords from a real email inbox during 3-tier test execution using IMAP over TLS. The OTP step is detected at execution time (JIT), IMAP is polled, and the resolved OTP is expanded into one per-digit step — matching UIs such as Three HK registration that render separate `<input maxlength="1">` boxes for each digit.
+
+**Implementation Outcome (Actual):**
+- ✅ `EmailCredential` ORM model added to `backend/app/models/email_credential.py` with Fernet-encrypted `imap_password_encrypted` column.
+- ✅ Pydantic schemas (`EmailCredentialCreate`, `EmailCredentialUpdate`, `EmailCredentialResponse`) in `backend/app/schemas/email_credential.py`; response schema never exposes the password.
+- ✅ `EmailOTPService` in `backend/app/services/email_otp_service.py`: IMAP4_SSL connect, `SINCE <today>` search (ALL, not UNSEEN — so UI-opened emails are still found), newest-first UID iteration, two-stage OTP regex extraction (context-aware first, digit-only fallback), 60 s / 3 s poll loop.
+- ✅ `format_otp_steps(otp)` converts a resolved OTP string into N per-digit step descriptions (e.g. `"Input the first number of OTP '4' to the first box"`) for UIs with individual digit boxes.
+- ✅ CRUD API at `backend/app/api/v1/endpoints/email_credentials.py` (list / create / update / delete); JWT-protected; password encrypted before persist, never returned.
+- ✅ JIT OTP expansion in `execution_service.py` and `stagehand_service.py`: the OTP placeholder step is left in the step list until the execution loop reaches it at runtime; IMAP is polled at that moment to capture the freshest email (prevents stale OTP from a prior test run).
+- ✅ `otp_expanded_end` guard prevents re-triggering IMAP polling on the expanded per-digit steps.
+- ✅ `EmailCredentialsSection.tsx` added to Settings page: add/edit/delete labeled IMAP credentials with a provider quick-select dropdown (Gmail / Outlook / Yahoo / Custom).
+- ✅ `SettingsPage.tsx` updated to render `EmailCredentialsSection`.
+- ✅ ADR-002-38 through ADR-002-41 recorded in `documentation/ADR-002-test-execution-engine.md`.
 
 **Why IMAP (not Gmail API or Mailtrap):**
 
@@ -2416,7 +2428,7 @@ AZURE_OPENAI_GPT52_API_KEY=<your-api-key>   # optional: defaults to AZURE_OPENAI
 | Mailtrap Sandbox | ❌ Rejected for external apps | Requires SMTP on the **app under test** to be pointed at Mailtrap — impossible for client-hosted apps |
 | **IMAP over TLS** | ✅ Selected | Open standard; works for Gmail, Outlook, Yahoo, corporate email; no Google Cloud setup; uses App Password (16-char, generated in 30 seconds); one credential covers all `+alias` addresses |
 
-**How It Works:**
+**How It Works (Actual):**
 
 ```
 External webapp (e.g. Three HK UAT)
@@ -2425,51 +2437,63 @@ External webapp (e.g. Three HK UAT)
 Real inbox: abc@gmail.com  (controlled by QA team)
     │
     ▼  IMAP over TLS (port 993)
-EmailOTPService (backend)
-    │  SEARCH UNSEEN FROM "noreply@three.com.hk" SINCE today
+EmailOTPService (backend) — polled JIT when the OTP step is reached in the loop
+    │  SEARCH FROM "noreply@three.com.hk" SINCE today  (ALL, newest-first)
     │  polls every 3s, timeout 60s
     ▼
-extracts OTP via regex r'\b\d{4,8}\b'
+extracts OTP via context-aware regex → fallback digit regex
     │
     ▼
-step resolved: "Enter OTP: 483921"
-Stagehand / _execute_type_hybrid fills OTP field
+format_otp_steps("482019") →
+  ["Input the first number of OTP '4' to the first box",
+   "Input the second number of OTP '8' to the second box", ...]
+    │
+    ▼
+execution loop processes one per-digit step per OTP digit
+Stagehand / Playwright fills each individual digit box
 ```
 
 **Gmail +Alias Trick (zero extra setup):** Gmail routes `abc+anything@gmail.com` to the same inbox as `abc@gmail.com`. One App Password credential covers unlimited test variations and parallel test runs — just filter by `to:` when searching.
 
-**Execution Engine Integration:**
+**Execution Engine Integration (Actual — JIT):**
 
-The OTP step is detected by pattern before being dispatched to the existing `_execute_step_hybrid`. No changes to Tier 1/2/3 execution logic.
+OTP detection happens inside the execution loop when each step is reached, not before the loop. This prevents stale OTP retrieval from a prior run's email.
 
 ```python
-# Pattern detection in execution engine (pre-dispatch)
-OTP_PATTERNS = [
-    r'enter.*otp',
-    r'enter.*one.?time.*password',
-    r'enter.*verification.*code',
-    r'type.*otp',
-]
-# If matched → resolve email from test context → poll IMAP → inject OTP value
+# JIT OTP expansion (execution_service.py / stagehand_service.py)
+otp_expanded_end = 0
+for idx, step in enumerate(steps):
+    step_desc = step["description"]
+    # Only poll IMAP if this step is a fresh OTP placeholder (not an expanded digit step)
+    if idx > otp_expanded_end and is_otp_step(step_desc):
+        expanded = self._fetch_otp_and_format_steps(step_desc, db, user_id)
+        steps[idx:idx+1] = expanded          # replace placeholder with N digit steps
+        otp_expanded_end = idx + len(expanded) - 1
 ```
 
-**Files Changed:**
+**Files Changed (Actual):**
 
 | File | Change |
 |------|--------|
-| `backend/app/services/email_otp_service.py` | New: IMAP client, `poll_otp()`, OTP regex extraction, credential lookup |
-| `backend/app/models/email_credential.py` | New: `EmailCredential` ORM model (label, imap_host, imap_port, email_address, encrypted app password) |
-| `backend/app/api/v2/endpoints/email_credentials.py` | New: CRUD endpoints for managing email credentials |
-| `backend/app/services/execution_service.py` | Add OTP step pattern detection + `EmailOTPService` dispatch before `_execute_step_hybrid` |
-| `backend/app/services/stagehand_service.py` | Add OTP step pattern detection + `EmailOTPService` dispatch before `_execute_step_hybrid` |
-| `frontend/src/features/settings/EmailCredentialsSection.tsx` | New: Settings UI — add/edit/delete IMAP credentials |
-| `backend/tests/unit/test_email_otp_service.py` | TDD: unit tests for `poll_otp`, OTP extraction, IMAP mocking |
-| `backend/tests/unit/test_email_credential_model.py` | TDD: encryption at rest, model validation |
-| `backend/tests/integration/test_email_otp_execution.py` | TDD: execution engine integration — OTP step detection, resolution, injection |
+| `backend/app/services/email_otp_service.py` | New: IMAP client, `poll_otp()`, two-stage OTP regex, `format_otp_steps()`, `is_otp_step()`, `get_email_credential_for_user()` |
+| `backend/app/models/email_credential.py` | New: `EmailCredential` ORM model with Fernet-encrypted password column, CASCADE delete |
+| `backend/app/schemas/email_credential.py` | New: `EmailCredentialCreate`, `EmailCredentialUpdate`, `EmailCredentialResponse` |
+| `backend/app/models/__init__.py` | Updated to export `EmailCredential` |
+| `backend/app/models/user.py` | Added `email_credentials` relationship |
+| `backend/app/api/v1/endpoints/email_credentials.py` | New: JWT-auth CRUD endpoints (list / create / update / delete) at `/api/v1/email-credentials` |
+| `backend/app/api/v1/api.py` | Registered email-credentials router |
+| `backend/app/core/config.py` | Added `EMAIL_OTP_POLL_TIMEOUT` and `EMAIL_OTP_POLL_INTERVAL` settings |
+| `backend/app/services/execution_service.py` | JIT OTP expansion: `_fetch_otp_and_format_steps()`, `_expand_otp_steps_list()`, `otp_expanded_end` loop guard |
+| `backend/app/services/stagehand_service.py` | Same JIT expansion pattern, `_fetch_otp_and_format_steps()`, `_expand_otp_steps_list()` |
+| `frontend/src/features/settings/EmailCredentialsSection.tsx` | New: Settings UI — add/edit/delete IMAP credentials with provider quick-select |
+| `frontend/src/features/settings/SettingsPage.tsx` | Updated to render `EmailCredentialsSection` |
+| `backend/tests/unit/test_email_otp_service.py` | 35 unit tests: OTP extraction, step detection, `format_otp_steps`, IMAP mock |
+| `backend/tests/unit/test_email_credential_model.py` | 19 unit tests: encryption round-trip, model columns, schema validation |
+| `backend/tests/integration/test_email_otp_execution.py` | 19 integration tests: OTP pattern detection, `_fetch_otp_and_format_steps`, JIT expansion guards |
 
 **New Environment Variables (add to `backend/.env`):**
 ```
-# Optional: default IMAP timeout (seconds)
+# Optional: IMAP polling configuration (defaults shown)
 EMAIL_OTP_POLL_TIMEOUT=60
 EMAIL_OTP_POLL_INTERVAL=3
 ```
@@ -2501,28 +2525,38 @@ All per-account IMAP credentials (host, port, email, app password) are stored **
 | Auth0 / Firebase OTP | ⚠️ Partial | Works if OTP is delivered to the Gmail/IMAP inbox; no special handling needed |
 | No IMAP access (e.g. locked-down corporate) | ❌ Not supported | Manual OTP entry only |
 
-**Task Table:**
+**Task Table (Actual):**
 
 | Task | File | Description | Status |
 |------|------|-------------|--------|
-| **10.10-B1** | `test_email_otp_service.py` | TDD: `poll_otp`, regex extraction, IMAP mock (IMAP4_SSL patch) | 📋 |
-| **10.10-B2** | `test_email_credential_model.py` | TDD: AES encryption at rest, model field validation | 📋 |
-| **10.10-B3** | `test_email_otp_execution.py` | TDD: OTP step detection in execution engine, resolved value injection | 📋 |
-| **10.10-B4** | `email_otp_service.py` | Implement `EmailOTPService`: IMAP connect, SEARCH, FETCH, regex, poll loop | 📋 |
-| **10.10-B5** | `email_credential.py` | `EmailCredential` ORM model with encrypted `imap_password` column | 📋 |
-| **10.10-B6** | `email_credentials.py` (API) | CRUD endpoints: list, create, update, delete email credentials | 📋 |
-| **10.10-B7** | `execution_service.py` + `stagehand_service.py` | OTP step pattern detection → dispatch to `EmailOTPService` → inject resolved value | 📋 |
-| **10.10-B8** | `EmailCredentialsSection.tsx` | Settings UI: add/edit/delete labeled IMAP credentials | 📋 |
+| **10.10-B1** | `test_email_otp_service.py` | TDD: `poll_otp`, regex extraction, IMAP mock (IMAP4_SSL patch) | ✅ |
+| **10.10-B2** | `test_email_credential_model.py` | TDD: Fernet encryption round-trip, model field validation, schema validation | ✅ |
+| **10.10-B3** | `test_email_otp_execution.py` | TDD: OTP step detection, `_fetch_otp_and_format_steps`, JIT expansion guards | ✅ |
+| **10.10-B4** | `email_otp_service.py` | `EmailOTPService`: IMAP connect, SEARCH/FETCH, two-stage regex, poll loop, `format_otp_steps()` | ✅ |
+| **10.10-B5** | `email_credential.py` + `schemas/email_credential.py` | ORM model + Pydantic schemas; encrypted password column | ✅ |
+| **10.10-B6** | `email_credentials.py` (API v1) | JWT-protected CRUD endpoints; password encrypted on write, never returned | ✅ |
+| **10.10-B7** | `execution_service.py` + `stagehand_service.py` | JIT OTP expansion in execution loop; `otp_expanded_end` guard prevents re-polling on digit steps | ✅ |
+| **10.10-B8** | `EmailCredentialsSection.tsx` + `SettingsPage.tsx` | Settings UI with provider quick-select; wired into Settings page | ✅ |
+| **10.10-B9** *(scope expansion)* | `email_otp_service.py` | Context-aware two-stage OTP extraction; newest-first IMAP UID iteration; ALL search instead of UNSEEN | ✅ |
+| **10.10-B10** *(scope expansion)* | `execution_service.py` + `stagehand_service.py` | JIT expansion (poll at step execution time, not upfront) to prevent stale OTP retrieval | ✅ |
 
-**Success Criteria:**
-- [ ] OTP retrieved from Gmail inbox via IMAP within 15s of email arrival
-- [ ] Test step `"Enter the OTP sent to email"` resolves automatically with no user intervention
-- [ ] IMAP credentials stored AES-encrypted at rest using existing `CREDENTIAL_ENCRYPTION_KEY`
-- [ ] Supports Gmail, Outlook, Yahoo, and custom IMAP hosts via configurable `imap_host`
-- [ ] Settings UI allows adding, editing, and deleting multiple labeled IMAP credentials
-- [ ] Gmail `+alias` addresses (e.g. `abc+test1@gmail.com`) resolve to the same IMAP credential as the base address
-- [ ] Poll timeout (default 60s) is configurable via env var; graceful failure message on timeout
-- [ ] All TDD tests pass; no regression in existing 3-tier execution tests
+**Sprint 10.10 Success Criteria (Actual):**
+- [x] OTP retrieved from Gmail inbox via IMAP within poll timeout (default 60s) of email arrival
+- [x] Test step `"Enter the OTP sent to email"` resolves automatically — expands into one per-digit step per OTP character
+- [x] IMAP credentials stored Fernet-encrypted at rest using existing `CREDENTIAL_ENCRYPTION_KEY`
+- [x] Supports Gmail, Outlook, Yahoo, and custom IMAP hosts via configurable `imap_host`
+- [x] Settings UI allows adding, editing, and deleting multiple labeled IMAP credentials with provider quick-select
+- [x] Gmail `+alias` addresses (e.g. `abc+test1@gmail.com`) supported via `to_filter` parameter on `poll_otp()`
+- [x] Poll timeout (default 60s) and interval (default 3s) configurable via env vars; graceful error step on timeout
+- [x] IMAP search uses ALL (not UNSEEN) so UI-opened emails are still matched; newest-first UID iteration picks freshest OTP
+- [x] OTP IMAP poll deferred JIT to execution loop — prevents stale OTP from prior test run's email
+- [x] `otp_expanded_end` guard prevents re-triggering IMAP on expanded digit steps
+- [x] 73 new tests pass (35 unit + 19 model/schema + 19 integration); no regression in existing tests
+- [x] ADR-002-38 through ADR-002-41 recorded
+
+#### Known Follow-Up Item
+
+- [ ] **Upload file TTL cleanup** (carried from Sprint 10.8) — Files in `uploads/workflow-files/` persist indefinitely. A scheduled cleanup job (e.g. delete entries older than 7 days) should be added in a future sprint.
 
 ---
 

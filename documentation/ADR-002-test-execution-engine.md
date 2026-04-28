@@ -32,6 +32,14 @@
 - `backend/tests/test_execution_service_three_tier_logging.py`
 - `backend/tests/test_xpath_cache_service.py`
 - `backend/tests/test_file_upload.py`
+- `backend/app/services/email_otp_service.py`
+- `backend/app/models/email_credential.py`
+- `backend/app/schemas/email_credential.py`
+- `backend/app/api/v1/endpoints/email_credentials.py`
+- `frontend/src/features/settings/EmailCredentialsSection.tsx`
+- `backend/tests/unit/test_email_otp_service.py`
+- `backend/tests/unit/test_email_credential_model.py`
+- `backend/tests/integration/test_email_otp_execution.py`
 
 ---
 
@@ -74,6 +82,10 @@
 35. [ADR-002-35: Further Narrow Modal Auto-Dismiss — Move 'I understand' and 'Close' to Conditional, Purge Button-Label Tokens from Nuisance Detector](#adr-002-35-further-narrow-modal-auto-dismiss--move-i-understand-and-close-to-conditional-purge-button-label-tokens-from-nuisance-detector)
 36. [ADR-002-36: Expand THREE_HK_PLAN_TAB_LABELS to Cover 4.5G Monthly Plans and 5G Broadband Categories](#adr-002-36-expand-three_hk_plan_tab_labels-to-cover-45g-monthly-plans-and-5g-broadband-categories)
 37. [ADR-002-37: Tab Locator DOM-Ready Wait and Post-Tier-3 Tab-State Verification](#adr-002-37-tab-locator-dom-ready-wait-and-post-tier-3-tab-state-verification)
+38. [ADR-002-38: IMAP-Based Email OTP Service with Fernet-Encrypted Credential Storage](#adr-002-38-imap-based-email-otp-service-with-fernet-encrypted-credential-storage)
+39. [ADR-002-39: Per-Digit OTP Step Expansion via format_otp_steps()](#adr-002-39-per-digit-otp-step-expansion-via-format_otp_steps)
+40. [ADR-002-40: JIT OTP Expansion — Poll IMAP at Step Execution Time, Not Upfront](#adr-002-40-jit-otp-expansion--poll-imap-at-step-execution-time-not-upfront)
+41. [ADR-002-41: Context-Aware OTP Extraction and Newest-First IMAP UID Search](#adr-002-41-context-aware-otp-extraction-and-newest-first-imap-uid-search)
 
 ---
 
@@ -2722,3 +2734,286 @@ Called in `_execute_option_b` and `_execute_option_c` immediately after Tier 3 r
 - `backend/tests/test_three_tier_tab_verification.py` — `TestApplyTabVerificationAfterTier3` (6 tests) + `TestOptionCAppliesTabVerificationAfterTier3` (1 test).
 
 **Total: 67 passed** across `test_tier2_plan_tab_registry.py` (22) + `test_three_tier_tab_verification.py` (7) + `test_tier2_plan_selection.py` (38), no regressions.
+
+---
+
+## ADR-002-38: IMAP-Based Email OTP Service with Fernet-Encrypted Credential Storage
+
+**Date:** April 28, 2026
+
+### Context
+
+Test scenarios for registration, password-reset, and 2FA on external web applications (e.g., Three HK UAT) require automated handling of one-time passwords (OTPs) delivered to a real email inbox. The platform has no control over the application under test's SMTP infrastructure, ruling out sandbox interception strategies.
+
+Several approaches were evaluated:
+
+| Approach | Verdict | Reason |
+|---|---|---|
+| Stagehand navigates Gmail UI | ❌ Rejected | Bot detection, 30–60 s overhead, multi-origin browser context, raw credentials in config |
+| Gmail API (OAuth2) | ❌ Rejected | Requires Google Cloud project per account; Gmail-only; OAuth token expiry toil |
+| Mailtrap Sandbox | ❌ Rejected | Requires SMTP on the **app under test** to point at Mailtrap — impossible for client-hosted apps |
+| **IMAP over TLS** | ✅ Selected | Open standard; works for Gmail, Outlook, Yahoo, any corporate IMAP server; App Password auth; zero cloud setup |
+
+### Decision
+
+Implement `EmailOTPService` in `backend/app/services/email_otp_service.py` using Python's standard `imaplib.IMAP4_SSL`. The service:
+
+1. Connects to `imap_host:imap_port` over TLS.
+2. Logs in with `email_address` / app password.
+3. Issues `SEARCH SINCE <today> [FROM <sender>] [TO <to_address>]` against `INBOX`.
+4. For matching UIDs (newest-first), fetches the full RFC-822 message and calls `extract_otp_from_text()`.
+5. Returns the first OTP found, or raises `TimeoutError` after `timeout` seconds.
+
+**Credential storage — `EmailCredential` ORM model (`backend/app/models/email_credential.py`):**
+
+```
+email_credentials (table)
+  id                       INTEGER PK
+  user_id                  INTEGER FK → users.id ON DELETE CASCADE
+  label                    VARCHAR(100)          human-readable name
+  imap_host                VARCHAR(255)
+  imap_port                INTEGER DEFAULT 993
+  email_address            VARCHAR(255)
+  imap_password_encrypted  TEXT                  Fernet ciphertext
+  created_at / updated_at  DATETIME
+```
+
+The app password is encrypted with `EncryptionService.encrypt_password()` (Fernet / AES-128 + HMAC, key from `CREDENTIAL_ENCRYPTION_KEY`) before persisting, and decrypted at poll time. It is **never returned** from any API endpoint — `EmailCredentialResponse` excludes the encrypted column entirely.
+
+**CRUD API at `/api/v1/email-credentials`** — JWT-protected list / create / update / delete. Password field in the update body is optional: omitting it preserves the existing ciphertext.
+
+**Factory function `get_email_credential_for_user(db, user_id)`** returns the first `EmailCredential` for the executing user, used by both `ExecutionService` and `StagehandService` to resolve credentials at step execution time.
+
+**Module-level singleton** `email_otp_service = EmailOTPService()` is imported by both execution engines.
+
+### Consequences
+
+**Positive**
+- Works for any external application without changes to the app under test or its SMTP configuration.
+- Single App Password credential covers unlimited `+alias` addresses (one-to-many test variants).
+- No cloud infrastructure required; `imaplib` is part of the Python standard library.
+- Security: raw app password never leaves the backend; encrypted at rest with the same key used for UAT HTTP credentials.
+
+**Negative**
+- IMAP polling adds wall-clock latency (up to `timeout` seconds) to OTP steps if email delivery is slow.
+- App Password must be manually revoked if the QA email account is compromised.
+- Provider-specific IMAP quirks (e.g., Gmail requiring 2SV before App Passwords are available) require human setup.
+
+**Alternatives Considered**
+- See rejection table in Context section.
+
+**Related files:**
+- `backend/app/services/email_otp_service.py` — `EmailOTPService`, `is_otp_step()`, `extract_otp_from_text()`, `get_email_credential_for_user()`
+- `backend/app/models/email_credential.py` — ORM model
+- `backend/app/schemas/email_credential.py` — `EmailCredentialCreate`, `EmailCredentialUpdate`, `EmailCredentialResponse`
+- `backend/app/api/v1/endpoints/email_credentials.py` — CRUD router
+- `frontend/src/features/settings/EmailCredentialsSection.tsx` — Settings UI
+
+**Tests:**
+- `backend/tests/unit/test_email_credential_model.py` — 19 tests: Fernet round-trip, model columns/nullability, schema validation, `KNOWN_IMAP_HOSTS` reference dict.
+- `backend/tests/unit/test_email_otp_service.py` — `TestEmailOTPServicePollOtp` (6 tests): mocked IMAP, sender filter, TODAY date filter, login credential check, timeout raise.
+
+---
+
+## ADR-002-39: Per-Digit OTP Step Expansion via `format_otp_steps()`
+
+**Date:** April 28, 2026
+
+### Context
+
+After `EmailOTPService.poll_otp()` returns the OTP string (e.g., `"482019"`), the execution engine must fill the digits into the page. Two UI patterns exist:
+
+1. **Single `<input>` field**: a single text box accepts the full OTP. Standard `fill(otp)` via Tier 1 / Tier 2 works directly.
+2. **Per-digit `<input maxlength="1">` fields** (common on Three HK registration and similar UIs): one input box per digit. Stagehand `act()` and Playwright direct fill cannot target "the third box of six" without per-step instructions.
+
+The original plan resolved the OTP as a single value and injected it into `step["value"]`. This works for pattern 1 but fails silently for pattern 2 because the full OTP string is typed into the first box only.
+
+### Decision
+
+**`format_otp_steps(otp: str) -> list[str]`** expands a resolved OTP into N step description strings — one per digit:
+
+```python
+format_otp_steps("482019") → [
+    "Input the first number of OTP '4' to the first box",
+    "Input the second number of OTP '8' to the second box",
+    "Input the third number of OTP '1' to the third box",   # note: digits in order
+    ...
+]
+```
+
+Each string is fully self-describing so that Stagehand `act()` can locate and fill the correct box without additional context. Ordinal labels (`first`, `second`, …, `tenth`) are used for positions 1–10; beyond 10 the fallback is `"{n+1}th"`.
+
+The execution loop replaces the single OTP placeholder step with the expanded list in-place:
+
+```python
+steps[idx:idx+1] = expanded   # splice N digit steps at the position of the placeholder
+```
+
+### Consequences
+
+**Positive**
+- Handles both single-input and per-digit-box OTP UIs without conditional logic in the execution engine — Stagehand/Playwright resolves the correct box from the ordinal instruction.
+- Step descriptions are human-readable in execution history (each digit step shows clearly in the run log).
+- Expanding in-place preserves correct step numbering and does not require a separate step list pass.
+
+**Negative**
+- For single-input UIs, this generates N extra steps instead of 1. Each step `fill`s one digit, which leaves the previous characters intact (fill appends). The final result is correct but produces N step log entries instead of 1.
+- If an OTP contains more than 10 digits (unusual), ordinal strings fall back to `"{n+1}th"`, which Stagehand can still interpret for most UIs.
+
+**Alternatives Considered**
+- **Inject the full OTP as `step["value"]` and dispatch via Tier 1 fill**: Works for single input; fails for per-digit boxes. Ruled out.
+- **Detect which UI pattern is present before deciding**: Requires an extra `observe()` call before each OTP step. Over-engineering for the current use case; per-digit expansion works for both patterns.
+
+**Related files:**
+- `backend/app/services/email_otp_service.py` — `format_otp_steps()`
+- `backend/app/services/execution_service.py` — in-place splice in the JIT loop
+- `backend/app/services/stagehand_service.py` — same pattern
+
+**Tests:**
+- `backend/tests/unit/test_email_otp_service.py` — `TestFormatOtpSteps` (5 tests): 4-digit and 6-digit OTPs, ordinal box references, per-digit containment, return type.
+
+---
+
+## ADR-002-40: JIT OTP Expansion — Poll IMAP at Step Execution Time, Not Upfront
+
+**Date:** April 28, 2026
+
+### Context
+
+An earlier implementation variant pre-expanded OTP steps once before the execution loop began (`_expand_otp_steps_list()`). This caused a **stale OTP** problem: the IMAP poll happened before the test navigated to the page that triggers the OTP email. If a prior test run had left an unread OTP email in the inbox, the poll returned that old OTP. The app under test then rejected it, failing the step.
+
+### Decision
+
+**Defer IMAP polling to the moment each OTP placeholder step is reached in the execution loop (JIT — Just-In-Time).**
+
+Both `ExecutionService` and `StagehandService` maintain an `otp_expanded_end` cursor:
+
+```python
+otp_expanded_end = 0   # exclusive upper bound of the last expanded OTP range
+
+for idx, step in enumerate(steps):
+    step_desc = step["description"] if isinstance(step, dict) else step
+
+    # JIT OTP expansion
+    if idx > otp_expanded_end and is_otp_step(step_desc):
+        expanded = self._fetch_otp_and_format_steps(step_desc, db, user_id)
+        # Splice the N per-digit steps in place
+        if isinstance(steps, list):
+            steps[idx:idx+1] = [{"description": s} for s in expanded]
+        otp_expanded_end = idx + len(expanded) - 1
+
+    # ... proceed to execute steps[idx] as normal
+```
+
+**`otp_expanded_end` guard**: prevents the expanded per-digit steps (which also match `is_otp_step()` because they contain "OTP") from re-triggering a second IMAP poll. The guard is correct-by-construction: after expansion, `idx` increments through the digit steps but never exceeds `otp_expanded_end` until the next genuine OTP placeholder is reached.
+
+**Graceful failure**: if no credential is configured, or if `poll_otp()` times out, `_fetch_otp_and_format_steps()` returns a single error step `["Enter OTP (No OTP email received — <reason>)"]` instead of raising. The execution continues; the step is logged as a failure.
+
+### Consequences
+
+**Positive**
+- IMAP is polled only after the app has had an opportunity to send the OTP email (the preceding navigation/submit steps have already run).
+- Eliminates stale-email false success from prior runs.
+- Zero overhead for tests that contain no OTP steps — the guard check is a fast string `re.search`.
+- Works correctly with multiple OTP steps in a single test (each placeholder triggers one independent poll).
+
+**Negative**
+- If the OTP email is sent by the app **before** the user reaches the fill step (e.g., on page load), there is a short window where the email exists but IMAP has not yet indexed it. The 3 s poll interval mitigates this; typical IMAP indexing lag is < 1 s on Gmail.
+- Multi-step OTP forms (where the user must enter different digits on separate pages) are not handled — each OTP placeholder triggers a fresh poll that would return the same OTP. This edge case does not occur in the current Three HK test suite.
+
+**Alternatives Considered**
+- **Pre-expand once before the loop**: Simpler code, but causes the stale-OTP problem (see Context). Rejected.
+- **Pre-expand and mark OTP email as read (IMAP STORE +FLAGS \Seen)**: Could work but requires additional IMAP write access and complicates error recovery. Rejected.
+- **Pass the OTP via a test parameter set externally**: Manual, defeats the purpose of autonomous OTP resolution. Rejected.
+
+**Related files:**
+- `backend/app/services/execution_service.py` — JIT loop with `otp_expanded_end` guard
+- `backend/app/services/stagehand_service.py` — same pattern
+
+**Tests:**
+- `backend/tests/integration/test_email_otp_execution.py` — `TestJitOtpExpansion` (6 tests):
+  - `test_stagehand_otp_not_fetched_before_loop`: asserts IMAP poll count is 0 before loop entry.
+  - `test_stagehand_jit_otp_fetches_at_step_position`: asserts poll fires exactly when the OTP step index is reached.
+  - `test_stagehand_jit_otp_result_is_fresh_not_stale`: second run returns second OTP, not first.
+  - `test_execution_service_jit_otp_fetches_at_step_position`: same guard for `ExecutionService`.
+  - `test_expanded_digit_steps_do_not_retrigger_otp_detection`: `otp_expanded_end` guard holds; only 1 poll for a 6-digit OTP.
+  - `test_stagehand_expanded_steps_polled_only_once`: same invariant for `StagehandService`.
+
+---
+
+## ADR-002-41: Context-Aware OTP Extraction and Newest-First IMAP UID Search
+
+**Date:** April 28, 2026
+
+### Context
+
+The initial `extract_otp_from_text()` implementation used a single regex `\b(\d{4,8})\b` (first standalone 4–8 digit number). In real-world OTP emails this approach produces false positives:
+
+- Phone numbers (`+852 9123 4567`, `1800 xxx xxxx`)
+- Prices (`HK$4,880.00`)
+- Order/reference numbers (`Order #20261234`)
+- Postal codes, dates in `YYYYMMDD` format
+
+The first such incidental digit sequence in the email body would be returned as the OTP.
+
+Separately, the initial search used `UNSEEN` as the first criterion. This meant that if a QA engineer had opened the OTP email in their Gmail browser tab to manually verify it, the email would be marked "Seen" and the IMAP search would skip it — causing a 60 s timeout on a valid email.
+
+### Decision
+
+**Two-stage OTP extraction (`extract_otp_from_text()`):**
+
+```python
+# Stage 1: context-aware — digits within 40 chars of an OTP semantic keyword
+_OTP_CONTEXT_RE = re.compile(
+    r"(?:code|otp|one.?time|password|pin|token|verification)\b.{0,40}?(\d{4,8})(?!\d)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+# Stage 2: fallback — any standalone 4–8 digit number
+_OTP_VALUE_RE = re.compile(r"\b(\d{4,8})\b")
+```
+
+Stage 1 matches `"Your verification code is: 482019"` but not `"Order #20261234"` (no keyword within 40 chars of the number). Stage 2 fires only when Stage 1 returns nothing.
+
+**Newest-first IMAP UID iteration:**
+
+```python
+for uid in reversed(uid_list):   # highest UID = most recently delivered
+    otp = self._fetch_and_extract_otp(imap, uid)
+    if otp:
+        return otp
+```
+
+When multiple OTP emails from the same test session are in the inbox (e.g., user requested OTP twice), the newest email contains the valid code.
+
+**`ALL` instead of `UNSEEN` search criterion:**
+
+The search uses `SINCE <today>` without `UNSEEN`. This ensures that emails opened in a Gmail web UI session are still found. Newest-first iteration means that even when multiple today-emails are present, the latest OTP is returned.
+
+### Consequences
+
+**Positive (context-aware extraction)**
+- False positive rate drops dramatically; OTPs in realistic email bodies (headers, footers, legal text) are no longer confused with unrelated digit sequences.
+- Falls back gracefully to the simple regex for minimal OTP emails that contain no keywords (unusual but possible).
+
+**Positive (newest-first + ALL search)**
+- No IMAP poll failure when the QA team has already viewed the OTP email manually.
+- In retry scenarios (user clicked "Resend OTP"), the newest, valid OTP is always returned.
+
+**Negative (context-aware extraction)**
+- The 40-character lookahead window is empirically tuned and may miss exotic email layouts where the OTP is separated from its label by more than 40 characters (e.g., a table with multiple blank rows between label and value). Stage 2 fallback still fires in those cases.
+
+**Negative (ALL search)**
+- Without `UNSEEN`, the same OTP email may be found across multiple test runs on the same day if the email is never deleted. Newest-first UID ordering mitigates this because the most recent email is returned first; the caller gets the freshest OTP regardless of prior runs' emails still being present.
+
+**Alternatives Considered**
+- **Mark messages as `\Seen` after fetching (IMAP STORE)**: Would isolate runs but requires an additional IMAP write per poll and complicates error recovery. Rejected.
+- **Delete fetched messages**: Too destructive; QA engineers may need to refer to the email. Rejected.
+- **Subject-line filter instead of keyword proximity**: Subject lines vary by provider; less reliable than body context proximity. Rejected.
+
+**Related files:**
+- `backend/app/services/email_otp_service.py` — `_OTP_CONTEXT_RE`, `_OTP_VALUE_RE`, `extract_otp_from_text()`, `_build_search_criteria()`, `poll_otp()` (reversed UID loop)
+
+**Tests:**
+- `backend/tests/unit/test_email_otp_service.py` — `TestExtractOtpFromText` (11 tests): 4/6/8-digit extraction, context-aware preference, HTML body, empty string, punctuation wrapping, 9-digit rejection, 3-digit rejection, fallback when no keyword near number.
+- `backend/tests/unit/test_email_otp_service.py` — `TestEmailOTPServicePollOtp.test_uses_sender_filter` and `test_uses_today_since_filter`: verify `ALL`+`SINCE` criteria and absence of `UNSEEN`.
