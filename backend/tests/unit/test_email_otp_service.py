@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch, call
 
 import pytest
 
-from app.services.email_otp_service import EmailOTPService, extract_otp_from_text, format_otp_step, is_otp_step
+from app.services.email_otp_service import EmailOTPService, extract_otp_from_text, format_otp_steps, is_otp_step
 
 
 # ---------------------------------------------------------------------------
@@ -281,29 +281,33 @@ class TestEmailOTPServicePollOtp:
 
 
 # ---------------------------------------------------------------------------
-# format_otp_step tests
+# format_otp_steps tests
 # ---------------------------------------------------------------------------
 
-class TestFormatOtpStep:
-    """Verify the per-digit step description generator."""
+class TestFormatOtpSteps:
+    """Verify the per-digit step list generator."""
 
-    def test_6_digit_otp_contains_digits_spaced(self):
-        result = format_otp_step("482019")
-        assert "4 8 2 0 1 9" in result
+    def test_6_digit_otp_returns_6_steps(self):
+        result = format_otp_steps("482019")
+        assert len(result) == 6
 
-    def test_4_digit_otp_mentions_count(self):
-        result = format_otp_step("1234")
-        assert "4" in result
-        assert "1 2 3 4" in result
+    def test_4_digit_otp_returns_4_steps(self):
+        result = format_otp_steps("1234")
+        assert len(result) == 4
 
-    def test_contains_otp_value(self):
-        result = format_otp_step("999888")
-        assert "999888" in result
+    def test_each_step_contains_its_digit(self):
+        result = format_otp_steps("482019")
+        for i, digit in enumerate("482019"):
+            assert digit in result[i]
 
-    def test_mentions_individual_boxes(self):
-        result = format_otp_step("123456")
-        result_lower = result.lower()
-        assert "input" in result_lower or "box" in result_lower or "digit" in result_lower
+    def test_steps_contain_ordinal_box_reference(self):
+        result = format_otp_steps("123456")
+        first_lower = result[0].lower()
+        second_lower = result[1].lower()
+        assert "first" in first_lower
+        assert "second" in second_lower
 
-    def test_returns_string(self):
-        assert isinstance(format_otp_step("482019"), str)
+    def test_returns_list_of_strings(self):
+        result = format_otp_steps("482019")
+        assert isinstance(result, list)
+        assert all(isinstance(s, str) for s in result)

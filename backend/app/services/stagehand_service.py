@@ -21,7 +21,7 @@ from app.models.test_execution import ExecutionStatus, ExecutionResult
 from app.crud import test_execution as crud_execution
 from app.services.email_otp_service import (
     email_otp_service,
-    format_otp_step,
+    format_otp_steps,
     get_email_credential_for_user,
     is_otp_step,
 )
@@ -888,6 +888,10 @@ class StagehandExecutionService:
                 current_url = self.page.url
                 print(f"[DEBUG] Current URL: {current_url}")
             
+            # OTP step pre-expansion: expand any OTP step into per-digit steps
+            # before the loop so total_steps is correct.
+            steps = self._expand_otp_steps_list(steps, db, user_id)
+
             total_steps = len(steps)
             passed_steps = 0
             failed_steps = 0
@@ -907,9 +911,6 @@ class StagehandExecutionService:
                         })
                     
                     print(f"[DEBUG] Step {idx}/{total_steps}: {step_desc}")
-                    
-                    # OTP step detection — resolve before dispatch
-                    step_desc = self._resolve_otp_step(step_desc, db, user_id)
 
                     # Hybrid execution strategy:
                     # 1. Try Playwright selectors first (fast, free, reliable)
@@ -1038,29 +1039,40 @@ class StagehandExecutionService:
         
         return execution
 
-    def _resolve_otp_step(self, step_description: str, db, user_id: int) -> str:
+    def _expand_otp_steps_list(self, steps: list, db, user_id: int) -> list:
         """
-        If *step_description* matches an OTP entry pattern, fetch the OTP from
-        the user's configured IMAP inbox and return an injected step description.
+        Pre-expand OTP steps into per-digit steps before the execution loop.
 
-        Returns the original step unchanged when:
-        - The step does not match any OTP pattern.
-        - No email credential is configured for the user.
-        - The IMAP poll times out (logs a warning; execution continues).
+        For each step that matches an OTP pattern, replaces it with N individual
+        steps (one per digit). Non-OTP steps are passed through unchanged. If
+        the IMAP poll fails or no credential is configured the original step is
+        kept unchanged so execution continues normally.
         """
-        if not is_otp_step(step_description):
-            return step_description
+        result = []
+        for step in steps:
+            step_str = str(step)
+            if is_otp_step(step_str):
+                expanded = self._fetch_otp_and_format_steps(step_str, db, user_id)
+                result.extend(expanded)
+            else:
+                result.append(step)
+        return result
 
+    def _fetch_otp_and_format_steps(self, step_description: str, db, user_id: int) -> list:
+        """
+        Fetch OTP via IMAP and return a list of one step per digit.
+        Falls back to [step_description] unchanged on any error.
+        """
         if db is None or encryption_service is None:
             logger.warning("OTP step detected but db/encryption not available; skipping IMAP poll")
-            return step_description
+            return [step_description]
 
         cred = get_email_credential_for_user(db, user_id)
         if cred is None:
             logger.warning(
                 "OTP step detected for user %s but no email credential configured", user_id
             )
-            return step_description
+            return [step_description]
 
         try:
             app_password = encryption_service.decrypt_password(cred.imap_password_encrypted)
@@ -1073,14 +1085,14 @@ class StagehandExecutionService:
                 timeout=app_settings.EMAIL_OTP_POLL_TIMEOUT,
                 interval=app_settings.EMAIL_OTP_POLL_INTERVAL,
             )
-            logger.info("OTP resolved for user %s: %s", user_id, otp)
-            return format_otp_step(otp)
+            logger.info("OTP resolved for user %s: %s — expanding into %d steps", user_id, otp, len(otp))
+            return format_otp_steps(otp)
         except TimeoutError as exc:
             logger.warning("OTP poll timed out for user %s: %s", user_id, exc)
-            return f"Enter OTP (No OTP email received — {exc})"
+            return [f"Enter OTP (No OTP email received — {exc})"]
         except Exception as exc:
             logger.error("OTP resolution error for user %s: %s", user_id, exc)
-            return step_description
+            return [step_description]
 
     async def _execute_step_hybrid(self, step_description: str, step_number: int) -> Dict[str, Any]:
         """

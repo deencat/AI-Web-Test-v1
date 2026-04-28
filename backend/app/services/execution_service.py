@@ -32,7 +32,7 @@ from app.utils.http_auth_credentials import http_credentials_for_url
 from app.utils.test_data_generator import TestDataGenerator
 from app.services.email_otp_service import (
     email_otp_service,
-    format_otp_step,
+    format_otp_steps,
     get_email_credential_for_user,
     is_otp_step,
 )
@@ -123,31 +123,38 @@ class ExecutionService:
         
         return default_settings
 
-    def _resolve_otp_step(self, step_description: str, db: Session, user_id: int) -> str:
+    def _expand_otp_steps_list(self, steps: list, db: Session, user_id: int) -> list:
         """
-        If *step_description* matches an OTP entry pattern, fetch the OTP from the
-        user's configured IMAP inbox and return an injected step description.
-
-        Returns the original step unchanged when:
-        - The step does not match any OTP pattern.
-        - No email credential is configured for the user.
-        - The IMAP poll times out (logs a warning; execution continues).
+        Pre-expand any OTP step in *steps* into N individual per-digit steps.
+        Returns a new list; non-OTP steps are passed through unchanged.
         """
-        if not is_otp_step(step_description):
-            return step_description
+        result = []
+        for step in steps:
+            step_str = str(step)
+            if is_otp_step(step_str):
+                expanded = self._fetch_otp_and_format_steps(step_str, db, user_id)
+                result.extend(expanded)
+            else:
+                result.append(step)
+        return result
 
+    def _fetch_otp_and_format_steps(self, step_description: str, db: Session, user_id: int) -> list:
+        """
+        Fetch OTP from IMAP and return a list of per-digit step descriptions.
+        Falls back to a single error step if OTP cannot be retrieved.
+        """
         import os as _os
         key = _os.getenv("CREDENTIAL_ENCRYPTION_KEY")
         if not key:
             logger.warning("OTP step detected but CREDENTIAL_ENCRYPTION_KEY not set; skipping IMAP poll")
-            return step_description
+            return [step_description]
 
         cred = get_email_credential_for_user(db, user_id)
         if cred is None:
             logger.warning(
                 "OTP step detected for user %s but no email credential configured", user_id
             )
-            return step_description
+            return [step_description]
 
         try:
             enc = _EncryptionService()
@@ -161,14 +168,14 @@ class ExecutionService:
                 timeout=app_settings.EMAIL_OTP_POLL_TIMEOUT,
                 interval=app_settings.EMAIL_OTP_POLL_INTERVAL,
             )
-            logger.info("OTP resolved for user %s: %s", user_id, otp)
-            return format_otp_step(otp)
+            logger.info("OTP resolved for user %s — expanding into %d steps", user_id, len(otp))
+            return format_otp_steps(otp)
         except TimeoutError as exc:
             logger.warning("OTP poll timed out for user %s: %s", user_id, exc)
-            return f"Enter OTP (No OTP email received — {exc})"
+            return [f"Enter OTP (No OTP email received — {exc})"]
         except Exception as exc:
             logger.error("OTP resolution error for user %s: %s", user_id, exc)
-            return step_description
+            return [step_description]
 
     async def initialize(self):
         """Initialize Playwright and browser."""
@@ -587,6 +594,10 @@ class ExecutionService:
             if loop_blocks:
                 logger.info(f"[LOOP] Found {len(loop_blocks)} loop block(s): {loop_blocks}")
             
+            # OTP step pre-expansion: replace any OTP step with per-digit steps
+            # before the loop so total_steps is correct.
+            steps = self._expand_otp_steps_list(steps, db, user_id)
+
             total_steps = len(steps)
             passed_steps = 0
             failed_steps = 0
@@ -811,11 +822,6 @@ class ExecutionService:
                     execution.id
                 )
 
-                # OTP step detection — resolve IMAP OTP before dispatch
-                step_desc_substituted = self._resolve_otp_step(
-                    step_desc_substituted, db, user_id
-                )
-                
                 try:
                     if progress_callback:
                         await progress_callback({

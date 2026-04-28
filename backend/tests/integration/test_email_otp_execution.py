@@ -49,8 +49,8 @@ class TestOtpPatternDetection:
 
 class TestOtpResolutionInStagehandService:
     """
-    Verifies that StagehandExecutionService._resolve_otp_step() calls
-    EmailOTPService.poll_otp() and returns the injected step description.
+    Verifies that StagehandExecutionService._fetch_otp_and_format_steps() calls
+    EmailOTPService.poll_otp() and returns a list of per-digit step descriptions.
     """
 
     def _build_mock_credential(self):
@@ -61,8 +61,8 @@ class TestOtpResolutionInStagehandService:
         cred.imap_password_encrypted = "encrypted"
         return cred
 
-    def test_resolve_otp_step_returns_injected_description(self):
-        """When OTP step is detected, resolved step injects the OTP value."""
+    def test_fetch_otp_steps_returns_list_with_digits(self):
+        """When OTP step is detected, each digit gets its own step description."""
         from app.services.stagehand_service import StagehandExecutionService
         import app.services.stagehand_service as stagehand_mod
 
@@ -82,30 +82,30 @@ class TestOtpResolutionInStagehandService:
                 return_value="482019",
             ):
                 with patch.object(stagehand_mod, "encryption_service", mock_enc):
-                    result = svc._resolve_otp_step(
+                    result = svc._fetch_otp_and_format_steps(
                         "Enter the OTP sent to email",
                         db=mock_db,
                         user_id=1,
                     )
 
-        assert "482019" in result or "4 8 2 0 1 9" in result
+        assert isinstance(result, list)
+        assert len(result) == 6
+        assert "4" in result[0]
+        assert "8" in result[1]
 
-    def test_non_otp_step_returns_unchanged(self):
-        """Non-OTP steps are returned unchanged."""
+    def test_expand_otp_steps_list_non_otp_unchanged(self):
+        """Non-OTP steps are returned unchanged in expanded list."""
         from app.services.stagehand_service import StagehandExecutionService
 
         svc = StagehandExecutionService.__new__(StagehandExecutionService)
 
-        result = svc._resolve_otp_step(
-            "Click the Submit button",
-            db=MagicMock(),
-            user_id=1,
-        )
+        steps = ["Click the Submit button", "Navigate to the home page"]
+        result = svc._expand_otp_steps_list(steps, db=MagicMock(), user_id=1)
 
-        assert result == "Click the Submit button"
+        assert result == steps
 
-    def test_no_credential_returns_original_step(self):
-        """If no email credential configured, return original step unchanged."""
+    def test_no_credential_returns_original_step_in_list(self):
+        """If no email credential configured, return original step as single-item list."""
         from app.services.stagehand_service import StagehandExecutionService
 
         svc = StagehandExecutionService.__new__(StagehandExecutionService)
@@ -114,17 +114,17 @@ class TestOtpResolutionInStagehandService:
             "app.services.stagehand_service.get_email_credential_for_user",
             return_value=None,
         ):
-            result = svc._resolve_otp_step(
+            result = svc._fetch_otp_and_format_steps(
                 "Enter the OTP",
                 db=MagicMock(),
                 user_id=1,
             )
 
-        # Falls back gracefully — original description returned
-        assert result == "Enter the OTP"
+        assert isinstance(result, list)
+        assert result == ["Enter the OTP"]
 
-    def test_poll_timeout_returns_graceful_message(self):
-        """When IMAP poll times out, step description becomes a clear error message."""
+    def test_poll_timeout_returns_graceful_message_list(self):
+        """When IMAP poll times out, step list contains a clear error message."""
         from app.services.stagehand_service import StagehandExecutionService
         import app.services.stagehand_service as stagehand_mod
 
@@ -142,13 +142,45 @@ class TestOtpResolutionInStagehandService:
                 side_effect=TimeoutError("No OTP email found"),
             ):
                 with patch.object(stagehand_mod, "encryption_service", mock_enc):
-                    result = svc._resolve_otp_step(
+                    result = svc._fetch_otp_and_format_steps(
                         "Enter the OTP sent to email",
                         db=MagicMock(),
                         user_id=1,
                     )
 
-        assert "OTP" in result or "timeout" in result.lower() or "No OTP" in result
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert "OTP" in result[0] or "No OTP" in result[0]
+
+    def test_expand_otp_steps_list_replaces_otp_step(self):
+        """_expand_otp_steps_list replaces a single OTP step with N per-digit steps."""
+        from app.services.stagehand_service import StagehandExecutionService
+        import app.services.stagehand_service as stagehand_mod
+
+        svc = StagehandExecutionService.__new__(StagehandExecutionService)
+        mock_cred = self._build_mock_credential()
+        mock_enc = MagicMock()
+        mock_enc.decrypt_password.return_value = "app-password"
+
+        with patch(
+            "app.services.stagehand_service.get_email_credential_for_user",
+            return_value=mock_cred,
+        ):
+            with patch(
+                "app.services.stagehand_service.email_otp_service.poll_otp",
+                return_value="123456",
+            ):
+                with patch.object(stagehand_mod, "encryption_service", mock_enc):
+                    result = svc._expand_otp_steps_list(
+                        ["Click login", "Enter the OTP", "Click submit"],
+                        db=MagicMock(),
+                        user_id=1,
+                    )
+
+        assert result[0] == "Click login"
+        assert result[-1] == "Click submit"
+        # OTP step was replaced by 6 per-digit steps
+        assert len(result) == 2 + 6
 
 
 # ---------------------------------------------------------------------------

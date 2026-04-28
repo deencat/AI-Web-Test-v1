@@ -60,6 +60,12 @@ _OTP_CONTEXT_RE = re.compile(
 _OTP_VALUE_RE = re.compile(r"\b(\d{4,8})\b")
 
 
+_ORDINALS = [
+    "first", "second", "third", "fourth", "fifth",
+    "sixth", "seventh", "eighth", "ninth", "tenth",
+]
+
+
 def is_otp_step(step_description: str) -> bool:
     """Return True if the step description matches an OTP entry pattern."""
     return bool(_OTP_STEP_RE.search(step_description))
@@ -84,21 +90,26 @@ def extract_otp_from_text(text: str) -> Optional[str]:
     return match.group(1) if match else None
 
 
-def format_otp_step(otp: str) -> str:
+def format_otp_steps(otp: str) -> list[str]:
     """
-    Return a step description that instructs the execution engine to type
-    each OTP digit into an individual input box.
+    Return one step description per OTP digit.
 
-    Stagehand interprets this as N sequential single-character fills instead
-    of a single `fill(otp)` call, which is required for UIs (e.g. Three HK
-    registration) that use separate <input maxlength="1"> boxes per digit.
+    Each step tells the execution engine to type a single digit into its
+    corresponding individual input box — matching UIs like Three HK
+    registration that use separate <input maxlength="1"> fields.
+
+    Example for OTP "482019":
+        ["Input the first number of OTP '4' to the first box",
+         "Input the second number of OTP '8' to the second box",
+         ...]
     """
-    digits_spaced = " ".join(list(otp))
-    return (
-        f"Enter the one-time password '{otp}' into the verification code inputs. "
-        f"There are {len(otp)} individual digit input boxes — type each digit "
-        f"one at a time in order: {digits_spaced}"
-    )
+    steps = []
+    for i, digit in enumerate(otp):
+        ordinal = _ORDINALS[i] if i < len(_ORDINALS) else f"{i + 1}th"
+        steps.append(
+            f"Input the {ordinal} number of OTP '{digit}' to the {ordinal} box"
+        )
+    return steps
 
 
 def get_email_credential_for_user(db: Session, user_id: int):
