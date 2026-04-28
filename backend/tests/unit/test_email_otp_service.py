@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch, call
 
 import pytest
 
-from app.services.email_otp_service import EmailOTPService, extract_otp_from_text, is_otp_step
+from app.services.email_otp_service import EmailOTPService, extract_otp_from_text, format_otp_step, is_otp_step
 
 
 # ---------------------------------------------------------------------------
@@ -32,17 +32,21 @@ class TestExtractOtpFromText:
     def test_extracts_8_digit_otp(self):
         assert extract_otp_from_text("Verification code: 87654321") == "87654321"
 
+    def test_prefers_context_aware_match_over_first_number(self):
+        # A phone number appears before the OTP keyword — context match wins
+        assert extract_otp_from_text("Call 12345678 or use code 482019") == "482019"
+
     def test_prefers_first_match(self):
-        # When multiple numeric sequences exist, return first matching OTP
+        # When multiple keyword-adjacent sequences exist, return first matching OTP
         assert extract_otp_from_text("Code 123456 for order 789") == "123456"
+
+    def test_ignores_9_digit_numbers(self):
+        # 9-digit numbers are too long (phone numbers, etc.) unless keyword context
+        assert extract_otp_from_text("Number 123456789 found") is None
 
     def test_ignores_3_digit_numbers(self):
         # 3-digit numbers are too short to be OTPs
         assert extract_otp_from_text("Use 123 as code") is None
-
-    def test_ignores_9_digit_numbers(self):
-        # 9-digit numbers are too long (phone numbers, etc.)
-        assert extract_otp_from_text("Number 123456789 found") is None
 
     def test_returns_none_when_no_otp(self):
         assert extract_otp_from_text("Hello, welcome to the service!") is None
@@ -231,7 +235,7 @@ class TestEmailOTPServicePollOtp:
         assert "otp@three.com.hk" in search_criteria
 
     def test_uses_today_since_filter(self):
-        """SEARCH criteria includes SINCE today to avoid stale emails."""
+        """SEARCH criteria includes SINCE today but NOT UNSEEN (Gmail marks emails read)."""
         email_bytes = _make_email_message(
             "noreply@example.com",
             "OTP",
@@ -252,7 +256,10 @@ class TestEmailOTPServicePollOtp:
             )
 
         search_args = imap_mock.search.call_args
-        assert today_str in str(search_args)
+        criteria_str = str(search_args)
+        assert today_str in criteria_str
+        # Must NOT require UNSEEN — emails may be marked read in Gmail web UI
+        assert "UNSEEN" not in criteria_str
 
     def test_logs_in_with_credentials(self):
         """Verify login() is called with the provided email + app_password."""
@@ -271,3 +278,32 @@ class TestEmailOTPServicePollOtp:
             )
 
         imap_mock.login.assert_called_once_with("qa@gmail.com", "mysecret")
+
+
+# ---------------------------------------------------------------------------
+# format_otp_step tests
+# ---------------------------------------------------------------------------
+
+class TestFormatOtpStep:
+    """Verify the per-digit step description generator."""
+
+    def test_6_digit_otp_contains_digits_spaced(self):
+        result = format_otp_step("482019")
+        assert "4 8 2 0 1 9" in result
+
+    def test_4_digit_otp_mentions_count(self):
+        result = format_otp_step("1234")
+        assert "4" in result
+        assert "1 2 3 4" in result
+
+    def test_contains_otp_value(self):
+        result = format_otp_step("999888")
+        assert "999888" in result
+
+    def test_mentions_individual_boxes(self):
+        result = format_otp_step("123456")
+        result_lower = result.lower()
+        assert "input" in result_lower or "box" in result_lower or "digit" in result_lower
+
+    def test_returns_string(self):
+        assert isinstance(format_otp_step("482019"), str)

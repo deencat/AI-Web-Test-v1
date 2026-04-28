@@ -32,6 +32,7 @@ from app.utils.http_auth_credentials import http_credentials_for_url
 from app.utils.test_data_generator import TestDataGenerator
 from app.services.email_otp_service import (
     email_otp_service,
+    format_otp_step,
     get_email_credential_for_user,
     is_otp_step,
 )
@@ -161,7 +162,7 @@ class ExecutionService:
                 interval=app_settings.EMAIL_OTP_POLL_INTERVAL,
             )
             logger.info("OTP resolved for user %s: %s", user_id, otp)
-            return f"Enter OTP: {otp}"
+            return format_otp_step(otp)
         except TimeoutError as exc:
             logger.warning("OTP poll timed out for user %s: %s", user_id, exc)
             return f"Enter OTP (No OTP email received — {exc})"

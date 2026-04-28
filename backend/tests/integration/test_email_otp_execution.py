@@ -88,7 +88,7 @@ class TestOtpResolutionInStagehandService:
                         user_id=1,
                     )
 
-        assert "482019" in result
+        assert "482019" in result or "4 8 2 0 1 9" in result
 
     def test_non_otp_step_returns_unchanged(self):
         """Non-OTP steps are returned unchanged."""

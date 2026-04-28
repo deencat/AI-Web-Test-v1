@@ -49,7 +49,14 @@ OTP_PATTERNS: list[str] = [
 
 _OTP_STEP_RE = re.compile("|".join(OTP_PATTERNS), re.IGNORECASE)
 
-# OTP value regex: a 4–8 digit standalone number
+# Context-aware regex: digit sequence near OTP/code/verification keywords
+# Try this FIRST to avoid picking up phone numbers, dates, prices, etc.
+_OTP_CONTEXT_RE = re.compile(
+    r"(?:code|otp|one.?time|password|pin|token|verification)\b.{0,40}?(\d{4,8})(?!\d)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+# Fallback: any standalone 4–8 digit number
 _OTP_VALUE_RE = re.compile(r"\b(\d{4,8})\b")
 
 
@@ -59,9 +66,39 @@ def is_otp_step(step_description: str) -> bool:
 
 
 def extract_otp_from_text(text: str) -> Optional[str]:
-    """Return the first 4–8 digit OTP found in *text*, or None."""
+    """
+    Return the OTP found in *text*, or None.
+
+    Strategy:
+    1. Context-aware match — digits appearing within 40 chars of a keyword
+       (code, otp, verification, pin, token, password).  This avoids picking
+       up phone numbers, prices, or other incidental digit sequences.
+    2. Fallback — first standalone 4–8 digit number in the body.
+    """
+    if not text:
+        return None
+    match = _OTP_CONTEXT_RE.search(text)
+    if match:
+        return match.group(1)
     match = _OTP_VALUE_RE.search(text)
     return match.group(1) if match else None
+
+
+def format_otp_step(otp: str) -> str:
+    """
+    Return a step description that instructs the execution engine to type
+    each OTP digit into an individual input box.
+
+    Stagehand interprets this as N sequential single-character fills instead
+    of a single `fill(otp)` call, which is required for UIs (e.g. Three HK
+    registration) that use separate <input maxlength="1"> boxes per digit.
+    """
+    digits_spaced = " ".join(list(otp))
+    return (
+        f"Enter the one-time password '{otp}' into the verification code inputs. "
+        f"There are {len(otp)} individual digit input boxes — type each digit "
+        f"one at a time in order: {digits_spaced}"
+    )
 
 
 def get_email_credential_for_user(db: Session, user_id: int):
@@ -141,7 +178,10 @@ class EmailOTPService:
                 status, data = imap.search(None, *criteria)
                 if status == "OK" and data and data[0]:
                     uid_list = data[0].split()
-                    for uid in uid_list:
+                    # Iterate newest-first (highest UID = most recently delivered
+                    # email) so we always pick up the latest OTP even when
+                    # previous emails from the same session are still unread.
+                    for uid in reversed(uid_list):
                         otp = self._fetch_and_extract_otp(imap, uid)
                         if otp:
                             logger.info(
@@ -168,8 +208,15 @@ class EmailOTPService:
         sender_filter: Optional[str],
         to_filter: Optional[str],
     ) -> list[str]:
-        """Build IMAP SEARCH criteria list."""
-        criteria: list[str] = ["UNSEEN", f"SINCE {today_str}"]
+        """
+        Build IMAP SEARCH criteria list.
+
+        Uses ALL (not UNSEEN) so that emails already opened in the Gmail web
+        UI are still found.  The newest-first UID iteration ensures we always
+        pick the latest OTP even when multiple OTP emails from the same test
+        session are in the inbox.
+        """
+        criteria: list[str] = [f"SINCE {today_str}"]
         if sender_filter:
             criteria += ["FROM", sender_filter]
         if to_filter:
