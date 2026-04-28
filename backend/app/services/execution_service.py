@@ -30,6 +30,12 @@ from app.services.three_tier_execution_service import ThreeTierExecutionService
 from app.services.post_click_readiness import auto_dismiss_blocking_modals
 from app.utils.http_auth_credentials import http_credentials_for_url
 from app.utils.test_data_generator import TestDataGenerator
+from app.services.email_otp_service import (
+    email_otp_service,
+    get_email_credential_for_user,
+    is_otp_step,
+)
+from app.services.encryption_service import EncryptionService as _EncryptionService
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +121,54 @@ class ExecutionService:
         default_settings.track_strategy_effectiveness = True
         
         return default_settings
-        
+
+    def _resolve_otp_step(self, step_description: str, db: Session, user_id: int) -> str:
+        """
+        If *step_description* matches an OTP entry pattern, fetch the OTP from the
+        user's configured IMAP inbox and return an injected step description.
+
+        Returns the original step unchanged when:
+        - The step does not match any OTP pattern.
+        - No email credential is configured for the user.
+        - The IMAP poll times out (logs a warning; execution continues).
+        """
+        if not is_otp_step(step_description):
+            return step_description
+
+        import os as _os
+        key = _os.getenv("CREDENTIAL_ENCRYPTION_KEY")
+        if not key:
+            logger.warning("OTP step detected but CREDENTIAL_ENCRYPTION_KEY not set; skipping IMAP poll")
+            return step_description
+
+        cred = get_email_credential_for_user(db, user_id)
+        if cred is None:
+            logger.warning(
+                "OTP step detected for user %s but no email credential configured", user_id
+            )
+            return step_description
+
+        try:
+            enc = _EncryptionService()
+            app_password = enc.decrypt_password(cred.imap_password_encrypted)
+            from app.core.config import settings as app_settings
+            otp = email_otp_service.poll_otp(
+                imap_host=cred.imap_host,
+                imap_port=cred.imap_port,
+                email_address=cred.email_address,
+                app_password=app_password,
+                timeout=app_settings.EMAIL_OTP_POLL_TIMEOUT,
+                interval=app_settings.EMAIL_OTP_POLL_INTERVAL,
+            )
+            logger.info("OTP resolved for user %s: %s", user_id, otp)
+            return f"Enter OTP: {otp}"
+        except TimeoutError as exc:
+            logger.warning("OTP poll timed out for user %s: %s", user_id, exc)
+            return f"Enter OTP (No OTP email received — {exc})"
+        except Exception as exc:
+            logger.error("OTP resolution error for user %s: %s", user_id, exc)
+            return step_description
+
     async def initialize(self):
         """Initialize Playwright and browser."""
         if not self.playwright:
@@ -755,6 +808,11 @@ class ExecutionService:
                 step_desc_substituted = self._substitute_test_data_patterns(
                     step_desc,
                     execution.id
+                )
+
+                # OTP step detection — resolve IMAP OTP before dispatch
+                step_desc_substituted = self._resolve_otp_step(
+                    step_desc_substituted, db, user_id
                 )
                 
                 try:

@@ -19,6 +19,14 @@ from sqlalchemy.orm import Session
 from app.models.test_case import TestCase
 from app.models.test_execution import ExecutionStatus, ExecutionResult
 from app.crud import test_execution as crud_execution
+from app.services.email_otp_service import (
+    email_otp_service,
+    get_email_credential_for_user,
+    is_otp_step,
+)
+from app.services.encryption_service import EncryptionService
+
+encryption_service = EncryptionService() if os.getenv("CREDENTIAL_ENCRYPTION_KEY") else None
 
 # Load environment variables
 load_dotenv()
@@ -899,6 +907,9 @@ class StagehandExecutionService:
                     
                     print(f"[DEBUG] Step {idx}/{total_steps}: {step_desc}")
                     
+                    # OTP step detection — resolve before dispatch
+                    step_desc = self._resolve_otp_step(step_desc, db, user_id)
+
                     # Hybrid execution strategy:
                     # 1. Try Playwright selectors first (fast, free, reliable)
                     # 2. If fails, fallback to Stagehand AI (flexible, handles complex cases)
@@ -1025,7 +1036,51 @@ class StagehandExecutionService:
             await self.cleanup()
         
         return execution
-    
+
+    def _resolve_otp_step(self, step_description: str, db, user_id: int) -> str:
+        """
+        If *step_description* matches an OTP entry pattern, fetch the OTP from
+        the user's configured IMAP inbox and return an injected step description.
+
+        Returns the original step unchanged when:
+        - The step does not match any OTP pattern.
+        - No email credential is configured for the user.
+        - The IMAP poll times out (logs a warning; execution continues).
+        """
+        if not is_otp_step(step_description):
+            return step_description
+
+        if db is None or encryption_service is None:
+            logger.warning("OTP step detected but db/encryption not available; skipping IMAP poll")
+            return step_description
+
+        cred = get_email_credential_for_user(db, user_id)
+        if cred is None:
+            logger.warning(
+                "OTP step detected for user %s but no email credential configured", user_id
+            )
+            return step_description
+
+        try:
+            app_password = encryption_service.decrypt_password(cred.imap_password_encrypted)
+            from app.core.config import settings as app_settings
+            otp = email_otp_service.poll_otp(
+                imap_host=cred.imap_host,
+                imap_port=cred.imap_port,
+                email_address=cred.email_address,
+                app_password=app_password,
+                timeout=app_settings.EMAIL_OTP_POLL_TIMEOUT,
+                interval=app_settings.EMAIL_OTP_POLL_INTERVAL,
+            )
+            logger.info("OTP resolved for user %s: %s", user_id, otp)
+            return f"Enter OTP: {otp}"
+        except TimeoutError as exc:
+            logger.warning("OTP poll timed out for user %s: %s", user_id, exc)
+            return f"Enter OTP (No OTP email received — {exc})"
+        except Exception as exc:
+            logger.error("OTP resolution error for user %s: %s", user_id, exc)
+            return step_description
+
     async def _execute_step_hybrid(self, step_description: str, step_number: int) -> Dict[str, Any]:
         """
         Hybrid execution: Try Playwright first, fallback to AI if it fails.

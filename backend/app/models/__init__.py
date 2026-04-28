@@ -13,6 +13,7 @@ from app.models.debug_session import DebugSession, DebugStepExecution, DebugMode
 from app.models.execution_feedback import ExecutionFeedback
 from app.models.execution_settings import ExecutionSettings, XPathCache, TierExecutionLog
 from app.models.browser_profile import BrowserProfile
+from app.models.email_credential import EmailCredential
 
 __all__ = [
     "User",
@@ -28,6 +29,7 @@ __all__ = [
     "DebugSession", "DebugStepExecution", "DebugMode", "DebugSessionStatus",
     "ExecutionFeedback",
     "ExecutionSettings", "XPathCache", "TierExecutionLog",
-    "BrowserProfile"
+    "BrowserProfile",
+    "EmailCredential",
 ]
 

@@ -73,6 +73,10 @@ class Settings(BaseSettings):
     # Optional override; relative paths are resolved from backend root. Env FLOW_RECORDINGS_DIR also supported.
     FLOW_RECORDINGS_DIR: str | None = None
 
+    # Sprint 10.10: IMAP Email OTP polling
+    EMAIL_OTP_POLL_TIMEOUT: int = 60    # seconds to wait for OTP email
+    EMAIL_OTP_POLL_INTERVAL: int = 3    # seconds between polls
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,

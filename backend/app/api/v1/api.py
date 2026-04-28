@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import health, auth, users, test_generation, tests, kb, executions, test_templates, test_scenarios, test_suites, settings, debug, versions, execution_feedback, browser_profiles, uploads
+from app.api.v1.endpoints import health, auth, users, test_generation, tests, kb, executions, test_templates, test_scenarios, test_suites, settings, debug, versions, execution_feedback, browser_profiles, uploads, email_credentials
 
 api_router = APIRouter()
 
@@ -19,4 +19,5 @@ api_router.include_router(settings.router, prefix="/settings", tags=["settings"]
 api_router.include_router(debug.router, tags=["debug"])
 api_router.include_router(browser_profiles.router, tags=["browser-profiles"])
 api_router.include_router(uploads.router, tags=["uploads"])
+api_router.include_router(email_credentials.router, tags=["email-credentials"])
 

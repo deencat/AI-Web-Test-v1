@@ -23,5 +23,6 @@ class User(Base):
     settings = relationship("UserSetting", back_populates="user", cascade="all, delete-orphan", uselist=False)
     execution_settings = relationship("ExecutionSettings", back_populates="user", cascade="all, delete-orphan", uselist=False)
     browser_profiles = relationship("BrowserProfile", back_populates="user", cascade="all, delete-orphan")
+    email_credentials = relationship("EmailCredential", back_populates="user", cascade="all, delete-orphan")
 
 
