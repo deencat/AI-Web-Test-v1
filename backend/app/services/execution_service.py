@@ -594,9 +594,10 @@ class ExecutionService:
             if loop_blocks:
                 logger.info(f"[LOOP] Found {len(loop_blocks)} loop block(s): {loop_blocks}")
             
-            # OTP step pre-expansion: replace any OTP step with per-digit steps
-            # before the loop so total_steps is correct.
-            steps = self._expand_otp_steps_list(steps, db, user_id)
+            # NOTE: OTP steps must NOT be pre-expanded here.
+            # Pre-expansion polls IMAP before prior steps (e.g. "Submit registration")
+            # have run, so the poll picks up stale emails from the previous session.
+            # OTP expansion is done JIT inside the loop when each step is reached.
 
             total_steps = len(steps)
             passed_steps = 0
@@ -635,9 +636,23 @@ class ExecutionService:
             
             # Step execution with loop support
             idx = 1  # Current step index (1-based)
+            # Tracks the exclusive 1-based end of the last expanded OTP digit range.
+            # Expanded steps like "Input the Nth number of OTP…" match is_otp_step()
+            # themselves; without this guard they would re-trigger IMAP on every digit.
+            otp_expanded_end = 0
             
             while idx <= total_steps:
                 step_desc = steps[idx - 1]  # 0-based list access
+
+                # JIT OTP expansion: poll IMAP only when we reach the OTP placeholder
+                # step and only if this index is NOT inside a previously-expanded range.
+                if idx > otp_expanded_end and is_otp_step(step_desc):
+                    expanded = self._fetch_otp_and_format_steps(step_desc, db, user_id)
+                    steps[idx - 1:idx] = expanded
+                    total_steps = len(steps)
+                    otp_expanded_end = idx + len(expanded) - 1
+                    step_desc = steps[idx - 1]
+
                 step_start = datetime.utcnow()
                 
                 # Check if this step starts a loop block

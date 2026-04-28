@@ -888,9 +888,10 @@ class StagehandExecutionService:
                 current_url = self.page.url
                 print(f"[DEBUG] Current URL: {current_url}")
             
-            # OTP step pre-expansion: expand any OTP step into per-digit steps
-            # before the loop so total_steps is correct.
-            steps = self._expand_otp_steps_list(steps, db, user_id)
+            # NOTE: OTP steps must NOT be pre-expanded here.
+            # Pre-expansion polls IMAP before prior steps (e.g. "Submit registration")
+            # have run, so the poll picks up stale emails from the previous session.
+            # OTP expansion is done JIT inside the loop when each step is reached.
 
             total_steps = len(steps)
             passed_steps = 0
@@ -898,7 +899,24 @@ class StagehandExecutionService:
             
             print(f"[DEBUG] Executing {total_steps} steps")
             
-            for idx, step_desc in enumerate(steps, start=1):
+            step_index = 0
+            # Tracks the exclusive 0-based end of the last expanded OTP digit range.
+            # Expanded steps like "Input the Nth number of OTP…" match is_otp_step()
+            # themselves; without this guard they would re-trigger IMAP on every digit.
+            otp_expanded_end = 0
+            while step_index < len(steps):
+                idx = step_index + 1
+                step_desc = steps[step_index]
+
+                # JIT OTP expansion: poll IMAP only when we reach the OTP placeholder
+                # step and only if this index is NOT inside a previously-expanded range.
+                if step_index >= otp_expanded_end and is_otp_step(step_desc):
+                    expanded = self._fetch_otp_and_format_steps(step_desc, db, user_id)
+                    steps[step_index:step_index + 1] = expanded
+                    total_steps = len(steps)
+                    otp_expanded_end = step_index + len(expanded)
+                    step_desc = steps[step_index]
+
                 step_start = datetime.utcnow()
                 
                 try:
@@ -983,6 +1001,8 @@ class StagehandExecutionService:
                         screenshot_path=screenshot_path,
                         duration_seconds=duration
                     )
+                
+                step_index += 1
             
             # Get final screenshot
             final_screenshot = await self._capture_screenshot(
