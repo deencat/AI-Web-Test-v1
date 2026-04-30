@@ -389,6 +389,12 @@ def _normalize_agent_output(obj: dict) -> dict:
                 uf.pop("index", None)
             action = {"upload_file": uf}
 
+        # Clamp wait seconds to max 5 to avoid long unnecessary pauses
+        if "wait" in action:
+            w = action["wait"]
+            if isinstance(w, dict) and "seconds" in w:
+                w["seconds"] = min(w["seconds"], 5)
+
         normalized_actions.append(action)
 
     obj["action"] = normalized_actions
