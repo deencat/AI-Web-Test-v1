@@ -648,7 +648,7 @@ class ObservationAgent(BaseAgent):
             )
             enable_payment_click = task.payload.get(
                 "use_playwright_payment_click",
-                self.config.get("use_playwright_payment_click", False),
+                self.config.get("use_playwright_payment_click", True),
             )
 
             # Build task description for browser-use
@@ -712,8 +712,11 @@ class ObservationAgent(BaseAgent):
                 task_description += """
             PAYMENT METHOD SELECTION (CRITICAL):
             - All payment method icons share the same div CSS classes, so do NOT try to identify the correct icon by its div class.
-            - Instead, look for the img element whose alt attribute contains "Visa" (e.g. alt="Visa" or alt="Visa/Mastercard") and click that image or its immediate parent container.
-            - Do NOT click by element index ??always locate by the img alt text containing "Visa".
+            - MANDATORY STEP 1: Before clicking ANYTHING on the Payment Method page, use **find_elements** with query="img" to list all img elements and identify the one whose alt attribute contains "Visa".
+            - MANDATORY STEP 2: Confirm the element text/alt is exactly the Visa icon (NOT a bell icon, NOT a wallet icon, NOT a notification icon). Only proceed after you have verified the correct element.
+            - MANDATORY STEP 3: Click the identified Visa img element or its immediate parent div, then locate and click the "Checkout" button by its text label.
+            - Do NOT click by element index — always locate by the img alt text containing "Visa".
+            - The Visa payment icon is inside the main page content area, NOT in the header navigation bar. Header icons (bell/notification, wallet) are NOT the payment method.
             """
             try:
                 from app.utils.three_uat_test_credentials import (
