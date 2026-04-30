@@ -431,9 +431,14 @@ class CognitiveServicesAzureAdapter:
         create_kwargs: dict = dict(
             model=self._deployment,
             messages=formatted,
-            temperature=temperature,
-            max_tokens=max_tokens,
+            max_completion_tokens=max_tokens,
         )
+        # temperature is not supported by o-series / gpt-5.x models; skip it
+        if temperature is not None and temperature > 0:
+            try:
+                create_kwargs["temperature"] = temperature
+            except Exception:
+                pass
         if output_format is not None:
             create_kwargs["response_format"] = {"type": "json_object"}
 
