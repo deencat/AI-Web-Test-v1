@@ -1620,14 +1620,18 @@ class ObservationAgent(BaseAgent):
             # Clean endpoint: remove /openai/v1 suffix, SDK adds it
             clean_endpoint = endpoint.replace("/openai/v1", "").replace("/openai", "").rstrip("/")
             
+            api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+            max_tokens = int(os.getenv("AZURE_OPENAI_MAX_COMPLETION_TOKENS", "4096"))
+            temperature = float(os.getenv("AZURE_OPENAI_TEMPERATURE", "0.2"))
+
             adapter = ChatAzureOpenAI(
                 model=deployment,
                 api_key=api_key,
                 azure_endpoint=clean_endpoint,
                 azure_deployment=deployment,
-                api_version="2024-12-01-preview",  # Supports json_schema structured output
-                temperature=0.2,
-                max_completion_tokens=4096,
+                api_version=api_version,
+                temperature=temperature,
+                max_completion_tokens=max_tokens,
             )
             logger.info(
                 f"Browser-use ChatAzureOpenAI adapter created: model={adapter.model}, "
