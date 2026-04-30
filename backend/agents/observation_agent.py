@@ -1593,22 +1593,19 @@ class ObservationAgent(BaseAgent):
 
         # --- Attempt 1: Use browser-use's built-in ChatAzureOpenAI ---
         import os
-        # Collect credentials from llm_client or env vars
-        api_key = ""
-        endpoint = ""
-        deployment = ""
+        # Env vars take priority; fall back to llm_client attributes if not set
+        api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
+        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
+        deployment = os.getenv("AZURE_OPENAI_MODEL", "")
 
-        if self.llm_client and hasattr(self.llm_client, 'api_key'):
+        if not api_key and self.llm_client and hasattr(self.llm_client, 'api_key'):
             api_key = self.llm_client.api_key
+        if not endpoint and self.llm_client:
             endpoint = getattr(self.llm_client, 'endpoint', '')
-            deployment = getattr(self.llm_client, 'deployment', '')
-
-        if not api_key:
-            api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
-        if not endpoint:
-            endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
+        if not deployment and self.llm_client:
+            deployment = getattr(self.llm_client, 'deployment', getattr(self.llm_client, 'model', ''))
         if not deployment:
-            deployment = os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT")
+            deployment = "ChatGPT-UAT"
 
         api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
         max_tokens = int(os.getenv("AZURE_OPENAI_MAX_COMPLETION_TOKENS", "4096"))
