@@ -51,6 +51,22 @@ DEFAULT_OBSERVATION_BROWSER_ARGS = [
     "--disable-dev-shm-usage",
     "--no-first-run",
     "--no-default-browser-check",
+    "--no-sandbox",
+    "--disable-gpu",
+    "--disable-software-rasterizer",
+    "--disable-background-timer-throttling",
+    "--disable-renderer-backgrounding",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-ipc-flooding-protection",
+    "--disable-hang-monitor",
+    "--disable-prompt-on-repost",
+    "--disable-domain-reliability",
+    "--disable-component-update",
+    "--disable-client-side-phishing-detection",
+    # Suppress Chrome's native "Save password?" and "Use passkey?" dialogs
+    "--disable-features=PasswordManager,CredentialManagementAPI",
+    "--password-store=basic",
+    "--disable-save-password-bubble",
 ]
 
 from agents.base_agent import (
@@ -591,10 +607,47 @@ class ObservationAgent(BaseAgent):
                 http_credentials=http_credentials,
             )
 
+            # If the browser was not primed (no HTTP credentials), start it explicitly
+            # and navigate to the target URL so the CDP session is ready before the
+            # agent fires its first BrowserStateRequestEvent.  Without this, browser-use
+            # fires the event while the browser is still on about:blank / CDP is not yet
+            # connected, causing all watchdog handlers to fail 6/6 times and the agent
+            # to abort immediately with "Stopping due to 5 consecutive failures".
+            if not initial_page_primed:
+                try:
+                    start_fn = getattr(browser, "start", None)
+                    if callable(start_fn):
+                        start_result = start_fn()
+                        if inspect.isawaitable(start_result):
+                            await start_result
+                    navigate_fn = getattr(browser, "navigate_to", None)
+                    if callable(navigate_fn):
+                        nav_result = navigate_fn(url)
+                        if inspect.isawaitable(nav_result):
+                            await nav_result
+                        logger.info(f"ObservationAgent: Browser pre-navigated to {url} (CDP warm-up)")
+                    # Small grace period for the CDP watchdogs to register
+                    await asyncio.sleep(1.0)
+                except Exception as e:
+                    logger.warning(
+                        f"ObservationAgent: Browser warm-up failed ({e}); agent will attempt to navigate itself"
+                    )
+
             start_instruction = (
                 f"You are already on {url}. Continue from the current page and complete the following task:"
                 if initial_page_primed
                 else f"Navigate to {url} and complete the following task:"
+            )
+
+            # Resolve opt-in flags here so they're available for both the task description
+            # and the tool registration block below.
+            enable_sig = task.payload.get(
+                "enable_signature_pad_tool",
+                self.config.get("enable_signature_pad_tool", True),
+            )
+            enable_payment_click = task.payload.get(
+                "use_playwright_payment_click",
+                self.config.get("use_playwright_payment_click", False),
             )
 
             # Build task description for browser-use
@@ -633,6 +686,22 @@ class ObservationAgent(BaseAgent):
             - If you see "Subscriber's signature", "Sales and Service Contract", or a large empty signature area with a canvas, a single click will NOT work.
             - Use the **draw_signature_pad** action to draw a stroke on the signature canvas (optional: pass canvas_css_selector if you know it from find_elements).
             - After drawing, use **Preview** if the page offers it, confirm checkboxes if needed, then **Next** or **Submit** to continue.
+            """
+
+            # Payment method instructions — wording differs based on whether the Playwright tool is on
+            if enable_payment_click:
+                task_description += """
+            PAYMENT METHOD SELECTION (CRITICAL):
+            - When you reach the Payment Method page with multiple payment icons (VISA/MasterCard, UnionPay, etc.), do NOT click by index number.
+            - Instead, use the **click_visa_mastercard_and_checkout** action. It will precisely click the VISA/MasterCard icon using the img alt attribute and then click Checkout automatically.
+            - This avoids accidentally selecting UnionPay or the wrong payment method.
+            """
+            else:
+                task_description += """
+            PAYMENT METHOD SELECTION (CRITICAL):
+            - All payment method icons share the same div CSS classes, so do NOT try to identify the correct icon by its div class.
+            - Instead, look for the img element whose alt attribute contains "Visa" (e.g. alt="Visa" or alt="Visa/Mastercard") and click that image or its immediate parent container.
+            - Do NOT click by element index — always locate by the img alt text containing "Visa".
             """
             try:
                 from app.utils.three_uat_test_credentials import (
@@ -738,26 +807,28 @@ class ObservationAgent(BaseAgent):
                 agent_kwargs["available_file_paths"] = available_file_paths
                 logger.info(f"ObservationAgent: Providing available_file_paths for uploads: {available_file_paths}")
 
-            # Custom tool: canvas signature stroke (same BrowserSession/CDP as browser-use)
-            enable_sig = task.payload.get(
-                "enable_signature_pad_tool",
-                self.config.get("enable_signature_pad_tool", True),
-            )
-            if enable_sig:
+            # enable_sig and enable_payment_click are resolved earlier (before task_description)
+            # so they are available for both the task prompt and the tool registration below.
+
+            if enable_sig or enable_payment_click:
                 try:
                     from browser_use.tools.service import Tools as BrowserUseTools
-
-                    from agents.browser_use_signature_tool import register_draw_signature_pad_tool
-
                     _tools = BrowserUseTools()
-                    register_draw_signature_pad_tool(_tools)
+
+                    if enable_sig:
+                        from agents.browser_use_signature_tool import register_draw_signature_pad_tool
+                        register_draw_signature_pad_tool(_tools)
+                        logger.info("ObservationAgent: Registered draw_signature_pad tool")
+
+                    if enable_payment_click:
+                        from agents.browser_use_payment_tool import register_click_visa_mastercard_tool
+                        register_click_visa_mastercard_tool(_tools)
+                        logger.info("ObservationAgent: Registered click_visa_mastercard_and_checkout tool (use_playwright_payment_click=true)")
+
                     agent_kwargs["tools"] = _tools
-                    logger.info(
-                        "ObservationAgent: Registered draw_signature_pad tool for e-signature canvases"
-                    )
                 except Exception as e:
                     logger.warning(
-                        "ObservationAgent: Could not register signature pad tool (%s); using default tools",
+                        "ObservationAgent: Could not register custom tools (%s); using default tools",
                         e,
                     )
 
@@ -1201,6 +1272,28 @@ class ObservationAgent(BaseAgent):
 
         headers = self._build_http_auth_headers(http_credentials)
 
+        # Resolve Playwright's own Chromium executable so browser-use always uses
+        # the pinned Playwright build instead of a system Chrome (which may show
+        # black screens or be missing CDP support on some machines).
+        # NOTE: sync_playwright() cannot be called inside an asyncio loop, so we
+        # use a subprocess to ask Python for the path instead.
+        _playwright_chromium_path: Optional[str] = None
+        try:
+            import subprocess as _sp, sys as _sys
+            _result = _sp.run(
+                [_sys.executable, "-c",
+                 "from playwright.sync_api import sync_playwright;" 
+                 "p=sync_playwright().start();print(p.chromium.executable_path);p.stop()"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if _result.returncode == 0 and _result.stdout.strip():
+                _playwright_chromium_path = _result.stdout.strip()
+                logger.info(f"ObservationAgent: Using Playwright Chromium at {_playwright_chromium_path}")
+            else:
+                logger.warning(f"ObservationAgent: Could not resolve Playwright Chromium path: {_result.stderr.strip()}")
+        except Exception as _e:
+            logger.warning(f"ObservationAgent: Could not resolve Playwright Chromium path: {_e}")
+
         profile_kwargs: Dict[str, Any] = {
             "headless": False,
             "viewport": dict(DEFAULT_OBSERVATION_VIEWPORT),
@@ -1211,6 +1304,8 @@ class ObservationAgent(BaseAgent):
             "wait_for_network_idle_page_load_time": 1.0,
             "wait_between_actions": 0.2,
         }
+        if _playwright_chromium_path:
+            profile_kwargs["chrome_instance_path"] = _playwright_chromium_path
         if headers:
             profile_kwargs["headers"] = headers
         storage_state = self._build_storage_state(url, browser_profile_data)
