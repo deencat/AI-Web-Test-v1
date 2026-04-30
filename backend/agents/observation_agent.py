@@ -648,7 +648,7 @@ class ObservationAgent(BaseAgent):
             )
             enable_payment_click = task.payload.get(
                 "use_playwright_payment_click",
-                self.config.get("use_playwright_payment_click", True),
+                self.config.get("use_playwright_payment_click", False),
             )
 
             # Build task description for browser-use
