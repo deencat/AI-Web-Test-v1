@@ -35,6 +35,7 @@ import asyncio
 import base64
 import inspect
 import logging
+import os
 from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass
 from urllib.parse import quote, urljoin, urlparse, urlunparse
@@ -683,7 +684,7 @@ class ObservationAgent(BaseAgent):
 
             FLOW CONTINUITY (CRITICAL):
             - If a reminder, confirmation, or informational modal appears, click the close, confirm, or I understand button and continue from the current step without restarting the purchase flow.
-            - MODAL PRIORITY (CRITICAL): When a modal/dialog is visible (e.g. "Reminder" about HKID card, "I understand" button), ONLY click elements INSIDE the modal. Do NOT click "Next" or other buttons in the background?”they are blocked by the modal. The modal is on top; click "I understand", "Close", or the modal's confirm button first. Ignore background elements until the modal is dismissed.
+            - MODAL PRIORITY (CRITICAL): When a modal/dialog is visible (e.g. "Reminder" about HKID card, "I understand" button), ONLY click elements INSIDE the modal. Do NOT click "Next" or other buttons in the background?ï¿½they are blocked by the modal. The modal is on top; click "I understand", "Close", or the modal's confirm button first. Ignore background elements until the modal is dismissed.
             - Stay in the current checkout/subscription journey whenever possible. Do not navigate back, reopen the start page, or intentionally restart the wizard unless the site forces it.
             - If the site unexpectedly returns to an earlier plan-selection step, reselect the same plan or add-on choices you already made and resume progressing forward instead of starting over with a different plan.
             - When the site keeps your current selections visible, preserve them and continue to the next incomplete step.
@@ -1571,6 +1572,7 @@ class ObservationAgent(BaseAgent):
         For non-Azure providers, skip ChatAzureOpenAI entirely and use the
         provider-aware custom adapter.
         """
+        import os
         configured_provider = self.config.get("llm_provider", "azure")
         configured_model = self.config.get("llm_model", (os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT")))
 
@@ -1592,7 +1594,6 @@ class ObservationAgent(BaseAgent):
                 return None
 
         # --- Attempt 1: Use browser-use's built-in ChatAzureOpenAI ---
-        import os
         # Env vars take priority; fall back to llm_client attributes if not set
         api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
         endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
@@ -1822,45 +1823,45 @@ class ObservationAgent(BaseAgent):
                 "subscription successful",
                 "successfully completed",
                 "subscribed page",
-                "ç¢ºè?",
-                "?å?",
-                "è¨‚å–®ç·¨è?",
-                "è¨‚å–®ç¢ºè?",
-                "ä»˜æ¬¾?å?",
+                "ç¢ºï¿½?",
+                "?ï¿½ï¿½?",
+                "è¨‚å–®ç·¨ï¿½?",
+                "è¨‚å–®ç¢ºï¿½?",
+                "ä»˜æ¬¾?ï¿½ï¿½?",
             ])
         
         # Registration/signup flow indicators
-        if any(keyword in instruction_lower for keyword in ["register", "signup", "sign up", "create account", "è¨»å?"]):
+        if any(keyword in instruction_lower for keyword in ["register", "signup", "sign up", "create account", "è¨»ï¿½?"]):
             indicators.extend([
                 "registration complete", "account created", "welcome", "verify your email",
                 "registration successful", "signup complete", "account activated",
-                "è¨»å??å?", "å¸³æˆ¶å·²å»ºç«?, "æ­¡è?"
+                "è¨»å†Šå®Œæˆ", "å¸³æˆ¶å·²å»ºç«‹", "æ­¡è¿"
             ])
         
         # Login flow indicators
-        if any(keyword in instruction_lower for keyword in ["login", "sign in", "log in", "?»å…¥"]):
+        if any(keyword in instruction_lower for keyword in ["login", "sign in", "log in", "?ï¿½å…¥"]):
             indicators.extend([
                 "dashboard", "welcome back", "logged in", "my account", "profile",
-                "home", "?»å…¥?å?", "æ­¡è??ä?"
+                "home", "?ï¿½å…¥?ï¿½ï¿½?", "æ­¡ï¿½??ï¿½ï¿½?"
             ])
         
         # Form submission indicators
-        if any(keyword in instruction_lower for keyword in ["submit", "send", "contact", "inquiry", "?äº¤"]):
+        if any(keyword in instruction_lower for keyword in ["submit", "send", "contact", "inquiry", "?ï¿½äº¤"]):
             indicators.extend([
                 "submitted", "sent", "received", "thank you", "we will contact you",
-                "message sent", "form submitted", "å·²æ?äº?, "å·²ç™¼??
+                "message sent", "form submitted", "å·²æäº¤", "å·²ç™¼é€"
             ])
         
         # Search flow indicators
-        if any(keyword in instruction_lower for keyword in ["search", "find", "?œå?", "?¥æ‰¾"]):
+        if any(keyword in instruction_lower for keyword in ["search", "find", "?ï¿½ï¿½?", "?ï¿½æ‰¾"]):
             indicators.extend([
-                "results", "found", "showing", "matches", "?œå?çµæ?", "?¾åˆ°"
+                "results", "found", "showing", "matches", "?ï¿½ï¿½?çµï¿½?", "?ï¿½åˆ°"
             ])
         
         # Generic success indicators (always include)
         indicators.extend([
             "success", "complete", "done", "finished", "confirmed",
-            "?å?", "å®Œæ?", "ç¢ºè?"
+            "?ï¿½ï¿½?", "å®Œï¿½?", "ç¢ºï¿½?"
         ])
         
         # Remove duplicates while preserving order
