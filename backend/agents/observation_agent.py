@@ -671,6 +671,12 @@ class ObservationAgent(BaseAgent):
             - After a file upload completes, wait briefly (1–3s) for validation/UI to update before clicking "Next" or "Continue".
             - If you click "Next" twice in a row and the page URL and main content do not change, STOP repeating: dismiss any overlay, scroll, fix a validation error,
               or click a different element that matches the step (e.g. checkbox, I understand).
+
+            LOADING SPINNER (CRITICAL):
+            - NEVER click any element whose visible text is "Loading..." or whose role is "status". These are spinner overlays — clicking them does nothing useful and corrupts element indices for the next step.
+            - After any click that triggers a page transition or form submission, ALWAYS wait for spinners to fully disappear before attempting the next click.
+            - If a spinner is visible and you need to click "Next", use the **wait** action (5–10 seconds) first, then re-read the page state and find the "Next" button by its text — do NOT reuse the index from a previous step, as the DOM will have re-rendered and indices will have shifted.
+            - If after waiting the spinner is still present, wait again rather than clicking anything in the background.
             
             Extract UI elements from each page you visit during this flow.
             Stop when you reach the confirmation/success page (or payment page if that is the end of the flow).
