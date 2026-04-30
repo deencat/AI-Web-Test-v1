@@ -353,6 +353,48 @@ class AzureOpenAIAdapter:
 # CognitiveServicesAzureAdapter
 # ---------------------------------------------------------------------------
 
+def _normalize_agent_output(obj: dict) -> dict:
+    """
+    Normalize AgentOutput dict produced by gpt-5.x / o-series models that use
+    slightly different field names than browser-use expects.
+
+    Known differences vs browser-use's UploadFileActionModel:
+      - Model emits: {"upload_file": {"file_path": "...", "index": N}}
+      - Expected:    {"upload_file": {"path": "..."}}
+
+    Also handles: upload_file action emitted at the top level of an action dict
+    instead of wrapped in {"upload_file": {...}}.
+    """
+    if not isinstance(obj, dict):
+        return obj
+
+    actions = obj.get("action")
+    if not isinstance(actions, list):
+        return obj
+
+    normalized_actions = []
+    for action in actions:
+        if not isinstance(action, dict):
+            normalized_actions.append(action)
+            continue
+
+        # Fix upload_file field names
+        if "upload_file" in action:
+            uf = action["upload_file"]
+            if isinstance(uf, dict):
+                # Rename file_path → path
+                if "file_path" in uf and "path" not in uf:
+                    uf["path"] = uf.pop("file_path")
+                # Remove extra fields not in the model schema
+                uf.pop("index", None)
+            action = {"upload_file": uf}
+
+        normalized_actions.append(action)
+
+    obj["action"] = normalized_actions
+    return obj
+
+
 class CognitiveServicesAzureAdapter:
     """
     Browser-use compatible adapter for cognitiveservices.azure.com endpoints.
@@ -462,14 +504,14 @@ class CognitiveServicesAzureAdapter:
             except Exception as e:
                 logger.warning(f"Failed to parse response into {output_format.__name__}: {e}")
                 try:
-                    completion = output_format.model_validate(json.loads(response_text))
+                    completion = output_format.model_validate(_normalize_agent_output(json.loads(response_text)))
                 except Exception as e2:
                     # Last resort: extract first complete JSON object via decoder
                     try:
                         decoder = json.JSONDecoder()
                         clean = response_text.strip()
                         obj, _ = decoder.raw_decode(clean)
-                        completion = output_format.model_validate(obj)
+                        completion = output_format.model_validate(_normalize_agent_output(obj))
                         logger.info("First-JSON-object extraction succeeded")
                     except Exception as e3:
                         logger.error(f"All parsing attempts failed: {e3}")
