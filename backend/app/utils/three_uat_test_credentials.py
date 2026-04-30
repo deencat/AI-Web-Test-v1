@@ -33,11 +33,13 @@ def three_uat_payment_test_instruction_block() -> str:
     return f"""
 
             UAT PAYMENT / CARD DETAILS (Three HK wwwuat — use only on this environment):
-            - When the flow asks for credit or debit card payment, use these UAT test card details exactly:
+            - When the flow reaches the Auto-pay Setup page, you MUST fill ALL THREE card fields before clicking Next:
               • Card number: {THREE_UAT_TEST_PAYMENT_CARD_NUMBER}
-              • Expiry date: {THREE_UAT_TEST_PAYMENT_EXPIRY}
-              • CVV: {THREE_UAT_TEST_PAYMENT_CVV}
-            - Enter them in the site's card fields as shown (expiry may be split into month/year fields: use 12 and 28 or 2028 per the form).
+              • Expiry date (Exp. Date MM/YY field): {THREE_UAT_TEST_PAYMENT_EXPIRY}  ← REQUIRED, do not skip
+              • CVV / Security Code (if visible): {THREE_UAT_TEST_PAYMENT_CVV}
+            - Fill card number first, then cardholder name (if required), then expiry date, then CVV (if shown).
+            - If the Next button does not advance after clicking, check for a "This field is required" error — it is almost always the Expiry Date field that is empty. Enter {THREE_UAT_TEST_PAYMENT_EXPIRY} in the Exp. Date field, then click Next again.
+            - Expiry date may be a single MM/YY text input or split into separate Month / Year dropdowns; adapt accordingly.
             - These are sandbox/test values for http(s)://{THREE_HK_UAT_HOSTNAME}/ only; do not assume they work on production.
             """
 
