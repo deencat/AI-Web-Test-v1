@@ -464,11 +464,19 @@ class CognitiveServicesAzureAdapter:
                 try:
                     completion = output_format.model_validate(json.loads(response_text))
                 except Exception as e2:
-                    logger.error(f"Fallback parsing also failed: {e2}")
-                    raise ValueError(
-                        f"LLM response missing required fields. "
-                        f"Expected: {output_format.__name__}. Response: {response_text[:300]}"
-                    ) from e2
+                    # Last resort: extract first complete JSON object via decoder
+                    try:
+                        decoder = json.JSONDecoder()
+                        clean = response_text.strip()
+                        obj, _ = decoder.raw_decode(clean)
+                        completion = output_format.model_validate(obj)
+                        logger.info("First-JSON-object extraction succeeded")
+                    except Exception as e3:
+                        logger.error(f"All parsing attempts failed: {e3}")
+                        raise ValueError(
+                            f"LLM response missing required fields. "
+                            f"Expected: {output_format.__name__}. Response: {response_text[:300]}"
+                        ) from e3
 
         usage = None
         if hasattr(response, "usage") and response.usage:
