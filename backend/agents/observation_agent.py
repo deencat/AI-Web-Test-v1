@@ -668,6 +668,7 @@ class ObservationAgent(BaseAgent):
               e.g. for "Login" choose the control labeled "Login", NOT a promo tile, price banner, or unrelated text like "Buy" or a dollar amount.
             - If the listed "index" for your intended action points at a large card, carousel, or price (e.g. "$338") while the task says Login/Next/Checkbox,
               pick a different index that matches the requirement or scroll until the correct control is in view.
+            - FORBIDDEN ELEMENT — "Download My3 App": This button/link appears on many pages of the Three HK site. It must NEVER be clicked. Before confirming any click action, check that the target element's visible text is NOT "Download My3 App". If your intended index resolves to "Download My3 App", immediately abandon that index and find the correct target by its text label.
             - Scroll the target control into the center of the viewport before clicking. For checkboxes/terms, click the checkbox or its label, not a nearby price div.
             - After a file upload completes, wait briefly (1??s) for validation/UI to update before clicking "Next" or "Continue".
             - If you click "Next" twice in a row and the page URL and main content do not change, STOP repeating: dismiss any overlay, scroll, fix a validation error,
@@ -678,6 +679,8 @@ class ObservationAgent(BaseAgent):
             - After any click that triggers a page transition or form submission, ALWAYS wait for spinners to fully disappear before attempting the next click.
             - If a spinner is visible and you need to click "Next", use the **wait** action (5??0 seconds) first, then re-read the page state and find the "Next" button by its text ??do NOT reuse the index from a previous step, as the DOM will have re-rendered and indices will have shifted.
             - If after waiting the spinner is still present, wait again rather than clicking anything in the background.
+            - STALE INDEX DANGER: After any wait action, element indices are invalidated. NEVER re-use a saved index number to click "Next" or any other button after a wait — always look up the button fresh by its visible text (e.g. text="Next"). Stale indices frequently point to wrong elements like "Download My3 App" or other buttons.
+            - ABSOLUTE PROHIBITION: The button/link labeled "Download My3 App" must NEVER be clicked under ANY circumstance — not even if it appears at a previously-saved index for "Next". If you are about to click an element and its text is "Download My3 App", STOP immediately and find the real "Next" button by its label text instead.
             
             Extract UI elements from each page you visit during this flow.
             Stop when you reach the confirmation/success page (or payment page if that is the end of the flow).
