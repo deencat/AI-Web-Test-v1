@@ -688,6 +688,8 @@ class ObservationAgent(BaseAgent):
             - Stay in the current checkout/subscription journey whenever possible. Do not navigate back, reopen the start page, or intentionally restart the wizard unless the site forces it.
             - If the site unexpectedly returns to an earlier plan-selection step, reselect the same plan or add-on choices you already made and resume progressing forward instead of starting over with a different plan.
             - When the site keeps your current selections visible, preserve them and continue to the next incomplete step.
+            - CRITICAL — DO NOT RESTART AFTER PAYMENT: Once you have passed the Auto-pay Setup page, you are INSIDE the checkout tunnel. If you are then redirected to any account overview, wallet, home, or dashboard page, DO NOT click "5G Monthly Plans" or restart the subscription flow. Instead, look on the current page for an order confirmation banner, order ID, success notification, "Thank you" message, or receipt link — those indicate a successful purchase. Only look forward, never backward.
+            - CRITICAL — WALLET PAGE DURING CHECKOUT: If you see the wallet/account home page at any point AFTER the Auto-pay Setup page, it means the checkout may have completed or is in progress. Scan the page for a success/confirmation message BEFORE taking any other action. Never treat a wallet-page appearance as a reason to restart from "Click 5G Monthly Plans".
 
             SIGNATURE PAD / E-SIGNATURE (CRITICAL):
             - If you see "Subscriber's signature", "Sales and Service Contract", or a large empty signature area with a canvas, a single click will NOT work.
