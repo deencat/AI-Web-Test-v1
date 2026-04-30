@@ -5,6 +5,7 @@ Follows ISTQB, IEEE 29119, FMEA standards for risk-based testing
 from agents.base_agent import BaseAgent, AgentCapability, TaskContext, TaskResult
 from typing import Dict, List, Tuple, Optional, Any
 from collections import defaultdict, deque
+import os
 import time
 import json
 import logging
@@ -18,9 +19,9 @@ logger = logging.getLogger(__name__)
 
 class RiskPriority(Enum):
     """Priority levels based on RPN (Risk Priority Number)"""
-    CRITICAL = "critical"  # RPN ≥ 80
-    HIGH = "high"          # RPN ≥ 50
-    MEDIUM = "medium"      # RPN ≥ 20
+    CRITICAL = "critical"  # RPN ??80
+    HIGH = "high"          # RPN ??50
+    MEDIUM = "medium"      # RPN ??20
     LOW = "low"            # RPN < 20
 
 
@@ -72,7 +73,7 @@ class AnalysisAgent(BaseAgent):
         if self.use_llm:
             from llm.client_factory import get_llm_client
             llm_provider = config.get("llm_provider", "azure") if config else "azure"
-            llm_model = config.get("llm_model", "ChatGPT-UAT") if config else "ChatGPT-UAT"
+            llm_model = config.get("llm_model", (os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT"))) if config else (os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT"))
             self.llm_client = get_llm_client(
                 llm_provider,
                 llm_model,
@@ -1284,7 +1285,7 @@ Respond with valid JSON only."""
         Execute a scenario in real-time using Phase 2 execution engine.
         
         Converts BDD scenario (Given/When/Then) to executable test steps
-        and executes using 3-tier strategy (Playwright → Hybrid → Stagehand AI).
+        and executes using 3-tier strategy (Playwright ??Hybrid ??Stagehand AI).
         
         Returns execution result with success rate for scoring.
         """
@@ -1362,7 +1363,7 @@ Respond with valid JSON only."""
                 execution_service.set_runtime_http_credentials(resolved_http_creds)
 
                 # Execute using Phase 2 engine (3-tier strategy)
-                # Note: StagehandExecutionService uses hybrid execution (Tier 1 → Tier 3)
+                # Note: StagehandExecutionService uses hybrid execution (Tier 1 ??Tier 3)
                 if execution_id and self.db:
                     # Full execution with database tracking
                     execution_result = await execution_service.execute_test(
@@ -1422,7 +1423,7 @@ Respond with valid JSON only."""
                     for idx, step_desc in enumerate(test_steps, start=1):
                         try:
                             logger.info(f"Executing step {idx}/{total_steps}: {step_desc}")
-                            # Use hybrid execution (Tier 1 → Tier 3)
+                            # Use hybrid execution (Tier 1 ??Tier 3)
                             result = await execution_service._execute_step_hybrid(step_desc, idx)
                             if result.get("success", False):
                                 passed_steps += 1
@@ -1452,7 +1453,7 @@ Respond with valid JSON only."""
                 
                 # Determine tier used (for database execution, default to hybrid)
                 if execution_id and self.db:
-                    tier_used = "hybrid"  # StagehandExecutionService uses hybrid (Tier 1 → Tier 3)
+                    tier_used = "hybrid"  # StagehandExecutionService uses hybrid (Tier 1 ??Tier 3)
                 # tier_used is already set from the loop above for non-database execution
                 
                 logger.info(f"Scenario {scenario.get('scenario_id')} executed: "
@@ -1525,7 +1526,7 @@ Respond with valid JSON only."""
         else:
             logger.warning(f"No URL found in page_context. page_context keys: {list(page_context.keys()) if page_context else 'None'}")
         
-        # Given: Preconditions → Navigate/setup (only if no URL was added above)
+        # Given: Preconditions ??Navigate/setup (only if no URL was added above)
         given = scenario.get("given", "")
         url_was_added = bool(page_context and page_context.get("url") and page_context["url"].startswith(("http://", "https://")))
         if given and not url_was_added:
@@ -1541,7 +1542,7 @@ Respond with valid JSON only."""
             elif "navigate" in given_lower or "go to" in given_lower:
                 steps.append(given)
         
-        # When: Actions → Click, type, navigate
+        # When: Actions ??Click, type, navigate
         when = scenario.get("when", "")
         if when:
             # Parse actions from "when" clause
@@ -1590,7 +1591,7 @@ Respond with valid JSON only."""
                     elif part.strip():
                         steps.append(clean_part)  # Include other actions
         
-        # Then: Assertions → Verify, check, wait
+        # Then: Assertions ??Verify, check, wait
         then = scenario.get("then", "")
         if then:
             if not then.lower().startswith("verify"):
@@ -1621,7 +1622,7 @@ Respond with valid JSON only."""
     
     def _estimate_token_usage(self, scenarios: List[Dict]) -> int:
         """Estimate token usage for LLM calls"""
-        # Rough estimation: 1 token ≈ 4 characters
+        # Rough estimation: 1 token ??4 characters
         input_chars = len(json.dumps(scenarios))
         # Output: risk assessments for each scenario
         output_chars = len(scenarios) * 200  # ~200 chars per assessment

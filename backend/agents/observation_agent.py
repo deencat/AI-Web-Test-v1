@@ -152,7 +152,7 @@ class ObservationAgent(BaseAgent):
     This agent can:
     1. Crawl web application pages (follow links, map structure)
     2. Extract UI elements (buttons, inputs, forms, links)
-    3. Identify user flows (login → dashboard → settings)
+    3. Identify user flows (login ??dashboard ??settings)
     4. Take screenshots for visual verification
     5. Measure page load times and performance
     """
@@ -188,18 +188,18 @@ class ObservationAgent(BaseAgent):
         self.take_screenshots = self.config.get("take_screenshots", True)
         self.use_llm = self.config.get("use_llm", True)  # Enable LLM by default
         # UAT checkout (login, upload, signature, payment, post-payment) often needs many steps; override via
-        # config["max_browser_steps"] or task payload["max_browser_steps"] (capped 1–500).
+        # config["max_browser_steps"] or task payload["max_browser_steps"] (capped 1??00).
         self.max_browser_steps = self.config.get("max_browser_steps", 120)
         
         # OPT-3: Element Finding Cache - Cache selectors for repeated scenarios (30-40% faster)
         # Key: (element_type, element_id, element_class) -> selector
         self._element_cache: Dict[Tuple[str, Optional[str], Optional[str]], str] = {}
         
-        # Initialize LLM client — provider/model driven by config (Sprint 10.6)
+        # Initialize LLM client ??provider/model driven by config (Sprint 10.6)
         self.llm_client = None
         if self.use_llm and LLM_AVAILABLE:
             llm_provider = self.config.get("llm_provider", "azure")
-            llm_model = self.config.get("llm_model", "ChatGPT-UAT")
+            llm_model = self.config.get("llm_model", (os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT")))
             self.llm_client = get_llm_client(
                 llm_provider,
                 llm_model,
@@ -660,7 +660,7 @@ class ObservationAgent(BaseAgent):
             - Do NOT click "Login with Gmail", "Sign in with Google", or any social/OAuth login button.
             - Do NOT open new tabs or new windows for login. Stay on the same site.
             - If the page shows both an email/password form and a Gmail/Google button, use ONLY the email/password form.
-            - Typical flow: Click "Login" → enter email in the email field → click Next/Login → enter password → click Login/Submit.
+            - Typical flow: Click "Login" ??enter email in the email field ??click Next/Login ??enter password ??click Login/Submit.
 
             ELEMENT SELECTION / CLICK ACCURACY (CRITICAL):
             - When choosing an index to click, prefer a real control (button, link, or span inside a button) whose visible text or role matches the task:
@@ -668,14 +668,14 @@ class ObservationAgent(BaseAgent):
             - If the listed "index" for your intended action points at a large card, carousel, or price (e.g. "$338") while the task says Login/Next/Checkbox,
               pick a different index that matches the requirement or scroll until the correct control is in view.
             - Scroll the target control into the center of the viewport before clicking. For checkboxes/terms, click the checkbox or its label, not a nearby price div.
-            - After a file upload completes, wait briefly (1–3s) for validation/UI to update before clicking "Next" or "Continue".
+            - After a file upload completes, wait briefly (1??s) for validation/UI to update before clicking "Next" or "Continue".
             - If you click "Next" twice in a row and the page URL and main content do not change, STOP repeating: dismiss any overlay, scroll, fix a validation error,
               or click a different element that matches the step (e.g. checkbox, I understand).
 
             LOADING SPINNER (CRITICAL):
-            - NEVER click any element whose visible text is "Loading..." or whose role is "status". These are spinner overlays — clicking them does nothing useful and corrupts element indices for the next step.
+            - NEVER click any element whose visible text is "Loading..." or whose role is "status". These are spinner overlays ??clicking them does nothing useful and corrupts element indices for the next step.
             - After any click that triggers a page transition or form submission, ALWAYS wait for spinners to fully disappear before attempting the next click.
-            - If a spinner is visible and you need to click "Next", use the **wait** action (5–10 seconds) first, then re-read the page state and find the "Next" button by its text — do NOT reuse the index from a previous step, as the DOM will have re-rendered and indices will have shifted.
+            - If a spinner is visible and you need to click "Next", use the **wait** action (5??0 seconds) first, then re-read the page state and find the "Next" button by its text ??do NOT reuse the index from a previous step, as the DOM will have re-rendered and indices will have shifted.
             - If after waiting the spinner is still present, wait again rather than clicking anything in the background.
             
             Extract UI elements from each page you visit during this flow.
@@ -683,7 +683,7 @@ class ObservationAgent(BaseAgent):
 
             FLOW CONTINUITY (CRITICAL):
             - If a reminder, confirmation, or informational modal appears, click the close, confirm, or I understand button and continue from the current step without restarting the purchase flow.
-            - MODAL PRIORITY (CRITICAL): When a modal/dialog is visible (e.g. "Reminder" about HKID card, "I understand" button), ONLY click elements INSIDE the modal. Do NOT click "Next" or other buttons in the background—they are blocked by the modal. The modal is on top; click "I understand", "Close", or the modal's confirm button first. Ignore background elements until the modal is dismissed.
+            - MODAL PRIORITY (CRITICAL): When a modal/dialog is visible (e.g. "Reminder" about HKID card, "I understand" button), ONLY click elements INSIDE the modal. Do NOT click "Next" or other buttons in the background?�they are blocked by the modal. The modal is on top; click "I understand", "Close", or the modal's confirm button first. Ignore background elements until the modal is dismissed.
             - Stay in the current checkout/subscription journey whenever possible. Do not navigate back, reopen the start page, or intentionally restart the wizard unless the site forces it.
             - If the site unexpectedly returns to an earlier plan-selection step, reselect the same plan or add-on choices you already made and resume progressing forward instead of starting over with a different plan.
             - When the site keeps your current selections visible, preserve them and continue to the next incomplete step.
@@ -694,7 +694,7 @@ class ObservationAgent(BaseAgent):
             - After drawing, use **Preview** if the page offers it, confirm checkboxes if needed, then **Next** or **Submit** to continue.
             """
 
-            # Payment method instructions — wording differs based on whether the Playwright tool is on
+            # Payment method instructions ??wording differs based on whether the Playwright tool is on
             if enable_payment_click:
                 task_description += """
             PAYMENT METHOD SELECTION (CRITICAL):
@@ -707,7 +707,7 @@ class ObservationAgent(BaseAgent):
             PAYMENT METHOD SELECTION (CRITICAL):
             - All payment method icons share the same div CSS classes, so do NOT try to identify the correct icon by its div class.
             - Instead, look for the img element whose alt attribute contains "Visa" (e.g. alt="Visa" or alt="Visa/Mastercard") and click that image or its immediate parent container.
-            - Do NOT click by element index — always locate by the img alt text containing "Visa".
+            - Do NOT click by element index ??always locate by the img alt text containing "Visa".
             """
             try:
                 from app.utils.three_uat_test_credentials import (
@@ -855,7 +855,7 @@ class ObservationAgent(BaseAgent):
             
             # Run the agent to navigate through the flow with wall-clock timeout (heartbeat loop).
             # Default 1200s (20m): long UAT checkout flows often exceed 10m; OTP/Gmail can need more.
-            # Task payload overrides agent config. Clamped to 60s–7200s.
+            # Task payload overrides agent config. Clamped to 60s??200s.
             _raw_flow_timeout = task.payload.get("max_flow_timeout_seconds")
             if _raw_flow_timeout is None:
                 _raw_flow_timeout = self.config.get("max_flow_timeout_seconds")
@@ -1343,7 +1343,7 @@ class ObservationAgent(BaseAgent):
         if cdp_client is None:
             logger.warning(
                 "ObservationAgent: CDP client root not available after start(); "
-                "cannot register server auth handler — preprod page may remain blocked"
+                "cannot register server auth handler ??preprod page may remain blocked"
             )
             return False
 
@@ -1440,7 +1440,7 @@ class ObservationAgent(BaseAgent):
             if inspect.isawaitable(start_result):
                 await start_result
 
-        # Register CDP auth handler — this is the only auth mechanism needed
+        # Register CDP auth handler ??this is the only auth mechanism needed
         await self._setup_cdp_server_auth(browser, normalized)
 
         # Navigate to the initial page; CDP handler responds to the 401 challenge
@@ -1572,7 +1572,7 @@ class ObservationAgent(BaseAgent):
         provider-aware custom adapter.
         """
         configured_provider = self.config.get("llm_provider", "azure")
-        configured_model = self.config.get("llm_model", "ChatGPT-UAT")
+        configured_model = self.config.get("llm_model", (os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT")))
 
         if configured_provider != "azure":
             try:
@@ -1605,7 +1605,7 @@ class ObservationAgent(BaseAgent):
         if not deployment and self.llm_client:
             deployment = getattr(self.llm_client, 'deployment', getattr(self.llm_client, 'model', ''))
         if not deployment:
-            deployment = "ChatGPT-UAT"
+            deployment = (os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT"))
 
         api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
         max_tokens = int(os.getenv("AZURE_OPENAI_MAX_COMPLETION_TOKENS", "4096"))
@@ -1615,12 +1615,12 @@ class ObservationAgent(BaseAgent):
         clean_endpoint = endpoint.replace("/openai/v1", "").replace("/openai", "").rstrip("/")
 
         # Auto-detect endpoint type:
-        # - cognitiveservices.azure.com  → use standard openai.AzureOpenAI SDK
-        # - openai.azure.com             → use browser-use's ChatAzureOpenAI (LangChain)
+        # - cognitiveservices.azure.com  ??use standard openai.AzureOpenAI SDK
+        # - openai.azure.com             ??use browser-use's ChatAzureOpenAI (LangChain)
         is_cognitive_services = "cognitiveservices.azure.com" in clean_endpoint
 
         if is_cognitive_services:
-            # --- Attempt 1a: Cognitive Services endpoint → standard openai SDK wrapped for browser-use ---
+            # --- Attempt 1a: Cognitive Services endpoint ??standard openai SDK wrapped for browser-use ---
             try:
                 from llm.browser_use_adapter import CognitiveServicesAzureAdapter
 
@@ -1640,7 +1640,7 @@ class ObservationAgent(BaseAgent):
             except Exception as e:
                 logger.warning(f"CognitiveServices adapter creation failed: {e}. Trying ChatAzureOpenAI...")
 
-        # --- Attempt 1b: Classic openai.azure.com endpoint → browser-use ChatAzureOpenAI ---
+        # --- Attempt 1b: Classic openai.azure.com endpoint ??browser-use ChatAzureOpenAI ---
         try:
             from browser_use.llm.azure.chat import ChatAzureOpenAI
 
@@ -1737,7 +1737,7 @@ class ObservationAgent(BaseAgent):
                         if hasattr(result, 'extracted_content') and result.extracted_content:
                             content_lower += str(result.extracted_content).lower() + " "
 
-                # LLM step summaries (Eval / Memory / Next goal) — matches final "done" messaging
+                # LLM step summaries (Eval / Memory / Next goal) ??matches final "done" messaging
                 mo = getattr(history_item, "model_output", None)
                 if mo is not None:
                     for _field in ("evaluation", "memory", "next_goal", "thought"):
@@ -1822,45 +1822,45 @@ class ObservationAgent(BaseAgent):
                 "subscription successful",
                 "successfully completed",
                 "subscribed page",
-                "確認",
-                "成功",
-                "訂單編號",
-                "訂單確認",
-                "付款成功",
+                "確�?",
+                "?��?",
+                "訂單編�?",
+                "訂單確�?",
+                "付款?��?",
             ])
         
         # Registration/signup flow indicators
-        if any(keyword in instruction_lower for keyword in ["register", "signup", "sign up", "create account", "註冊"]):
+        if any(keyword in instruction_lower for keyword in ["register", "signup", "sign up", "create account", "註�?"]):
             indicators.extend([
                 "registration complete", "account created", "welcome", "verify your email",
                 "registration successful", "signup complete", "account activated",
-                "註冊成功", "帳戶已建立", "歡迎"
+                "註�??��?", "帳戶已建�?, "歡�?"
             ])
         
         # Login flow indicators
-        if any(keyword in instruction_lower for keyword in ["login", "sign in", "log in", "登入"]):
+        if any(keyword in instruction_lower for keyword in ["login", "sign in", "log in", "?�入"]):
             indicators.extend([
                 "dashboard", "welcome back", "logged in", "my account", "profile",
-                "home", "登入成功", "歡迎回來"
+                "home", "?�入?��?", "歡�??��?"
             ])
         
         # Form submission indicators
-        if any(keyword in instruction_lower for keyword in ["submit", "send", "contact", "inquiry", "提交"]):
+        if any(keyword in instruction_lower for keyword in ["submit", "send", "contact", "inquiry", "?�交"]):
             indicators.extend([
                 "submitted", "sent", "received", "thank you", "we will contact you",
-                "message sent", "form submitted", "已提交", "已發送"
+                "message sent", "form submitted", "已�?�?, "已發??
             ])
         
         # Search flow indicators
-        if any(keyword in instruction_lower for keyword in ["search", "find", "搜尋", "查找"]):
+        if any(keyword in instruction_lower for keyword in ["search", "find", "?��?", "?�找"]):
             indicators.extend([
-                "results", "found", "showing", "matches", "搜尋結果", "找到"
+                "results", "found", "showing", "matches", "?��?結�?", "?�到"
             ])
         
         # Generic success indicators (always include)
         indicators.extend([
             "success", "complete", "done", "finished", "confirmed",
-            "成功", "完成", "確認"
+            "?��?", "完�?", "確�?"
         ])
         
         # Remove duplicates while preserving order

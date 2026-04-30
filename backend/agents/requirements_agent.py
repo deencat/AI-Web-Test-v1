@@ -5,6 +5,7 @@ Follows BDD, ISTQB, WCAG 2.1, OWASP security standards
 from agents.base_agent import BaseAgent, AgentCapability, TaskContext, TaskResult
 from typing import Dict, List, Tuple, Optional, Any
 import asyncio
+import os
 import time
 import re
 import json
@@ -75,7 +76,7 @@ class RequirementsAgent(BaseAgent):
         self.llm_client = None
         if self.use_llm:
             llm_provider = config.get("llm_provider", "azure")
-            llm_model = config.get("llm_model", "ChatGPT-UAT")
+            llm_model = config.get("llm_model", (os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT")))
             self.llm_client = get_llm_client(
                 llm_provider,
                 llm_model,
@@ -479,7 +480,7 @@ class RequirementsAgent(BaseAgent):
         return journeys
 
     def _score_scenario_relevance(self, scenario: "Scenario", user_instruction: str) -> float:
-        """Heuristic relevance score between scenario text and user instruction (0.0–1.0)."""
+        """Heuristic relevance score between scenario text and user instruction (0.0??.0)."""
         if not user_instruction:
             return 0.5
 
@@ -914,7 +915,7 @@ class RequirementsAgent(BaseAgent):
             return []
 
         llm_provider = self.config.get("llm_provider", "azure")
-        llm_model = self.config.get("llm_model", "ChatGPT-UAT")
+        llm_model = self.config.get("llm_model", (os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT")))
         
         flow_steps = flow_steps or []
         pages = pages or []
@@ -1077,12 +1078,12 @@ The user wants to test: "{user_instruction}"
 1. **MUST generate at least one scenario that specifically matches this user requirement**
 2. **PRIORITIZE scenarios matching the user's intent** - assign "critical" or "high" priority
 3. **Use semantic matching** to find UI elements related to the user's requirement
-   - Example: If user says "Test purchase flow for '5G寬頻數據無限任用' plan"
-   - Find elements containing "5G寬頻數據無限任用" or related text
-   - Generate scenario: "Click on plan '5G寬頻數據無限任用', Select contract term, Verify price, Click subscribe button"
+   - Example: If user says "Test purchase flow for '5G寬頻?��??��?任用' plan"
+   - Find elements containing "5G寬頻?��??��?任用" or related text
+   - Generate scenario: "Click on plan '5G寬頻?��??��?任用', Select contract term, Verify price, Click subscribe button"
 4. **Include specific details** from the user requirement in the scenario
 5. **Mark matching scenarios** with tags like ["user-requirement", "priority-test"]
-6. **For login flows:** Describe in-page email/password login only (click Login → enter email → enter password → click Login). Do NOT describe Gmail, OAuth, or new-tab login unless the user explicitly asks for OTP or email verification.
+6. **For login flows:** Describe in-page email/password login only (click Login ??enter email ??enter password ??click Login). Do NOT describe Gmail, OAuth, or new-tab login unless the user explicitly asks for OTP or email verification.
 """
         
         # Build observed crawl flow section when ObservationAgent passed flow_steps (browser-use)
@@ -1094,7 +1095,7 @@ The user wants to test: "{user_instruction}"
                 for i, s in enumerate(flow_steps[:80])  # Cap at 80 steps
             )
             observed_flow_section = f"""
-**OBSERVED CRAWL FLOW (FROM BROWSER-USE – USE THIS FOR END-TO-END SCENARIO):**
+**OBSERVED CRAWL FLOW (FROM BROWSER-USE ??USE THIS FOR END-TO-END SCENARIO):**
 The ObservationAgent crawled the application and recorded the following flow. The user's goal is: "{user_instruction or 'complete the flow to success'}". Goal was reached: {goal_reached}.
 
 **Steps observed in order (follow this exact sequence for one complete scenario):**
@@ -1105,7 +1106,7 @@ The ObservationAgent crawled the application and recorded the following flow. Th
 - **When:** List ALL the key actions in order (navigate, click Login, input email, click Login, input password, click Login, select plan, click Next, acknowledge T&C, click Subscribe, confirm as many times as shown, upload document if in flow, fill HKID/personal details, fill payment, sign, checkout, pay) so that the test case can be executed by the 3-tier execution engine as one complete flow.
 - **Then:** User sees the success/subscription confirmation page (or the stated goal).
 
-**Login in the scenario:** Use only in-page email/password login (click Login → enter email → click Login → enter password → click Login). Do NOT include Gmail, OAuth, "Sign in with Google", or new-tab login unless the user instruction explicitly requires OTP or email verification.
+**Login in the scenario:** Use only in-page email/password login (click Login ??enter email ??click Login ??enter password ??click Login). Do NOT include Gmail, OAuth, "Sign in with Google", or new-tab login unless the user instruction explicitly requires OTP or email verification.
 
 This scenario MUST be "critical" priority and tagged ["user-requirement", "end-to-end", "priority-test"]. Do not truncate the flow: include all confirmations, document upload, payment, and final pay step if they appear in the observed flow above.
 """
@@ -1202,7 +1203,7 @@ Focus on **realistic user scenarios** and **important test coverage**. Be specif
             elem_type = elem.get("type", "unknown")
             text = elem.get("text", "")[:50]
             if text:
-                sample_elements.append(f"  • [{elem_type}] {text}")
+                sample_elements.append(f"  ??[{elem_type}] {text}")
         
         summary = "\n".join(summary_lines)
         if sample_elements:
@@ -1251,14 +1252,14 @@ Focus on **realistic user scenarios** and **important test coverage**. Be specif
         # Strategy 1: Direct text matching (including Chinese characters)
         # Check if key phrases from instruction appear in scenario
         key_phrases = [
-            "5g寬頻數據無限任用",  # The specific plan name
+            "5g寬頻?��??��?任用",  # The specific plan name
             "5g寬頻",  # 5G broadband
             "寬頻",  # broadband
-            "數據無限",  # unlimited data
+            "?��??��?",  # unlimited data
             "purchase",  # purchase flow
             "subscribe",  # subscription
             "register",  # registration
-            "立即登記",  # register button (common in purchase flow)
+            "立即?��?",  # register button (common in purchase flow)
         ]
         
         # Check all scenario fields for matches
@@ -1289,7 +1290,7 @@ Focus on **realistic user scenarios** and **important test coverage**. Be specif
         keyword_matches = sum(1 for keyword in instruction_keywords if keyword in scenario_text)
         
         # Strategy 3: Semantic matching for purchase/registration flows
-        purchase_keywords = ["purchase", "buy", "subscribe", "register", "sign up", "order", "checkout", "立即登記"]
+        purchase_keywords = ["purchase", "buy", "subscribe", "register", "sign up", "order", "checkout", "立即?��?"]
         has_purchase_intent = any(keyword in instruction_lower for keyword in purchase_keywords)
         has_purchase_scenario = any(keyword in scenario_text for keyword in purchase_keywords)
         
@@ -1334,7 +1335,7 @@ Focus on **realistic user scenarios** and **important test coverage**. Be specif
         
         # Strong match criteria
         has_plan_name = any(quoted in scenario_text for quoted in quoted_texts)
-        has_purchase_flow = any(keyword in scenario_text for keyword in ["purchase", "subscribe", "register", "立即登記"])
+        has_purchase_flow = any(keyword in scenario_text for keyword in ["purchase", "subscribe", "register", "立即?��?"])
         
         return has_plan_name and has_purchase_flow
     

@@ -12,6 +12,7 @@ from agents.base_agent import BaseAgent, AgentCapability, TaskContext, TaskResul
 from typing import Dict, List, Tuple, Optional, Any
 from pathlib import Path
 import asyncio
+import os
 import time
 import json
 import logging
@@ -55,7 +56,7 @@ class EvolutionAgent(BaseAgent):
         if self.use_llm:
             from llm.client_factory import get_llm_client
             llm_provider = config.get("llm_provider", "azure") if config else "azure"
-            llm_model = config.get("llm_model", "ChatGPT-UAT") if config else "ChatGPT-UAT"
+            llm_model = config.get("llm_model", (os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT"))) if config else (os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT"))
             self.llm_client = get_llm_client(
                 llm_provider,
                 llm_model,
@@ -229,7 +230,7 @@ class EvolutionAgent(BaseAgent):
                         logger.info(
                             "EvolutionAgent: Using LLM provider/model for step generation: %s/%s",
                             self.config.get("llm_provider", "azure"),
-                            self.config.get("llm_model", "ChatGPT-UAT"),
+                            self.config.get("llm_model", (os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT"))),
                         )
                         steps_result = await self._generate_test_steps_with_llm(
                             scenario, risk_scores, prioritization, page_context, test_data, user_instruction, login_credentials
@@ -361,7 +362,7 @@ class EvolutionAgent(BaseAgent):
     ) -> Optional[Dict]:
         """Generate test steps using Azure OpenAI GPT-4o"""
         llm_provider = self.config.get("llm_provider", "azure")
-        llm_model = self.config.get("llm_model", "ChatGPT-UAT")
+        llm_model = self.config.get("llm_model", (os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT")))
         try:
             # Build prompt using current variant
             prompt_builder = self.prompt_variants.get(self.current_variant, self._build_prompt_variant_1)
@@ -583,14 +584,14 @@ class EvolutionAgent(BaseAgent):
 **CRITICAL: Goal Completion Requirements:**
 1. **DO NOT STOP** until the goal "{goal}" is TRULY achieved
 2. **Multi-Page Flows:** If the goal requires multiple pages, include ALL pages:
-   - For "complete purchase flow": Include plan selection → registration → payment → order confirmation
-   - For "user registration": Include registration form → email verification → welcome page
-   - For "checkout process": Include cart → checkout → payment → confirmation
+   - For "complete purchase flow": Include plan selection ??registration ??payment ??order confirmation
+   - For "user registration": Include registration form ??email verification ??welcome page
+   - For "checkout process": Include cart ??checkout ??payment ??confirmation
 3. **State Verification:** After each major step, verify the current state and continue if goal not achieved
 4. **Final Verification:** The last step MUST verify that the goal is complete (e.g., order ID displayed, payment confirmed, registration complete)
 
 **Example for "Complete purchase flow":**
-- Steps must continue through: Plan selection → Registration → Payment entry → Payment confirmation → Order confirmation with order ID
+- Steps must continue through: Plan selection ??Registration ??Payment entry ??Payment confirmation ??Order confirmation with order ID
 - Final step must verify: Order ID is displayed AND payment is confirmed AND order details are shown
 - DO NOT stop at "verify confirmation" if purchase is not actually complete
 
@@ -746,10 +747,10 @@ Return JSON: {{"steps": ["step1", "step2", ...]}}"""
         
         # Include common patterns based on scenario type
         patterns = {
-            "functional": "Navigation → Input → Click → Verify",
-            "accessibility": "Keyboard navigation → ARIA checks → Screen reader verification",
-            "security": "Input validation → XSS prevention → CSRF checks",
-            "edge_case": "Boundary testing → Error handling → Edge case validation"
+            "functional": "Navigation ??Input ??Click ??Verify",
+            "accessibility": "Keyboard navigation ??ARIA checks ??Screen reader verification",
+            "security": "Input validation ??XSS prevention ??CSRF checks",
+            "edge_case": "Boundary testing ??Error handling ??Edge case validation"
         }
         pattern_hint = patterns.get(scenario_type, patterns["functional"])
         
@@ -865,7 +866,7 @@ Return JSON: {{"steps": ["step1", "step2", ...]}}"""
                 nav_step = f"Navigate to {url}"
                 steps.append(nav_step)
         
-        # Given: Preconditions → Navigate/setup (only if no URL was added above)
+        # Given: Preconditions ??Navigate/setup (only if no URL was added above)
         given = scenario.get("given", "")
         url_was_added = bool(page_context and page_context.get("url") and 
                             page_context["url"].startswith(("http://", "https://")))
@@ -882,7 +883,7 @@ Return JSON: {{"steps": ["step1", "step2", ...]}}"""
             elif "navigate" in given_lower or "go to" in given_lower:
                 steps.append(given)
         
-        # When: Actions → Click, type, navigate
+        # When: Actions ??Click, type, navigate
         when = scenario.get("when", "")
         if when:
             # Parse actions from "when" clause
@@ -929,7 +930,7 @@ Return JSON: {{"steps": ["step1", "step2", ...]}}"""
                     elif part.strip():
                         steps.append(clean_part)  # Include other actions
         
-        # Then: Assertions → Verify, check, wait
+        # Then: Assertions ??Verify, check, wait
         then = scenario.get("then", "")
         if then:
             if not then.lower().startswith("verify"):
