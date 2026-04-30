@@ -106,6 +106,14 @@ class GenerateTestsRequest(BaseModel):
             "`user_instruction` (goal-focused mode) before applying max_scenarios."
         ),
     )
+    use_playwright_payment_click: bool = Field(
+        default=False,
+        description=(
+            "When true, ObservationAgent registers the click_visa_mastercard_and_checkout tool "
+            "which uses a direct JS/CSS selector to click the Visa payment icon and Checkout button, "
+            "bypassing unreliable element index lookups. Set true for Three HK UAT payment flows."
+        ),
+    )
     model_config = ConfigDict(
         json_schema_extra={
             "example": {

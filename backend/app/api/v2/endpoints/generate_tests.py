@@ -69,6 +69,7 @@ async def generate_tests(
         "max_browser_steps": request.max_browser_steps,
         "max_flow_timeout_seconds": request.max_flow_timeout_seconds,
         "save_flow_recording": request.save_flow_recording,
+        "use_playwright_payment_click": request.use_playwright_payment_click,
     }
 
     set_state(workflow_id, {
