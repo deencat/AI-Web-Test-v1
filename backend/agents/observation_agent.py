@@ -669,6 +669,10 @@ class ObservationAgent(BaseAgent):
             - If the listed "index" for your intended action points at a large card, carousel, or price (e.g. "$338") while the task says Login/Next/Checkbox,
               pick a different index that matches the requirement or scroll until the correct control is in view.
             - FORBIDDEN ELEMENT — "Download My3 App": This button/link appears on many pages of the Three HK site. It must NEVER be clicked. Before confirming any click action, check that the target element's visible text is NOT "Download My3 App". If your intended index resolves to "Download My3 App", immediately abandon that index and find the correct target by its text label.
+            - FORBIDDEN IMAGES — HEADER ICONS (ABSOLUTE): The following two images are navigation/header icons and must NEVER be clicked under any circumstances, especially on the Payment Method page:
+              * img with src containing "bell.ed275648.svg" (notification bell icon in the top header)
+              * img with src containing "wallet.b0f72d7b.svg" (wallet icon in the top header)
+              These are NOT payment method options. If you see these in a list of elements, skip them entirely. The Visa payment icon is in the MAIN CONTENT AREA of the page, not the header.
             - Scroll the target control into the center of the viewport before clicking. For checkboxes/terms, click the checkbox or its label, not a nearby price div.
             - After a file upload completes, wait briefly (1??s) for validation/UI to update before clicking "Next" or "Continue".
             - If you click "Next" twice in a row and the page URL and main content do not change, STOP repeating: dismiss any overlay, scroll, fix a validation error,
@@ -848,6 +852,31 @@ class ObservationAgent(BaseAgent):
                     )
 
             agent = BrowserUseAgent(**agent_kwargs)
+
+            # Inject CSS to make the header bell and wallet icons physically unclickable
+            # on every page load, so the agent can never accidentally click them.
+            try:
+                _browser_session = agent.browser_session if hasattr(agent, 'browser_session') else None
+                if _browser_session is not None and hasattr(_browser_session, 'browser_context') and _browser_session.browser_context is not None:
+                    await _browser_session.browser_context.add_init_script("""
+                        const _blockForbiddenImgs = () => {
+                            const forbidden = ['bell.ed275648.svg', 'wallet.b0f72d7b.svg'];
+                            document.querySelectorAll('img').forEach(img => {
+                                if (forbidden.some(f => (img.src || '').includes(f))) {
+                                    img.style.pointerEvents = 'none';
+                                    img.style.cursor = 'not-allowed';
+                                    const parent = img.closest('a, button, [role="button"]');
+                                    if (parent) { parent.style.pointerEvents = 'none'; }
+                                }
+                            });
+                        };
+                        document.addEventListener('DOMContentLoaded', _blockForbiddenImgs);
+                        // Also run on dynamic content changes
+                        new MutationObserver(_blockForbiddenImgs).observe(document.documentElement, { childList: true, subtree: true });
+                    """)
+                    logger.info("ObservationAgent: Injected CSS to block bell/wallet header icon clicks")
+            except Exception as _css_err:
+                logger.warning("ObservationAgent: Could not inject forbidden-image CSS: %s", _css_err)
 
             # Per-run step cap (browser-use Agent.run(max_steps=...)); request can override via task payload.
             _raw_steps = task.payload.get("max_browser_steps", self.max_browser_steps)
