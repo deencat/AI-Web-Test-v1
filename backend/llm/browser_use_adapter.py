@@ -347,3 +347,148 @@ class AzureOpenAIAdapter:
         logger.info("Streaming not natively supported; falling back to full response.")
         full_response = await self.achat(messages, **kwargs)
         yield full_response
+
+
+# ---------------------------------------------------------------------------
+# CognitiveServicesAzureAdapter
+# ---------------------------------------------------------------------------
+
+class CognitiveServicesAzureAdapter:
+    """
+    Browser-use compatible adapter for cognitiveservices.azure.com endpoints.
+
+    Uses the standard `openai.AsyncAzureOpenAI` SDK directly (instead of
+    LangChain's ChatAzureOpenAI) because the cognitiveservices.azure.com
+    endpoint requires the standard SDK API format.
+
+    Conforms to browser-use's BaseChatModel protocol.
+    """
+
+    _verified_api_keys: bool = True
+
+    def __init__(
+        self,
+        api_key: str,
+        azure_endpoint: str,
+        deployment: str,
+        api_version: str = "2024-12-01-preview",
+        max_tokens: int = 4096,
+        temperature: float = 0.2,
+    ):
+        from openai import AsyncAzureOpenAI
+
+        self._client = AsyncAzureOpenAI(
+            api_key=api_key,
+            azure_endpoint=azure_endpoint,
+            api_version=api_version,
+        )
+        self._deployment = deployment
+        self._max_tokens = max_tokens
+        self._temperature = temperature
+
+        self.model = deployment
+        self._provider = "azure-cognitiveservices"
+
+    @property
+    def provider(self) -> str:
+        return self._provider
+
+    @property
+    def name(self) -> str:
+        return f"{self._provider}_{self.model}"
+
+    @property
+    def model_name(self) -> str:
+        return self.model
+
+    async def ainvoke(self, input_data, output_format=None, **kwargs):
+        """
+        Browser-use compatible ainvoke using AsyncAzureOpenAI directly.
+        """
+        if output_format is None:
+            output_format = kwargs.pop("output_format", None)
+        else:
+            kwargs.pop("output_format", None)
+        kwargs.pop("session_id", None)
+
+        if isinstance(input_data, dict):
+            messages = input_data.get("messages", [])
+        elif isinstance(input_data, list):
+            messages = input_data
+        else:
+            raise ValueError(f"Unexpected input_data type: {type(input_data)}")
+
+        formatted = _normalize_messages(messages)
+
+        temperature = kwargs.get("temperature", self._temperature)
+        max_tokens = kwargs.get("max_tokens", self._max_tokens)
+
+        logger.info(
+            f"CognitiveServicesAzureAdapter.ainvoke: deployment={self._deployment}, "
+            f"output_format={output_format.__name__ if output_format else None}"
+        )
+
+        create_kwargs: dict = dict(
+            model=self._deployment,
+            messages=formatted,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        if output_format is not None:
+            create_kwargs["response_format"] = {"type": "json_object"}
+
+        response = await self._client.chat.completions.create(**create_kwargs)
+
+        if not (response.choices and len(response.choices) > 0):
+            raise ValueError("No response from Azure Cognitive Services OpenAI")
+
+        response_text: str = response.choices[0].message.content
+        stop_reason = getattr(response.choices[0], "finish_reason", None)
+
+        completion: Any = response_text
+        if output_format is not None:
+            try:
+                clean = response_text.strip()
+                if clean.startswith("```"):
+                    clean = clean[clean.index("\n") + 1:]
+                if clean.endswith("```"):
+                    clean = clean[:-3].rstrip()
+                completion = output_format.model_validate_json(clean)
+            except Exception as e:
+                logger.warning(f"Failed to parse response into {output_format.__name__}: {e}")
+                try:
+                    completion = output_format.model_validate(json.loads(response_text))
+                except Exception as e2:
+                    logger.error(f"Fallback parsing also failed: {e2}")
+                    raise ValueError(
+                        f"LLM response missing required fields. "
+                        f"Expected: {output_format.__name__}. Response: {response_text[:300]}"
+                    ) from e2
+
+        usage = None
+        if hasattr(response, "usage") and response.usage:
+            if BROWSER_USE_VIEWS_AVAILABLE:
+                usage = ChatInvokeUsage(
+                    prompt_tokens=getattr(response.usage, "prompt_tokens", 0),
+                    completion_tokens=getattr(response.usage, "completion_tokens", 0),
+                    total_tokens=getattr(response.usage, "total_tokens", 0),
+                    prompt_cached_tokens=0,
+                    prompt_cache_creation_tokens=0,
+                    prompt_image_tokens=0,
+                )
+
+        if BROWSER_USE_VIEWS_AVAILABLE:
+            return ChatInvokeCompletion(
+                completion=completion,
+                usage=usage,
+                stop_reason=stop_reason,
+            )
+        else:
+            class _FallbackResponse:
+                def __init__(self, c, u, s):
+                    self.completion = c; self.usage = u; self.stop_reason = s
+            return _FallbackResponse(completion, usage, stop_reason)
+
+    async def astream(self, messages, **kwargs) -> AsyncIterator[str]:
+        full = await self.ainvoke(messages, **kwargs)
+        yield full.completion if hasattr(full, "completion") else str(full)

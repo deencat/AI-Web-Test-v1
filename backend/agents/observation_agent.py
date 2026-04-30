@@ -1592,37 +1592,63 @@ class ObservationAgent(BaseAgent):
                 return None
 
         # --- Attempt 1: Use browser-use's built-in ChatAzureOpenAI ---
+        import os
+        # Collect credentials from llm_client or env vars
+        api_key = ""
+        endpoint = ""
+        deployment = ""
+
+        if self.llm_client and hasattr(self.llm_client, 'api_key'):
+            api_key = self.llm_client.api_key
+            endpoint = getattr(self.llm_client, 'endpoint', '')
+            deployment = getattr(self.llm_client, 'deployment', '')
+
+        if not api_key:
+            api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
+        if not endpoint:
+            endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
+        if not deployment:
+            deployment = os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT")
+
+        api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+        max_tokens = int(os.getenv("AZURE_OPENAI_MAX_COMPLETION_TOKENS", "4096"))
+        temperature = float(os.getenv("AZURE_OPENAI_TEMPERATURE", "0.2"))
+
+        # Clean endpoint: remove /openai/v1 suffix added by some configs
+        clean_endpoint = endpoint.replace("/openai/v1", "").replace("/openai", "").rstrip("/")
+
+        # Auto-detect endpoint type:
+        # - cognitiveservices.azure.com  → use standard openai.AzureOpenAI SDK
+        # - openai.azure.com             → use browser-use's ChatAzureOpenAI (LangChain)
+        is_cognitive_services = "cognitiveservices.azure.com" in clean_endpoint
+
+        if is_cognitive_services:
+            # --- Attempt 1a: Cognitive Services endpoint → standard openai SDK wrapped for browser-use ---
+            try:
+                from llm.browser_use_adapter import CognitiveServicesAzureAdapter
+
+                adapter = CognitiveServicesAzureAdapter(
+                    api_key=api_key,
+                    azure_endpoint=clean_endpoint,
+                    deployment=deployment,
+                    api_version=api_version,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+                logger.info(
+                    f"Browser-use adapter (cognitiveservices) created: model={deployment}, "
+                    f"endpoint={clean_endpoint}"
+                )
+                return adapter
+            except Exception as e:
+                logger.warning(f"CognitiveServices adapter creation failed: {e}. Trying ChatAzureOpenAI...")
+
+        # --- Attempt 1b: Classic openai.azure.com endpoint → browser-use ChatAzureOpenAI ---
         try:
             from browser_use.llm.azure.chat import ChatAzureOpenAI
-            import os
-            
-            # Get Azure credentials from our existing client or env vars
-            api_key = ""
-            endpoint = ""
-            deployment = ""
-            
-            if self.llm_client and hasattr(self.llm_client, 'api_key'):
-                api_key = self.llm_client.api_key
-                endpoint = getattr(self.llm_client, 'endpoint', '')
-                deployment = getattr(self.llm_client, 'deployment', '')
-            
-            # Fallback to env vars
-            if not api_key:
-                api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
-            if not endpoint:
-                endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
-            if not deployment:
-                deployment = os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT")
-            
-            if not api_key or not endpoint:
+
+            if not api_key or not clean_endpoint:
                 raise ValueError("Azure OpenAI credentials not available")
-            
-            # Clean endpoint: remove /openai/v1 suffix, SDK adds it
-            clean_endpoint = endpoint.replace("/openai/v1", "").replace("/openai", "").rstrip("/")
-            
-            api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
-            max_tokens = int(os.getenv("AZURE_OPENAI_MAX_COMPLETION_TOKENS", "4096"))
-            temperature = float(os.getenv("AZURE_OPENAI_TEMPERATURE", "0.2"))
 
             adapter = ChatAzureOpenAI(
                 model=deployment,
@@ -1638,7 +1664,7 @@ class ObservationAgent(BaseAgent):
                 f"endpoint={clean_endpoint}"
             )
             return adapter
-            
+
         except ImportError as e:
             logger.warning(f"ChatAzureOpenAI not available: {e}. Trying custom adapter...")
         except Exception as e:
