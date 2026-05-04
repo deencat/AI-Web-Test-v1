@@ -215,6 +215,7 @@ class OrchestrationService:
         max_browser_steps = request.get("max_browser_steps")
         max_flow_timeout_seconds = request.get("max_flow_timeout_seconds")
         save_flow_recording = bool(request.get("save_flow_recording", True))
+        use_playwright_payment_click = request.get("use_playwright_payment_click")
 
         db = None
         try:
@@ -339,6 +340,8 @@ class OrchestrationService:
                 obs_payload["available_file_paths"] = available_file_paths
             if enable_signature_pad_tool is not None:
                 obs_payload["enable_signature_pad_tool"] = bool(enable_signature_pad_tool)
+            if use_playwright_payment_click is not None:
+                obs_payload["use_playwright_payment_click"] = bool(use_playwright_payment_click)
             if max_browser_steps is not None:
                 obs_payload["max_browser_steps"] = int(max_browser_steps)
             if max_flow_timeout_seconds is not None:
