@@ -1228,12 +1228,29 @@ class ObservationAgent(BaseAgent):
 
         headers = self._build_http_auth_headers(http_credentials)
 
+        # Use a unique temporary user-data-dir so browser-use always launches a
+        # fresh, isolated Chrome process and never attaches to an existing window.
+        # This prevents the CDP WebSocket dropping when the shared browser tab is
+        # disturbed (WinError 1225 / "All reconnection attempts failed").
+        import tempfile, uuid as _uuid
+        _tmp_profile_dir = str(
+            (
+                __import__("pathlib").Path(tempfile.gettempdir())
+                / f"bu_profile_{_uuid.uuid4().hex[:8]}"
+            )
+        )
+
         profile_kwargs: Dict[str, Any] = {
             "headless": False,
             "viewport": dict(DEFAULT_OBSERVATION_VIEWPORT),
             "window_size": dict(DEFAULT_OBSERVATION_VIEWPORT),
             "user_agent": DEFAULT_OBSERVATION_USER_AGENT,
-            "args": list(DEFAULT_OBSERVATION_BROWSER_ARGS),
+            "args": list(DEFAULT_OBSERVATION_BROWSER_ARGS) + [
+                f"--user-data-dir={_tmp_profile_dir}",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--disable-extensions",
+            ],
             "minimum_wait_page_load_time": 0.5,
             "wait_for_network_idle_page_load_time": 1.0,
             "wait_between_actions": 0.2,
