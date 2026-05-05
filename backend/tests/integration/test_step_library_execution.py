@@ -130,7 +130,28 @@ class TestThreeTierExecutionServiceModuleExpansion:
 # CRUD integration: step library DB operations
 # ---------------------------------------------------------------------------
 
-class TestStepLibraryCRUD:
+class TestExecutionServiceWiring:
+    """Verify resolve_steps is imported and wired into the execution services."""
+
+    def test_execution_service_imports_resolve_steps(self):
+        """execution_service.py must import resolve_steps from step_module_resolver."""
+        import importlib
+        import inspect
+        import app.services.execution_service as svc
+        importlib.reload(svc)
+        src = inspect.getsource(svc)
+        assert "resolve_steps" in src, "execution_service.py does not call resolve_steps"
+        assert "step_module_resolver" in src, "execution_service.py does not import step_module_resolver"
+
+    def test_stagehand_service_imports_resolve_steps(self):
+        """stagehand_service.py must import resolve_steps from step_module_resolver."""
+        import importlib
+        import inspect
+        import app.services.stagehand_service as svc
+        importlib.reload(svc)
+        src = inspect.getsource(svc)
+        assert "resolve_steps" in src, "stagehand_service.py does not call resolve_steps"
+        assert "step_module_resolver" in src, "stagehand_service.py does not import step_module_resolver"
     """CRUD operations on StepLibraryModule through the crud module."""
 
     def test_create_returns_module_with_id(self):

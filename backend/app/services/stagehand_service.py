@@ -26,6 +26,7 @@ from app.services.email_otp_service import (
     is_otp_step,
 )
 from app.services.encryption_service import EncryptionService
+from app.services.step_module_resolver import resolve_steps
 
 encryption_service = EncryptionService() if os.getenv("CREDENTIAL_ENCRYPTION_KEY") else None
 
@@ -860,6 +861,8 @@ class StagehandExecutionService:
                     steps = [steps]  # Treat as single step if JSON parse fails
             elif not isinstance(steps, list):
                 steps = []
+            # Expand any @module: references to concrete steps before execution.
+            steps = resolve_steps(steps, db=db, user_id=user_id)
             
             # Check if first step contains navigation (URL)
             first_step_has_url = False

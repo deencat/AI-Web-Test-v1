@@ -37,6 +37,7 @@ from app.services.email_otp_service import (
     is_otp_step,
 )
 from app.services.encryption_service import EncryptionService as _EncryptionService
+from app.services.step_module_resolver import resolve_steps
 
 logger = logging.getLogger(__name__)
 
@@ -515,6 +516,8 @@ class ExecutionService:
                 })
 
             steps = self._normalize_test_steps(test_case.steps)
+            # Expand any @module: references to concrete steps before execution.
+            steps = resolve_steps(steps, db=db, user_id=user_id)
             detailed_steps = None
             loop_blocks = []
             if test_case.test_data:
