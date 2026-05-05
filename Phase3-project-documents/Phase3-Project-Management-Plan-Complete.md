@@ -3,8 +3,8 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials  
-**Last Updated:** April 28, 2026 (Sprint 10.10 COMPLETE — EmailOTPService with JIT IMAP polling and per-digit step expansion; ADR-002-38 through ADR-002-41 added)  
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials · 🔄 Sprint 10.11 Developer B Step Library — reusable `@module:` step sequences, Step Library sidebar page, Insert Module picker in TestStepEditor, backend `StepLibraryModule` CRUD PLANNED  
+**Last Updated:** May 5, 2026 (Sprint 10.11 PLANNED — Step Library: reusable modular step sequences for 3-tier test cases; `@module:` inline syntax; backend CRUD + frontend sidebar page)  
 **Version:** 3.5
 
 > **📖 When to Use This Document:**
@@ -82,6 +82,7 @@ For detailed analysis, strategies, and agent-specific documentation, see the [Su
       - Sprint 9: Orchestration & Reporting
       - Sprint 10: Phase 2 Integration & API
       - Sprint 10.10: IMAP-Based Email OTP Service
+      - Sprint 10.11: Step Library (Reusable Modular Steps)
       - Sprint 11: Learning System Activation
       - Sprint 12: Security & Production Readiness
 
@@ -2557,6 +2558,168 @@ All per-account IMAP credentials (host, port, email, app password) are stored **
 #### Known Follow-Up Item
 
 - [ ] **Upload file TTL cleanup** (carried from Sprint 10.8) — Files in `uploads/workflow-files/` persist indefinitely. A scheduled cleanup job (e.g. delete entries older than 7 days) should be added in a future sprint.
+
+---
+
+### Sprint 10.11: Developer B Step Library — Reusable Modular Test Steps (May 2026)
+
+**Owner:** Developer B  
+**Status:** 🔄 **PLANNED**  
+**Story Points:** 18 points / 4 days  
+
+**Summary:** Introduce a **Step Library** — a named, parameterized, reusable step-sequence entity that can be referenced from any test case using `@module:name(param=value)` inline syntax. This eliminates copy-paste duplication across test cases (e.g. login flows, OTP sequences, checkout steps) and keeps test cases maintainable as the application evolves.
+
+**Motivation:**
+- Test cases for complex flows (Three HK subscriptions, UAT registration) share many identical step sequences (login, OTP entry, checkout navigation)
+- Today each test case duplicates those steps — changes to the login flow require editing every test case individually
+- The 3-tier execution engine already processes steps one-by-one; expanding `@module:` references at runtime requires only a lightweight resolver pass before dispatch
+- This is the recommended "Option A" architecture: TestCase owns modular step module references; the TestSuite remains a pure orchestrator; browser isolation per test case is preserved
+
+**Design Decisions:**
+
+| Decision | Choice | Rationale |
+|---|---|---|
+| Module reference syntax | `@module:name(param=value)` inline in step text | Stays within existing plain-text step editor model; visually distinct; easily parsed |
+| Dedicated entity vs. import-test-case | New `StepLibraryModule` entity | Avoids ownership/metadata/execution-record coupling of test-case-to-test-case imports |
+| Navigation placement | Sidebar nav item `/step-library` | Shared resource, not owned by a single test or suite; matches pattern of Knowledge Base |
+| Backward compatibility | `@module:` is a new step type; existing steps unchanged | Zero migration; existing test cases work without modification |
+| Execution engine integration | Resolver expands modules in `three_tier_execution_service.py` before step dispatch | No changes to Tier 1/2/3 executors themselves |
+
+**Data Model:**
+
+```python
+# backend/app/models/step_library_module.py
+class StepLibraryModule(Base):
+    __tablename__ = "step_library_modules"
+    id           = Column(Integer, primary_key=True)
+    name         = Column(String(100), nullable=False, unique=True, index=True)  # slug: "login_three_hk"
+    display_name = Column(String(255), nullable=False)  # "Three HK Login Flow"
+    description  = Column(Text, nullable=True)
+    steps        = Column(JSON, nullable=False)   # List[str | Dict] — same format as TestCase.steps
+    parameters   = Column(JSON, nullable=True)    # List[str] — declared param names e.g. ["username", "password"]
+    tags         = Column(JSON, nullable=True)
+    user_id      = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at   = Column(DateTime, nullable=False, default=utc_now)
+    updated_at   = Column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
+```
+
+**Execution Engine Integration (`@module:` expansion):**
+
+```python
+# backend/app/services/step_module_resolver.py  (new)
+def resolve_steps(raw_steps: list, db: Session, user_id: int) -> list:
+    """Expand @module: references to concrete steps before 3-tier dispatch."""
+    resolved = []
+    for step in raw_steps:
+        if isinstance(step, str) and step.startswith("@module:"):
+            module_name, params = parse_module_ref(step)   # e.g. login_three_hk, {username: ...}
+            module = crud_step_library.get_by_name(db, module_name, user_id)
+            expanded = substitute_params(module.steps, params)
+            resolved.extend(expanded)
+        else:
+            resolved.append(step)
+    return resolved
+```
+
+The resolver is called in `three_tier_execution_service.py` immediately before the step dispatch loop. Tier 1/2/3 executors receive only concrete steps — no `@module:` references reach them.
+
+**Frontend: Step Library Page (`/step-library`):**
+
+```
+Sidebar
+  Dashboard
+  Tests
+  Step Library    ← NEW (between Tests and Test Suites)
+  Test Suites
+  Executions
+  Knowledge Base
+  Agent Workflow
+  Settings
+```
+
+Page layout:
+```
+┌─ Step Library ──────────────────────────────────────┐
+│  [+ New Module]                   [Search modules]   │
+│                                                       │
+│  login_three_hk     e2e  4 steps   Used by 7 tests ↗ │
+│  checkout_flow      e2e  9 steps   Used by 3 tests ↗ │
+│  otp_verification   e2e  3 steps   Used by 5 tests ↗ │
+│                                                       │
+│  [Click row] → opens StepLibraryModuleEditor          │
+│    (reuses TestStepEditor component, no run button)   │
+└───────────────────────────────────────────────────────┘
+```
+
+**Frontend: Insert Module in TestStepEditor:**
+
+Add an **"Insert Module"** button to `TestStepEditor.tsx`. Opens a side panel:
+```
+┌─ Insert Module ──────────────────────┐
+│ Search: [login________________]      │
+│                                      │
+│ login_three_hk   4 steps             │
+│   Preview:                           │
+│   1. Navigate to https://...         │
+│   2. Click Login button              │
+│   Parameters: username, password     │
+│                                      │
+│ [Insert ↙]  → appends to step editor │
+│   @module:login_three_hk(            │
+│     username=test@example.com,       │
+│     password=Pass123)                │
+└──────────────────────────────────────┘
+```
+
+The inserted line is rendered in the editor as a collapsible badge, visually distinct from plain step text.
+
+**Task Table:**
+
+| Task | File | Description | Points |
+|------|------|-------------|--------|
+| **10.11-B1** | `test_step_library_module.py` | TDD: ORM model fields, schema validation, name uniqueness | 2 |
+| **10.11-B2** | `test_step_module_resolver.py` | TDD: `@module:` parsing, param substitution, missing module error, nested step expansion | 3 |
+| **10.11-B3** | `step_library_module.py` (model + schema) | `StepLibraryModule` ORM + Pydantic schemas (`Create`, `Update`, `Response`); `parameters` field declared | 2 |
+| **10.11-B4** | `crud/step_library.py` | CRUD: `get_by_name`, `list_for_user`, `create`, `update`, `delete`, `get_usage_count` | 2 |
+| **10.11-B5** | `api/v1/endpoints/step_library.py` | JWT-protected REST endpoints: `GET /step-library`, `POST`, `PUT /{id}`, `DELETE /{id}`, `GET /{id}/usage` | 2 |
+| **10.11-B6** | `step_module_resolver.py` | `resolve_steps()`: parse `@module:` refs, substitute params, expand to concrete steps; wired into `three_tier_execution_service.py` | 2 |
+| **10.11-B7** | `StepLibraryPage.tsx` | New `/step-library` page: list, search, create/edit/delete modules; reuses `TestStepEditor` | 3 |
+| **10.11-B8** | `TestStepEditor.tsx` (update) + `InsertModulePicker.tsx` | "Insert Module" button + side panel: search, preview, parameter form, append `@module:` line to editor | 2 |
+
+**Total: 18 points, 4 days**
+
+**Files Changed:**
+
+| File | Change |
+|------|--------|
+| `backend/app/models/step_library_module.py` | New: `StepLibraryModule` ORM model |
+| `backend/app/schemas/step_library_module.py` | New: Pydantic schemas |
+| `backend/app/crud/step_library.py` | New: CRUD helpers |
+| `backend/app/api/v1/endpoints/step_library.py` | New: JWT-protected REST API |
+| `backend/app/api/v1/api.py` | Register step-library router |
+| `backend/app/services/step_module_resolver.py` | New: `resolve_steps()` expander |
+| `backend/app/services/three_tier_execution_service.py` | Call `resolve_steps()` before step dispatch loop |
+| `backend/migrations/` | New Alembic migration for `step_library_modules` table |
+| `frontend/src/pages/StepLibraryPage.tsx` | New: Step Library management page |
+| `frontend/src/components/InsertModulePicker.tsx` | New: Module search/preview/insert side panel |
+| `frontend/src/components/TestStepEditor.tsx` | Add "Insert Module" button, render `@module:` lines as collapsible badge |
+| `frontend/src/components/layout/Sidebar.tsx` | Add `/step-library` nav item between Tests and Test Suites |
+| `frontend/src/App.tsx` | Add `/step-library` route |
+| `backend/tests/unit/test_step_library_module.py` | Unit tests: ORM, schema |
+| `backend/tests/unit/test_step_module_resolver.py` | Unit tests: resolver logic |
+| `backend/tests/integration/test_step_library_execution.py` | Integration tests: `@module:` expansion in execution flow |
+
+**Sprint 10.11 Success Criteria:**
+- [ ] `StepLibraryModule` CRUD API operational (`/api/v1/step-library`), JWT-protected
+- [ ] `@module:name(params)` references in test case steps expand to concrete steps before 3-tier dispatch
+- [ ] Missing or invalid module reference produces a clear error step (does not crash execution)
+- [ ] `/step-library` sidebar page: create, edit, delete, search modules
+- [ ] `TestStepEditor` "Insert Module" button: search, preview, parameter entry, appends `@module:` line
+- [ ] `@module:` lines rendered as collapsible badge in editor (visually distinct from plain text)
+- [ ] All existing test cases without `@module:` references execute unchanged (backward compatible)
+- [ ] Sidebar nav item `/step-library` visible between Tests and Test Suites
+- [ ] TDD: all unit + integration tests pass; no regression in existing tests
+- [ ] ADR recorded for `@module:` syntax and `StepLibraryModule` design decision
 
 ---
 
