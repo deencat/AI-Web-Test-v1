@@ -86,6 +86,7 @@
 39. [ADR-002-39: Per-Digit OTP Step Expansion via format_otp_steps()](#adr-002-39-per-digit-otp-step-expansion-via-format_otp_steps)
 40. [ADR-002-40: JIT OTP Expansion — Poll IMAP at Step Execution Time, Not Upfront](#adr-002-40-jit-otp-expansion--poll-imap-at-step-execution-time-not-upfront)
 41. [ADR-002-41: Context-Aware OTP Extraction and Newest-First IMAP UID Search](#adr-002-41-context-aware-otp-extraction-and-newest-first-imap-uid-search)
+42. [ADR-002-42: Step Library @module: Syntax and Resolver Architecture](#adr-002-42-step-library-module-syntax-and-resolver-architecture)
 
 ---
 
@@ -3017,3 +3018,71 @@ The search uses `SINCE <today>` without `UNSEEN`. This ensures that emails opene
 **Tests:**
 - `backend/tests/unit/test_email_otp_service.py` — `TestExtractOtpFromText` (11 tests): 4/6/8-digit extraction, context-aware preference, HTML body, empty string, punctuation wrapping, 9-digit rejection, 3-digit rejection, fallback when no keyword near number.
 - `backend/tests/unit/test_email_otp_service.py` — `TestEmailOTPServicePollOtp.test_uses_sender_filter` and `test_uses_today_since_filter`: verify `ALL`+`SINCE` criteria and absence of `UNSEEN`.
+
+---
+
+## ADR-002-42: Step Library @module: Syntax and Resolver Architecture
+
+**Date:** May 5, 2026  
+**Sprint:** 10.11
+
+### Context
+
+As test case count grows, login flows, OTP sequences, and checkout steps are copy-pasted across many test cases. When the application UI changes, every copy must be updated. This creates maintenance debt and inconsistency risk.
+
+### Decision
+
+**Option A — New `StepLibraryModule` entity with inline `@module:` syntax:**
+
+1. A `StepLibraryModule` is a named, parameterized step sequence stored independently from test cases.
+2. Test case steps reference modules using `@module:name(param=value)` inline syntax.
+3. A lightweight `step_module_resolver.py` service expands all `@module:` references to concrete steps before the 3-tier execution engine dispatches them (Tier 1/2/3 executors never see `@module:` references).
+4. A `/api/v1/step-library` REST API (JWT-protected) provides CRUD for modules.
+5. A `/step-library` sidebar page provides a management UI.
+6. `TestStepEditor` gains an "Insert Module" button that opens `InsertModulePicker` for search, preview, param entry, and one-click append.
+
+**Why not "import test case as module":** that approach couples execution records, metadata, and ownership models. A dedicated `StepLibraryModule` entity is lightweight, has no execution history of its own, and has a clear ownership (user-scoped).
+
+**`@module:` syntax:**
+
+```
+@module:login_three_hk()                             # no parameters
+@module:login_flow(username=admin,password=p@ss)     # with parameters
+@module:checkout_flow                                # shorthand (no parens)
+```
+
+**Resolver behaviour:**
+- Steps without `@module:` prefix pass through unchanged (backward compatible).
+- Missing module → error step string `[ERROR] Step Library module '...' not found.` — never crashes execution.
+- Parameter substitution uses `{placeholder}` syntax in module steps.
+
+**Security:** `resolve_steps(…, user_id=N)` filters `StepLibraryModule.user_id == N` — prevents cross-user module access.
+
+### Consequences
+
+- Existing test cases without `@module:` references are completely unaffected.
+- Updating a module in the Step Library immediately affects all test cases that reference it.
+- Missing module reference produces a visible error step at runtime instead of silently skipping.
+- `usage_count` API endpoint scans test case steps for `@module:name` references to show "Used by N tests."
+
+### Related files
+
+- `backend/app/models/step_library_module.py` — ORM model
+- `backend/app/schemas/step_library_module.py` — Pydantic schemas
+- `backend/app/crud/step_library.py` — CRUD helpers
+- `backend/app/api/v1/endpoints/step_library.py` — REST API
+- `backend/app/services/step_module_resolver.py` — resolver
+- `backend/migrations/add_step_library_modules_table.py` — migration
+- `frontend/src/pages/StepLibraryPage.tsx` — management page
+- `frontend/src/components/InsertModulePicker.tsx` — insert panel
+- `frontend/src/components/TestStepEditor.tsx` — Insert Module button added
+- `frontend/src/services/stepLibraryService.ts` — API client
+- `frontend/src/types/stepLibrary.types.ts` — TypeScript types
+
+### Tests
+
+- `backend/tests/unit/test_step_library_module.py` — 23 tests (ORM columns, schemas)
+- `backend/tests/unit/test_step_module_resolver.py` — 17 tests (resolver, parse, is_module_ref)
+- `backend/tests/integration/test_step_library_execution.py` — 10 tests (DB query, CRUD, execution wiring)
+- `frontend/src/pages/__tests__/StepLibraryPage.test.tsx` — 10 tests
+- `frontend/src/components/__tests__/InsertModulePicker.test.tsx` — 8 tests

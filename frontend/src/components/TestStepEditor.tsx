@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { debounce } from 'lodash';
 import { LoopBlockEditor, LoopBlock } from './LoopBlockEditor';
+import { InsertModulePicker } from './InsertModulePicker';
 
 interface TestStepEditorProps {
   testId: number;
@@ -34,6 +35,7 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [showLoopBlocks, setShowLoopBlocks] = useState(true);
   const [localLoopBlocks, setLocalLoopBlocks] = useState<LoopBlock[]>(loopBlocks);
+  const [showModulePicker, setShowModulePicker] = useState(false);
 
   // Auto-save function (debounced)
   const autoSave = useCallback(
@@ -258,14 +260,36 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
           )}
         </label>
         
-        <button
-          onClick={handleManualSave}
-          disabled={isSaving || steps === savedSteps}
-          className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-        >
-          {isSaving ? 'Saving...' : 'Save Now'}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowModulePicker(p => !p)}
+            className="px-3 py-1 text-sm border border-blue-400 text-blue-600 rounded hover:bg-blue-50"
+            title="Insert a reusable step module"
+          >
+            ⊕ Insert Module
+          </button>
+          <button
+            onClick={handleManualSave}
+            disabled={isSaving || steps === savedSteps}
+            className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            {isSaving ? 'Saving...' : 'Save Now'}
+          </button>
+        </div>
       </div>
+
+      {/* Insert Module Picker */}
+      {showModulePicker && (
+        <div className="mb-3">
+          <InsertModulePicker
+            onInsert={(ref) => {
+              setSteps(prev => prev ? `${prev}\n${ref}` : ref);
+              setShowModulePicker(false);
+            }}
+            onClose={() => setShowModulePicker(false)}
+          />
+        </div>
+      )}
 
       {/* Textarea */}
       <textarea

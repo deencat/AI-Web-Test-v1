@@ -14,6 +14,7 @@ from app.models.execution_feedback import ExecutionFeedback
 from app.models.execution_settings import ExecutionSettings, XPathCache, TierExecutionLog
 from app.models.browser_profile import BrowserProfile
 from app.models.email_credential import EmailCredential
+from app.models.step_library_module import StepLibraryModule
 
 __all__ = [
     "User",
@@ -31,5 +32,6 @@ __all__ = [
     "ExecutionSettings", "XPathCache", "TierExecutionLog",
     "BrowserProfile",
     "EmailCredential",
+    "StepLibraryModule",
 ]
 
