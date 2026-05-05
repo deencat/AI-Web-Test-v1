@@ -872,6 +872,33 @@ class ObservationAgent(BaseAgent):
                                 "steps_total": effective_max_steps,
                             })
 
+                        # stop_at_page_hint: stop crawling when agent reaches the target page
+                        _stop_hint = task.payload.get("stop_at_page_hint", "")
+                        if _stop_hint:
+                            _hist_obj = getattr(agent, "history", None)
+                            _hist_items = getattr(_hist_obj, "history", []) or []
+                            if _hist_items:
+                                _latest_state = getattr(_hist_items[-1], "state", None)
+                                if _latest_state:
+                                    _cur_url = (getattr(_latest_state, "url", "") or "").lower()
+                                    _cur_title = (getattr(_latest_state, "title", "") or "").lower()
+                                    if _stop_hint.lower() in _cur_url or _stop_hint.lower() in _cur_title:
+                                        logger.info(
+                                            "ObservationAgent: stop_at_page_hint '%s' matched page "
+                                            "title='%s' url='%s'. Stopping crawl early.",
+                                            _stop_hint,
+                                            getattr(_latest_state, "title", ""),
+                                            getattr(_latest_state, "url", ""),
+                                        )
+                                        run_task.cancel()
+                                        try:
+                                            await run_task
+                                        except asyncio.CancelledError:
+                                            pass
+                                        if hasattr(agent, "history") and agent.history:
+                                            history = agent.history
+                                        break
+
                         if elapsed >= max_flow_timeout:
                             raise asyncio.TimeoutError()
 
