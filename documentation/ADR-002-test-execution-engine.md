@@ -3036,7 +3036,7 @@ As test case count grows, login flows, OTP sequences, and checkout steps are cop
 
 1. A `StepLibraryModule` is a named, parameterized step sequence stored independently from test cases.
 2. Test case steps reference modules using `@module:name(param=value)` inline syntax.
-3. A lightweight `step_module_resolver.py` service expands all `@module:` references to concrete steps before the 3-tier execution engine dispatches them (Tier 1/2/3 executors never see `@module:` references).
+3. A lightweight `step_module_resolver.py` service expands all `@module:` references to concrete steps before the execution services dispatch them — Tier 1/2/3 executors never see `@module:` references.
 4. A `/api/v1/step-library` REST API (JWT-protected) provides CRUD for modules.
 5. A `/step-library` sidebar page provides a management UI.
 6. `TestStepEditor` gains an "Insert Module" button that opens `InsertModulePicker` for search, preview, param entry, and one-click append.
@@ -3058,12 +3058,35 @@ As test case count grows, login flows, OTP sequences, and checkout steps are cop
 
 **Security:** `resolve_steps(…, user_id=N)` filters `StepLibraryModule.user_id == N` — prevents cross-user module access.
 
+### Execution service wiring (actual vs planned)
+
+**Planned** (Sprint 10.11 spec): call `resolve_steps()` in `three_tier_execution_service.py`.
+
+**Actual**: `resolve_steps()` is called in `execution_service.py` and `stagehand_service.py`. These are the correct attachment points because `ThreeTierExecutionService.execute_step()` accepts a single step dict at a time — there is no list-level entrypoint inside it. The step list is owned by the two calling services, so resolution must happen there.
+
+**Discovery:** Bug first noticed at execution #794 where `@module:` references passed through untouched to the browser/AI tier. Root cause: `step_module_resolver.py` was implemented but the import and call were never added to either execution service. Fixed by adding:
+
+```python
+# execution_service.py — after _normalize_test_steps()
+from app.services.step_module_resolver import resolve_steps
+steps = self._normalize_test_steps(test_case.steps)
+steps = resolve_steps(steps, db=db, user_id=user_id)   # ← wiring fix
+
+# stagehand_service.py — after JSON-parse/normalise block
+from app.services.step_module_resolver import resolve_steps
+# ... JSON parse / list normalisation ...
+steps = resolve_steps(steps, db=db, user_id=user_id)   # ← wiring fix
+```
+
+OTP JIT expansion (Sprint 10.10) runs **inside** the loop after module expansion — ordering is preserved.
+
 ### Consequences
 
 - Existing test cases without `@module:` references are completely unaffected.
 - Updating a module in the Step Library immediately affects all test cases that reference it.
-- Missing module reference produces a visible error step at runtime instead of silently skipping.
+- Missing module reference produces a visible `[ERROR]` step at runtime instead of silently skipping.
 - `usage_count` API endpoint scans test case steps for `@module:name` references to show "Used by N tests."
+- Name collision at create/rename returns HTTP 409 — enforced per user scope at the API layer.
 
 ### Related files
 
@@ -3071,11 +3094,13 @@ As test case count grows, login flows, OTP sequences, and checkout steps are cop
 - `backend/app/schemas/step_library_module.py` — Pydantic schemas
 - `backend/app/crud/step_library.py` — CRUD helpers
 - `backend/app/api/v1/endpoints/step_library.py` — REST API
-- `backend/app/services/step_module_resolver.py` — resolver
-- `backend/migrations/add_step_library_modules_table.py` — migration
+- `backend/app/services/step_module_resolver.py` — resolver (`resolve_steps`, `parse_module_ref`, `is_module_ref`)
+- `backend/app/services/execution_service.py` — `resolve_steps()` called after `_normalize_test_steps()`
+- `backend/app/services/stagehand_service.py` — `resolve_steps()` called after steps JSON-parse block
+- `backend/migrations/add_step_library_modules_table.py` — migration (run ✅)
 - `frontend/src/pages/StepLibraryPage.tsx` — management page
 - `frontend/src/components/InsertModulePicker.tsx` — insert panel
-- `frontend/src/components/TestStepEditor.tsx` — Insert Module button added
+- `frontend/src/components/TestStepEditor.tsx` — "⊕ Insert Module" button added
 - `frontend/src/services/stepLibraryService.ts` — API client
 - `frontend/src/types/stepLibrary.types.ts` — TypeScript types
 
@@ -3083,6 +3108,8 @@ As test case count grows, login flows, OTP sequences, and checkout steps are cop
 
 - `backend/tests/unit/test_step_library_module.py` — 23 tests (ORM columns, schemas)
 - `backend/tests/unit/test_step_module_resolver.py` — 17 tests (resolver, parse, is_module_ref)
-- `backend/tests/integration/test_step_library_execution.py` — 10 tests (DB query, CRUD, execution wiring)
+- `backend/tests/integration/test_step_library_execution.py` — 12 tests (DB query, CRUD, execution wiring, `TestExecutionServiceWiring`: import assertions for both services)
 - `frontend/src/pages/__tests__/StepLibraryPage.test.tsx` — 10 tests
 - `frontend/src/components/__tests__/InsertModulePicker.test.tsx` — 8 tests
+
+**Total: 52 backend + 18 frontend = 70 tests. 215 total frontend tests pass. No regression.**

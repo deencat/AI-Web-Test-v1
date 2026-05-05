@@ -2564,10 +2564,25 @@ All per-account IMAP credentials (host, port, email, app password) are stored **
 ### Sprint 10.11: Developer B Step Library — Reusable Modular Test Steps (May 2026)
 
 **Owner:** Developer B  
-**Status:** 🔄 **PLANNED**  
+**Status:** ✅ **COMPLETE** (May 5, 2026)  
 **Story Points:** 18 points / 4 days  
 
-**Summary:** Introduce a **Step Library** — a named, parameterized, reusable step-sequence entity that can be referenced from any test case using `@module:name(param=value)` inline syntax. This eliminates copy-paste duplication across test cases (e.g. login flows, OTP sequences, checkout steps) and keeps test cases maintainable as the application evolves.
+**Summary:** Introduced a **Step Library** — a named, parameterized, reusable step-sequence entity that can be referenced from any test case using `@module:name(param=value)` inline syntax. Eliminates copy-paste duplication across test cases (login flows, OTP sequences, checkout steps) and keeps test cases maintainable as the application evolves. 52 backend tests + 18 frontend tests pass; 215 total frontend tests — no regression.
+
+**Implementation Outcome (Actual):**
+- ✅ `StepLibraryModule` ORM (`backend/app/models/step_library_module.py`): unique slug `name`, `display_name`, `description`, JSON `steps`/`parameters`/`tags`, user-scoped `user_id` FK with CASCADE delete.
+- ✅ Pydantic schemas (`Create`, `Update`, `Response` with optional `usage_count`).
+- ✅ CRUD: `list_modules`, `get_by_id`, `get_by_name`, `create_module`, `update_module`, `delete_module`, `get_usage_count`.
+- ✅ `step_module_resolver.py`: `resolve_steps()`, `parse_module_ref()`, `is_module_ref()`, `_substitute_params()`. Missing modules produce `[ERROR]` step — never crashes execution.
+- ✅ JWT-protected REST API: `GET /api/v1/step-library`, `POST` (409 on name collision), `PUT /{id}`, `DELETE /{id}`, `GET /{id}/usage`.
+- ✅ `resolve_steps()` wired into **both** `execution_service.py` (after `_normalize_test_steps()`) and `stagehand_service.py` (after steps JSON-parse block). *(Plan originally specified `three_tier_execution_service.py`; actual insertion points are the two calling services — correct architecture, same net effect.)*
+- ✅ DB migration `add_step_library_modules_table.py` — run and verified.
+- ✅ `StepLibraryPage.tsx` (`/step-library`): list, search, create/edit/delete with inline modal form.
+- ✅ `InsertModulePicker.tsx`: search, step preview, param inputs, `@module:` ref preview, insert appends to editor.
+- ✅ `TestStepEditor.tsx`: \"⊕ Insert Module\" button toggles `InsertModulePicker`.
+- ✅ TypeScript types `stepLibrary.types.ts` + API client `stepLibraryService.ts`.
+- ✅ Sidebar `Library` icon + `/step-library` nav between Tests and Test Suites; `App.tsx` route added.
+- ✅ ADR-002-42 recorded in `documentation/ADR-002-test-execution-engine.md`.
 
 **Motivation:**
 - Test cases for complex flows (Three HK subscriptions, UAT registration) share many identical step sequences (login, OTP entry, checkout navigation)
@@ -2583,7 +2598,7 @@ All per-account IMAP credentials (host, port, email, app password) are stored **
 | Dedicated entity vs. import-test-case | New `StepLibraryModule` entity | Avoids ownership/metadata/execution-record coupling of test-case-to-test-case imports |
 | Navigation placement | Sidebar nav item `/step-library` | Shared resource, not owned by a single test or suite; matches pattern of Knowledge Base |
 | Backward compatibility | `@module:` is a new step type; existing steps unchanged | Zero migration; existing test cases work without modification |
-| Execution engine integration | Resolver expands modules in `three_tier_execution_service.py` before step dispatch | No changes to Tier 1/2/3 executors themselves |
+| Execution engine integration | Resolver expands modules in `execution_service.py` and `stagehand_service.py` before the step loop | Correct insertion points — `ThreeTierExecutionService.execute_step()` accepts one step at a time so list-level interception belongs in the callers; Tier 1/2/3 executors never receive `@module:` references |
 
 **Data Model:**
 
@@ -2621,7 +2636,19 @@ def resolve_steps(raw_steps: list, db: Session, user_id: int) -> list:
     return resolved
 ```
 
-The resolver is called in `three_tier_execution_service.py` immediately before the step dispatch loop. Tier 1/2/3 executors receive only concrete steps — no `@module:` references reach them.
+The resolver is called in **`execution_service.py`** (after `_normalize_test_steps()`) and **`stagehand_service.py`** (after the steps JSON-parse block), immediately before the step dispatch loop. Tier 1/2/3 executors receive only concrete steps — no `@module:` references reach them.
+
+```python
+# execution_service.py
+steps = self._normalize_test_steps(test_case.steps)
+steps = resolve_steps(steps, db=db, user_id=user_id)   # expand @module: refs
+
+# stagehand_service.py
+# ... JSON parse / list normalisation ...
+steps = resolve_steps(steps, db=db, user_id=user_id)   # expand @module: refs
+```
+
+OTP JIT expansion (Sprint 10.10) runs **inside** the loop after module expansion — ordering is preserved.
 
 **Frontend: Step Library Page (`/step-library`):**
 
@@ -2673,22 +2700,24 @@ Add an **"Insert Module"** button to `TestStepEditor.tsx`. Opens a side panel:
 
 The inserted line is rendered in the editor as a collapsible badge, visually distinct from plain step text.
 
-**Task Table:**
+**Task Table (Actual):**
 
-| Task | File | Description | Points |
+| Task | File | Description | Status |
 |------|------|-------------|--------|
-| **10.11-B1** | `test_step_library_module.py` | TDD: ORM model fields, schema validation, name uniqueness | 2 |
-| **10.11-B2** | `test_step_module_resolver.py` | TDD: `@module:` parsing, param substitution, missing module error, nested step expansion | 3 |
-| **10.11-B3** | `step_library_module.py` (model + schema) | `StepLibraryModule` ORM + Pydantic schemas (`Create`, `Update`, `Response`); `parameters` field declared | 2 |
-| **10.11-B4** | `crud/step_library.py` | CRUD: `get_by_name`, `list_for_user`, `create`, `update`, `delete`, `get_usage_count` | 2 |
-| **10.11-B5** | `api/v1/endpoints/step_library.py` | JWT-protected REST endpoints: `GET /step-library`, `POST`, `PUT /{id}`, `DELETE /{id}`, `GET /{id}/usage` | 2 |
-| **10.11-B6** | `step_module_resolver.py` | `resolve_steps()`: parse `@module:` refs, substitute params, expand to concrete steps; wired into `three_tier_execution_service.py` | 2 |
-| **10.11-B7** | `StepLibraryPage.tsx` | New `/step-library` page: list, search, create/edit/delete modules; reuses `TestStepEditor` | 3 |
-| **10.11-B8** | `TestStepEditor.tsx` (update) + `InsertModulePicker.tsx` | "Insert Module" button + side panel: search, preview, parameter form, append `@module:` line to editor | 2 |
+| **10.11-B1** | `test_step_library_module.py` | TDD: 23 tests — ORM model columns, schema validation, name uniqueness | ✅ |
+| **10.11-B2** | `test_step_module_resolver.py` | TDD: 17 tests — `@module:` parsing, param substitution, missing module, `is_module_ref` | ✅ |
+| **10.11-B3** | `step_library_module.py` + schemas | `StepLibraryModule` ORM + Pydantic schemas (`Create`, `Update`, `Response` with `usage_count`) | ✅ |
+| **10.11-B4** | `crud/step_library.py` | CRUD: `list_modules`, `get_by_id`, `get_by_name`, `create_module`, `update_module`, `delete_module`, `get_usage_count` | ✅ |
+| **10.11-B5** | `api/v1/endpoints/step_library.py` | JWT-protected REST: `GET /step-library`, `POST` (409 on collision), `PUT /{id}`, `DELETE /{id}`, `GET /{id}/usage` | ✅ |
+| **10.11-B6** | `step_module_resolver.py` | `resolve_steps()`, `parse_module_ref()`, `is_module_ref()`, `_substitute_params()` | ✅ |
+| **10.11-B7** | `StepLibraryPage.tsx` | New `/step-library` page: list, search, create/edit/delete with inline modal form | ✅ |
+| **10.11-B8** | `TestStepEditor.tsx` + `InsertModulePicker.tsx` | \"⊕ Insert Module\" button + side panel: search, preview, param inputs, insert | ✅ |
+| **10.11-B9** | `execution_service.py` + `stagehand_service.py` | Wire `resolve_steps()` before step loop in both execution services *(scope correction)* | ✅ |
+| **10.11-B10** | `test_step_library_execution.py` | 12 integration tests: DB query, CRUD, wiring assertions for both execution services | ✅ |
 
-**Total: 18 points, 4 days**
+**Total: 18 points / 4 days (+1 scope correction task for execution service wiring)**
 
-**Files Changed:**
+**Files Changed (Actual):**
 
 | File | Change |
 |------|--------|
@@ -2698,28 +2727,43 @@ The inserted line is rendered in the editor as a collapsible badge, visually dis
 | `backend/app/api/v1/endpoints/step_library.py` | New: JWT-protected REST API |
 | `backend/app/api/v1/api.py` | Register step-library router |
 | `backend/app/services/step_module_resolver.py` | New: `resolve_steps()` expander |
-| `backend/app/services/three_tier_execution_service.py` | Call `resolve_steps()` before step dispatch loop |
-| `backend/migrations/` | New Alembic migration for `step_library_modules` table |
+| `backend/app/services/execution_service.py` | Import + call `resolve_steps()` after `_normalize_test_steps()` |
+| `backend/app/services/stagehand_service.py` | Import + call `resolve_steps()` after steps JSON-parse block |
+| `backend/app/models/__init__.py` | Export `StepLibraryModule` |
+| `backend/app/models/user.py` | Add `step_library_modules` relationship |
+| `backend/migrations/add_step_library_modules_table.py` | New: DB migration (run ✅) |
 | `frontend/src/pages/StepLibraryPage.tsx` | New: Step Library management page |
 | `frontend/src/components/InsertModulePicker.tsx` | New: Module search/preview/insert side panel |
-| `frontend/src/components/TestStepEditor.tsx` | Add "Insert Module" button, render `@module:` lines as collapsible badge |
-| `frontend/src/components/layout/Sidebar.tsx` | Add `/step-library` nav item between Tests and Test Suites |
-| `frontend/src/App.tsx` | Add `/step-library` route |
-| `backend/tests/unit/test_step_library_module.py` | Unit tests: ORM, schema |
-| `backend/tests/unit/test_step_module_resolver.py` | Unit tests: resolver logic |
-| `backend/tests/integration/test_step_library_execution.py` | Integration tests: `@module:` expansion in execution flow |
+| `frontend/src/components/TestStepEditor.tsx` | \"⊕ Insert Module\" button + `InsertModulePicker` toggle |
+| `frontend/src/components/layout/Sidebar.tsx` | `Library` icon + `/step-library` nav item between Tests and Test Suites |
+| `frontend/src/App.tsx` | `/step-library` route added |
+| `frontend/src/services/stepLibraryService.ts` | New: API client |
+| `frontend/src/types/stepLibrary.types.ts` | New: TypeScript interfaces |
+| `backend/tests/unit/test_step_library_module.py` | 23 unit tests: ORM, schema |
+| `backend/tests/unit/test_step_module_resolver.py` | 17 unit tests: resolver, parse, is_module_ref |
+| `backend/tests/integration/test_step_library_execution.py` | 12 integration tests: DB, CRUD, execution wiring |
+| `frontend/src/pages/__tests__/StepLibraryPage.test.tsx` | 10 frontend tests |
+| `frontend/src/components/__tests__/InsertModulePicker.test.tsx` | 8 frontend tests |
 
 **Sprint 10.11 Success Criteria:**
-- [ ] `StepLibraryModule` CRUD API operational (`/api/v1/step-library`), JWT-protected
-- [ ] `@module:name(params)` references in test case steps expand to concrete steps before 3-tier dispatch
-- [ ] Missing or invalid module reference produces a clear error step (does not crash execution)
-- [ ] `/step-library` sidebar page: create, edit, delete, search modules
-- [ ] `TestStepEditor` "Insert Module" button: search, preview, parameter entry, appends `@module:` line
-- [ ] `@module:` lines rendered as collapsible badge in editor (visually distinct from plain text)
-- [ ] All existing test cases without `@module:` references execute unchanged (backward compatible)
-- [ ] Sidebar nav item `/step-library` visible between Tests and Test Suites
-- [ ] TDD: all unit + integration tests pass; no regression in existing tests
-- [ ] ADR recorded for `@module:` syntax and `StepLibraryModule` design decision
+- [x] `StepLibraryModule` CRUD API operational (`/api/v1/step-library`), JWT-protected
+- [x] `@module:name(params)` references in test case steps expand to concrete steps before execution dispatch
+- [x] Expansion wired in `execution_service.py` (Playwright/3-tier) and `stagehand_service.py` (AI/Stagehand)
+- [x] Missing or invalid module reference produces `[ERROR]` step string — never crashes execution
+- [x] Parameter substitution: `{placeholder}` in module step text replaced with caller-supplied values
+- [x] `/step-library` sidebar page: list, search, create/edit/delete with inline modal form
+- [x] `TestStepEditor` "⊕ Insert Module" button: search, step preview, param inputs, appends `@module:` line
+- [x] All existing test cases without `@module:` references execute unchanged (backward compatible)
+- [x] `Library` icon nav item visible between Tests and Test Suites in sidebar
+- [x] 52 backend tests pass (23 unit model/schema + 17 unit resolver + 12 integration incl. wiring assertions)
+- [x] 18 frontend tests pass (10 `StepLibraryPage` + 8 `InsertModulePicker`)
+- [x] 215 total frontend tests pass — no regression
+- [x] ADR-002-42 recorded in `documentation/ADR-002-test-execution-engine.md`
+
+#### Known Follow-Up Items
+
+- [ ] **Upload file TTL cleanup** (carried) — Files in `uploads/workflow-files/` persist indefinitely.
+- [ ] **`@module:` badge rendering in TestStepEditor** — Inserted lines appear as plain monospace text. Future enhancement: render as collapsible badges (requires rich text editor or overlay renderer).
 
 ---
 
