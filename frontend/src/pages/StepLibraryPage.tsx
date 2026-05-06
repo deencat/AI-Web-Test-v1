@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
+import { RenameModuleModal } from '../components/RenameModuleModal';
 import stepLibraryService from '../services/stepLibraryService';
 import type { StepLibraryModule, StepLibraryModuleCreate, StepLibraryModuleUpdate } from '../types/stepLibrary.types';
 
@@ -57,6 +58,10 @@ export function StepLibraryPage() {
   const [form, setForm] = useState<ModuleFormState>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Rename modal state
+  const [renameTarget, setRenameTarget] = useState<StepLibraryModule | null>(null);
+  const [renameToast, setRenameToast] = useState<string | null>(null);
 
   useEffect(() => {
     loadModules();
@@ -120,6 +125,17 @@ export function StepLibraryPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleRenameSuccess(updated: StepLibraryModule, updatedCount: number) {
+    setModules(prev => prev.map(m => m.id === updated.id ? updated : m));
+    setRenameTarget(null);
+    const msg =
+      updatedCount === 0
+        ? `Module renamed to "${updated.name}".`
+        : `Module renamed to "${updated.name}". ${updatedCount} test case${updatedCount !== 1 ? 's' : ''} updated.`;
+    setRenameToast(msg);
+    setTimeout(() => setRenameToast(null), 5000);
   }
 
   async function handleDelete(id: number) {
@@ -209,6 +225,13 @@ export function StepLibraryPage() {
                     Edit
                   </button>
                   <button
+                    onClick={() => setRenameTarget(module)}
+                    className="px-3 py-1.5 text-sm border border-purple-300 text-purple-600 rounded hover:bg-purple-50"
+                    aria-label="Rename"
+                  >
+                    Rename
+                  </button>
+                  <button
                     onClick={() => handleDelete(module.id)}
                     className="px-3 py-1.5 text-sm border border-red-300 text-red-600 rounded hover:bg-red-50"
                     aria-label="Delete"
@@ -219,6 +242,22 @@ export function StepLibraryPage() {
               </div>
             ))}
           </div>
+        )}
+
+        {/* Success toast for rename */}
+        {renameToast && (
+          <div className="fixed bottom-6 right-6 z-50 bg-green-600 text-white px-5 py-3 rounded-lg shadow-lg text-sm">
+            {renameToast}
+          </div>
+        )}
+
+        {/* Rename slug modal */}
+        {renameTarget && (
+          <RenameModuleModal
+            module={renameTarget}
+            onClose={() => setRenameTarget(null)}
+            onRenamed={handleRenameSuccess}
+          />
         )}
 
         {/* Module form modal */}

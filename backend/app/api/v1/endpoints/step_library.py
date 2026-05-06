@@ -1,16 +1,17 @@
 """
 CRUD endpoints for StepLibraryModule — Sprint 10.11.
 
-GET    /api/v1/step-library              List user's modules
-POST   /api/v1/step-library              Create a new module
-PUT    /api/v1/step-library/{id}         Update an existing module
-DELETE /api/v1/step-library/{id}         Delete a module
-GET    /api/v1/step-library/{id}/usage   Get usage count for a module
+GET    /api/v1/step-library                              List user's modules
+POST   /api/v1/step-library                              Create a new module
+PUT    /api/v1/step-library/{id}                         Update an existing module
+DELETE /api/v1/step-library/{id}                         Delete a module
+GET    /api/v1/step-library/{id}/usage                   Get usage count for a module
+GET    /api/v1/step-library/{id}/rename-preview          Dry-run: list affected test cases
 """
 import logging
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_current_user
@@ -91,8 +92,9 @@ def update_step_library_module(
 ):
     module = _get_module_or_404(module_id, current_user.id, db)
 
-    # If renaming, enforce uniqueness
-    if body.name and body.name != module.name:
+    # If renaming, enforce uniqueness and cascade references
+    old_name = module.name
+    if body.name and body.name != old_name:
         existing = crud.get_by_name(db=db, name=body.name, user_id=current_user.id)
         if existing:
             raise HTTPException(
@@ -101,7 +103,20 @@ def update_step_library_module(
             )
 
     updated = crud.update_module(db=db, module=module, schema=body)
-    logger.info("Updated step library module %s for user %s", module_id, current_user.id)
+
+    # Cascade @module: references now that the module name has changed
+    if body.name and body.name != old_name:
+        affected = crud.rename_module_references(
+            db=db, old_name=old_name, new_name=body.name, user_id=current_user.id
+        )
+        db.commit()
+        logger.info(
+            "Renamed module '%s' → '%s' for user %s; %d test case(s) updated",
+            old_name, body.name, current_user.id, len(affected),
+        )
+    else:
+        logger.info("Updated step library module %s for user %s", module_id, current_user.id)
+
     return updated
 
 
@@ -136,3 +151,32 @@ def get_module_usage(
     module = _get_module_or_404(module_id, current_user.id, db)
     count = crud.get_usage_count(db=db, module_name=module.name)
     return {"module_id": module_id, "usage_count": count}
+
+
+@router.get(
+    "/step-library/{module_id}/rename-preview",
+    summary="Dry-run: list test cases affected by renaming this module's slug",
+)
+def rename_preview(
+    module_id: int,
+    new_name: str = Query(..., min_length=1, max_length=100, description="Proposed new slug"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns all user-owned test cases that reference ``@module:<current_name>``
+    so the frontend can show a confirmation modal before committing the rename.
+
+    Response shape::
+
+        {
+            "affected_test_cases": [{"id": 5, "name": "Login Test"}, ...],
+            "count": 1
+        }
+    """
+    module = _get_module_or_404(module_id, current_user.id, db)
+    affected = crud.get_affected_test_cases(
+        db=db, module_name=module.name, user_id=current_user.id
+    )
+    affected_list = [{"id": tc.id, "name": tc.title} for tc in affected]
+    return {"affected_test_cases": affected_list, "count": len(affected_list)}

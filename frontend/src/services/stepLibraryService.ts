@@ -42,6 +42,17 @@ class StepLibraryService {
     const response = await api.get(`${BASE}/${id}/usage`);
     return response.data;
   }
+
+  /** Dry-run: return test cases that would be affected by renaming the module's slug. */
+  async renamePreview(
+    id: number,
+    newName: string,
+  ): Promise<{ affected_test_cases: { id: number; name: string }[]; count: number }> {
+    const response = await api.get(`${BASE}/${id}/rename-preview`, {
+      params: { new_name: newName },
+    });
+    return response.data;
+  }
 }
 
 const stepLibraryService = new StepLibraryService();
