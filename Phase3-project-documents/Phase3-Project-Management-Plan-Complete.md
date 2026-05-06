@@ -2599,6 +2599,7 @@ All per-account IMAP credentials (host, port, email, app password) are stored **
 | Navigation placement | Sidebar nav item `/step-library` | Shared resource, not owned by a single test or suite; matches pattern of Knowledge Base |
 | Backward compatibility | `@module:` is a new step type; existing steps unchanged | Zero migration; existing test cases work without modification |
 | Execution engine integration | Resolver expands modules in `execution_service.py` and `stagehand_service.py` before the step loop | Correct insertion points — `ThreeTierExecutionService.execute_step()` accepts one step at a time so list-level interception belongs in the callers; Tier 1/2/3 executors never receive `@module:` references |
+| Module rename behaviour | **Option C — Preview + Confirm Cascade** | When the user renames a module's `name` slug, the backend first exposes a dry-run `GET /{id}/rename-preview?new_name=foo` endpoint that returns all affected test cases. If ≥1 tests are affected the frontend shows a confirmation modal listing them; on confirm the `PUT /{id}` rewrites all `@module:old` → `@module:new` references atomically in the same DB transaction. Silent auto-mutation (Option A) was rejected because invisible data changes break auditability; blocking the rename with forced manual edits (Option B) creates unacceptable friction when many tests reference the module. |
 
 **Data Model:**
 
@@ -2714,8 +2715,12 @@ The inserted line is rendered in the editor as a collapsible badge, visually dis
 | **10.11-B8** | `TestStepEditor.tsx` + `InsertModulePicker.tsx` | \"⊕ Insert Module\" button + side panel: search, preview, param inputs, insert | ✅ |
 | **10.11-B9** | `execution_service.py` + `stagehand_service.py` | Wire `resolve_steps()` before step loop in both execution services *(scope correction)* | ✅ |
 | **10.11-B10** | `test_step_library_execution.py` | 12 integration tests: DB query, CRUD, wiring assertions for both execution services | ✅ |
+| **10.11-B11** | `test_step_library_rename.py` | TDD: unit + integration tests for `rename_module_references()` CRUD helper and `GET /{id}/rename-preview` endpoint | 🔲 |
+| **10.11-B12** | `crud/step_library.py` | Add `rename_module_references(db, old_name, new_name, user_id)` — rewrites `@module:old_name` → `@module:new_name` in all user-owned test case steps atomically (`db.flush()` within the same transaction) | 🔲 |
+| **10.11-B13** | `api/v1/endpoints/step_library.py` | Add `GET /{id}/rename-preview?new_name=foo` dry-run endpoint (returns `{ affected_test_cases: [{id, name}], count }`) and update `PUT /{id}` to call `rename_module_references()` when `name` changes | 🔲 |
+| **10.11-B14** | `StepLibraryPage.tsx` + new `RenameModuleModal.tsx` | Frontend confirmation modal: triggered only when editing changes `name`; lists affected test cases with links; calls `GET /rename-preview` before submission; calls `PUT` with confirmed rename; shows toast with updated-count | 🔲 |
 
-**Total: 18 points / 4 days (+1 scope correction task for execution service wiring)**
+**Total: 18 points / 4 days (+1 scope correction task for execution service wiring) + 4 pending tasks for module rename (Option C)**
 
 **Files Changed (Actual):**
 
@@ -2744,6 +2749,11 @@ The inserted line is rendered in the editor as a collapsible badge, visually dis
 | `backend/tests/integration/test_step_library_execution.py` | 12 integration tests: DB, CRUD, execution wiring |
 | `frontend/src/pages/__tests__/StepLibraryPage.test.tsx` | 10 frontend tests |
 | `frontend/src/components/__tests__/InsertModulePicker.test.tsx` | 8 frontend tests |
+| `backend/tests/unit/test_step_library_rename.py` | 🔲 Pending: unit + integration tests for `rename_module_references()` and rename-preview endpoint |
+| `backend/app/crud/step_library.py` | 🔲 Pending: add `rename_module_references()` |
+| `backend/app/api/v1/endpoints/step_library.py` | 🔲 Pending: add `GET /{id}/rename-preview` + cascade call in `PUT /{id}` |
+| `frontend/src/pages/StepLibraryPage.tsx` | 🔲 Pending: wire rename-preview call + confirmation modal trigger |
+| `frontend/src/components/RenameModuleModal.tsx` | 🔲 Pending: new confirmation modal (affected test case list + confirm/cancel) |
 
 **Sprint 10.11 Success Criteria:**
 - [x] `StepLibraryModule` CRUD API operational (`/api/v1/step-library`), JWT-protected
@@ -2759,11 +2769,16 @@ The inserted line is rendered in the editor as a collapsible badge, visually dis
 - [x] 18 frontend tests pass (10 `StepLibraryPage` + 8 `InsertModulePicker`)
 - [x] 215 total frontend tests pass — no regression
 - [x] ADR-002-42 recorded in `documentation/ADR-002-test-execution-engine.md`
+- [ ] Module rename: `GET /{id}/rename-preview` dry-run endpoint returns affected test cases
+- [ ] Module rename: `PUT /{id}` cascades `@module:old_name` → `@module:new_name` atomically when `name` changes
+- [ ] Module rename: Frontend confirmation modal lists affected test cases before committing rename
+- [ ] Module rename: success toast shows count of updated test cases
 
 #### Known Follow-Up Items
 
 - [ ] **Upload file TTL cleanup** (carried) — Files in `uploads/workflow-files/` persist indefinitely.
 - [ ] **`@module:` badge rendering in TestStepEditor** — Inserted lines appear as plain monospace text. Future enhancement: render as collapsible badges (requires rich text editor or overlay renderer).
+- [ ] **Module rename — Option C (Preview + Confirm Cascade)** — When a user renames the `name` slug of a step library module, the system must (1) call a dry-run `GET /{id}/rename-preview?new_name=foo` endpoint that scans all user-owned test cases and returns the list of affected ones, (2) display a confirmation modal listing affected test cases (with links) if any exist, and (3) on user confirmation, call `PUT /{id}` which atomically renames the module **and** rewrites all `@module:old_name` references via `rename_module_references()` in the same DB transaction. Silent auto-cascade without user confirmation was rejected (invisible data mutation); blocking the rename with forced manual edits was rejected (poor UX at scale). See Design Decisions table for full rationale. Tasks: **10.11-B11 → 10.11-B14**.
 
 ---
 
