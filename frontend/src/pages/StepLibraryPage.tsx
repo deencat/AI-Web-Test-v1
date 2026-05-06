@@ -276,19 +276,29 @@ export function StepLibraryPage() {
                 )}
 
                 <div className="space-y-4">
-                  <div>
-                    <label htmlFor="module-name" className="block text-sm font-medium text-gray-700 mb-1">
-                      Module Name (slug)
-                    </label>
-                    <input
-                      id="module-name"
-                      type="text"
-                      value={form.name}
-                      onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                      placeholder="e.g. login_three_hk"
-                      className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 font-mono text-sm"
-                    />
-                  </div>
+                  {/* Name slug only shown when creating; renaming uses the dedicated Rename modal */}
+                  {formMode === 'create' && (
+                    <div>
+                      <label htmlFor="module-name" className="block text-sm font-medium text-gray-700 mb-1">
+                        Module Name (slug)
+                      </label>
+                      <input
+                        id="module-name"
+                        type="text"
+                        value={form.name}
+                        onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                        placeholder="e.g. login_three_hk"
+                        className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                      />
+                    </div>
+                  )}
+                  {formMode === 'edit' && (
+                    <div className="flex items-center gap-2 text-sm text-gray-500 bg-gray-50 border border-gray-200 rounded px-3 py-2">
+                      <span>Slug:</span>
+                      <code className="font-mono text-gray-700">{form.name}</code>
+                      <span className="ml-auto text-xs text-gray-400">Use the Rename button to change the slug</span>
+                    </div>
+                  )}
 
                   <div>
                     <label htmlFor="display-name" className="block text-sm font-medium text-gray-700 mb-1">

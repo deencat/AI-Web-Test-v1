@@ -154,7 +154,7 @@ describe('StepLibraryPage', () => {
     });
   });
 
-  it('8. edit action launches form pre-filled with module data', async () => {
+  it('8. edit action launches form pre-filled with module data (slug shown read-only)', async () => {
     renderPage();
     await waitFor(() => screen.getByText('Three HK Login Flow'));
 
@@ -162,8 +162,10 @@ describe('StepLibraryPage', () => {
     fireEvent.click(editButtons[0]);
 
     await waitFor(() => {
-      const nameInput = screen.getByLabelText(/module name \(slug\)/i) as HTMLInputElement;
-      expect(nameInput.value).toBe('login_three_hk');
+      // In edit mode the slug is displayed read-only — no editable name input
+      // Users must use the Rename button to change the slug
+      expect(screen.queryByLabelText(/module name \(slug\)/i)).toBeNull();
+      expect(screen.getByText(/use the rename button/i)).toBeInTheDocument();
     });
   });
 

@@ -3,8 +3,8 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials · 🔄 Sprint 10.11 Developer B Step Library — reusable `@module:` step sequences, Step Library sidebar page, Insert Module picker in TestStepEditor, backend `StepLibraryModule` CRUD PLANNED  
-**Last Updated:** May 5, 2026 (Sprint 10.11 PLANNED — Step Library: reusable modular step sequences for 3-tier test cases; `@module:` inline syntax; backend CRUD + frontend sidebar page)  
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials · ✅ Sprint 10.11 Developer B Step Library COMPLETE (May 6, 2026) — reusable `@module:` step sequences, Step Library sidebar page, Insert Module picker in TestStepEditor, backend `StepLibraryModule` CRUD, module rename Option C (Preview + Confirm Cascade) with `GET /{id}/rename-preview` dry-run + atomic cascade, dedicated Rename modal, name slug locked in Edit form  
+**Last Updated:** May 6, 2026 (Sprint 10.11 COMPLETE — Step Library fully delivered including module rename Option C: Preview + Confirm Cascade; 72 backend + 227 frontend tests pass)  
 **Version:** 3.5
 
 > **📖 When to Use This Document:**
@@ -2715,12 +2715,12 @@ The inserted line is rendered in the editor as a collapsible badge, visually dis
 | **10.11-B8** | `TestStepEditor.tsx` + `InsertModulePicker.tsx` | \"⊕ Insert Module\" button + side panel: search, preview, param inputs, insert | ✅ |
 | **10.11-B9** | `execution_service.py` + `stagehand_service.py` | Wire `resolve_steps()` before step loop in both execution services *(scope correction)* | ✅ |
 | **10.11-B10** | `test_step_library_execution.py` | 12 integration tests: DB query, CRUD, wiring assertions for both execution services | ✅ |
-| **10.11-B11** | `test_step_library_rename.py` | TDD: unit + integration tests for `rename_module_references()` CRUD helper and `GET /{id}/rename-preview` endpoint | 🔲 |
-| **10.11-B12** | `crud/step_library.py` | Add `rename_module_references(db, old_name, new_name, user_id)` — rewrites `@module:old_name` → `@module:new_name` in all user-owned test case steps atomically (`db.flush()` within the same transaction) | 🔲 |
-| **10.11-B13** | `api/v1/endpoints/step_library.py` | Add `GET /{id}/rename-preview?new_name=foo` dry-run endpoint (returns `{ affected_test_cases: [{id, name}], count }`) and update `PUT /{id}` to call `rename_module_references()` when `name` changes | 🔲 |
-| **10.11-B14** | `StepLibraryPage.tsx` + new `RenameModuleModal.tsx` | Frontend confirmation modal: triggered only when editing changes `name`; lists affected test cases with links; calls `GET /rename-preview` before submission; calls `PUT` with confirmed rename; shows toast with updated-count | 🔲 |
+| **10.11-B11** | `test_step_library_rename.py` | TDD: 20 tests — `rename_module_references()` CRUD helper (11 unit) + `GET /{id}/rename-preview` (5) + `PUT /{id}` cascade (4) | ✅ |
+| **10.11-B12** | `crud/step_library.py` | Added `rename_module_references(db, old_name, new_name, user_id)` + `get_affected_test_cases(db, name, user_id)` — rewrites `@module:old_name` → `@module:new_name` atomically; `db.flush()` within caller's transaction | ✅ |
+| **10.11-B13** | `api/v1/endpoints/step_library.py` | Added `GET /{id}/rename-preview?new_name=foo` dry-run (returns `{ affected_test_cases: [{id, name}], count }`); updated `PUT /{id}` to call `rename_module_references()` + `db.commit()` when `name` changes | ✅ |
+| **10.11-B14** | `StepLibraryPage.tsx` + new `RenameModuleModal.tsx` + `stepLibraryService.ts` | Dedicated **Rename** button (purple) on each module row; `RenameModuleModal` two-step flow (Preview → Confirm); name slug hidden from Edit form (read-only display + hint); `renamePreview()` added to service; success toast with updated-count; 12 new frontend tests | ✅ |
 
-**Total: 18 points / 4 days (+1 scope correction task for execution service wiring) + 4 pending tasks for module rename (Option C)**
+**Total: 18 points / 4 days (+1 scope correction task for execution service wiring + 4 module rename tasks — all complete)**
 
 **Files Changed (Actual):**
 
@@ -2749,11 +2749,13 @@ The inserted line is rendered in the editor as a collapsible badge, visually dis
 | `backend/tests/integration/test_step_library_execution.py` | 12 integration tests: DB, CRUD, execution wiring |
 | `frontend/src/pages/__tests__/StepLibraryPage.test.tsx` | 10 frontend tests |
 | `frontend/src/components/__tests__/InsertModulePicker.test.tsx` | 8 frontend tests |
-| `backend/tests/unit/test_step_library_rename.py` | 🔲 Pending: unit + integration tests for `rename_module_references()` and rename-preview endpoint |
-| `backend/app/crud/step_library.py` | 🔲 Pending: add `rename_module_references()` |
-| `backend/app/api/v1/endpoints/step_library.py` | 🔲 Pending: add `GET /{id}/rename-preview` + cascade call in `PUT /{id}` |
-| `frontend/src/pages/StepLibraryPage.tsx` | 🔲 Pending: wire rename-preview call + confirmation modal trigger |
-| `frontend/src/components/RenameModuleModal.tsx` | 🔲 Pending: new confirmation modal (affected test case list + confirm/cancel) |
+| `backend/tests/unit/test_step_library_rename.py` | New: 20 tests — `rename_module_references()` unit (11) + rename-preview endpoint (5) + PUT cascade (4) |
+| `backend/app/crud/step_library.py` | Updated: `rename_module_references()` + `get_affected_test_cases()` |
+| `backend/app/api/v1/endpoints/step_library.py` | Updated: `GET /{id}/rename-preview` endpoint + `PUT /{id}` cascade call |
+| `frontend/src/pages/StepLibraryPage.tsx` | Updated: **Rename** button per row; name slug removed from Edit form (read-only hint shown); `RenameModuleModal` + success toast wired in |
+| `frontend/src/components/RenameModuleModal.tsx` | New: two-step rename modal (Preview → Confirm; affected test cases list; error handling) |
+| `frontend/src/services/stepLibraryService.ts` | Updated: `renamePreview(id, newName)` method added |
+| `frontend/src/components/__tests__/RenameModuleModal.test.tsx` | New: 12 frontend tests |
 
 **Sprint 10.11 Success Criteria:**
 - [x] `StepLibraryModule` CRUD API operational (`/api/v1/step-library`), JWT-protected
@@ -2769,16 +2771,19 @@ The inserted line is rendered in the editor as a collapsible badge, visually dis
 - [x] 18 frontend tests pass (10 `StepLibraryPage` + 8 `InsertModulePicker`)
 - [x] 215 total frontend tests pass — no regression
 - [x] ADR-002-42 recorded in `documentation/ADR-002-test-execution-engine.md`
-- [ ] Module rename: `GET /{id}/rename-preview` dry-run endpoint returns affected test cases
-- [ ] Module rename: `PUT /{id}` cascades `@module:old_name` → `@module:new_name` atomically when `name` changes
-- [ ] Module rename: Frontend confirmation modal lists affected test cases before committing rename
-- [ ] Module rename: success toast shows count of updated test cases
+- [x] Module rename: `GET /{id}/rename-preview` dry-run endpoint returns affected test cases
+- [x] Module rename: `PUT /{id}` cascades `@module:old_name` → `@module:new_name` atomically when `name` changes
+- [x] Module rename: Frontend confirmation modal lists affected test cases before committing rename
+- [x] Module rename: success toast shows count of updated test cases
+- [x] Module rename: name slug field hidden from Edit form — slug is read-only display with hint to use Rename button
+- [x] 72 backend tests pass (+20 rename unit/integration tests)
+- [x] 227 total frontend tests pass (+12 `RenameModuleModal` tests)
 
 #### Known Follow-Up Items
 
 - [ ] **Upload file TTL cleanup** (carried) — Files in `uploads/workflow-files/` persist indefinitely.
 - [ ] **`@module:` badge rendering in TestStepEditor** — Inserted lines appear as plain monospace text. Future enhancement: render as collapsible badges (requires rich text editor or overlay renderer).
-- [ ] **Module rename — Option C (Preview + Confirm Cascade)** — When a user renames the `name` slug of a step library module, the system must (1) call a dry-run `GET /{id}/rename-preview?new_name=foo` endpoint that scans all user-owned test cases and returns the list of affected ones, (2) display a confirmation modal listing affected test cases (with links) if any exist, and (3) on user confirmation, call `PUT /{id}` which atomically renames the module **and** rewrites all `@module:old_name` references via `rename_module_references()` in the same DB transaction. Silent auto-cascade without user confirmation was rejected (invisible data mutation); blocking the rename with forced manual edits was rejected (poor UX at scale). See Design Decisions table for full rationale. Tasks: **10.11-B11 → 10.11-B14**.
+- [x] **Module rename — Option C (Preview + Confirm Cascade)** — ✅ Complete (May 6, 2026). The `name` slug is renamed via a dedicated **Rename** button (separate from Edit). The two-step modal calls `GET /{id}/rename-preview?new_name=foo`, lists affected test cases with links, then on confirm calls `PUT /{id}` which atomically renames the module and cascades `@module:old_name` → `@module:new_name` via `rename_module_references()` in the same DB transaction. The Edit form no longer shows the name field — a read-only slug display with a hint directs users to the Rename button. 72 backend + 227 frontend tests all pass.
 
 ---
 
