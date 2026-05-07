@@ -878,26 +878,42 @@ class ObservationAgent(BaseAgent):
                             _hist_obj = getattr(agent, "history", None)
                             _hist_items = getattr(_hist_obj, "history", []) or []
                             if _hist_items:
-                                _latest_state = getattr(_hist_items[-1], "state", None)
-                                if _latest_state:
-                                    _cur_url = (getattr(_latest_state, "url", "") or "").lower()
-                                    _cur_title = (getattr(_latest_state, "title", "") or "").lower()
-                                    if _stop_hint.lower() in _cur_url or _stop_hint.lower() in _cur_title:
-                                        logger.info(
-                                            "ObservationAgent: stop_at_page_hint '%s' matched page "
-                                            "title='%s' url='%s'. Stopping crawl early.",
-                                            _stop_hint,
-                                            getattr(_latest_state, "title", ""),
-                                            getattr(_latest_state, "url", ""),
-                                        )
-                                        run_task.cancel()
-                                        try:
-                                            await run_task
-                                        except asyncio.CancelledError:
-                                            pass
-                                        if hasattr(agent, "history") and agent.history:
-                                            history = agent.history
-                                        break
+                                _latest = _hist_items[-1]
+                                _latest_state = getattr(_latest, "state", None)
+                                _cur_url = (getattr(_latest_state, "url", "") or "").lower() if _latest_state else ""
+                                _cur_title = (getattr(_latest_state, "title", "") or "").lower() if _latest_state else ""
+                                # Also check the LLM agent's memory/eval text — covers SPA pages
+                                # where document.title and URL don't change between steps
+                                _model_out = getattr(_latest, "model_output", None)
+                                _agent_state = getattr(_model_out, "current_state", None) if _model_out else None
+                                _memory_text = (getattr(_agent_state, "memory", "") or "").lower() if _agent_state else ""
+                                _eval_text = (getattr(_agent_state, "evaluation_previous_goal", "") or "").lower() if _agent_state else ""
+                                _next_goal = (getattr(_agent_state, "next_goal", "") or "").lower() if _agent_state else ""
+                                _hint_lower = _stop_hint.lower()
+                                _matched = (
+                                    _hint_lower in _cur_url
+                                    or _hint_lower in _cur_title
+                                    or _hint_lower in _memory_text
+                                    or _hint_lower in _eval_text
+                                    or _hint_lower in _next_goal
+                                )
+                                if _matched:
+                                    logger.info(
+                                        "ObservationAgent: stop_at_page_hint '%s' matched "
+                                        "(url='%s', title='%s', memory snippet='%s'). Stopping crawl early.",
+                                        _stop_hint,
+                                        _cur_url[:80],
+                                        _cur_title[:80],
+                                        _memory_text[:120],
+                                    )
+                                    run_task.cancel()
+                                    try:
+                                        await run_task
+                                    except asyncio.CancelledError:
+                                        pass
+                                    if hasattr(agent, "history") and agent.history:
+                                        history = agent.history
+                                    break
 
                         if elapsed >= max_flow_timeout:
                             raise asyncio.TimeoutError()
