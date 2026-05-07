@@ -133,6 +133,52 @@ class CrawlAndSaveTestResponse(BaseModel):
 # Helper: convert flow_steps → human-readable test step strings
 # ---------------------------------------------------------------------------
 
+import re as _re
+
+def _parse_extracted_content(content: str, login_credentials: Optional[Dict[str, str]] = None) -> Optional[str]:
+    """
+    Parse browser-use extracted_content strings into clean plain-English descriptions.
+
+    Browser-use produces strings like:
+      "🖱️Clicked div \"Login\""
+      "⌨️Typed \"pmo@example.com\" into element with index 42 (content: ...)"
+      "🖱️Clicked button \"Subscribe Now\""
+      "Navigated to https://..."
+      "Scrolled down by 500 pixels"
+    """
+    if not content:
+        return None
+
+    # Strip leading emoji / special chars (code points outside normal BMP, and common icon ranges)
+    c = _re.sub(r'^[\U00010000-\U0010ffff\u2600-\u27FF\uFE00-\uFE0F\u2700-\u27BF\u{1F300}-\u{1FFFF}]+\s*', '', content, flags=_re.UNICODE)
+    c = c.strip()
+
+    # Pattern: Clicked {tag} "{label}" or Clicked {tag} '{label}'
+    m = _re.match(r'Clicked\s+\S+\s+["\u201c\u2018](.+?)["\u201d\u2019]', c, _re.IGNORECASE)
+    if m:
+        label = m.group(1).strip()
+        if label and label.lower() not in ('div', 'span', 'button', 'a', 'input', 'li'):
+            return f"Click the '{label}' button"
+
+    # Pattern: Typed "{value}" into element...
+    m = _re.match(r'Typed\s+["\u201c\u2018](.+?)["\u201d\u2019]\s+into', c, _re.IGNORECASE)
+    if m:
+        value = m.group(1).strip()
+        # Mask sensitive values if they match login credentials
+        if login_credentials:
+            pw = login_credentials.get("password", "")
+            if pw and value == pw:
+                value = value  # keep as-is for test steps
+        return f"Input '{value}' in the input field"
+
+    # Pattern: Navigated to {url}
+    m = _re.match(r'Navigated\s+to\s+(\S+)', c, _re.IGNORECASE)
+    if m:
+        return f"Navigate to {m.group(1)} in a web browser"
+
+    return None
+
+
 def _flow_steps_to_test_steps(
     flow_steps: List[Dict[str, Any]],
     login_credentials: Optional[Dict[str, str]] = None,
@@ -141,7 +187,9 @@ def _flow_steps_to_test_steps(
     Convert observation agent ``flow_steps`` dicts into plain-English step strings
     compatible with the existing test case format (like test case #1079).
 
-    Input / output credentials are embedded when ``login_credentials`` is provided.
+    Prefers ``extracted_content`` from the browser-use action result (contains rich
+    descriptions like "Clicked div 'Login'" or "Typed 'user@example.com' into...").
+    Falls back to DOM-derived ``target`` when extracted_content is absent or generic.
     """
     if not flow_steps:
         return []
@@ -161,26 +209,38 @@ def _flow_steps_to_test_steps(
         page_url = fs.get("page_url", "")
         input_type = (fs.get("input_type") or "").lower()
         elem_type = (fs.get("element_type") or "").lower()
+        extracted_content = fs.get("extracted_content", "")
 
+        # --- Primary: try to use extracted_content (richer description from browser-use) ---
+        if extracted_content:
+            parsed = _parse_extracted_content(extracted_content, login_credentials)
+            if parsed:
+                steps.append(f"Step {step_num}: {parsed}")
+                step_num += 1
+                continue
+
+        # --- Fallback: derive from DOM action / target fields ---
         if action == "navigate":
             steps.append(f"Step {step_num}: Navigate to {page_url or target} in a web browser")
 
         elif action == "input":
-            # Try to infer value from login credentials for known field types
-            if "email" in target.lower() or input_type == "email":
+            if input_type == "email" or (target and "email" in target.lower()):
                 value = email if email else "[EMAIL]"
-            elif "password" in target.lower() or input_type == "password":
+                field_label = "email address"
+            elif input_type == "password" or (target and "password" in target.lower()):
                 value = password if password else "[PASSWORD]"
+                field_label = "password"
             else:
-                value = f"[{target.upper() if target else 'VALUE'}]"
-            field_label = target if target else "input field"
+                value = f"[{target.upper() if target and target not in ('input', 'div', 'span') else 'VALUE'}]"
+                field_label = target if target and target not in ('input', 'div', 'span') else "input"
             steps.append(f"Step {step_num}: Input '{value}' in the {field_label} field")
 
         elif action == "click":
-            if not target:
-                target = elem_type or "element"
-            # Classify button vs link vs checkbox
-            if elem_type in ("input",) and input_type == "checkbox":
+            # Skip meaningless generic targets
+            if not target or target.lower() in ('div', 'span', 'li', ''):
+                step_num += 1
+                continue
+            if elem_type == "input" and input_type == "checkbox":
                 steps.append(f"Step {step_num}: Check the '{target}' checkbox")
             elif elem_type == "a":
                 steps.append(f"Step {step_num}: Click the '{target}' link")
@@ -188,8 +248,11 @@ def _flow_steps_to_test_steps(
                 steps.append(f"Step {step_num}: Click the '{target}' button")
 
         else:
-            # Generic fallback
-            steps.append(f"Step {step_num}: {action.capitalize()} '{target}'")
+            if target and target.lower() not in ('div', 'span', 'li'):
+                steps.append(f"Step {step_num}: {action.capitalize()} '{target}'")
+            else:
+                step_num += 1
+                continue
 
         step_num += 1
 

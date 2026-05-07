@@ -1014,17 +1014,28 @@ class ObservationAgent(BaseAgent):
                     
                     # Convert DOMInteractedElement objects to UI element dicts
                     interacted = getattr(state, 'interacted_element', []) or []
-                    for elem in interacted:
+                    # Pair each interacted element with its action result to get extracted_content
+                    # (browser-use stores rich descriptions like "Clicked div 'Login'" there)
+                    step_results = getattr(history_item, 'result', []) or []
+                    for elem_idx, elem in enumerate(interacted):
                         if elem is None:
                             continue
-                        
+
+                        # Get the parallel extracted_content for this action
+                        _paired_result = step_results[elem_idx] if elem_idx < len(step_results) else None
+                        _extracted_content = ""
+                        if _paired_result:
+                            _ec = getattr(_paired_result, 'extracted_content', None)
+                            if _ec and isinstance(_ec, str):
+                                _extracted_content = _ec.strip()
+
                         # Map DOMInteractedElement attributes to our UI element format
                         attrs = getattr(elem, 'attributes', {}) or {}
                         node_name = getattr(elem, 'node_name', '').lower()
                         ax_name = getattr(elem, 'ax_name', '') or ''
                         node_value = getattr(elem, 'node_value', '') or ''
                         x_path = getattr(elem, 'x_path', '') or ''
-                        
+
                         # Build one flow step for RequirementsAgent (ordered crawl actions)
                         step_text = ax_name or node_value or attrs.get('aria-label', '') or attrs.get('title', '') or node_name
                         if node_name == 'input':
@@ -1037,6 +1048,7 @@ class ObservationAgent(BaseAgent):
                                 "element_type": node_name,
                                 "input_type": attrs.get("type", "text"),
                                 "locator": _locator_for_elem(elem),
+                                "extracted_content": _extracted_content,
                             })
                         elif node_name in ('button', 'a') or attrs.get('role') in ('button', 'link'):
                             flow_steps.append({
@@ -1047,6 +1059,7 @@ class ObservationAgent(BaseAgent):
                                 "page_title": page_title or "",
                                 "element_type": node_name,
                                 "locator": _locator_for_elem(elem),
+                                "extracted_content": _extracted_content,
                             })
                         else:
                             flow_steps.append({
@@ -1057,6 +1070,7 @@ class ObservationAgent(BaseAgent):
                                 "page_title": page_title or "",
                                 "element_type": node_name,
                                 "locator": _locator_for_elem(elem),
+                                "extracted_content": _extracted_content,
                             })
                         
                         # Determine element type from tag name and attributes
