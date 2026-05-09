@@ -314,20 +314,40 @@ class UserSettingsService:
                 return cfg["recommended"]
             return self._AGENT_AZURE_DEFAULT["model"]
 
+        # Env-level default: honour MODEL_PROVIDER from .env when no DB override exists.
+        # Falls back to _AGENT_AZURE_DEFAULT only when MODEL_PROVIDER is also absent/azure.
+        def _env_default() -> Dict[str, Any]:
+            try:
+                return self.get_default_provider_config()
+            except Exception:
+                return dict(self._AGENT_AZURE_DEFAULT)
+
         if db is None:
-            return dict(self._AGENT_AZURE_DEFAULT)
+            return _env_default()
 
         user_settings = self.get_user_settings(db, user_id)
         if user_settings is None:
-            return dict(self._AGENT_AZURE_DEFAULT)
+            return _env_default()
 
         provider_val = getattr(user_settings, f"{agent_name}_provider", None)
         model_val = getattr(user_settings, f"{agent_name}_model", None)
 
         if provider_val is None:
-            return dict(self._AGENT_AZURE_DEFAULT)
+            return _env_default()
 
-        # Provider is set; resolve model
+        # If the DB still holds the hardcoded Azure default (i.e. the user never explicitly
+        # changed it through the UI) AND MODEL_PROVIDER in .env differs from azure, defer to
+        # the env default so that setting MODEL_PROVIDER=openrouter actually takes effect.
+        _is_azure_default = (
+            provider_val == self._AGENT_AZURE_DEFAULT["provider"]
+            and (model_val or "") in ("", self._AGENT_AZURE_DEFAULT["model"])
+        )
+        if _is_azure_default:
+            env_cfg = _env_default()
+            if env_cfg.get("provider", "azure").lower() != "azure":
+                return env_cfg
+
+        # Provider is set to a non-default value (user explicitly chose it); use it.
         resolved_model = model_val if model_val else _default_model_for_provider(provider_val)
         return {"provider": provider_val, "model": resolved_model}
 

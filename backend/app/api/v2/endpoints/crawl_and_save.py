@@ -46,7 +46,20 @@ class CrawlAndSaveTestRequest(BaseModel):
     The agent will navigate the purchase flow via browser-use, recording every
     click/input/navigate action.  When ``stop_at_page_hint`` is matched against the
     current page title or URL the crawl is cancelled and partial history is used.
-    The resulting steps are prepended to ``tail_steps`` and saved as a test case.
+
+    **Step Library integration (Sprint 10.11):**
+
+    * ``login_module`` — name of a Step Library module that replaces the login steps
+      captured by the crawler.  Inserted as ``@module:<name>()`` at the start of the
+      crawled steps, and login-related actions are stripped from the crawled output so
+      they are not duplicated.
+    * ``existing_subscriber_module`` — module to append when the login flow shows a
+      popup listing already-subscribed numbers (indicating an existing subscriber).
+    * ``new_subscriber_module`` — module to append when no such popup appears
+      (new subscriber).
+    * ``subscriber_type_hint`` — optional override: ``"existing"`` | ``"new"`` |
+      ``"auto"`` (default).  When ``"auto"`` the endpoint detects subscriber type from
+      the browser-use history; otherwise the hint is used directly.
     """
     url: HttpUrl = Field(..., description="Start URL to begin crawling from")
     user_instruction: str = Field(
@@ -69,9 +82,44 @@ class CrawlAndSaveTestRequest(BaseModel):
         description=(
             "Hardcoded step strings to append after the crawled steps. "
             "These cover the portion of the flow that browser-use should NOT execute "
-            "(e.g. SIM card settings, address, payment, signature)."
+            "(e.g. SIM card settings, address, payment, signature). "
+            "Superseded by existing_subscriber_module / new_subscriber_module when provided."
         ),
     )
+    # --- Step Library module fields ---
+    login_module: Optional[str] = Field(
+        None,
+        description=(
+            "Step Library module name to substitute for the login steps captured by the crawler. "
+            "E.g. 'login_my3_andrew'. Inserted as @module:<name>() at the start of the test, "
+            "and login actions are stripped from the crawled steps to avoid duplication."
+        ),
+    )
+    existing_subscriber_module: Optional[str] = Field(
+        None,
+        description=(
+            "Step Library module name to append when subscriber type is 'existing' "
+            "(post-login popup listing already-subscribed numbers was detected). "
+            "E.g. 'plan_subscribe_flow_existing_preprod_andrew'."
+        ),
+    )
+    new_subscriber_module: Optional[str] = Field(
+        None,
+        description=(
+            "Step Library module name to append when subscriber type is 'new' "
+            "(no existing-subscriber popup after login). "
+            "E.g. 'plan_subscriber_flow_andrew'."
+        ),
+    )
+    subscriber_type_hint: Optional[str] = Field(
+        None,
+        description=(
+            "'existing' | 'new' | 'auto' (default). "
+            "When 'auto', subscriber type is inferred from the browser-use history. "
+            "Use 'existing' or 'new' to override auto-detection."
+        ),
+    )
+    # --- end Step Library fields ---
     test_title: str = Field(..., description="Title for the saved test case")
     test_description: str = Field(..., description="Description for the saved test case")
     test_type: str = Field(default="e2e", description="Test type: e2e | integration | unit")
@@ -102,21 +150,17 @@ class CrawlAndSaveTestRequest(BaseModel):
         "example": {
             "url": "https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/",
             "user_instruction": (
-                "Login with email hthkqa.as+94@gmail.com / DEE57vTo!, navigate to "
-                "the 4.5G Greater China Pro Monthly Plan and complete the subscription "
-                "flow up to (but not including) the SIM Card Setting page."
+                "Login and navigate to the voucher monthly plan tab, select $288 plan "
+                "and proceed through the subscription flow."
             ),
             "stop_at_page_hint": "SIM Card Setting",
-            "tail_steps": [
-                "Step 18: wait",
-                "Step 19: Upload the HKID document from /home/dt-qa/Pictures/HKID-Sample-Blank-7.jpeg",
-                "Step 20: wait",
-                "Step 28: Input contact number '90457537'",
-                "Step 29: Click the next button",
-            ],
-            "test_title": "Subscribe to 4.5G Greater China Plan (crawled + tail)",
-            "test_description": "E2E purchase flow auto-crawled up to SIM Card Setting, then hardcoded tail steps",
-            "login_credentials": {"email": "hthkqa.as+94@gmail.com", "password": "DEE57vTo!"},
+            "login_module": "login_my3_andrew",
+            "existing_subscriber_module": "plan_subscribe_flow_existing_preprod_andrew",
+            "new_subscriber_module": "plan_subscriber_flow_andrew",
+            "subscriber_type_hint": "auto",
+            "test_title": "Subscribe to $288 Voucher Plan (Step Library modules)",
+            "test_description": "E2E purchase flow using Step Library modules for login and subscription steps",
+            "login_credentials": {"email": "pmo.andrewchan+015@gmail.com", "password": "cA8mn49&"},
         }
     })
 
@@ -141,24 +185,39 @@ def _parse_extracted_content(content: str, login_credentials: Optional[Dict[str,
 
     Browser-use produces strings like:
       "🖱️Clicked div \"Login\""
+      "🖱️Clicked a role=button \"5G Monthly Plans\""
+      "🖱️Clicked span role=button \"Login\""
       "⌨️Typed \"pmo@example.com\" into element with index 42 (content: ...)"
       "🖱️Clicked button \"Subscribe Now\""
       "Navigated to https://..."
       "Scrolled down by 500 pixels"
+
+    browser-use sometimes includes role/attribute info between the tag and the label:
+      "Clicked a role=button \"5G Monthly Plans\""
+    so we must skip any extra tokens before the quoted label.
     """
     if not content:
         return None
 
     # Strip leading emoji / special chars (code points outside normal BMP, and common icon ranges)
-    c = _re.sub(r'^[\U00010000-\U0010ffff\u2600-\u27FF\uFE00-\uFE0F\u2700-\u27BF\u{1F300}-\u{1FFFF}]+\s*', '', content, flags=_re.UNICODE)
+    c = _re.sub(r'^[\U00010000-\U0010FFFF\u2600-\u27FF\uFE00-\uFE0F\u2700-\u27BF\U0001F300-\U0001FFFF]+\s*', '', content, flags=_re.UNICODE)
     c = c.strip()
 
-    # Pattern: Clicked {tag} "{label}" or Clicked {tag} '{label}'
-    m = _re.match(r'Clicked\s+\S+\s+["\u201c\u2018](.+?)["\u201d\u2019]', c, _re.IGNORECASE)
+    # Pattern: Clicked {tag} [optional role/attr tokens...] "{label}"
+    # Handles both simple ("Clicked button \"Select\"") and extended
+    # ("Clicked a role=button \"5G Monthly Plans\"") forms from browser-use.
+    m = _re.match(r'Clicked\s+\S+(?:\s+\S+)*?\s+["\u201c\u2018](.+?)["\u201d\u2019]', c, _re.IGNORECASE)
     if m:
         label = m.group(1).strip()
         if label and label.lower() not in ('div', 'span', 'button', 'a', 'input', 'li'):
             return f"Click the '{label}' button"
+    # Fallback: grab the last quoted string on the line (handles any format variant)
+    if _re.match(r'Clicked\b', c, _re.IGNORECASE):
+        fm = _re.findall(r'["\u201c\u2018](.+?)["\u201d\u2019]', c)
+        if fm:
+            label = fm[-1].strip()
+            if label and label.lower() not in ('div', 'span', 'button', 'a', 'input', 'li'):
+                return f"Click the '{label}' button"
 
     # Pattern: Typed "{value}" into element...
     m = _re.match(r'Typed\s+["\u201c\u2018](.+?)["\u201d\u2019]\s+into', c, _re.IGNORECASE)
@@ -260,6 +319,252 @@ def _flow_steps_to_test_steps(
 
 
 # ---------------------------------------------------------------------------
+# Step Library helpers
+# ---------------------------------------------------------------------------
+
+def _filter_forbidden_steps(steps: List[str], user_instruction: str) -> List[str]:
+    """
+    Remove crawled steps that explicitly contradict a "do NOT <action> X" rule
+    found in the user_instruction.
+
+    Parses patterns like:
+      - "do NOT click Download My3 App"
+      - "do not click Settings"
+      - "don't navigate to ..."
+    and drops any step whose text contains the forbidden target.
+    Navigate steps are never dropped (the URL is always required as Step 1).
+    """
+    _forbidden_targets: List[str] = []
+    # Pattern: "do not" or "don't" (NOT standalone — too broad) followed by an
+    # action verb, an optional article ("the", "a", "an", ...), then the target.
+    # Minimum target length of 4 characters avoids false positives from short
+    # words like "the" or "i" being captured when the instruction says
+    # 'do not click the "i" button'.
+    _ARTICLE = r"(?:(?:the|a|an|this|that|those|these|my|your|any)\s+)?"
+    for m in _re.finditer(
+        r"(?:do\s+not|don[\u2019']t)\s+"
+        r"(?:click|open|navigate\s+to|select|download|tap|press)\s+"
+        + _ARTICLE +
+        r"['\"\u201c\u2018]?([a-zA-Z0-9][^.,;!\n'\"\u201d\u2019]{3,79})['\"\u201c\u201d\u2019]?",
+        user_instruction,
+        _re.IGNORECASE,
+    ):
+        target = m.group(1).strip().rstrip('. ').lower()
+        # Skip if target is itself just an article or too short
+        if len(target) < 4 or target in ("the", "a", "an", "this", "that", "any"):
+            continue
+        _forbidden_targets.append(target)
+
+    if not _forbidden_targets:
+        return steps
+
+    logger.info("_filter_forbidden_steps: forbidden targets=%s", _forbidden_targets)
+    filtered: List[str] = []
+    for step in steps:
+        step_lower = step.lower()
+        if "navigate to" in step_lower:
+            filtered.append(step)  # never drop the URL navigate step
+            continue
+        if any(ft in step_lower for ft in _forbidden_targets):
+            logger.info(
+                "_filter_forbidden_steps: dropped step violating instruction: '%s'", step[:120]
+            )
+        else:
+            filtered.append(step)
+    return filtered
+
+
+async def _enrich_steps_with_instruction(
+    steps: List[str],
+    user_instruction: str,
+    llm_client,
+) -> List[str]:
+    """
+    Best-effort LLM pass that enriches generic crawled steps with context from the
+    user_instruction (e.g. 'Click \'Select\'' → 'Click \'Select\' for the $288 Voucher Monthly Plan').
+
+    Rules given to the LLM:
+    - Do NOT add new steps; do NOT remove steps.
+    - Only enrich steps where the instruction gives clear context.
+    - Return the same number of steps in the same order.
+
+    Falls back to the original steps if the LLM call fails or returns a different count.
+    """
+    if not steps or not user_instruction:
+        return steps
+    if not llm_client or not getattr(llm_client, 'enabled', False):
+        return steps
+
+    import json as _json
+
+    numbered = "\n".join(steps)
+    prompt = (
+        "You are a test step editor.\n"
+        "Given the original user instruction and browser-recorded steps, enrich generic steps with "
+        "specific context from the instruction.\n"
+        "Rules:\n"
+        "  1. Do NOT add new steps or remove existing steps.\n"
+        "  2. Only enrich a step when the instruction provides clear, unambiguous context "
+        "(e.g. instruction says 'Select $288 plan', step says 'Click the \'Select\' button' → "
+        "enrich to 'Click the \'Select\' button for the $288 Voucher Monthly Plan').\n"
+        "  3. If you cannot confidently enrich a step, leave it exactly as-is.\n"
+        "  4. Return ONLY a JSON array of step strings with exactly the same count as the input.\n\n"
+        f"USER INSTRUCTION:\n{user_instruction}\n\n"
+        f"RECORDED STEPS:\n{numbered}\n\n"
+        "Return a JSON array: [\"Step 1: ...\", \"Step 2: ...\", ...]"
+    )
+
+    try:
+        response = await asyncio.to_thread(
+            llm_client.client.chat.completions.create,
+            model=llm_client.deployment,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a precise test step editor. Always return valid JSON arrays.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.1,
+            max_tokens=2000,
+        )
+        raw = response.choices[0].message.content.strip()
+        # Strip markdown fences if present
+        raw = _re.sub(r'^```[a-z]*\n?', '', raw)
+        raw = _re.sub(r'\n?```$', '', raw.strip())
+        enriched = _json.loads(raw)
+        if isinstance(enriched, list) and len(enriched) == len(steps):
+            logger.info(
+                "_enrich_steps_with_instruction: enriched %d steps via LLM", len(steps)
+            )
+            return [str(s) for s in enriched]
+        else:
+            logger.warning(
+                "_enrich_steps_with_instruction: LLM returned %d items but expected %d; ignoring",
+                len(enriched) if isinstance(enriched, list) else -1,
+                len(steps),
+            )
+    except Exception as exc:
+        logger.warning(
+            "_enrich_steps_with_instruction: LLM call failed (%s); using original steps", exc
+        )
+    return steps
+
+
+# Keywords that identify login / authentication steps in the crawled output.
+# Used by _strip_login_steps to remove them when a login_module is provided.
+#
+# IMPORTANT: match action-specific phrases only, NOT bare "login" — the word
+# "login" can appear in enriched step context (e.g. "post-login navigation")
+# and should not cause legitimate navigation steps to be stripped.
+_LOGIN_KEYWORDS = (
+    "click 'login'",
+    "click login",
+    "click the 'login'",
+    "click the login",
+    "click 'sign in'",
+    "click sign in",
+    "log in button",
+    "sign in button",
+    "input email",
+    "input password",
+    "input '[email]",
+    "input '[password]",
+    "enter email",
+    "enter password",
+    "type email",
+    "type password",
+    "fill in email",
+    "fill in password",
+    "in the email address field",
+    "in the password field",
+)
+
+# Matches generic input-field steps produced by the fallback path in
+# _flow_steps_to_test_steps when browser-use cannot identify the field label.
+# During the login phase these are always email/password inputs.
+_GENERIC_INPUT_STEP_RE = _re.compile(
+    r"input\s+['\"].*['\"]\s+in\s+the\s+(email|password|input)\s+(address\s+)?field",
+    _re.IGNORECASE,
+)
+
+
+def _strip_login_steps(crawled_steps: List[str]) -> List[str]:
+    """
+    Remove login-related steps from the crawled step list.
+
+    When a ``login_module`` is provided the caller wants to replace the captured
+    login interactions with a reusable Step Library reference.  This helper drops:
+    - Steps whose text matches common login/authentication keywords
+    - Generic "Input '[VALUE]' in the input/email/password field" steps (these
+      are always login-phase steps when login_module is active)
+    Navigate steps are never stripped so the URL always stays as Step 1.
+    """
+    filtered: List[str] = []
+    for step in crawled_steps:
+        step_lower = step.lower()
+        # Always keep navigate steps — they must remain as Step 1
+        if "navigate to" in step_lower:
+            filtered.append(step)
+            continue
+        if any(kw in step_lower for kw in _LOGIN_KEYWORDS):
+            logger.debug("_strip_login_steps: dropping keyword match '%s'", step[:120])
+            continue
+        if _GENERIC_INPUT_STEP_RE.search(step):
+            logger.debug("_strip_login_steps: dropping generic input step '%s'", step[:120])
+            continue
+        filtered.append(step)
+    return filtered
+
+
+# Phrases that appear in the existing-subscriber popup (the "already subscribed
+# numbers" dialog that shows after login for My3 accounts with active plans).
+_EXISTING_SUBSCRIBER_SIGNALS = (
+    "already subscribed",
+    "existing subscriber",
+    "subscribed number",
+    "your current plan",
+    "current subscription",
+    "your subscribed",
+    "your plan",          # generic but common in the popup context
+    "select number",      # "Please select the number you want to manage"
+    "manage number",
+)
+
+
+def _detect_existing_subscriber(obs_data: Dict[str, Any]) -> str:
+    """
+    Infer subscriber type from browser-use observation data.
+
+    Returns ``"existing"`` when any flow step or extracted element contains text
+    characteristic of the "already subscribed numbers" popup that Three HK shows
+    after login for accounts with active plans; returns ``"new"`` otherwise.
+    """
+    # Check flow_steps extracted_content and target text
+    flow_steps: List[Dict] = obs_data.get("flow_steps") or []
+    for fs in flow_steps:
+        combined = " ".join([
+            (fs.get("extracted_content") or ""),
+            (fs.get("target") or ""),
+            (fs.get("page_title") or ""),
+        ]).lower()
+        if any(sig in combined for sig in _EXISTING_SUBSCRIBER_SIGNALS):
+            logger.info("_detect_existing_subscriber: 'existing' detected from flow step: %s", combined[:120])
+            return "existing"
+
+    # Also scan ui_elements text
+    ui_elements: List[Dict] = obs_data.get("ui_elements") or []
+    for elem in ui_elements:
+        text = (elem.get("text") or "").lower()
+        if any(sig in text for sig in _EXISTING_SUBSCRIBER_SIGNALS):
+            logger.info("_detect_existing_subscriber: 'existing' detected from ui_element text: %s", text[:120])
+            return "existing"
+
+    logger.info("_detect_existing_subscriber: no existing-subscriber signals found → 'new'")
+    return "new"
+
+
+# ---------------------------------------------------------------------------
 # Background worker
 # ---------------------------------------------------------------------------
 
@@ -281,7 +586,9 @@ async def _run_crawl_and_save(
     def _emit(evt: str, data: dict):
         if pt:
             asyncio.create_task(pt.emit(workflow_id, evt, data))
-        update_state(workflow_id, current_agent=data.get("agent"), status="running")
+        # Only keep status="running" for intermediate events, not terminal ones.
+        if evt not in ("workflow_completed", "workflow_failed"):
+            update_state(workflow_id, current_agent=data.get("agent"), status="running")
 
     try:
         # ---- 1. Build ObservationAgent task payload ----
@@ -294,6 +601,12 @@ async def _run_crawl_and_save(
         available_file_paths = request_dict.get("available_file_paths")
         max_browser_steps = request_dict.get("max_browser_steps")
         max_flow_timeout_seconds = request_dict.get("max_flow_timeout_seconds")
+
+        # Step Library module fields
+        login_module: Optional[str] = request_dict.get("login_module") or None
+        existing_subscriber_module: Optional[str] = request_dict.get("existing_subscriber_module") or None
+        new_subscriber_module: Optional[str] = request_dict.get("new_subscriber_module") or None
+        subscriber_type_hint: str = (request_dict.get("subscriber_type_hint") or "auto").lower()
 
         obs_payload: Dict[str, Any] = {
             "url": url,
@@ -347,12 +660,107 @@ async def _run_crawl_and_save(
         # ---- 3. Convert flow_steps → test step strings ----
         crawled_step_strings = _flow_steps_to_test_steps(flow_steps, login_credentials)
 
-        # ---- 4. Combine crawled + tail steps ----
-        all_steps = crawled_step_strings + tail_steps
-        if not all_steps:
-            raise RuntimeError("No steps were captured from crawl and no tail_steps provided")
+        # ---- 3b. Filter steps that contradict the user instruction ----
+        # Removes steps like "Click 'Download My3 App'" when the instruction says
+        # "do NOT click Download My3 App".
+        crawled_step_strings = _filter_forbidden_steps(crawled_step_strings, user_instruction)
 
-        # ---- 5. Save test case to DB ----
+        # ---- 4. Apply Step Library module substitution (if configured) ----
+        #
+        # NOTE: login stripping happens HERE, before LLM enrichment, so that the
+        # enrichment step cannot add words like "login" to post-login navigation
+        # steps and cause them to be incorrectly stripped.
+        #
+        # Strategy:
+        #   a) Strip login steps from crawled output (they will be replaced by login_module).
+        #   b) Prepend @module:<login_module>() as the first step.
+        #   c) Determine subscriber type (auto-detect or use hint).
+        #   d) If a subscriber module is configured, append @module:<module_name>() instead of
+        #      any tail_steps — the module contains the full post-login subscription flow.
+        #      tail_steps are still appended when no subscriber module is configured (backward
+        #      compatible with the original behaviour).
+
+        module_steps_prepend: List[str] = []
+        module_steps_append: List[str] = []
+        subscriber_type_resolved: Optional[str] = None
+
+        if login_module:
+            # Strip login-related crawled steps; the module replaces them.
+            # Navigate step is preserved by _strip_login_steps so it stays as Step 1.
+            # This runs BEFORE enrichment so enriched context cannot accidentally
+            # trigger login-keyword matches on legitimate navigation steps.
+            crawled_step_strings = _strip_login_steps(crawled_step_strings)
+            module_steps_prepend.append(f"@module:{login_module}()")
+            logger.info("CrawlAndSave %s: login_module='%s' → inserting module ref after navigate, stripped login steps", workflow_id, login_module)
+
+        use_subscriber_modules = bool(existing_subscriber_module or new_subscriber_module)
+        if use_subscriber_modules:
+            if subscriber_type_hint in ("existing", "new"):
+                subscriber_type_resolved = subscriber_type_hint
+                logger.info("CrawlAndSave %s: subscriber_type_hint='%s' (manual override)", workflow_id, subscriber_type_resolved)
+            else:
+                subscriber_type_resolved = _detect_existing_subscriber(obs_data)
+                logger.info("CrawlAndSave %s: auto-detected subscriber_type='%s'", workflow_id, subscriber_type_resolved)
+
+            if subscriber_type_resolved == "existing" and existing_subscriber_module:
+                module_steps_append.append(f"@module:{existing_subscriber_module}()")
+                logger.info("CrawlAndSave %s: appending existing_subscriber_module='%s'", workflow_id, existing_subscriber_module)
+            elif subscriber_type_resolved == "new" and new_subscriber_module:
+                module_steps_append.append(f"@module:{new_subscriber_module}()")
+                logger.info("CrawlAndSave %s: appending new_subscriber_module='%s'", workflow_id, new_subscriber_module)
+            else:
+                # Fallback to tail_steps if the resolved type has no matching module
+                logger.info(
+                    "CrawlAndSave %s: no module for subscriber_type='%s'; falling back to tail_steps",
+                    workflow_id, subscriber_type_resolved,
+                )
+                module_steps_append = tail_steps  # type: ignore[assignment]
+        else:
+            # No subscriber modules configured — legacy tail_steps behaviour
+            module_steps_append = tail_steps  # type: ignore[assignment]
+
+        # ---- 4c. Enrich generic steps with instruction context (LLM, best-effort) ----
+        # Runs AFTER login stripping so only the surviving post-login navigation
+        # steps are enriched. E.g. "Click 'Select'" → "Click 'Select' for the $288
+        # Voucher Monthly Plan" when the instruction says "Find and Select $288 plan".
+        _obs_llm = getattr(obs_agent, 'llm_client', None)
+        crawled_step_strings = await _enrich_steps_with_instruction(
+            crawled_step_strings, user_instruction, _obs_llm
+        )
+
+        # ---- 5. Assemble final step list ----
+        # Correct order when login_module is set:
+        #   [navigate step] + [@module:login_module()] + [remaining post-login crawled steps] + [@module:subscriber_module()]
+        # Without login_module (legacy):
+        #   [module_steps_prepend] + [crawled_step_strings] + [tail_steps]
+        if login_module and module_steps_prepend:
+            # Split crawled steps: navigate step(s) first, then everything else
+            _navigate_steps = [s for s in crawled_step_strings
+                               if _re.search(r'navigate to', s, _re.IGNORECASE)]
+            _post_nav_steps = [s for s in crawled_step_strings
+                               if not _re.search(r'navigate to', s, _re.IGNORECASE)]
+            all_steps = _navigate_steps + module_steps_prepend + _post_nav_steps + module_steps_append
+        else:
+            all_steps = module_steps_prepend + crawled_step_strings + module_steps_append
+
+        # Re-number steps so numbering is sequential in the saved test case
+        _renumbered: List[str] = []
+        _step_counter = 1
+        for s in all_steps:
+            # Module refs and non-"Step N:" lines keep their text as-is (they may be
+            # @module: references or inline notes without a step prefix).
+            if s.startswith("@module:") or not s.lower().startswith("step "):
+                _renumbered.append(s)
+            else:
+                # Replace leading "Step N:" with the new sequential number
+                _renumbered.append(_re.sub(r"^Step\s+\d+\s*:", f"Step {_step_counter}:", s))
+                _step_counter += 1
+        all_steps = _renumbered
+
+        if not all_steps:
+            raise RuntimeError("No steps were captured from crawl and no tail_steps / modules provided")
+
+        # ---- 6. Save test case to DB ----
         test_title = request_dict.get("test_title", f"Auto-crawled test ({datetime.now().strftime('%Y%m%d%H%M')})")
         test_description = request_dict.get("test_description", user_instruction)
         test_type_str = request_dict.get("test_type", "e2e").lower()
@@ -386,6 +794,10 @@ async def _run_crawl_and_save(
                 "crawled_steps_count": len(crawled_step_strings),
                 "tail_steps_count": len(tail_steps),
                 "pages_crawled": obs_data.get("pages_crawled", 0),
+                "login_module": login_module,
+                "subscriber_type": subscriber_type_resolved,
+                "existing_subscriber_module": existing_subscriber_module,
+                "new_subscriber_module": new_subscriber_module,
             },
         )
 
@@ -399,15 +811,16 @@ async def _run_crawl_and_save(
             db.close()
 
         logger.info(
-            "CrawlAndSave workflow %s: saved test case #%s (%d steps = %d crawled + %d tail)",
+            "CrawlAndSave workflow %s: saved test case #%s (%d steps: %d module-prepend + %d crawled + %d module-append/tail)",
             workflow_id,
             test_case_id,
             len(all_steps),
+            len(module_steps_prepend),
             len(crawled_step_strings),
-            len(tail_steps),
+            len(module_steps_append),
         )
 
-        # ---- 6. Store final result in workflow store ----
+        # ---- 7. Store final result in workflow store ----
         set_state(workflow_id, {
             "workflow_id": workflow_id,
             "status": "completed",
@@ -421,6 +834,10 @@ async def _run_crawl_and_save(
                 "total_steps": len(all_steps),
                 "crawled_steps_count": len(crawled_step_strings),
                 "tail_steps_count": len(tail_steps),
+                "login_module": login_module,
+                "subscriber_type": subscriber_type_resolved,
+                "existing_subscriber_module": existing_subscriber_module,
+                "new_subscriber_module": new_subscriber_module,
                 "pages_crawled": obs_data.get("pages_crawled", 0),
                 "stop_triggered": bool(stop_at_page_hint),
                 "steps_preview": all_steps[:10],
@@ -484,6 +901,10 @@ async def crawl_and_save_test(
         "user_instruction": request.user_instruction,
         "stop_at_page_hint": request.stop_at_page_hint,
         "tail_steps": request.tail_steps,
+        "login_module": request.login_module,
+        "existing_subscriber_module": request.existing_subscriber_module,
+        "new_subscriber_module": request.new_subscriber_module,
+        "subscriber_type_hint": request.subscriber_type_hint,
         "test_title": request.test_title,
         "test_description": request.test_description,
         "test_type": request.test_type,
