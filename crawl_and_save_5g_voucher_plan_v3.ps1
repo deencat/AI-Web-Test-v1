@@ -12,9 +12,7 @@
 # Override with 'existing' or 'new' if you already know the account type.
 
 $user_instruction = 'Login with the provided credentials. After login: do NOT click Settings, do NOT click Download My3 App.
-Click 5G Monthly Plan on the left menu. Click voucher monthly plan tab. Find and Select $288 plan from the available plans and click Subscribe Now.
-Agree to Terms and Conditions if a modal appears. On the subscription options page (Service Subscription, SIM Card Type, Value-added Service) make default selections and click Next to proceed.
-STOP immediately as soon as the SIM Setting page appears. Do NOT fill any fields on the SIM Setting page. Do NOT click Next or Submit on the SIM Setting page.'
+Click 5G Monthly Plan on the left menu. Click voucher monthly plan tab. Find and Select $288 plan with 36 months contract from the available plans. Complete the whole purchase flow until the successful subscribed page.'
 
 $bodyObj = @{
     url                        = 'https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/'
@@ -39,6 +37,11 @@ $bodyObj = @{
     max_browser_steps        = 50
     max_flow_timeout_seconds = 600
     tags                     = @('5g', 'voucher-plan', 'step-library', 'purchase-flow')
+
+    # LLM review pass — compare generated steps against this model-answer test case
+    # and remove noise (price labels, repeated Next loops, off-script forms).
+    # Set to $null to skip the review pass.
+    reference_test_id        = 1217
 }
 
 # Safety check: abort if a browser-use (chrome) process is already running

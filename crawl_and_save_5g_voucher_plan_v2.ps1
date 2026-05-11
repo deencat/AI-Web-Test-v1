@@ -50,6 +50,11 @@ $bodyObj = @{
     max_browser_steps        = 50
     max_flow_timeout_seconds = 600
     tags                     = @('5g', 'voucher-plan', 'step-library', 'purchase-flow')
+
+    # LLM review pass — compare generated steps against this model-answer test case
+    # and remove noise (price labels, repeated Next loops, off-script forms).
+    # Set to $null to skip the review pass.
+    reference_test_id        = 1217
 }
 
 $json     = $bodyObj | ConvertTo-Json -Depth 20

@@ -145,6 +145,14 @@ class CrawlAndSaveTestRequest(BaseModel):
         description="Override wall-clock timeout in seconds (default 1200)"
     )
     tags: Optional[List[str]] = Field(None, description="Optional tags for the test case")
+    reference_test_id: Optional[int] = Field(
+        None,
+        description=(
+            "ID of an existing test case to use as a quality reference. "
+            "The LLM review pass will compare generated steps against it and "
+            "clean up noise while preserving the crawl intent."
+        ),
+    )
 
     model_config = ConfigDict(json_schema_extra={
         "example": {
@@ -451,6 +459,107 @@ async def _enrich_steps_with_instruction(
     return steps
 
 
+async def _review_and_clean_steps(
+    steps: List[str],
+    user_instruction: str,
+    reference_steps: Optional[List[str]],
+    llm_client,
+) -> List[str]:
+    """
+    Post-generation LLM review pass that cleans and validates crawled steps.
+
+    Problems it detects and fixes:
+    - Price/display labels mistakenly captured as button clicks (e.g. 'Total Amount Due $1,556')
+    - Repeated identical actions in a row (Next/Confirm loops from stop-condition overshoot)
+    - Off-script form interactions not mentioned in the user instruction
+    - Steps that duplicate a reference test case (model answer) step for step
+    - Missing required steps that the instruction explicitly calls out
+
+    The LLM is given:
+      1. The user instruction (source of truth for what SHOULD happen)
+      2. The generated steps (what browser-use actually captured)
+      3. Optionally: a reference/model test case to compare against
+
+    It returns a cleaned list. Steps may be removed but NOT added or reordered
+    (adding steps is the enrichment job; ordering comes from crawl reality).
+
+    Falls back to the original steps if the LLM call fails or returns empty.
+    """
+    if not steps or not user_instruction:
+        return steps
+    if not llm_client or not getattr(llm_client, 'enabled', False):
+        return steps
+
+    import json as _json
+
+    ref_section = ""
+    if reference_steps:
+        ref_section = (
+            "\n\nREFERENCE TEST CASE (model answer — the ideal clean version):\n"
+            + "\n".join(reference_steps)
+            + "\nUse this only as a quality guide; do not copy it literally.\n"
+        )
+
+    numbered = "\n".join(steps)
+    prompt = (
+        "You are a test quality reviewer.\n"
+        "Given the user instruction and raw browser-recorded steps, return a CLEANED version.\n\n"
+        "RULES:\n"
+        "  1. REMOVE steps that are clearly noise:\n"
+        "     - Price/amount display labels clicked as buttons (e.g. 'Click the Total Amount Due $X button')\n"
+        "     - Repeated identical actions back-to-back (keep only the first occurrence)\n"
+        "     - Actions on form fields or UI sections NOT mentioned in the user instruction\n"
+        "  2. KEEP all steps that are meaningful navigation or selection actions.\n"
+        "  3. If the instruction explicitly requires an action (e.g. 'Check the I confirm checkbox')\n"
+        "     and it is missing from the steps, ADD it in the correct position.\n"
+        "  4. Do NOT reorder steps — preserve the crawl sequence.\n"
+        "  5. Do NOT add commentary or explanations — only step strings.\n"
+        "  6. Return ONLY a JSON array of step strings.\n\n"
+        f"USER INSTRUCTION:\n{user_instruction}\n"
+        f"{ref_section}\n"
+        f"RECORDED STEPS (to clean):\n{numbered}\n\n"
+        "Return a JSON array: [\"Step 1: ...\", \"Step 2: ...\", ...]"
+    )
+
+    try:
+        response = await asyncio.to_thread(
+            llm_client.client.chat.completions.create,
+            model=llm_client.deployment,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a precise test step reviewer. "
+                        "Return only valid JSON arrays of step strings. "
+                        "Never return empty arrays."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.1,
+            max_tokens=2000,
+        )
+        raw = response.choices[0].message.content.strip()
+        raw = _re.sub(r'^```[a-z]*\n?', '', raw)
+        raw = _re.sub(r'\n?```$', '', raw.strip())
+        cleaned = _json.loads(raw)
+        if isinstance(cleaned, list) and len(cleaned) > 0:
+            logger.info(
+                "_review_and_clean_steps: reduced %d → %d steps via LLM review",
+                len(steps), len(cleaned),
+            )
+            return [str(s) for s in cleaned]
+        else:
+            logger.warning(
+                "_review_and_clean_steps: LLM returned empty/invalid result; keeping originals"
+            )
+    except Exception as exc:
+        logger.warning(
+            "_review_and_clean_steps: LLM review failed (%s); keeping original steps", exc
+        )
+    return steps
+
+
 # Keywords that identify login / authentication steps in the crawled output.
 # Used by _strip_login_steps to remove them when a login_module is provided.
 #
@@ -595,6 +704,7 @@ async def _run_crawl_and_save(
         url = str(request_dict["url"])
         user_instruction = request_dict.get("user_instruction", "")
         stop_at_page_hint = request_dict.get("stop_at_page_hint") or ""
+        reference_test_id: Optional[int] = request_dict.get("reference_test_id") or None
         tail_steps: List[str] = request_dict.get("tail_steps") or []
         login_credentials = request_dict.get("login_credentials") or {}
         http_credentials = request_dict.get("http_credentials") or {}
@@ -726,6 +836,32 @@ async def _run_crawl_and_save(
         _obs_llm = getattr(obs_agent, 'llm_client', None)
         crawled_step_strings = await _enrich_steps_with_instruction(
             crawled_step_strings, user_instruction, _obs_llm
+        )
+
+        # ---- 4d. LLM review pass — remove noise, deduplicate, check required steps ----
+        # Optionally uses a reference test case (model answer) as a quality guide.
+        _reference_steps: Optional[List[str]] = None
+        if reference_test_id:
+            try:
+                from app.db.session import SessionLocal as _SL
+                from app.crud.test_cases import get_test_case as _get_tc
+                import json as _j
+                _db_ref = _SL()
+                try:
+                    _ref_tc = _get_tc(_db_ref, reference_test_id)
+                    if _ref_tc and _ref_tc.steps:
+                        _reference_steps = _j.loads(_ref_tc.steps) if isinstance(_ref_tc.steps, str) else _ref_tc.steps
+                        logger.info(
+                            "CrawlAndSave %s: loaded %d reference steps from test #%s",
+                            workflow_id, len(_reference_steps), reference_test_id,
+                        )
+                finally:
+                    _db_ref.close()
+            except Exception as _ref_err:
+                logger.warning("CrawlAndSave: could not load reference test #%s: %s", reference_test_id, _ref_err)
+
+        crawled_step_strings = await _review_and_clean_steps(
+            crawled_step_strings, user_instruction, _reference_steps, _obs_llm
         )
 
         # ---- 5. Assemble final step list ----
@@ -900,6 +1036,7 @@ async def crawl_and_save_test(
         "url": str(request.url),
         "user_instruction": request.user_instruction,
         "stop_at_page_hint": request.stop_at_page_hint,
+        "reference_test_id": request.reference_test_id,
         "tail_steps": request.tail_steps,
         "login_module": request.login_module,
         "existing_subscriber_module": request.existing_subscriber_module,
