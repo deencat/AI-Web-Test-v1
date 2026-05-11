@@ -203,7 +203,7 @@ def get_api_version():
                 "file_upload": True,
                 "supported_formats": ["PDF", "DOCX", "TXT", "MD"],
                 "text_extraction": True,
-                "max_file_size": "10MB",
+                "max_file_size": "25MB",
                 "categories": 8,
                 "search": True
             }
