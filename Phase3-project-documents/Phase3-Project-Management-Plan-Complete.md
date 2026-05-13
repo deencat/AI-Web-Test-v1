@@ -3,8 +3,8 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials · ✅ Sprint 10.11 Developer B Step Library COMPLETE (May 6, 2026) — reusable `@module:` step sequences, Step Library sidebar page, Insert Module picker in TestStepEditor, backend `StepLibraryModule` CRUD, module rename Option C (Preview + Confirm Cascade) with `GET /{id}/rename-preview` dry-run + atomic cascade, dedicated Rename modal, name slug locked in Edit form · 🔄 Sprint 10.12 Developer B AI-Powered Failure Root Cause Analysis + Re-Run from Failed Step — PLANNED (May 2026)  
-**Last Updated:** May 13, 2026 (Sprint 10.12 PLANNED — AI-Powered Failure Root Cause Analysis + Re-Run from Failed Step added to plan)  
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials · ✅ Sprint 10.11 Developer B Step Library COMPLETE (May 6, 2026) — reusable `@module:` step sequences, Step Library sidebar page, Insert Module picker in TestStepEditor, backend `StepLibraryModule` CRUD, module rename Option C (Preview + Confirm Cascade) with `GET /{id}/rename-preview` dry-run + atomic cascade, dedicated Rename modal, name slug locked in Edit form · ✅ Sprint 10.12 Developer B **Feature A** AI-Powered Failure Root Cause Analysis COMPLETE (May 13, 2026) — `root_cause_analysis_service.py`, DOM snapshot capped at 16 000 chars, `execution_feedback.root_cause_analysis` TEXT column, amber collapsible panel in `ExecutionProgressPage`, 37 new tests, two production bugs fixed (Azure `max_completion_tokens`, `error_type` propagation) · 🔄 Sprint 10.12 **Feature B** Re-Run from Failed Step — PLANNED  
+**Last Updated:** May 13, 2026 (Sprint 10.12 Feature A COMPLETE — AI-Powered Failure Root Cause Analysis implemented and deployed)  
 **Version:** 3.6
 
 > **📖 When to Use This Document:**
@@ -2791,34 +2791,37 @@ The inserted line is rendered in the editor as a collapsible badge, visually dis
 ### Sprint 10.12: Developer B — AI-Powered Failure Root Cause Analysis + Re-Run from Failed Step (May 2026)
 
 **Owner:** Developer B  
-**Status:** 🔄 **PLANNED**  
-**Story Points:** 20 points / 5 days  
-**Depends on:** Sprint 10.11 (Step Library), ADR-002-42 (step library resolver), existing `ExecutionFailedError` + `_capture_execution_feedback()` infrastructure
+**Status:** ✅ **Feature A COMPLETE** (May 13, 2026) · 🔄 Feature B PLANNED  
+**Story Points:** 20 points / 5 days (10 Feature A complete · 10 Feature B planned)  
+**Depends on:** Sprint 10.11 (Step Library), ADR-002-42 (step library resolver), existing `_capture_execution_feedback()` infrastructure
 
-**Summary:** Two tightly-coupled debugging productivity features that together close the debug loop: Feature A tells the user *why* a step failed (AI-generated root cause), and Feature B lets them re-run from that exact step without restarting the full test. On complex flows (e.g. Three HK 30-step checkout), this reduces a 5–8 minute re-run cycle to a 30-second targeted retry.
+**Summary:** Two debugging productivity features that together close the debug loop: Feature A tells the user *why* a step failed (AI-generated root cause), and Feature B lets them re-run from that exact step without restarting the full test. On complex flows (e.g. Three HK 30-step checkout), this reduces a 5–8 minute re-run cycle to a 30-second targeted retry.
 
 ---
 
-#### Feature A: AI-Powered Failure Root Cause Analysis
+#### Feature A: AI-Powered Failure Root Cause Analysis ✅ COMPLETE (May 13, 2026)
 
 **Motivation:** When all 3 tiers are exhausted and `ExecutionFailedError` is raised, the user currently sees up to three raw per-tier error strings in `execution_history`. Diagnosing the actual cause (wrong step order, disabled button, missing field value, DOM structure change) requires manual inspection of the error log, the failure screenshot, and the step instruction together. An LLM prompt at the failure point can synthesise all three into one plain-English explanation in under 2 seconds.
 
-**How it works:**
+**Implementation (Actual):**
 
-1. `ExecutionFailedError` is caught in `execution_service._execute_step()`.  
-2. A new helper `_generate_root_cause_analysis()` is called before `_capture_execution_feedback()`.  
-3. It assembles:  
-   - The step instruction (`step_data["instruction"]`)  
-   - The current page URL (`page.url`)  
-   - Per-tier error messages from `result["execution_history"]`  
-   - A scoped DOM snapshot (`page.inner_html("body")`, capped at ~4 000 tokens)  
-4. A single LLM call via the existing `universal_llm.py` provider returns a 2–3 sentence explanation.  
-5. The analysis string is stored on the `execution_feedback` record in a new `root_cause_analysis` TEXT column.  
-6. The execution results UI shows the analysis beneath the failed step's error message.
+1. `_capture_execution_feedback()` in `execution_service.py` detects `error_type == "all_tiers_exhausted"`.
+2. A standalone service `root_cause_analysis_service.py` exports `generate_root_cause_analysis()` (not an inline helper — kept separate for testability and reuse).
+3. It assembles:
+   - The step instruction (`step_data["instruction"]`)
+   - The current page URL (`page.url`)
+   - Per-tier error messages extracted by `_extract_tier_error(execution_history, tier)` (returns `"N/A"` for untried tiers)
+   - A DOM snapshot from `page.inner_html("body")`, **capped at 16 000 chars** (~4 000 tokens) by `_cap_dom_snapshot()`; DOM failure is non-fatal
+4. A single `UniversalLLMService.chat_completion()` call with `temperature=0.2, max_tokens=256` returns a 2–3 sentence explanation.
+5. The analysis string is stored in a new `root_cause_analysis TEXT` column on `execution_feedback` (migration run ✅).
+6. `ExecutionProgressPage` fetches feedback after load, builds `rcaByStepIndex: Record<number, string>`, and passes the RCA string to each `StepCard`.
+7. `RootCauseAnalysisPanel` renders an amber collapsible panel — collapsed by default, shows `🔍 Root Cause Analysis` header; renders nothing when RCA is null.
 
-**Only fires when `error_type == "all_tiers_exhausted"`** — no LLM cost on partial failures or Tier 1 successes.
+**Only fires when `error_type == "all_tiers_exhausted"` AND `not is_otp_step()`** — no LLM cost on partial failures, Tier 1 successes, or OTP digit steps.
 
-**Suggested LLM prompt structure:**
+**Provider resolution:** `user_ai_config` from `three_tier_service` is used verbatim — same provider/model as the test execution itself, avoiding free-tier rate limits.
+
+**Actual LLM prompt structure:**
 ```
 You are a web test automation debugger.
 
@@ -2826,35 +2829,49 @@ Step: "{instruction}"
 URL at failure: {page_url}
 
 Per-tier errors:
-- Tier 1: {t1_error}
-- Tier 2: {t2_error}
-- Tier 3: {t3_error}
+- Tier 1 (Playwright direct): {t1_error}
+- Tier 2 (XPath hybrid):      {t2_error}
+- Tier 3 (AI Stagehand):      {t3_error}
 
-Relevant DOM snapshot (truncated):
+Relevant DOM snapshot (may be truncated):
 {dom_snapshot}
 
-In 2–3 sentences: explain the likely root cause and suggest what the test or page may need.
+In 2–3 sentences: explain the likely root cause of the failure and suggest what the test step or the page may need to fix it.
 ```
 
-**Backend changes:**
+**Bugs fixed during integration testing:**
+
+| Bug | Root Cause | Fix |
+|-----|-----------|------|
+| `error_type` never reached `_capture_execution_feedback` | `_execute_step()` failed-result dict omitted `error_type` key in legacy format conversion | Added `"error_type": result.get("error_type")` to the failed-result return dict |
+| Azure `gpt-5.2` returned HTTP 400 on every RCA call | `_build_azure_request_candidates()` sent `max_tokens`; `gpt-5.2` requires `max_completion_tokens` | Branch `token_limit_field` on `model.startswith("gpt-5")` |
+| Server restarted mid-execution when test files were saved | `watchfiles` default watches all `.py` files; saving a test file killed the live execution process | `start_server.py` now passes `reload_dirs=["app"]` |
+
+**Implementation outcome (files changed):**
 
 | File | Change |
 |------|--------|
-| `backend/app/models/execution_feedback.py` | Add `root_cause_analysis = Column(Text, nullable=True)` |
-| `backend/app/schemas/execution_feedback.py` | Add `root_cause_analysis: Optional[str]` to response schema |
-| `backend/app/services/execution_service.py` | Add `_generate_root_cause_analysis(page, step_data, execution_history)` helper; call before `_capture_execution_feedback()` |
-| `backend/migrations/add_root_cause_analysis_column.py` | New DB migration |
-| `backend/tests/unit/test_root_cause_analysis.py` | Unit tests: prompt construction, token capping, LLM mock |
-| `backend/tests/integration/test_rca_execution.py` | Integration tests: feedback record has `root_cause_analysis` after simulated exhaustion |
+| `backend/app/services/root_cause_analysis_service.py` | **New:** `_cap_dom_snapshot()`, `_build_rca_prompt()`, `generate_root_cause_analysis()` |
+| `backend/app/models/execution_feedback.py` | Added `root_cause_analysis = Column(Text, nullable=True)` |
+| `backend/app/schemas/execution_feedback.py` | Added `root_cause_analysis: Optional[str]` to `ExecutionFeedbackCreate` and `ExecutionFeedbackResponse` |
+| `backend/app/services/execution_service.py` | Import + RCA call gate in `_capture_execution_feedback()`; `error_type` propagation fix in `_execute_step()` |
+| `backend/app/services/universal_llm.py` | `_build_azure_request_candidates()`: `max_completion_tokens` for `gpt-5.x` models |
+| `backend/start_server.py` | `reload_dirs=["app"]` to scope watchfiles to application code only |
+| `backend/migrations/add_root_cause_analysis_column.py` | New migration — run ✅ |
+| `backend/tests/unit/test_root_cause_analysis.py` | 22 unit tests: `_cap_dom_snapshot` (5), `_build_rca_prompt` (7), `generate_root_cause_analysis` (10) |
+| `backend/tests/integration/test_rca_execution.py` | 5 integration tests: end-to-end flow, non-triggering types, OTP exclusion, LLM failure resilience |
+| `backend/tests/test_execution_service_three_tier_logging.py` | +1 regression: `test_execute_step_preserves_error_type_for_failed_three_tier_results` |
+| `backend/tests/unit/test_universal_llm_azure.py` | +1 regression: `test_build_azure_request_candidates_uses_max_completion_tokens_for_gpt52` |
+| `frontend/src/components/execution/RootCauseAnalysisPanel.tsx` | **New:** amber collapsible panel; collapsed by default; renders nothing when null |
+| `frontend/src/pages/ExecutionProgressPage.tsx` | Fetches feedback, builds `rcaByStepIndex`, passes to `StepCard` |
+| `frontend/src/services/feedbackService.ts` | Added `root_cause_analysis: string | null` to `ExecutionFeedback` interface |
+| `frontend/src/components/__tests__/ExecutionProgressPage.rca.test.tsx` | 8 frontend tests: panel render, expand/collapse, null guard, step-index mapping |
 
-**Frontend changes:**
+**Test results:** 29 backend tests (22 unit + 5 integration + 2 regressions) + 8 frontend = **37 new tests**. 235 total frontend tests pass. No regression.
 
-| File | Change |
-|------|--------|
-| `frontend/src/pages/ExecutionProgressPage.tsx` | Show `root_cause_analysis` panel below failed step's error message (collapsible, italic) |
-| `frontend/src/components/__tests__/ExecutionProgressPage.rca.test.tsx` | 6 frontend tests: renders when present, hidden when null |
+**Security note:** DOM snapshot is processed server-side only and never returned to the client. Only the plain-text LLM summary is stored and displayed.
 
-**Security note:** DOM snapshot is server-side only and never returned to the client. Only the plain-text LLM summary is stored and displayed.
+**ADR:** ADR-002-43 recorded in `documentation/ADR-002-test-execution-engine.md` ✅
 
 ---
 
@@ -2913,33 +2930,43 @@ Feature A tells the user *why* step 24 failed (e.g. *"The 'Pay Now' button was p
 
 #### Task Table
 
-| Task | Description | Owner | Points | Dependencies |
-|------|-------------|-------|--------|--------------|
-| **10.12-B1** | DB migration: `root_cause_analysis` column on `execution_feedback` | Dev B | 1 | Sprint 10.11 |
-| **10.12-B2** | `_generate_root_cause_analysis()` helper in `execution_service.py` | Dev B | 3 | 10.12-B1, `universal_llm.py` |
-| **10.12-B3** | Unit + integration tests for RCA (LLM mock, DOM cap, feedback record) | Dev B | 2 | 10.12-B2 |
-| **10.12-B4** | Frontend: RCA panel on failed step in `ExecutionProgressPage` | Dev B | 2 | 10.12-B2 |
-| **10.12-B5** | DB migration: `step_session_snapshots` table | Dev B | 1 | Sprint 10.11 |
-| **10.12-B6** | Snapshot save: call `export_profile_session()` after each passing step | Dev B | 2 | 10.12-B5 |
-| **10.12-B7** | Resume logic in `execute_test()`: load snapshot, inject, SKIP records | Dev B | 3 | 10.12-B6 |
-| **10.12-B8** | API: accept `resume_from_execution_id` + `start_from_step`; stateful + OTP guards | Dev B | 2 | 10.12-B7 |
-| **10.12-B9** | Unit + integration tests for resume (guard, SKIP records, snapshot injection) | Dev B | 2 | 10.12-B8 |
-| **10.12-B10** | Frontend: "Re-run from here" button + confirmation dialog (both pages) | Dev B | 2 | 10.12-B8 |
+| Task | Description | Owner | Points | Dependencies | Status |
+|------|-------------|-------|--------|--------------|--------|
+| **10.12-B1** | DB migration: `root_cause_analysis` column on `execution_feedback` | Dev B | 1 | Sprint 10.11 | ✅ |
+| **10.12-B2** | `root_cause_analysis_service.py`: standalone service with `generate_root_cause_analysis()`, `_build_rca_prompt()`, `_cap_dom_snapshot()` | Dev B | 3 | 10.12-B1, `universal_llm.py` | ✅ |
+| **10.12-B3** | Unit + integration tests for RCA (22 unit + 5 integration + 2 regression = 29 backend tests) | Dev B | 2 | 10.12-B2 | ✅ |
+| **10.12-B4** | Frontend: `RootCauseAnalysisPanel.tsx` + `ExecutionProgressPage.tsx` integration + 8 frontend tests | Dev B | 2 | 10.12-B2 | ✅ |
+| **10.12-B5** | DB migration: `step_session_snapshots` table | Dev B | 1 | Sprint 10.11 | 🔄 Planned |
+| **10.12-B6** | Snapshot save: call `export_profile_session()` after each passing step | Dev B | 2 | 10.12-B5 | 🔄 Planned |
+| **10.12-B7** | Resume logic in `execute_test()`: load snapshot, inject, SKIP records | Dev B | 3 | 10.12-B6 | 🔄 Planned |
+| **10.12-B8** | API: accept `resume_from_execution_id` + `start_from_step`; stateful + OTP guards | Dev B | 2 | 10.12-B7 | 🔄 Planned |
+| **10.12-B9** | Unit + integration tests for resume (guard, SKIP records, snapshot injection) | Dev B | 2 | 10.12-B8 | 🔄 Planned |
+| **10.12-B10** | Frontend: "Re-run from here" button + confirmation dialog (both pages) | Dev B | 2 | 10.12-B8 | 🔄 Planned |
 
-**Total: 20 points / 5 days**
+**Feature A total: 8 points / ~2 days (COMPLETE ✅) · Feature B total: 12 points / 3 days (PLANNED 🔄)**
 
 #### ADR reference
 
-Document decisions in `documentation/ADR-002-test-execution-engine.md` as:
-- **ADR-002-43**: AI-Powered Failure Root Cause Analysis — LLM prompt at `ExecutionFailedError`, DOM snapshot token cap, `root_cause_analysis` feedback column
-- **ADR-002-44**: Re-Run from Failed Step — `step_session_snapshots` table, session injection, SKIP record semantics, stateful + OTP resume guards
+- **ADR-002-43**: AI-Powered Failure Root Cause Analysis — standalone `root_cause_analysis_service.py`, DOM snapshot 16 000-char cap, `root_cause_analysis` feedback column, Azure `max_completion_tokens` fix, `error_type` propagation fix — ✅ **Recorded** in `documentation/ADR-002-test-execution-engine.md`
+- **ADR-002-44**: Re-Run from Failed Step — `step_session_snapshots` table, session injection, SKIP record semantics, stateful + OTP resume guards — 🔄 **Planned**
 
 #### Sprint 10.12 Success Criteria
 
-- [ ] `root_cause_analysis` column on `execution_feedback`; populated on every `all_tiers_exhausted` failure
-- [ ] LLM prompt uses per-tier errors + URL + DOM snapshot; response is plain English, ≤3 sentences
-- [ ] DOM snapshot capped server-side to prevent token overflow; never sent to client
-- [ ] RCA panel visible in `ExecutionProgressPage` beneath failed step error (hidden when null)
+**Feature A (✅ COMPLETE)**
+- [x] `root_cause_analysis` column on `execution_feedback`; populated on every `all_tiers_exhausted` failure
+- [x] LLM prompt uses per-tier errors + URL + DOM snapshot; response is plain English, ≤3 sentences
+- [x] DOM snapshot capped server-side at 16 000 chars; never sent to client
+- [x] OTP digit steps excluded from RCA (`is_otp_step()` guard)
+- [x] LLM failures are non-fatal — returns `None`, execution continues
+- [x] Provider/model resolved from user's existing `user_ai_config` — no new credentials required
+- [x] RCA panel visible in `ExecutionProgressPage` beneath failed step error (hidden when null); amber collapsible
+- [x] 29 backend tests pass (22 unit + 5 integration + 2 regression); 8 frontend tests pass; 235 total frontend tests — no regression
+- [x] ADR-002-43 recorded in `documentation/ADR-002-test-execution-engine.md`
+- [x] Azure `max_completion_tokens` fix: `gpt-5.x` models no longer receive HTTP 400
+- [x] `error_type` propagation fix: `_execute_step()` failed-result dict now includes `error_type`
+- [x] `start_server.py` watchfiles scoped to `app/` — test-file saves no longer restart server mid-execution
+
+**Feature B (🔄 PLANNED)**
 - [ ] `step_session_snapshots` table persists `(execution_id, step_number, page_url, session_data)` after each passing step
 - [ ] `POST /tests/{id}/run` accepts `resume_from_execution_id` + `start_from_step`
 - [ ] Skipped steps recorded as `ExecutionResult.SKIP` with description `"(skipped — resumed from step N)"`
@@ -2947,18 +2974,19 @@ Document decisions in `documentation/ADR-002-test-execution-engine.md` as:
 - [ ] OTP guard: HTTP 422 when resume would skip an OTP step
 - [ ] "Re-run from here" button on each failed step row in `ExecutionProgressPage` and `ExecutionDetailPage`
 - [ ] Confirmation dialog shows source execution ID, step number, and page URL to be restored
-- [ ] All existing tests continue to pass (zero regression)
-- [ ] ADR-002-43 and ADR-002-44 recorded in `documentation/ADR-002-test-execution-engine.md`
+- [ ] ADR-002-44 recorded in `documentation/ADR-002-test-execution-engine.md`
 
 #### Known Constraints & Risks
 
-| Risk | Mitigation |
-|------|------------|
-| DOM snapshot too large for LLM context | Cap `page.inner_html("body")` at 4 000 tokens server-side before sending |
-| Session snapshot storage growth | Add 30-day TTL cleanup job for `step_session_snapshots`; snapshot per step is ~5–50 KB |
-| Resume on SPA with non-serialisable state | Guard: if `page_url` differs from expected step URL, show warning and require user acknowledgment |
-| RCA LLM cost | Only fires on `all_tiers_exhausted`; estimated <5% of total executions; single short prompt |
-| Snapshot injection incompatible with HTTP Basic Auth flows | Existing `http_credentials` param is applied before snapshot — ordering preserved |
+| Risk | Mitigation | Status |
+|------|------------|--------|
+| DOM snapshot too large for LLM context | Cap `page.inner_html("body")` at 16 000 chars (≈4 000 tokens) server-side | ✅ Resolved |
+| Azure `gpt-5.2` HTTP 400 on `max_tokens` | Use `max_completion_tokens` for `gpt-5.x` models | ✅ Resolved |
+| `watchfiles` kills live executions when test files saved | `reload_dirs=["app"]` in `start_server.py` | ✅ Resolved |
+| Session snapshot storage growth | Add 30-day TTL cleanup job for `step_session_snapshots`; snapshot per step is ~5–50 KB | 🔄 Feature B |
+| Resume on SPA with non-serialisable state | Guard: if `page_url` differs from expected step URL, show warning | 🔄 Feature B |
+| RCA LLM cost | Only fires on `all_tiers_exhausted`; estimated <5% of total executions; single short prompt | ✅ By design |
+| Snapshot injection incompatible with HTTP Basic Auth flows | Existing `http_credentials` param applied before snapshot — ordering preserved | 🔄 Feature B |
 
 ---
 

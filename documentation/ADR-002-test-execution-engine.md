@@ -40,6 +40,18 @@
 - `backend/tests/unit/test_email_otp_service.py`
 - `backend/tests/unit/test_email_credential_model.py`
 - `backend/tests/integration/test_email_otp_execution.py`
+- `backend/app/services/root_cause_analysis_service.py`
+- `backend/app/models/execution_feedback.py`
+- `backend/app/schemas/execution_feedback.py`
+- `backend/migrations/add_root_cause_analysis_column.py`
+- `backend/tests/unit/test_root_cause_analysis.py`
+- `backend/tests/integration/test_rca_execution.py`
+- `backend/tests/unit/test_universal_llm_azure.py`
+- `backend/tests/test_execution_service_three_tier_logging.py`
+- `frontend/src/components/execution/RootCauseAnalysisPanel.tsx`
+- `frontend/src/components/__tests__/ExecutionProgressPage.rca.test.tsx`
+- `frontend/src/pages/ExecutionProgressPage.tsx`
+- `frontend/src/services/feedbackService.ts`
 
 ---
 
@@ -87,6 +99,7 @@
 40. [ADR-002-40: JIT OTP Expansion — Poll IMAP at Step Execution Time, Not Upfront](#adr-002-40-jit-otp-expansion--poll-imap-at-step-execution-time-not-upfront)
 41. [ADR-002-41: Context-Aware OTP Extraction and Newest-First IMAP UID Search](#adr-002-41-context-aware-otp-extraction-and-newest-first-imap-uid-search)
 42. [ADR-002-42: Step Library @module: Syntax and Resolver Architecture](#adr-002-42-step-library-module-syntax-and-resolver-architecture)
+43. [ADR-002-43: AI-Powered Failure Root Cause Analysis](#adr-002-43-ai-powered-failure-root-cause-analysis)
 
 ---
 
@@ -797,6 +810,14 @@ Key properties:
 | 002-33 | Post-check `is_checked()` verification for `check` actions; immediate `ValueError` when Subscribe Now button stays permanently disabled | Accepted | Low |
 | 002-34 | Change navigate Tier 2 `wait_until` from `networkidle` to `domcontentloaded`; raise nav-click loading timeout to 20 s; cap non-nav networkidle wait at 3 s | Accepted | Low |
 | 002-35 | Move `'I understand'`, `'I Understand'`, and `'Close'` from `SAFE` to `CONDITIONAL` dismiss list; remove button-label tokens (`'i understand'`, `'got it'`, `'information'`) from `NUISANCE_MODAL_TEXT_TOKENS` | Accepted | Low |
+| 002-36 | Expand `THREE_HK_PLAN_TAB_LABELS` to cover 4.5G Monthly Plans and 5G Broadband tab categories | Accepted | Low |
+| 002-37 | Bounded DOM-ready wait in `_find_three_hk_plan_tab_locator`; post-Tier-3 tab-state verification via `_apply_tab_verification_after_tier3` | Accepted | Low |
+| 002-38 | IMAP-based `EmailOTPService` with Fernet-encrypted credential storage; `EmailCredential` ORM model; `/api/v1/email-credentials` CRUD API | Accepted | Low |
+| 002-39 | `format_otp_steps()` expands a resolved OTP into N per-digit step strings for both single-input and split-box OTP UIs | Accepted | Low |
+| 002-40 | JIT OTP expansion — poll IMAP at step execution time (not upfront); parallel `asyncio.wait_for` with timeout per digit step | Accepted | Low |
+| 002-41 | Context-aware OTP extraction with 40-char lookahead keyword proximity; newest-first IMAP UID iteration; `ALL`+`SINCE` search to handle read emails | Accepted | Low |
+| 002-42 | Step Library `@module:` inline syntax; `StepLibraryModule` entity; `resolve_steps()` called in `execution_service.py` and `stagehand_service.py` | Accepted | Low |
+| 002-43 | AI-generated root cause analysis for `all_tiers_exhausted` failures; stored in `execution_feedback.root_cause_analysis`; amber collapsible panel in `ExecutionProgressPage` | Accepted | Low |
 
 ADR-002-24 and ADR-002-25 are low risk: ADR-002-24's overlay guard only fires for the two generic overlay selectors, leaving all other loading indicators unchanged; ADR-002-25's fast-path requires both conditions — URL unchanged and interactive modal visible — to be true simultaneously, which is conservative. ADR-002-26 is a one-line wiring fix with no behavioural change to step execution. All three were applied together to fix the repeated 10–20 s per-step stalls in Execution #637 and to restore tier-level diagnostics.
 
@@ -3113,3 +3134,126 @@ OTP JIT expansion (Sprint 10.10) runs **inside** the loop after module expansion
 - `frontend/src/components/__tests__/InsertModulePicker.test.tsx` — 8 tests
 
 **Total: 52 backend + 18 frontend = 70 tests. 215 total frontend tests pass. No regression.**
+
+---
+
+## ADR-002-43: AI-Powered Failure Root Cause Analysis
+
+**Date:** May 13, 2026  
+**Sprint:** 10.12
+
+### Context
+
+When all three execution tiers are exhausted (`error_type == "all_tiers_exhausted"`), the execution log shows a raw stack trace or a terse `"No selector provided"` / `"Timeout"` string. Diagnosing the real root cause — whether the test step definition is wrong, the page has changed, or the selector is missing — requires manually correlating the per-tier error messages, the DOM structure, and the page URL. This is time-consuming and requires deep familiarity with the execution engine.
+
+The system already stores per-tier error strings in `execution_history` (ADR-002-26) and captures the page URL in `ExecutionFeedback`. What was missing was a single plain-English explanation tying these artefacts together, readable by a QA engineer without stack-trace expertise.
+
+### Decision
+
+**Core service — `root_cause_analysis_service.py`:**
+
+A standalone async service with three concerns:
+
+1. **`_cap_dom_snapshot(raw_html)`** — Caps the `page.inner_html("body")` result at 16,000 characters (≈4,000 tokens at 4 chars/token) before sending to the LLM. The truncation appends `... [truncated]`. This is a server-side safety measure; the DOM snapshot is never returned to the client.
+
+2. **`_build_rca_prompt(instruction, page_url, execution_history, dom_snapshot)`** — Assembles a structured prompt:
+   - Includes the failing step instruction and URL at failure.
+   - Includes per-tier errors extracted by `_extract_tier_error(execution_history, tier)` (returns `"N/A"` when a tier was not attempted).
+   - Includes the capped DOM snapshot when available.
+   - Requests a 2–3 sentence diagnosis and fix suggestion.
+
+3. **`generate_root_cause_analysis(page, step_data, execution_history, error_type, provider, model)`** — Main async entry point:
+   - Returns `None` immediately for any `error_type` other than `"all_tiers_exhausted"` — zero cost on partial failures.
+   - DOM snapshot fetch is non-fatal: a `try/except` logs at DEBUG and continues with an empty snapshot.
+   - LLM call uses `UniversalLLMService.chat_completion()` with `temperature=0.2`, `max_tokens=256`.
+   - Any LLM exception is caught and returns `None` — RCA must never interrupt test execution.
+
+**Database — `execution_feedback` table:**
+
+A new nullable `TEXT` column `root_cause_analysis` is added via migration `add_root_cause_analysis_column.py` (SQLite `ALTER TABLE`, idempotent). The `ExecutionFeedback` ORM model and Pydantic schemas (`ExecutionFeedbackCreate`, `ExecutionFeedbackResponse`) are updated accordingly.
+
+**Execution service wiring — `execution_service._capture_execution_feedback()`:**
+
+Two independent bug fixes were required before RCA could fire in production:
+
+- **Bug 1 — `error_type` dropped in `_execute_step()` legacy conversion**: The failed-result dict returned from `_execute_step()` omitted `error_type`, so `_capture_execution_feedback` always received `error_type=None`. Fixed by adding `"error_type": result.get("error_type")` to the failed-result return dict.
+
+- **Bug 2 — Azure `gpt-5.2` rejects `max_tokens`**: `_build_azure_request_candidates()` in `universal_llm.py` sent `max_tokens` for all models. Azure's `gpt-5.2` deployment requires `max_completion_tokens` instead. Fixed by branching on `model.startswith("gpt-5")` to select the correct field name.
+
+Once those bugs were fixed, the RCA call gate is:
+
+```python
+if error_type == "all_tiers_exhausted" and not is_otp_step(step_description):
+    rca_provider = self.three_tier_service.user_ai_config.get("provider", "openrouter")
+    rca_model    = self.three_tier_service.user_ai_config.get("model")
+    root_cause_analysis = await generate_root_cause_analysis(
+        page=page,
+        step_data={"instruction": step_description},
+        execution_history=tier_info or [],
+        error_type=error_type,
+        provider=rca_provider,
+        model=rca_model,
+    )
+```
+
+OTP digit steps are excluded because their failures carry timing-sensitive re-poll requirements that RCA cannot address.
+
+The provider and model are resolved from `self.three_tier_service.user_ai_config` (same configuration used by the execution engine itself) to avoid free-tier rate limits on the default OpenRouter model.
+
+**Dev server fix — `start_server.py`:**
+
+`watchfiles` (uvicorn `reload=True`) was watching all `.py` files by default, restarting the server whenever a test file was saved. This killed live executions mid-run. Fixed by passing `reload_dirs=["app"]` so only application code changes trigger a reload.
+
+**Frontend — `RootCauseAnalysisPanel.tsx` + `ExecutionProgressPage.tsx`:**
+
+`RootCauseAnalysisPanel` is a collapsible amber panel:
+- Renders nothing when `rootCauseAnalysis` is `null`, `undefined`, or an empty string.
+- Collapsed by default; header row shows `🔍 Root Cause Analysis` with a chevron toggle.
+- Expanded body renders the RCA text in an `<em>` italic block.
+
+`ExecutionProgressPage` fetches `feedbackService.getExecutionFeedback()` after loading execution detail, builds a `rcaByStepIndex: Record<number, string>` map keyed by 0-based `step_index`, and passes `rootCauseAnalysis={rcaByStepIndex[step.step_number - 1] ?? null}` to each `StepCard`. (`step_index` in feedback is 0-based; `step_number` in the step list is 1-based.)
+
+### Consequences
+
+**Positive**
+- QA engineers see a plain-English explanation directly below the failed step — no need to read stack traces.
+- Only fires on `all_tiers_exhausted` — zero LLM cost on Tier 1 or Tier 2 failures.
+- OTP steps are excluded — avoids spurious RCA for timing-sensitive re-poll failures.
+- LLM and DOM failures are both non-fatal — execution continues even if RCA generation fails.
+- DOM snapshot is capped server-side — no unbounded token cost even on large SPAs.
+- Uses the user's existing AI provider configuration — no new credentials or settings required.
+
+**Negative**
+- RCA adds one LLM call per `all_tiers_exhausted` step, increasing latency after already-failed steps. For Azure `gpt-5.2` this is typically 3–5 s.
+- LLM accuracy depends on prompt quality and the model's web-automation knowledge. Explanations are 2–3 sentences; they may be generic if the DOM snapshot does not contain the relevant element.
+- `max_tokens=256` cap keeps cost low but may truncate explanations for complex failures.
+- The amber panel is only shown on `ExecutionProgressPage`; the feedback viewer (`/executions/{id}/feedback`) does not yet surface it.
+
+**Alternatives Considered**
+- **Rule-based heuristic messages (no LLM)**: Fast and cheap but cannot handle the full variety of failure modes across arbitrary web applications.
+- **Fire RCA for all failure types**: Would add LLM cost to every Tier 1/2 failure; most Tier 1/2 failures are transient and already self-healed by the 3-tier cascade.
+- **Dedicated analysis agent (Phase 3)**: The correct long-term home; this feature is a lightweight precursor that uses the existing `UniversalLLMService` without a separate agent process.
+- **Real-time streaming in the UI**: Adds WebSocket complexity; polling the existing feedback endpoint on page load is sufficient for async diagnostics.
+
+### Related files
+
+- `backend/app/services/root_cause_analysis_service.py` — new service (`_cap_dom_snapshot`, `_build_rca_prompt`, `generate_root_cause_analysis`)
+- `backend/app/models/execution_feedback.py` — `root_cause_analysis = Column(Text, nullable=True)` added
+- `backend/app/schemas/execution_feedback.py` — `root_cause_analysis: Optional[str]` added to `ExecutionFeedbackCreate` and `ExecutionFeedbackResponse`
+- `backend/app/services/execution_service.py` — import, RCA call gate, and `error_type` propagation fix in `_execute_step()`
+- `backend/app/services/universal_llm.py` — `_build_azure_request_candidates()` uses `max_completion_tokens` for `gpt-5.x` models
+- `backend/start_server.py` — `reload_dirs=["app"]` to prevent test-file saves from restarting the server mid-execution
+- `backend/migrations/add_root_cause_analysis_column.py` — migration; already run ✅
+- `frontend/src/components/execution/RootCauseAnalysisPanel.tsx` — new collapsible amber panel component
+- `frontend/src/pages/ExecutionProgressPage.tsx` — fetches feedback, maps `step_index` → RCA, passes to `StepCard`
+- `frontend/src/services/feedbackService.ts` — `root_cause_analysis: string | null` added to `ExecutionFeedback` interface
+
+### Tests
+
+- `backend/tests/unit/test_root_cause_analysis.py` — 22 tests: `_cap_dom_snapshot` (5), `_build_rca_prompt` (7), `generate_root_cause_analysis` (10)
+- `backend/tests/integration/test_rca_execution.py` — 5 integration tests: end-to-end RCA flow, non-triggering error types, OTP exclusion, LLM failure resilience
+- `backend/tests/test_execution_service_three_tier_logging.py` — 1 regression test: `test_execute_step_preserves_error_type_for_failed_three_tier_results`
+- `backend/tests/unit/test_universal_llm_azure.py` — 1 regression test: `test_build_azure_request_candidates_uses_max_completion_tokens_for_gpt52`
+- `frontend/src/components/__tests__/ExecutionProgressPage.rca.test.tsx` — 8 frontend tests: panel renders/hides, expand/collapse, null guard, step-index mapping
+
+**Total: 29 backend + 8 frontend = 37 tests. 235 total frontend tests pass. No regression.**
