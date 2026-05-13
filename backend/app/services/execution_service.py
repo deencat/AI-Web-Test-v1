@@ -38,6 +38,7 @@ from app.services.email_otp_service import (
 )
 from app.services.encryption_service import EncryptionService as _EncryptionService
 from app.services.step_module_resolver import resolve_steps
+from app.services.root_cause_analysis_service import generate_root_cause_analysis
 
 logger = logging.getLogger(__name__)
 
@@ -765,7 +766,8 @@ class ExecutionService:
                                         screenshot_path=screenshot_path,
                                         duration_ms=int(duration * 1000),
                                         tier_info=result.get("execution_history"),
-                                        strategy_used=result.get("strategy_used")
+                                        strategy_used=result.get("strategy_used"),
+                                        error_type=result.get("error_type"),
                                     )
                                     
                                     # If step is critical and failed, stop loop execution
@@ -896,7 +898,8 @@ class ExecutionService:
                             screenshot_path=screenshot_path,
                             duration_ms=int(duration * 1000),
                             tier_info=result.get("execution_history"),  # 3-tier execution history
-                            strategy_used=result.get("strategy_used")  # Which strategy was used
+                            strategy_used=result.get("strategy_used"),  # Which strategy was used
+                            error_type=result.get("error_type"),  # all_tiers_exhausted triggers RCA
                         )
                         
                         # If step is critical and failed, stop execution
@@ -1811,12 +1814,17 @@ class ExecutionService:
         screenshot_path: Optional[str],
         duration_ms: int,
         tier_info: Optional[List[Dict[str, Any]]] = None,
-        strategy_used: Optional[str] = None
+        strategy_used: Optional[str] = None,
+        error_type: Optional[str] = None,
     ):
         """
         Capture execution feedback for failed steps.
         This is the foundation of the learning system - collects context for pattern analysis.
         Includes 3-tier execution information for better diagnostics.
+
+        Sprint 10.12: When error_type == "all_tiers_exhausted" and the step is not
+        an OTP digit step, calls generate_root_cause_analysis() to obtain an
+        AI-generated plain-English explanation stored in root_cause_analysis.
         
         Args:
             db: Database session
@@ -1829,6 +1837,7 @@ class ExecutionService:
             duration_ms: Step duration in milliseconds
             tier_info: Optional 3-tier execution history (which tiers attempted/failed)
             strategy_used: Optional strategy used (option_a, option_b, option_c)
+            error_type: Optional error category (e.g. "all_tiers_exhausted")
         """
         try:
             # Get current page context
@@ -1874,6 +1883,18 @@ class ExecutionService:
             
             if strategy_used:
                 metadata["strategy_used"] = strategy_used
+
+            # Sprint 10.12: Generate AI root cause analysis for all_tiers_exhausted failures.
+            # Skip for OTP digit steps — those have timing-sensitive re-poll requirements.
+            root_cause_analysis = None
+            if error_type == "all_tiers_exhausted" and not is_otp_step(step_description):
+                step_data_for_rca = {"instruction": step_description}
+                root_cause_analysis = await generate_root_cause_analysis(
+                    page=page,
+                    step_data=step_data_for_rca,
+                    execution_history=tier_info or [],
+                    error_type=error_type,
+                )
             
             # Create feedback entry
             feedback = ExecutionFeedbackCreate(
@@ -1890,7 +1911,8 @@ class ExecutionService:
                 failed_selector=failed_selector,
                 selector_type=selector_type,
                 step_duration_ms=duration_ms,
-                metadata=metadata if metadata else None  # Include 3-tier execution info
+                metadata=metadata if metadata else None,  # Include 3-tier execution info
+                root_cause_analysis=root_cause_analysis,
             )
             
             # Save feedback (with minimal overhead)

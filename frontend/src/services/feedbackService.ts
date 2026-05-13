@@ -35,6 +35,8 @@ export interface ExecutionFeedback {
   anomaly_type: string | null;
   notes: string | null;
   tags: string[] | null;
+  /** Sprint 10.12: AI-generated root cause analysis (all_tiers_exhausted only). */
+  root_cause_analysis: string | null;
   created_at: string;
   updated_at: string;
 }

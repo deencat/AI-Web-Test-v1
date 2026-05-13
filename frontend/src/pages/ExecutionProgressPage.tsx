@@ -9,8 +9,10 @@ import { CorrectionForm } from '../components/execution/CorrectionForm';
 import { ReportIssueButton } from '../components/execution/ReportIssueButton';
 import { DebugModeModal } from '../components/debug/DebugModeModal';
 import { DebugSessionView } from '../components/debug/DebugSessionView';
+import { RootCauseAnalysisPanel } from '../components/execution/RootCauseAnalysisPanel';
 import executionService from '../services/executionService';
 import debugService from '../services/debugService';
+import feedbackService from '../services/feedbackService';
 import type { TestExecutionDetail, ExecutionStatus, ExecutionResult, ExecutionFeedback } from '../types/execution';
 import type { DebugMode } from '../types/debug';
 
@@ -29,6 +31,9 @@ export function ExecutionProgressPage() {
   const [showCorrectionModal, setShowCorrectionModal] = useState(false);
   const [selectedFeedback, setSelectedFeedback] = useState<ExecutionFeedback | null>(null);
 
+  // Sprint 10.12: map step_index (0-based) → root_cause_analysis text
+  const [rcaByStepIndex, setRcaByStepIndex] = useState<Record<number, string>>({});
+
   const fetchExecutionDetail = async () => {
     if (!executionId) return;
 
@@ -36,6 +41,20 @@ export function ExecutionProgressPage() {
       const data = await executionService.getExecutionDetail(Number(executionId));
       setExecution(data);
       setError(null);
+
+      // Sprint 10.12: fetch feedback to extract root_cause_analysis per step
+      try {
+        const feedbackItems = await feedbackService.getExecutionFeedback(Number(executionId));
+        const map: Record<number, string> = {};
+        for (const item of feedbackItems) {
+          if (item.step_index != null && item.root_cause_analysis) {
+            map[item.step_index] = item.root_cause_analysis;
+          }
+        }
+        setRcaByStepIndex(map);
+      } catch {
+        // Non-fatal: missing RCA data should not break the page
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch execution details');
     } finally {
@@ -252,6 +271,7 @@ export function ExecutionProgressPage() {
                   step={step} 
                   executionId={execution.id}
                   onReportSuccess={fetchExecutionDetail}
+                  rootCauseAnalysis={rcaByStepIndex[step.step_number - 1] ?? null}
                 />
               ))}
             </div>
@@ -368,9 +388,11 @@ interface StepCardProps {
   step: TestExecutionDetail['steps'][0];
   executionId: number;
   onReportSuccess?: () => void;
+  /** Sprint 10.12: AI-generated root cause analysis for all_tiers_exhausted failures. */
+  rootCauseAnalysis?: string | null;
 }
 
-function StepCard({ step, executionId, onReportSuccess }: StepCardProps) {
+function StepCard({ step, executionId, onReportSuccess, rootCauseAnalysis }: StepCardProps) {
   const getStepResultColor = () => {
     if (step.result === 'pass') return 'border-green-200 bg-green-50';
     if (step.result === 'fail') return 'border-red-200 bg-red-50';
@@ -419,6 +441,10 @@ function StepCard({ step, executionId, onReportSuccess }: StepCardProps) {
               <span className="font-medium">Error:</span> {step.error_message}
             </div>
           )}
+
+          {/* Sprint 10.12: AI Root Cause Analysis panel for all_tiers_exhausted failures */}
+          <RootCauseAnalysisPanel rootCauseAnalysis={rootCauseAnalysis} />
+
           {step.duration_seconds !== undefined && (
             <div className="mt-2 text-sm text-gray-600">
               Duration: {step.duration_seconds.toFixed(2)}s

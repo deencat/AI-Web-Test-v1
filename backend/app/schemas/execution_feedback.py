@@ -31,6 +31,8 @@ class ExecutionFeedbackCreate(ExecutionFeedbackBase):
     step_duration_ms: Optional[int] = Field(None, description="Step duration in milliseconds")
     memory_usage_mb: Optional[float] = Field(None, description="Memory usage in MB")
     network_requests: Optional[int] = Field(None, description="Number of network requests")
+    # Sprint 10.12: AI-generated root cause analysis (only for all_tiers_exhausted failures)
+    root_cause_analysis: Optional[str] = Field(None, description="AI-generated plain-English root cause (all_tiers_exhausted only)")
 
 
 class ExecutionFeedbackUpdate(BaseModel):
@@ -69,6 +71,8 @@ class ExecutionFeedbackResponse(ExecutionFeedbackBase):
     is_anomaly: bool
     anomaly_score: Optional[float] = None
     anomaly_type: Optional[str] = None
+    # Sprint 10.12: AI-generated root cause analysis
+    root_cause_analysis: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     
