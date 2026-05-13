@@ -69,6 +69,7 @@ if __name__ == "__main__":
         host="127.0.0.1",
         port=8000,
         reload=USE_RELOAD,
+        reload_dirs=["app"] if USE_RELOAD else None,  # Only watch app/ — prevents test-file saves from killing running executions
         log_level="info",
         loop="asyncio",
     )

@@ -1262,7 +1262,10 @@ class ExecutionService:
                         "actual": f"All tiers failed: {result.get('error')}",
                         "expected": step_description,
                         "execution_history": result.get("execution_history", []),
-                        "strategy_used": result.get("strategy_used")
+                        "strategy_used": result.get("strategy_used"),
+                        # Preserve top-level failure classification so downstream
+                        # feedback capture can trigger RCA for all_tiers_exhausted.
+                        "error_type": result.get("error_type"),
                     }
             
             # Fallback: Use old direct Playwright execution if 3-tier not available

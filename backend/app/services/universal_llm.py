@@ -297,6 +297,7 @@ class UniversalLLMService:
         resolved_endpoint = (endpoint or self.azure_endpoint or "").rstrip("/")
         resolved_api_version = api_version or self.azure_api_version
         resource_base = resolved_endpoint.split("/openai")[0] if "/openai" in resolved_endpoint else resolved_endpoint
+        token_limit_field = "max_completion_tokens" if model.startswith("gpt-5") else "max_tokens"
 
         v1_base = resolved_endpoint if "/openai/v1" in resolved_endpoint else f"{resource_base}/openai/v1"
         v1_url = f"{v1_base.rstrip('/')}/chat/completions"
@@ -307,7 +308,7 @@ class UniversalLLMService:
             "temperature": temperature,
         }
         if max_tokens:
-            v1_payload["max_tokens"] = max_tokens
+            v1_payload[token_limit_field] = max_tokens
 
         deployment_url = (
             f"{resource_base}/openai/deployments/{model}/chat/completions"
@@ -318,7 +319,7 @@ class UniversalLLMService:
             "temperature": temperature,
         }
         if max_tokens:
-            deployment_payload["max_tokens"] = max_tokens
+            deployment_payload[token_limit_field] = max_tokens
 
         request_candidates: List[Dict[str, object]] = [
             {"url": v1_url, "payload": v1_payload},
