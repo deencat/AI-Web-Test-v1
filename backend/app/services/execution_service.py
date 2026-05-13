@@ -1886,14 +1886,24 @@ class ExecutionService:
 
             # Sprint 10.12: Generate AI root cause analysis for all_tiers_exhausted failures.
             # Skip for OTP digit steps — those have timing-sensitive re-poll requirements.
+            # Use the user's configured AI provider (same as execution engine) so we don't
+            # hit free-tier rate limits on the default openrouter model.
             root_cause_analysis = None
             if error_type == "all_tiers_exhausted" and not is_otp_step(step_description):
                 step_data_for_rca = {"instruction": step_description}
+                # Resolve provider/model from user's execution AI config stored on this service
+                rca_provider = "openrouter"
+                rca_model = None
+                if self.three_tier_service and self.three_tier_service.user_ai_config:
+                    rca_provider = self.three_tier_service.user_ai_config.get("provider", "openrouter")
+                    rca_model = self.three_tier_service.user_ai_config.get("model")
                 root_cause_analysis = await generate_root_cause_analysis(
                     page=page,
                     step_data=step_data_for_rca,
                     execution_history=tier_info or [],
                     error_type=error_type,
+                    provider=rca_provider,
+                    model=rca_model,
                 )
             
             # Create feedback entry

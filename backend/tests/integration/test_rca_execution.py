@@ -55,6 +55,7 @@ class TestCaptureExecutionFeedbackRCA:
         svc.config = MagicMock(browser="chromium")
         svc._classify_failure_type = MagicMock(return_value="all_tiers_exhausted")
         svc._extract_selector_from_error = MagicMock(return_value=(None, None))
+        svc.three_tier_service = MagicMock(user_ai_config={"provider": "azure", "model": "ChatGPT-UAT"})
 
         db = MagicMock()
         db.add = MagicMock()
@@ -104,6 +105,7 @@ class TestCaptureExecutionFeedbackRCA:
         svc.config = MagicMock(browser="chromium")
         svc._classify_failure_type = MagicMock(return_value="timeout")
         svc._extract_selector_from_error = MagicMock(return_value=(None, None))
+        svc.three_tier_service = None
 
         db = MagicMock()
         page = _mock_page()
@@ -140,6 +142,7 @@ class TestCaptureExecutionFeedbackRCA:
         svc.config = MagicMock(browser="chromium")
         svc._classify_failure_type = MagicMock(return_value="all_tiers_exhausted")
         svc._extract_selector_from_error = MagicMock(return_value=(None, None))
+        svc.three_tier_service = MagicMock(user_ai_config={"provider": "azure", "model": "ChatGPT-UAT"})
 
         db = MagicMock()
         page = _mock_page()
@@ -189,6 +192,7 @@ class TestRcaSkippedForOtpStep:
         svc.config = MagicMock(browser="chromium")
         svc._classify_failure_type = MagicMock(return_value="otp_step_failed")
         svc._extract_selector_from_error = MagicMock(return_value=(None, None))
+        svc.three_tier_service = None
 
         db = MagicMock()
         page = _mock_page()
