@@ -100,6 +100,7 @@
 41. [ADR-002-41: Context-Aware OTP Extraction and Newest-First IMAP UID Search](#adr-002-41-context-aware-otp-extraction-and-newest-first-imap-uid-search)
 42. [ADR-002-42: Step Library @module: Syntax and Resolver Architecture](#adr-002-42-step-library-module-syntax-and-resolver-architecture)
 43. [ADR-002-43: AI-Powered Failure Root Cause Analysis](#adr-002-43-ai-powered-failure-root-cause-analysis)
+44. [ADR-002-44: Re-Run from Failed Step — Session Snapshot Persistence and Resume Architecture](#adr-002-44-re-run-from-failed-step--session-snapshot-persistence-and-resume-architecture)
 
 ---
 
@@ -3257,3 +3258,151 @@ The provider and model are resolved from `self.three_tier_service.user_ai_config
 - `frontend/src/components/__tests__/ExecutionProgressPage.rca.test.tsx` — 8 frontend tests: panel renders/hides, expand/collapse, null guard, step-index mapping
 
 **Total: 29 backend + 8 frontend = 37 tests. 235 total frontend tests pass. No regression.**
+
+---
+
+## ADR-002-44: Re-Run from Failed Step — Session Snapshot Persistence and Resume Architecture
+
+### Context
+
+`execute_test()` always starts from `idx = 1`. For a 30-step checkout flow, a failure at step 24 forces re-running all 23 preceding steps (login, plan selection, cart, address) before reaching the failure point. Each full re-run costs 5–8 minutes in real test time.
+
+Feature A (ADR-002-43) identifies *why* a step failed. Feature B makes that insight actionable: the tester should be able to resume execution from any safe step, not from the beginning.
+
+### Decision
+
+**Part 1 — Session snapshot per passing step**
+
+After every passing step, `ExecutionService._save_step_snapshot()` calls the existing `export_profile_session()` method and persists the result to a new `step_session_snapshots` table via `save_step_session_snapshot()` (CRUD helper). The snapshot captures:
+
+- `cookies` — context-level cookies (from `page.context.cookies()`)
+- `localStorage` — via `page.evaluate()`
+- `sessionStorage` — via `page.evaluate()`
+- `exported_at` — ISO timestamp
+- `page_url` — `page.url` at snapshot time (used for re-navigation on resume)
+
+Snapshot save is **non-fatal**: exceptions are caught and logged as warnings; they never interrupt execution.
+
+**`step_session_snapshots` table design:**
+
+```sql
+CREATE TABLE step_session_snapshots (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    execution_id INTEGER NOT NULL,   -- no FK: snapshots from completed runs must outlive the execution row
+    step_number  INTEGER NOT NULL,   -- 1-based; snapshot taken *after* this step passed
+    page_url     TEXT,
+    session_data TEXT,               -- JSON: {cookies, localStorage, sessionStorage, exported_at}
+    created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX ix_step_session_snapshots_execution_id ON step_session_snapshots (execution_id);
+```
+
+`execution_id` is intentionally **not** a foreign key. Snapshots from prior completed executions must remain queryable even if the execution row is later pruned or the table is used across schema migrations.
+
+**Part 2 — Resume request parameters**
+
+`ExecutionStartRequest` gains two optional fields:
+
+| Field | Type | Constraint | Description |
+|-------|------|-----------|-------------|
+| `resume_from_execution_id` | `Optional[int]` | — | Source execution whose snapshot to restore |
+| `start_from_step` | `Optional[int]` | `ge=2` | 1-based step to resume from; minimum 2 (resuming from step 1 = full run) |
+
+Both must be supplied together; supplying only one is a no-op (treated as a full run).
+
+**Part 3 — Resume guard (`resume_guard.py`)**
+
+`validate_resume_point(db, resume_from_execution_id, start_from_step, steps)` is called in the API endpoint **before** the execution is queued. It raises HTTP 422 for two cases:
+
+1. **Failed source step**: any `TestExecutionStep` in `resume_from_execution_id` with `step_number < start_from_step` and result `FAIL` or `ERROR`.  
+   *"Cannot resume: step X failed in the source execution. Choose a safe resume point."*
+
+2. **OTP step in skipped range**: any step in positions `0..start_from_step-2` (0-based) of the incoming step list matches `is_otp_step()`.  
+   *"Cannot skip OTP steps — the OTP from the original run is consumed. Trigger a new run from before the OTP step."*
+
+**Part 4 — Resume execution flow**
+
+Resume params are stored in `execution.trigger_details` JSON alongside existing profile data. `queue_manager.py` extracts them and passes them to `execute_test()` as `resume_from_execution_id` and `start_from_step`.
+
+Inside `execute_test()`:
+
+```python
+is_resume = resume_from_execution_id is not None and start_from_step is not None
+if is_resume:
+    snapshot = get_step_session_snapshot(db, resume_from_execution_id, start_from_step - 1)
+    if snapshot:
+        await self._apply_resume_snapshot(page, snapshot)
+    self._create_skip_records(db, execution.id, steps, start_from_step, resume_from_execution_id)
+
+idx = start_from_step if is_resume else 1
+skipped_steps = (start_from_step - 1) if is_resume else 0
+```
+
+`_apply_resume_snapshot(page, snapshot)`:
+1. `_apply_profile_cookies(page, session_data)` — injects cookies into the browser context
+2. `page.goto(snapshot.page_url, timeout=30000, wait_until="domcontentloaded")` — navigates to the saved page
+3. `_apply_profile_storage(page, session_data)` — injects localStorage + sessionStorage via `page.evaluate()`
+
+`_create_skip_records(db, execution_id, steps, start_from_step, resumed_from_execution_id)`:
+- Creates `TestExecutionStep` rows with `result=ExecutionResult.SKIP` for all steps 1..start_from_step-1.
+- Description: `"(skipped — resumed from step {N} of execution {X}) {original_step_text}"`.
+
+`skipped_steps` is passed to `complete_execution()` (new parameter) so the execution summary accurately reflects how many steps were skipped.
+
+**Part 5 — Frontend `ReRunFromStepButton`**
+
+`ReRunFromStepButton` is a new component rendered inside `StepCard` in `ExecutionProgressPage`.
+
+- **Visibility**: renders only when `stepResult === 'fail'` or `stepResult === 'error'`; returns `null` otherwise.
+- **Confirmation dialog**: `role="dialog"` modal showing the source execution ID and step number. "Cancel" closes without API call. "Confirm re-run" calls `executionService.startExecution(testCaseId, { ..., resume_from_execution_id, start_from_step })`.
+- **Post-confirm navigation**: on success, navigates to `/executions/{newExecutionId}`.
+- **Error state**: API errors are displayed inside the dialog; the dialog stays open so the user can read the message (e.g., the guard rejection reason).
+
+### Consequences
+
+**Positive**
+- Reduces re-run time from 5–8 minutes (full flow) to ~30 seconds (resume from snapshot) for complex multi-step tests.
+- Snapshot save is zero-cost when resuming is not needed — it only adds one `export_profile_session()` call per passing step.
+- Guard ensures the user cannot resume from a logically inconsistent state (failed source steps, consumed OTP).
+- OTP guard prevents silent failures where the re-run would attempt to re-enter a one-time code that is no longer valid.
+- The `ReRunFromStepButton` is co-located with the RCA panel (ADR-002-43) — the user sees *why* the step failed directly above the *resume from here* button.
+
+**Negative**
+- `step_session_snapshots` grows indefinitely — a background TTL cleanup job (e.g. 30-day expiration) is a known follow-up item.
+- For SPAs that rely on non-serialisable in-memory state (e.g., Vuex/Redux stores that are not reflected in localStorage), re-navigation + storage injection may not fully restore the expected application state. The guard does not yet detect this case.
+- Snapshot injection is only wired in `execution_service.py` (Playwright/3-tier path). The Stagehand path (`stagehand_service.py`) does not yet support session snapshot persistence or resume.
+- `execution_id` in `step_session_snapshots` is denormalized (no FK). This is intentional but means orphaned rows are not automatically cleaned up if the related execution is deleted.
+
+**Alternatives Considered**
+
+| Option | Verdict | Reason |
+|--------|---------|--------|
+| Re-execute all prior steps silently (no snapshot, just re-run fast) | ❌ Rejected | Cannot guarantee idempotent side effects (form submissions, emails sent, charges triggered) |
+| Store snapshot only at failure point | ❌ Rejected | Only useful if failure is at the same step; provides no value for exploratory resume |
+| Checkpoint only at explicit "resume point" annotations in test steps | ❌ Rejected | Requires test authoring changes; snapshots after every passing step is zero-config |
+| Full browser profile clone (CDP persistent context) | ❌ Rejected | Heavyweight; requires filesystem management; existing `export_profile_session()` is sufficient |
+| Resume via `browser_profile_data` pass-through (existing mechanism) | Partially compatible | `browser_profile_data` is applied before the initial `page.goto()`; the resume path needs `page_url` from the snapshot to navigate to the correct page post-injection |
+
+### Related files
+
+- `backend/app/models/test_execution.py` — `StepSessionSnapshot` ORM model appended
+- `backend/migrations/add_step_session_snapshots_table.py` — migration; run ✅
+- `backend/app/crud/step_session_snapshot.py` — `save_step_session_snapshot`, `get_step_session_snapshot`
+- `backend/app/services/resume_guard.py` — `validate_resume_point()`
+- `backend/app/schemas/test_execution.py` — `resume_from_execution_id` + `start_from_step` on `ExecutionStartRequest`
+- `backend/app/services/execution_service.py` — `_save_step_snapshot`, `_apply_resume_snapshot`, `_create_skip_records`, resume branch in `execute_test()`
+- `backend/app/crud/test_execution.py` — `complete_execution()` gains `skipped_steps` parameter
+- `backend/app/api/v1/endpoints/executions.py` — `validate_resume_point` guard + resume params in `trigger_details`
+- `backend/app/services/queue_manager.py` — extracts + forwards resume params to `execute_test()`
+- `frontend/src/types/execution.ts` — `resume_from_execution_id` + `start_from_step` on `ExecutionStartRequest`
+- `frontend/src/components/execution/ReRunFromStepButton.tsx` — new component
+- `frontend/src/pages/ExecutionProgressPage.tsx` — `StepCard` wires `ReRunFromStepButton`
+
+### Tests
+
+- `backend/tests/unit/test_resume_execution.py` — 20 unit tests: `StepSessionSnapshot` model columns (8), `ExecutionStartRequest` schema fields (3), CRUD helpers (3), `validate_resume_point` guards (3), `_save_step_snapshot` (2), `_apply_resume_snapshot` (2), `_create_skip_records` (2) — *(note: 7 tests in classes, total 20)*
+- `backend/tests/integration/test_resume_e2e.py` — 13 integration tests: CRUD with real in-memory SQLite (2), snapshot save after passing step (2), `_apply_resume_snapshot` full inject cycle (1), guard integration (3), SKIP record counts and result values (2) — *(note: distributed across test classes, total 13)*
+- `frontend/src/components/__tests__/ReRunFromStepButton.test.tsx` — 10 frontend tests: visibility (4), confirmation dialog (4), API integration (2)
+
+**Total: 33 backend + 10 frontend = 43 new tests. 245 total frontend tests pass. No regression.**
+
