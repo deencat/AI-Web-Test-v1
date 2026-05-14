@@ -187,11 +187,15 @@ class QueueManager:
                         # Extract browser profile data (if provided)
                         browser_profile_data = None
                         browser_profile_id = None
+                        resume_from_execution_id = None
+                        start_from_step = None
                         if execution.trigger_details:
                             try:
                                 trigger_details = json.loads(execution.trigger_details)
                                 browser_profile_data = trigger_details.get("browser_profile_data")
                                 browser_profile_id = trigger_details.get("browser_profile_id")
+                                resume_from_execution_id = trigger_details.get("resume_from_execution_id")
+                                start_from_step = trigger_details.get("start_from_step")
                             except Exception as e:
                                 logger.warning(f"Failed to parse trigger_details JSON: {e}")
 
@@ -248,7 +252,9 @@ class QueueManager:
                                     base_url=base_url,
                                     environment=execution.environment or "dev",
                                     browser_profile_data=browser_profile_data,
-                                    http_credentials=http_credentials
+                                    http_credentials=http_credentials,
+                                    resume_from_execution_id=resume_from_execution_id,
+                                    start_from_step=start_from_step,
                                 )
                             )
 

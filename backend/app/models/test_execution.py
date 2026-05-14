@@ -130,3 +130,36 @@ class TestExecutionStep(Base):
     def __repr__(self):
         return f"<TestExecutionStep(id={self.id}, execution_id={self.execution_id}, step={self.step_number}, result={self.result})>"
 
+
+class StepSessionSnapshot(Base):
+    """
+    Persists browser session state (cookies, localStorage, sessionStorage) after each
+    passing step so that a failed execution can be resumed from any safe point.
+    Sprint 10.12 Feature B.
+    """
+
+    __tablename__ = "step_session_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Parent execution reference (no FK constraint — snapshots from prior completed runs
+    # must remain accessible even if the execution row is later deleted)
+    execution_id = Column(Integer, nullable=False, index=True)
+
+    # 1-based step number that *just passed* when this snapshot was taken
+    step_number = Column(Integer, nullable=False)
+
+    # URL of the page at snapshot time — used to navigate back to the correct page on resume
+    page_url = Column(String(2000), nullable=True)
+
+    # JSON blob: {cookies, localStorage, sessionStorage, exported_at}
+    session_data = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, nullable=False, default=utc_now)
+
+    def __repr__(self):
+        return (
+            f"<StepSessionSnapshot(id={self.id}, execution_id={self.execution_id}, "
+            f"step_number={self.step_number})>"
+        )
+

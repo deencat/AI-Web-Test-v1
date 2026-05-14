@@ -10,6 +10,7 @@ import { ReportIssueButton } from '../components/execution/ReportIssueButton';
 import { DebugModeModal } from '../components/debug/DebugModeModal';
 import { DebugSessionView } from '../components/debug/DebugSessionView';
 import { RootCauseAnalysisPanel } from '../components/execution/RootCauseAnalysisPanel';
+import { ReRunFromStepButton } from '../components/execution/ReRunFromStepButton';
 import executionService from '../services/executionService';
 import debugService from '../services/debugService';
 import feedbackService from '../services/feedbackService';
@@ -270,6 +271,10 @@ export function ExecutionProgressPage() {
                   key={step.id} 
                   step={step} 
                   executionId={execution.id}
+                  testCaseId={execution.test_case_id}
+                  baseUrl={execution.base_url ?? undefined}
+                  browser={execution.browser ?? undefined}
+                  environment={execution.environment ?? undefined}
                   onReportSuccess={fetchExecutionDetail}
                   rootCauseAnalysis={rcaByStepIndex[step.step_number - 1] ?? null}
                 />
@@ -387,12 +392,16 @@ function ExecutionStatusBadge({ status, result }: ExecutionStatusBadgeProps) {
 interface StepCardProps {
   step: TestExecutionDetail['steps'][0];
   executionId: number;
+  testCaseId: number;
+  baseUrl?: string;
+  browser?: string;
+  environment?: string;
   onReportSuccess?: () => void;
   /** Sprint 10.12: AI-generated root cause analysis for all_tiers_exhausted failures. */
   rootCauseAnalysis?: string | null;
 }
 
-function StepCard({ step, executionId, onReportSuccess, rootCauseAnalysis }: StepCardProps) {
+function StepCard({ step, executionId, testCaseId, baseUrl, browser, environment, onReportSuccess, rootCauseAnalysis }: StepCardProps) {
   const getStepResultColor = () => {
     if (step.result === 'pass') return 'border-green-200 bg-green-50';
     if (step.result === 'fail') return 'border-red-200 bg-red-50';
@@ -444,6 +453,17 @@ function StepCard({ step, executionId, onReportSuccess, rootCauseAnalysis }: Ste
 
           {/* Sprint 10.12: AI Root Cause Analysis panel for all_tiers_exhausted failures */}
           <RootCauseAnalysisPanel rootCauseAnalysis={rootCauseAnalysis} />
+
+          {/* Sprint 10.12 Feature B: Re-run from this failed step */}
+          <ReRunFromStepButton
+            testCaseId={testCaseId}
+            executionId={executionId}
+            stepNumber={step.step_number}
+            stepResult={step.result}
+            baseUrl={baseUrl ?? ''}
+            browser={browser}
+            environment={environment}
+          />
 
           {step.duration_seconds !== undefined && (
             <div className="mt-2 text-sm text-gray-600">

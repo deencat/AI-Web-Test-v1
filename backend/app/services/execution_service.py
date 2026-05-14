@@ -39,6 +39,7 @@ from app.services.email_otp_service import (
 from app.services.encryption_service import EncryptionService as _EncryptionService
 from app.services.step_module_resolver import resolve_steps
 from app.services.root_cause_analysis_service import generate_root_cause_analysis
+from app.crud.step_session_snapshot import save_step_session_snapshot, get_step_session_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -460,7 +461,89 @@ class ExecutionService:
             return step_urls[0]
 
         return base_url
-    
+
+    # ------------------------------------------------------------------
+    # Sprint 10.12 Feature B: Re-Run from Failed Step — helper methods
+    # ------------------------------------------------------------------
+
+    async def _save_step_snapshot(
+        self,
+        db: Session,
+        execution_id: int,
+        step_number: int,
+        page: Any,
+    ) -> None:
+        """Export and persist the current browser session after a passing step."""
+        try:
+            snap_data = await self.export_profile_session()
+            if snap_data is None:
+                return
+            save_step_session_snapshot(
+                db=db,
+                execution_id=execution_id,
+                step_number=step_number,
+                page_url=page.url,
+                session_data=snap_data,
+            )
+        except Exception as exc:
+            # Non-fatal: snapshot is best-effort; never interrupt execution
+            logger.warning("[RESUME] Failed to save step snapshot for step %d: %s", step_number, exc)
+
+    async def _apply_resume_snapshot(self, page: Any, snapshot: Any) -> None:
+        """
+        Restore page URL and session state from a StepSessionSnapshot so execution
+        can resume from the step immediately following the snapshot.
+        """
+        import json as _json
+        session_data: Dict[str, Any] = {}
+        try:
+            if snapshot.session_data:
+                session_data = _json.loads(snapshot.session_data) if isinstance(snapshot.session_data, str) else snapshot.session_data
+        except Exception as exc:
+            logger.warning("[RESUME] Could not parse snapshot session_data: %s", exc)
+
+        await self._apply_profile_cookies(page, session_data)
+        await page.goto(snapshot.page_url or "", timeout=30000, wait_until="domcontentloaded")
+        await self._apply_profile_storage(page, session_data)
+
+    def _create_skip_records(
+        self,
+        db: Session,
+        execution_id: int,
+        steps: List[Any],
+        start_from_step: int,
+        resumed_from_execution_id: int,
+    ) -> None:
+        """
+        Insert SKIP ExecutionStep records for all steps before start_from_step.
+
+        Args:
+            db: Database session
+            execution_id: The new execution whose steps we are populating
+            steps: Full ordered list of step descriptions
+            start_from_step: 1-based index; steps 1..start_from_step-1 are skipped
+            resumed_from_execution_id: Source execution ID (shown in description)
+        """
+        for step_idx in range(1, start_from_step):
+            step_desc_raw = steps[step_idx - 1] if step_idx - 1 < len(steps) else f"Step {step_idx}"
+            step_desc = (
+                step_desc_raw.get("description", str(step_desc_raw))
+                if isinstance(step_desc_raw, dict)
+                else str(step_desc_raw)
+            )
+            crud_execution.create_execution_step(
+                db=db,
+                execution_id=execution_id,
+                step_number=step_idx,
+                step_description=f"(skipped — resumed from step {start_from_step} of execution {resumed_from_execution_id}) {step_desc}",
+                expected_result="Skipped",
+                result=ExecutionResult.SKIP,
+                actual_result="Skipped",
+                error_message=None,
+                screenshot_path=None,
+                duration_seconds=0.0,
+            )
+
     async def execute_test(
         self,
         db: Session,
@@ -471,7 +554,9 @@ class ExecutionService:
         execution_id: Optional[int] = None,
         progress_callback: Optional[Callable] = None,
         browser_profile_data: Optional[Dict[str, Any]] = None,
-        http_credentials: Optional[Dict[str, Any]] = None
+        http_credentials: Optional[Dict[str, Any]] = None,
+        resume_from_execution_id: Optional[int] = None,
+        start_from_step: Optional[int] = None,
     ) -> TestExecution:
         """
         Execute a test case and track results.
@@ -592,7 +677,39 @@ class ExecutionService:
             # Apply localStorage/sessionStorage after navigation
             if browser_profile_data:
                 await self._apply_profile_storage(page, browser_profile_data)
-            
+
+            # Sprint 10.12 Feature B: if resuming, restore snapshot and create SKIP records
+            is_resume = resume_from_execution_id is not None and start_from_step is not None
+            if is_resume:
+                snapshot = get_step_session_snapshot(
+                    db=db,
+                    execution_id=resume_from_execution_id,
+                    step_number=start_from_step - 1,
+                )
+                if snapshot is None:
+                    logger.warning(
+                        "[RESUME] No snapshot found for execution_id=%d step=%d — "
+                        "proceeding without session restore",
+                        resume_from_execution_id,
+                        start_from_step - 1,
+                    )
+                else:
+                    logger.info(
+                        "[RESUME] Restoring session from execution %d step %d (%s)",
+                        resume_from_execution_id,
+                        start_from_step - 1,
+                        snapshot.page_url,
+                    )
+                    await self._apply_resume_snapshot(page=page, snapshot=snapshot)
+
+                self._create_skip_records(
+                    db=db,
+                    execution_id=execution.id,
+                    steps=steps,
+                    start_from_step=start_from_step,
+                    resumed_from_execution_id=resume_from_execution_id,
+                )
+
             # Execute steps - steps/detailed_steps/loop_blocks were normalized above
             # Validate and log loop blocks
             if loop_blocks:
@@ -639,7 +756,10 @@ class ExecutionService:
                 return None
             
             # Step execution with loop support
-            idx = 1  # Current step index (1-based)
+            # Sprint 10.12 Feature B: when resuming, start from start_from_step
+            idx = start_from_step if is_resume and start_from_step else 1
+            # Account for SKIP records already counted
+            skipped_steps = (start_from_step - 1) if is_resume and start_from_step else 0
             # Tracks the exclusive 1-based end of the last expanded OTP digit range.
             # Expanded steps like "Input the Nth number of OTP…" match is_otp_step()
             # themselves; without this guard they would re-trigger IMAP on every digit.
@@ -884,6 +1004,8 @@ class ExecutionService:
                     
                     if result["success"]:
                         passed_steps += 1
+                        # Sprint 10.12 Feature B: persist session snapshot after every passing step
+                        await self._save_step_snapshot(db=db, execution_id=execution.id, step_number=idx, page=page)
                     else:
                         failed_steps += 1
                         
@@ -958,7 +1080,7 @@ class ExecutionService:
             
             # Complete execution
             final_result = ExecutionResult.PASS if failed_steps == 0 else ExecutionResult.FAIL
-            
+
             execution = crud_execution.complete_execution(
                 db=db,
                 execution_id=execution.id,
@@ -967,7 +1089,8 @@ class ExecutionService:
                 passed_steps=passed_steps,
                 failed_steps=failed_steps,
                 screenshot_path=await self._capture_screenshot(page, execution.id, 0, final_result),
-                video_path=video_path
+                video_path=video_path,
+                skipped_steps=skipped_steps,
             )
             
             if progress_callback:

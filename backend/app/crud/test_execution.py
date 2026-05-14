@@ -62,6 +62,7 @@ def complete_execution(
     total_steps: int = 0,
     passed_steps: int = 0,
     failed_steps: int = 0,
+    skipped_steps: int = 0,
     screenshot_path: Optional[str] = None,
     video_path: Optional[str] = None
 ) -> TestExecution:
@@ -74,6 +75,7 @@ def complete_execution(
         execution.total_steps = total_steps
         execution.passed_steps = passed_steps
         execution.failed_steps = failed_steps
+        execution.skipped_steps = skipped_steps
         execution.screenshot_path = screenshot_path
         execution.video_path = video_path
         
