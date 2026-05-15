@@ -1,6 +1,6 @@
 # Hermes Agent — QA Multi-Agent Profiles (v2)
 ### Redesigned for ReqIQ Integration
-**Version:** 2.1 | **Date:** 2026-05-15
+**Version:** 2.2 | **Date:** 2026-05-15
 
 ---
 
@@ -54,6 +54,148 @@ This document defines all Hermes Agent profiles for the QA Multi-Agent System, r
   - Pipeline runs on Node 1 (3–10 min browser crawl)
   - Telegram notification sent when complete with test_case_id and pass/fail summary
   - Webapp shows a "Recent Hermes Jobs" status panel (polls job status)
+
+---
+
+## Complete Trigger Reference
+
+Every entry point that can start or advance the Hermes pipeline — external (human or system) and internal (agent-to-agent).
+
+### Category 1 — External Human Triggers
+
+| # | Trigger | Source | Entry point | What it starts |
+|---|---|---|---|---|
+| H1 | Telegram message | QA engineer (mobile/remote) | qa-manager Telegram gateway | Full pipeline: requirements → test-gen → dispatch → report |
+| H2 | "Generate via Hermes" button | AI Web Test Webapp UI (Node 2) | `POST /api/v1/hermes/trigger` → Hermes HTTP gateway | Full pipeline |
+| H3 | ReqIQ webapp UI | ReqIQ frontend (Node 1 port 3000) | `POST http://node1:8080/hermes/qa-manager/message` | Full pipeline |
+| H4 | Direct HTTP call | Developer / API client | `POST http://node1:8080/hermes/qa-manager/message` | Any pipeline path, depending on message content |
+
+**H1 — Telegram example:**
+```
+Developer sends: "Generate and run tests for 5G Voucher Plan in Three-HK"
+qa-manager parses intent → routes to full pipeline
+```
+
+**H2 — Webapp button request body:**
+```json
+POST /api/v1/hermes/trigger
+{ "project": "Three-HK", "feature": "5G Voucher Plan Purchase",
+  "feature_url": "https://wwwuat.three.com.hk/...", "env_config": { ... } }
+```
+
+**H3/H4 — Direct HTTP body:**
+```json
+POST http://node1:8080/hermes/qa-manager/message
+Authorization: Bearer ${HERMES_HTTP_API_KEY}
+{ "message": "Generate and run tests for 5G Voucher Plan in Three-HK",
+  "project": "Three-HK", "feature": "5G Voucher Plan Purchase",
+  "feature_url": "https://wwwuat.three.com.hk/...", "env_config": { ... } }
+```
+
+---
+
+### Category 2 — Automated / Scheduled Triggers
+
+| # | Trigger | Source | Schedule | What it starts |
+|---|---|---|---|---|
+| A1 | Nightly regression cron | qa-manager cron config | 2:00 AM daily | Skips requirements check → qa-dispatcher directly (test cases already exist) |
+| A2 | Post-deploy webhook | CI/CD pipeline (e.g. GitHub Actions, Jenkins) | On every deployment to UAT | `POST http://node1:8080/hermes/qa-manager/message` with deploy metadata |
+| A3 | ReqIQ document compile-complete event | ReqIQ backend | When a new document finishes compiling | `POST http://node1:8080/hermes/qa-manager/message` — "New requirements ready for [feature]" |
+
+**A1 — Nightly cron config** (in qa-manager profile):
+```yaml
+schedule: "0 2 * * *"
+message: "Run nightly regression suite. Delegate to qa-dispatcher for all active projects."
+auto_approve: true
+```
+
+**A2 — Post-deploy webhook example** (GitHub Actions step):
+```yaml
+- name: Trigger QA regression
+  run: |
+    curl -X POST http://node1:8080/hermes/qa-manager/message \
+      -H "Authorization: Bearer $HERMES_HTTP_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{"message": "Post-deploy regression triggered by CI/CD",
+           "project": "Three-HK", "trigger_type": "post_deploy",
+           "deploy_env": "uat", "deployed_by": "${{ github.actor }}"}'
+```
+
+**A3 — ReqIQ document compile event** (ReqIQ backend calls Hermes when wiki is ready):
+```json
+POST http://node1:8080/hermes/qa-manager/message
+{ "message": "Requirements compilation complete for feature 5G Voucher Plan",
+  "project": "Three-HK", "feature": "5G Voucher Plan Purchase",
+  "trigger_type": "reqiq_compile_complete",
+  "completeness_score": 87,
+  "wiki_url": "http://localhost:8090/api/v1/wiki/5g-voucher-plan" }
+```
+
+---
+
+### Category 3 — Internal Agent-to-Agent Triggers
+
+These are cascade triggers fired automatically within the Hermes pipeline. No human action required after the initial trigger.
+
+| # | From agent | Condition | To agent | Payload passed |
+|---|---|---|---|---|
+| I1 | qa-manager | Received any trigger | qa-requirements | `{ project, feature }` |
+| I2 | qa-requirements | `completeness_score >= 60` | qa-test-gen | `{ wiki_content, feature_url, env_config, completeness_score }` |
+| I3 | qa-test-gen | `status == "success"` | qa-dispatcher | `{ test_case_id, test_title }` |
+| I4 | qa-dispatcher | All runners complete | qa-reporter | `{ passed, failed, s3_results_path, run_timestamp }` |
+| I5 | qa-reporter | Report sent | qa-manager | `{ status: "done", telegram_message_ids: [...] }` |
+
+**Stop conditions** (pipeline halts, human notified via Telegram):
+
+| # | Agent | Condition | Action |
+|---|---|---|---|
+| S1 | qa-requirements | `completeness_score < 60` | Notify human: "Missing documents for [feature]. Need: [list]" — pipeline stops |
+| S2 | qa-requirements | ReqIQ API unreachable | Notify human: "ReqIQ unavailable" — pipeline stops |
+| S3 | qa-test-gen | Crawl `status == "failed"` | Notify human with error detail — pipeline stops, no dispatch |
+| S4 | qa-test-gen | API returns 401 | Notify qa-manager: "Token expired — re-authenticate" — pipeline stops |
+| S5 | qa-dispatcher | All runners unavailable | Notify human: "No runners available" — pipeline stops, no retry |
+| S6 | qa-dispatcher | Runner returns error (not test failure) | Retry once on different runner; if still fails, notify human |
+
+---
+
+### Category 4 — Regression-Only Triggers (No Test Generation)
+
+For cases where test cases already exist and only execution + reporting is needed:
+
+| # | Trigger | Skips | Goes directly to |
+|---|---|---|---|
+| R1 | Nightly cron (A1) | qa-requirements, qa-test-gen | qa-dispatcher with existing test_case_ids |
+| R2 | Post-deploy webhook (A2) with `trigger_type: "post_deploy"` | qa-requirements, qa-test-gen | qa-dispatcher |
+| R3 | Human Telegram: "Run regression for Three-HK" | qa-requirements, qa-test-gen | qa-dispatcher |
+| R4 | Webapp "Run Existing Tests" button | qa-requirements, qa-test-gen | qa-dispatcher via `POST /api/v1/hermes/trigger?mode=execute_only` |
+
+---
+
+### Trigger Decision Tree (qa-manager logic)
+
+```
+Incoming trigger
+       │
+       ├── contains "generate" OR new feature?
+       │         │
+       │         └── YES → qa-requirements → (if score>=60) → qa-test-gen → qa-dispatcher → qa-reporter
+       │
+       ├── contains "run" OR "regression" OR "execute" OR trigger_type=post_deploy?
+       │         │
+       │         └── YES → qa-dispatcher (with existing test IDs) → qa-reporter
+       │
+       ├── contains "report" OR "results"?
+       │         │
+       │         └── YES → qa-reporter (retrieve from S3 and send)
+       │
+       ├── trigger_type = "reqiq_compile_complete"?
+       │         │
+       │         └── YES → check if auto-generate is enabled for this feature
+       │                   → if yes: qa-test-gen → qa-dispatcher → qa-reporter
+       │                   → if no: notify human "Requirements ready, trigger generation when ready"
+       │
+       └── unknown intent → ask human for clarification
+```
 
 ---
 
