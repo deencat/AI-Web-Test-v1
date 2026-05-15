@@ -625,9 +625,12 @@ class ExecutionService:
             if browser_profile_data:
                 await self._apply_profile_cookies(page, browser_profile_data)
             
-            # Get CDP endpoint for shared browser context
-            # Use fixed remote debugging port (set in initialize())
-            cdp_endpoint = "http://localhost:9222"
+            # Get CDP endpoint for shared browser context.
+            # Use explicit IPv4 address (127.0.0.1) instead of "localhost".
+            # On Windows, "localhost" can resolve to IPv6 [::1] while Playwright's
+            # Chromium only binds --remote-debugging-port on IPv4 127.0.0.1,
+            # causing HTTP 400 and Stagehand falling back to launching a second browser.
+            cdp_endpoint = "http://127.0.0.1:9222"
             
             logger.info(f"[DEBUG] CDP endpoint: {cdp_endpoint}")
             
