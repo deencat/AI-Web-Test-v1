@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ReqIQ + Hermes Agent — Agentic QA Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root,[data-theme="light"]{
+  --color-bg:#f7f6f2;--color-surface:#f9f8f5;--color-surface-2:#fbfbf9;
+  --color-surface-offset:#f3f0ec;--color-surface-dynamic:#e6e4df;
+  --color-divider:#dcd9d5;--color-border:#d4d1ca;
+  --color-text:#28251d;--color-text-muted:#7a7974;--color-text-faint:#bab9b4;
+  --color-text-inverse:#f9f8f4;
+  --color-primary:#01696f;--color-primary-hover:#0c4e54;
+  --color-primary-highlight:#cedcd8;
+  --color-success:#437a22;--color-success-highlight:#d4dfcc;
+  --color-warning:#964219;--color-warning-highlight:#ddcfc6;
+  --color-error:#a12c7b;--color-error-highlight:#e0ced7;
+  --color-blue:#006494;--color-blue-highlight:#c6d8e4;
+  --color-purple:#7a39bb;--color-purple-highlight:#dacfde;
+  --color-orange:#da7101;--color-orange-highlight:#e7d7c4;
+  --color-gold:#d19900;--color-gold-highlight:#e9e0c6;
+  --radius-sm:0.375rem;--radius-md:0.5rem;--radius-lg:0.75rem;--radius-xl:1rem;--radius-full:9999px;
+  --shadow-sm:0 1px 2px oklch(0.2 0.01 80/0.06);--shadow-md:0 4px 12px oklch(0.2 0.01 80/0.08);--shadow-lg:0 12px 32px oklch(0.2 0.01 80/0.12);
+  --font-body:'Inter',sans-serif;--font-mono:'JetBrains Mono',monospace;
+  --text-xs:clamp(0.75rem,0.7rem + 0.25vw,0.875rem);
+  --text-sm:clamp(0.875rem,0.8rem + 0.35vw,1rem);
+  --text-base:clamp(1rem,0.95rem + 0.25vw,1.125rem);
+  --text-lg:clamp(1.125rem,1rem + 0.75vw,1.5rem);
+  --text-xl:clamp(1.5rem,1.2rem + 1.25vw,2.25rem);
+  --space-1:0.25rem;--space-2:0.5rem;--space-3:0.75rem;--space-4:1rem;
+  --space-6:1.5rem;--space-8:2rem;--space-10:2.5rem;--space-12:3rem;--space-16:4rem;
+  --transition:180ms cubic-bezier(0.16,1,0.3,1);
+}
+[data-theme="dark"]{
+  --color-bg:#171614;--color-surface:#1c1b19;--color-surface-2:#201f1d;
+  --color-surface-offset:#1d1c1a;--color-surface-dynamic:#2d2c2a;
+  --color-divider:#262523;--color-border:#393836;
+  --color-text:#cdccca;--color-text-muted:#797876;--color-text-faint:#5a5957;
+  --color-text-inverse:#2b2a28;
+  --color-primary:#4f98a3;--color-primary-hover:#227f8b;--color-primary-highlight:#313b3b;
+  --color-success:#6daa45;--color-success-highlight:#3a4435;
+  --color-warning:#bb653b;--color-warning-highlight:#564942;
+  --color-error:#d163a7;--color-error-highlight:#4c3d46;
+  --color-blue:#5591c7;--color-blue-highlight:#3a4550;
+  --color-purple:#a86fdf;--color-purple-highlight:#4e4652;
+  --color-orange:#fdab43;--color-orange-highlight:#564b3e;
+  --color-gold:#e8af34;--color-gold-highlight:#4d4332;
+  --shadow-sm:0 1px 2px oklch(0 0 0/0.2);--shadow-md:0 4px 12px oklch(0 0 0/0.3);--shadow-lg:0 12px 32px oklch(0 0 0/0.4);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:4rem;-webkit-font-smoothing:antialiased}
+body{font-family:var(--font-body);font-size:var(--text-base);color:var(--color-text);background:var(--color-bg);line-height:1.6;min-height:100dvh}
+@media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+/* NAV */
+nav{position:sticky;top:0;z-index:100;background:color-mix(in oklch,var(--color-bg) 90%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--color-divider);padding:0 var(--space-8)}
+.nav-inner{max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:56px;gap:var(--space-4)}
+.nav-logo{display:flex;align-items:center;gap:var(--space-2);font-weight:700;font-size:var(--text-sm);color:var(--color-text);text-decoration:none}
+.nav-links{display:flex;gap:var(--space-1)}
+.nav-links a{font-size:var(--text-xs);color:var(--color-text-muted);text-decoration:none;padding:var(--space-1) var(--space-3);border-radius:var(--radius-sm);transition:color var(--transition),background var(--transition)}
+.nav-links a:hover{color:var(--color-text);background:var(--color-surface-offset)}
+.theme-toggle{width:36px;height:36px;border-radius:var(--radius-md);border:1px solid var(--color-border);background:var(--color-surface);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--color-text-muted);transition:all var(--transition);flex-shrink:0}
+.theme-toggle:hover{color:var(--color-text);background:var(--color-surface-offset)}
+
+/* LAYOUT */
+.page{max-width:1200px;margin:0 auto;padding:var(--space-10) var(--space-8)}
+section{margin-bottom:var(--space-16)}
+h2.section-title{font-size:var(--text-xl);font-weight:700;color:var(--color-text);margin-bottom:var(--space-2)}
+.section-subtitle{font-size:var(--text-base);color:var(--color-text-muted);margin-bottom:var(--space-8);max-width:72ch}
+
+/* HERO */
+.hero{padding:var(--space-12) 0 var(--space-10);border-bottom:1px solid var(--color-divider);margin-bottom:var(--space-12)}
+.hero-badge{display:inline-flex;align-items:center;gap:var(--space-2);background:var(--color-primary-highlight);color:var(--color-primary);font-size:var(--text-xs);font-weight:600;padding:var(--space-1) var(--space-3);border-radius:var(--radius-full);margin-bottom:var(--space-4);letter-spacing:.04em;text-transform:uppercase}
+.hero h1{font-size:var(--text-xl);font-weight:700;line-height:1.2;color:var(--color-text);max-width:28ch;margin-bottom:var(--space-4)}
+.hero-desc{font-size:var(--text-base);color:var(--color-text-muted);max-width:62ch;line-height:1.7;margin-bottom:var(--space-8)}
+.hero-stats{display:flex;gap:var(--space-8);flex-wrap:wrap}
+.stat{display:flex;flex-direction:column;gap:var(--space-1)}
+.stat-num{font-size:var(--text-lg);font-weight:700;color:var(--color-primary)}
+.stat-label{font-size:var(--text-xs);color:var(--color-text-muted);text-transform:uppercase;letter-spacing:.05em}
+
+/* CARDS */
+.card{background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:var(--space-6);box-shadow:var(--shadow-sm)}
+.card-grid{display:grid;gap:var(--space-4)}
+.card-grid-2{grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr))}
+.card-grid-3{grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr))}
+.card-header{display:flex;align-items:flex-start;gap:var(--space-3);margin-bottom:var(--space-4)}
+.card-icon{width:40px;height:40px;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:20px}
+.card h3{font-size:var(--text-base);font-weight:600;color:var(--color-text);line-height:1.3}
+.card-meta{font-size:var(--text-xs);color:var(--color-text-muted);margin-top:var(--space-1)}
+.card p{font-size:var(--text-sm);color:var(--color-text-muted);line-height:1.6}
+.tag{display:inline-flex;align-items:center;font-size:var(--text-xs);font-weight:500;padding:2px var(--space-2);border-radius:var(--radius-full);margin-top:var(--space-3);margin-right:var(--space-1)}
+
+/* COLORS for icons/tags */
+.bg-teal{background:var(--color-primary-highlight);color:var(--color-primary)}
+.bg-blue{background:var(--color-blue-highlight);color:var(--color-blue)}
+.bg-purple{background:var(--color-purple-highlight);color:var(--color-purple)}
+.bg-orange{background:var(--color-orange-highlight);color:var(--color-orange)}
+.bg-green{background:var(--color-success-highlight);color:var(--color-success)}
+.bg-gold{background:var(--color-gold-highlight);color:var(--color-gold)}
+.bg-red{background:var(--color-error-highlight);color:var(--color-error)}
+.bg-warn{background:var(--color-warning-highlight);color:var(--color-warning)}
+
+/* ARCHITECTURE DIAGRAM */
+.arch-diagram{background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-xl);padding:var(--space-8);box-shadow:var(--shadow-md);overflow-x:auto}
+.arch-layers{display:flex;flex-direction:column;gap:var(--space-6)}
+.arch-layer{display:flex;flex-direction:column;gap:var(--space-3)}
+.arch-layer-label{font-size:var(--text-xs);font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--color-text-faint);padding-left:var(--space-2)}
+.arch-row{display:flex;gap:var(--space-3);flex-wrap:wrap}
+.arch-node{display:flex;flex-direction:column;padding:var(--space-3) var(--space-4);border-radius:var(--radius-md);border:1px solid;min-width:140px;flex:1;position:relative;cursor:default;transition:transform var(--transition),box-shadow var(--transition)}
+.arch-node:hover{transform:translateY(-2px);box-shadow:var(--shadow-md)}
+.arch-node-title{font-size:var(--text-sm);font-weight:600;margin-bottom:var(--space-1)}
+.arch-node-sub{font-size:var(--text-xs);opacity:0.75;line-height:1.4}
+.arch-connector{display:flex;align-items:center;justify-content:center;color:var(--color-text-faint);font-size:20px;margin:var(--space-1) 0}
+.arch-divider{border:none;border-top:1px dashed var(--color-divider);margin:var(--space-2) 0}
+
+/* FLOW DIAGRAM */
+.flow-container{position:relative;padding:var(--space-6) 0}
+.flow-steps{display:flex;flex-direction:column;gap:0}
+.flow-step{display:flex;gap:var(--space-6);align-items:flex-start;position:relative;padding-bottom:var(--space-6)}
+.flow-step:not(:last-child)::before{content:'';position:absolute;left:19px;top:40px;width:2px;height:calc(100% - 24px);background:var(--color-divider)}
+.flow-step-num{width:40px;height:40px;border-radius:var(--radius-full);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--text-sm);flex-shrink:0;z-index:1}
+.flow-step-content{flex:1;padding-top:var(--space-2)}
+.flow-step-title{font-size:var(--text-base);font-weight:600;color:var(--color-text);margin-bottom:var(--space-1)}
+.flow-step-desc{font-size:var(--text-sm);color:var(--color-text-muted);line-height:1.6;max-width:65ch}
+.flow-step-detail{margin-top:var(--space-3);background:var(--color-surface-offset);border-radius:var(--radius-md);padding:var(--space-3) var(--space-4);font-size:var(--text-xs);font-family:var(--font-mono);color:var(--color-text-muted);line-height:1.7;border:1px solid var(--color-divider)}
+
+/* TABLE */
+.data-table{width:100%;border-collapse:collapse;font-size:var(--text-sm)}
+.data-table th{background:var(--color-surface-offset);text-align:left;padding:var(--space-3) var(--space-4);font-weight:600;font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.05em;color:var(--color-text-muted);border-bottom:1px solid var(--color-border)}
+.data-table td{padding:var(--space-3) var(--space-4);border-bottom:1px solid var(--color-divider);vertical-align:top;color:var(--color-text-muted)}
+.data-table td:first-child{font-weight:600;color:var(--color-text)}
+.data-table tr:hover td{background:var(--color-surface-offset)}
+.table-wrap{border:1px solid var(--color-border);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-sm)}
+
+/* CODE BLOCK */
+.code-block{background:var(--color-surface-offset);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:var(--space-4) var(--space-6);font-family:var(--font-mono);font-size:var(--text-xs);color:var(--color-text-muted);line-height:1.8;overflow-x:auto;margin-top:var(--space-3)}
+.code-comment{color:var(--color-text-faint)}
+.code-key{color:var(--color-primary)}
+.code-val{color:var(--color-orange)}
+.code-str{color:var(--color-success)}
+
+/* HIGHLIGHT BOX */
+.highlight-box{border-radius:var(--radius-lg);padding:var(--space-6);border:1px solid;margin:var(--space-6) 0}
+.highlight-box.info{background:var(--color-blue-highlight);border-color:var(--color-blue);color:var(--color-blue)}
+.highlight-box.warn{background:var(--color-warning-highlight);border-color:var(--color-warning);color:var(--color-warning)}
+.highlight-box.success{background:var(--color-success-highlight);border-color:var(--color-success);color:var(--color-success)}
+.highlight-box h4{font-weight:700;font-size:var(--text-sm);margin-bottom:var(--space-2)}
+.highlight-box p{font-size:var(--text-sm);line-height:1.6;opacity:.85}
+
+/* PILL BADGES */
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:2px 8px;border-radius:var(--radius-full);letter-spacing:.03em}
+.badge::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
+
+/* RESPONSIVE */
+@media(max-width:768px){
+  .page{padding:var(--space-6) var(--space-4)}
+  .nav-links{display:none}
+  .hero-stats{gap:var(--space-6)}
+  .arch-row{flex-direction:column}
+  .arch-node{min-width:0}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <a href="#" class="nav-logo">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-label="ReqIQ" xmlns="http://www.w3.org/2000/svg">
+        <rect x="3" y="3" width="8" height="8" rx="2" fill="var(--color-primary)" opacity=".9"/>
+        <rect x="13" y="3" width="8" height="8" rx="2" fill="var(--color-primary)" opacity=".5"/>
+        <rect x="3" y="13" width="8" height="8" rx="2" fill="var(--color-primary)" opacity=".5"/>
+        <rect x="13" y="13" width="8" height="8" rx="2" fill="var(--color-primary)" opacity=".2"/>
+        <circle cx="17" cy="17" r="4" fill="var(--color-primary)"/>
+        <path d="M16 17l1 1 2-2" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      ReqIQ + Hermes Architecture
+    </a>
+    <div class="nav-links">
+      <a href="#overview">Overview</a>
+      <a href="#nodes">System Nodes</a>
+      <a href="#agents">Agents</a>
+      <a href="#flows">Flows</a>
+      <a href="#integration">Integration</a>
+      <a href="#deployment">Deployment</a>
+    </div>
+    <button class="theme-toggle" data-theme-toggle aria-label="Toggle theme">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+    </button>
+  </div>
+</nav>
+
+<div class="page">
+
+  <!-- HERO -->
+  <div class="hero" id="overview">
+    <div class="hero-badge">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>
+      Architecture Reference v1.0
+    </div>
+    <h1>ReqIQ + Hermes Agent Agentic QA System</h1>
+    <p class="hero-desc">A fully self-hosted, multi-agent test automation architecture that converts fragmented requirement documents (PPTX, Figma, Email, Word) into executable test cases, runs them on remote Windows browser PCs, and delivers results via Telegram — with zero cloud dependency.</p>
+    <div class="hero-stats">
+      <div class="stat"><span class="stat-num">5</span><span class="stat-label">Specialised Agents</span></div>
+      <div class="stat"><span class="stat-num">3</span><span class="stat-label">Physical Nodes</span></div>
+      <div class="stat"><span class="stat-num">0</span><span class="stat-label">External APIs Required</span></div>
+      <div class="stat"><span class="stat-num">100%</span><span class="stat-label">LAN-Isolated</span></div>
+    </div>
+  </div>
+
+  <!-- ARCHITECTURE DIAGRAM -->
+  <section id="nodes">
+    <h2 class="section-title">System Architecture</h2>
+    <p class="section-subtitle">Three physical nodes connected over LAN (Tailscale VPN for remote access). All AI inference runs locally on the Ubuntu mini PC via Ollama or OpenRouter.</p>
+
+    <div class="arch-diagram">
+      <div class="arch-layers">
+
+        <!-- LAYER: HUMAN -->
+        <div class="arch-layer">
+          <div class="arch-layer-label">Human Interfaces</div>
+          <div class="arch-row">
+            <div class="arch-node" style="background:var(--color-purple-highlight);border-color:var(--color-purple)">
+              <div class="arch-node-title" style="color:var(--color-purple)">📱 Developer / IT Team</div>
+              <div class="arch-node-sub">Telegram chat → trigger tests, upload docs, review results</div>
+            </div>
+            <div class="arch-node" style="background:var(--color-blue-highlight);border-color:var(--color-blue)">
+              <div class="arch-node-title" style="color:var(--color-blue)">👥 UAT / Business Team</div>
+              <div class="arch-node-sub">Telegram chat → describe feature in plain English, receive test pass/fail report</div>
+            </div>
+            <div class="arch-node" style="background:var(--color-gold-highlight);border-color:var(--color-gold)">
+              <div class="arch-node-title" style="color:var(--color-gold)">⏰ Scheduled Cron</div>
+              <div class="arch-node-sub">2am nightly regression, post-deploy smoke test hooks — no human needed</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="arch-connector">↓</div>
+
+        <!-- LAYER: UBUNTU MINI PC -->
+        <div class="arch-layer">
+          <div class="arch-layer-label">🖥 Node 1 — Ubuntu Mini PC (Hermes Agent + ReqIQ)</div>
+          <div class="arch-row">
+            <div class="arch-node" style="background:var(--color-primary-highlight);border-color:var(--color-primary);flex:2">
+              <div class="arch-node-title" style="color:var(--color-primary)">🤖 Hermes Agent (Manager)</div>
+              <div class="arch-node-sub">Receives all messages · Routes to correct specialist agent via delegate_task · Holds persistent memory of test suite state · Sends final Telegram report</div>
+            </div>
+            <div class="arch-node" style="background:var(--color-teal-highlight,var(--color-primary-highlight));border-color:var(--color-primary)">
+              <div class="arch-node-title" style="color:var(--color-primary)">📚 ReqIQ Webapp</div>
+              <div class="arch-node-sub">FastAPI + ChromaDB · Parses PPTX/DOCX/PDF/Figma · Compiles Test Instructions JSON via local Ollama LLM</div>
+            </div>
+            <div class="arch-node" style="background:var(--color-surface-offset);border-color:var(--color-border)">
+              <div class="arch-node-title">🧠 Ollama (Local LLM)</div>
+              <div class="arch-node-sub">qwen2.5:7b · llama3.1:8b · nomic-embed-text · 100% offline, no token cost</div>
+            </div>
+          </div>
+          <div class="arch-row" style="margin-top:var(--space-3)">
+            <div class="arch-node" style="background:var(--color-orange-highlight);border-color:var(--color-orange)">
+              <div class="arch-node-title" style="color:var(--color-orange)">📋 Requirements Agent</div>
+              <div class="arch-node-sub">Hermes Profile · Calls ReqIQ API · Scores doc completeness · Outputs Test Instruction JSON</div>
+            </div>
+            <div class="arch-node" style="background:var(--color-success-highlight);border-color:var(--color-success)">
+              <div class="arch-node-title" style="color:var(--color-success)">🔀 Dispatcher Agent</div>
+              <div class="arch-node-sub">Hermes Profile · Selects least-loaded Windows PC · Routes test batch via SSH/REST</div>
+            </div>
+            <div class="arch-node" style="background:var(--color-blue-highlight);border-color:var(--color-blue)">
+              <div class="arch-node-title" style="color:var(--color-blue)">📊 Reporter Agent</div>
+              <div class="arch-node-sub">Hermes Profile · Aggregates results · Formats Telegram report with screenshots</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="arch-connector">↓ SSH / REST API over LAN</div>
+
+        <!-- LAYER: WINDOWS PCs -->
+        <div class="arch-layer">
+          <div class="arch-layer-label">🪟 Node 2/3 — Remote Windows PCs (Test Execution)</div>
+          <div class="arch-row">
+            <div class="arch-node" style="background:var(--color-surface-offset);border-color:var(--color-border)">
+              <div class="arch-node-title">🖥 Windows PC — Alpha</div>
+              <div class="arch-node-sub">Your Test Automation Website · Stagehand AI executor · Playwright non-headless · Chrome/Edge visible browser · Screenshots captured locally</div>
+            </div>
+            <div class="arch-node" style="background:var(--color-surface-offset);border-color:var(--color-border)">
+              <div class="arch-node-title">🖥 Windows PC — Beta</div>
+              <div class="arch-node-sub">Parallel test runner · BrowserUse crawl-mode · Firefox non-headless · Load/smoke test runner</div>
+            </div>
+            <div class="arch-node" style="background:var(--color-surface-2);border-color:var(--color-divider);opacity:.7">
+              <div class="arch-node-title">🖥 Windows PC — Gamma (Optional)</div>
+              <div class="arch-node-sub">Future: IE11 / Safari WebKit compat · Overflow capacity for large regression suites</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="arch-connector">↓ Results + Screenshots</div>
+
+        <!-- LAYER: STORAGE -->
+        <div class="arch-layer">
+          <div class="arch-layer-label">💾 Shared Storage (Ubuntu Mini PC)</div>
+          <div class="arch-row">
+            <div class="arch-node" style="background:var(--color-surface-offset);border-color:var(--color-border)">
+              <div class="arch-node-title">SQLite / SQLModel</div>
+              <div class="arch-node-sub">Test runs · Feature registry · Audit log · Compilation jobs</div>
+            </div>
+            <div class="arch-node" style="background:var(--color-surface-offset);border-color:var(--color-border)">
+              <div class="arch-node-title">ChromaDB (Vector Store)</div>
+              <div class="arch-node-sub">Embedded requirement chunks · RAG retrieval for test case generation</div>
+            </div>
+            <div class="arch-node" style="background:var(--color-surface-offset);border-color:var(--color-border)">
+              <div class="arch-node-title">Garage S3 (Local)</div>
+              <div class="arch-node-sub">Screenshots · PPTX/DOCX originals · PDF test reports · All on-prem</div>
+            </div>
+            <div class="arch-node" style="background:var(--color-surface-offset);border-color:var(--color-border)">
+              <div class="arch-node-title">Hermes memory.md</div>
+              <div class="arch-node-sub">Persistent agent memory · Active test suite state · Known failure patterns</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- AGENTS DETAIL -->
+  <section id="agents">
+    <h2 class="section-title">The 5 Agents — Roles & Responsibilities</h2>
+    <p class="section-subtitle">Each agent has exactly one job. This single-responsibility design makes the system debuggable — if something fails, you know exactly which agent to look at.</p>
+
+    <div class="card-grid card-grid-2">
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-icon bg-teal">🧭</div>
+          <div>
+            <h3>Manager Agent</h3>
+            <div class="card-meta">Hermes Agent — Claude 3.5 Sonnet via OpenRouter</div>
+          </div>
+        </div>
+        <p>The single entry point for all humans. Receives Telegram messages from developers and UAT team. Understands natural language intent and routes to the correct specialist. Never executes tasks directly — it only delegates. Holds the "big picture" memory of what tests exist, which features are covered, and what was last run.</p>
+        <span class="tag bg-teal">Always-on</span>
+        <span class="tag bg-purple">Telegram Gateway</span>
+        <span class="tag bg-blue">delegate_task</span>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-icon bg-orange">📋</div>
+          <div>
+            <h3>Requirements Agent</h3>
+            <div class="card-meta">Hermes Profile — GPT-4o (multi-modal for Figma/PPTX screenshots)</div>
+          </div>
+        </div>
+        <p>The missing piece in your current setup. Accepts a bundle of requirement sources — any combination of Figma URLs, uploaded PPTX, email text, Word docs, or nothing at all. Calls ReqIQ's compilation API to parse and vectorise documents. Scores completeness (0–100). If below 60%, asks specific clarifying questions before proceeding. Outputs a standardised Test Instruction JSON.</p>
+        <span class="tag bg-orange">Calls ReqIQ API</span>
+        <span class="tag bg-gold">Figma scraping</span>
+        <span class="tag bg-green">JSON output</span>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-icon bg-blue">🏭</div>
+          <div>
+            <h3>Test Case Generation Agent</h3>
+            <div class="card-meta">Your Existing Website API — BrowserUse crawl mode</div>
+          </div>
+        </div>
+        <p>Receives the Test Instruction JSON from the Requirements Agent and calls your existing test automation website's generation API. BrowserUse crawls the target feature to discover actual UI elements. Returns a structured list of test cases with steps, expected outcomes, and selector hints. Stores results back to ReqIQ's feature registry via REST.</p>
+        <span class="tag bg-blue">POST /api/generate</span>
+        <span class="tag bg-teal">BrowserUse crawl</span>
+        <span class="tag bg-purple">ReqIQ storage</span>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-icon bg-green">🔀</div>
+          <div>
+            <h3>Dispatcher Agent</h3>
+            <div class="card-meta">Hermes Profile — Local Qwen 2.5:7b via Ollama (zero cost)</div>
+          </div>
+        </div>
+        <p>Routes test batches to available Windows PCs. Queries each PC's health endpoint to find the least-loaded machine. Splits large test suites across multiple PCs for parallel execution. SSHes into Windows via PowerShell or calls your execution REST API. Monitors run status with polling. Collects result JSON and screenshot paths when complete.</p>
+        <span class="tag bg-green">Load balancing</span>
+        <span class="tag bg-warn">SSH / REST</span>
+        <span class="tag bg-blue">Parallel dispatch</span>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-icon bg-purple">📊</div>
+          <div>
+            <h3>Reporter Agent</h3>
+            <div class="card-meta">Hermes Profile — GPT-4o-mini (cheap, templated output)</div>
+          </div>
+        </div>
+        <p>Aggregates raw results from all Windows PCs. Compares against previous run baselines to detect regressions vs known failures. Generates a structured Telegram report with pass/fail counts, failure screenshots, and plain-English failure summaries for the UAT team. Escalates critical failures via @mention. Archives full report as PDF to Garage S3.</p>
+        <span class="tag bg-purple">Telegram report</span>
+        <span class="tag bg-red">Regression diff</span>
+        <span class="tag bg-teal">PDF archive</span>
+      </div>
+
+      <div class="card" style="border:2px dashed var(--color-divider);background:var(--color-surface-2)">
+        <div class="card-header">
+          <div class="card-icon" style="background:var(--color-surface-offset);font-size:18px">📚</div>
+          <div>
+            <h3>ReqIQ — Not an Agent, but the Brain</h3>
+            <div class="card-meta">FastAPI webapp — always running alongside Hermes</div>
+          </div>
+        </div>
+        <p>ReqIQ is the knowledge backbone — not an agent itself, but the shared intelligence layer all agents query. It maintains the vector database of parsed requirements, the feature registry, the test case library, and the compilation pipeline. Agents call its REST API; humans can also use its web UI directly to upload documents and review compiled test instructions.</p>
+        <span class="tag bg-teal">REST API :8000</span>
+        <span class="tag bg-blue">ChromaDB RAG</span>
+        <span class="tag bg-orange">Web UI :3000</span>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- FLOW 1: NEW FEATURE -->
+  <section id="flows">
+    <h2 class="section-title">End-to-End Flows</h2>
+    <p class="section-subtitle">Three distinct trigger paths, each producing the same outcome: test cases generated and executed without developer involvement.</p>
+
+    <div class="card" style="margin-bottom:var(--space-6)">
+      <h3 style="font-size:var(--text-base);font-weight:700;margin-bottom:var(--space-6);display:flex;align-items:center;gap:var(--space-2)">
+        <span class="card-icon bg-orange" style="width:32px;height:32px;font-size:16px">🆕</span>
+        Flow A — New Feature Test (Developer or UAT-triggered)
+      </h3>
+      <div class="flow-steps">
+        <div class="flow-step">
+          <div class="flow-step-num bg-orange" style="color:white">1</div>
+          <div class="flow-step-content">
+            <div class="flow-step-title">Human uploads requirement documents to Telegram</div>
+            <div class="flow-step-desc">Developer or UAT team member sends message to Hermes bot: "New checkout flow — attaching Figma link, URS doc, and email thread from PM." Can be any combination — or nothing at all.</div>
+            <div class="flow-step-detail"><span class="code-comment"># Example Telegram message</span><br>"@hermesbot test new checkout flow<br>figma: https://figma.com/file/xxx<br>[attaches: checkout_URS_v2.docx]<br>[attaches: pm_email_thread.eml]"</div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-step-num bg-teal" style="color:white">2</div>
+          <div class="flow-step-content">
+            <div class="flow-step-title">Manager Agent routes to Requirements Agent</div>
+            <div class="flow-step-desc">Hermes Manager identifies intent as "generate tests from requirements" and delegates to the Requirements Agent profile with all attached files.</div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-step-num bg-orange" style="color:white">3</div>
+          <div class="flow-step-content">
+            <div class="flow-step-title">Requirements Agent calls ReqIQ compilation API</div>
+            <div class="flow-step-desc">Uploads all documents to ReqIQ. Triggers the 5-stage compilation pipeline: Parse → Extract → Merge → Score → Export. ReqIQ uses Ollama locally — no external LLM calls.</div>
+            <div class="flow-step-detail"><span class="code-comment"># ReqIQ API call</span><br><span class="code-key">POST</span> <span class="code-str">http://localhost:8000/api/v1/compile</span><br>{<br>  <span class="code-key">"feature_name"</span>: <span class="code-str">"checkout_flow"</span>,<br>  <span class="code-key">"documents"</span>: [<span class="code-str">"doc_id_1"</span>, <span class="code-str">"doc_id_2"</span>],<br>  <span class="code-key">"figma_url"</span>: <span class="code-str">"https://figma.com/file/xxx"</span><br>}</div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-step-num bg-orange" style="color:white">4</div>
+          <div class="flow-step-content">
+            <div class="flow-step-title">Completeness score returned — gap check</div>
+            <div class="flow-step-desc">ReqIQ returns a completeness score. If ≥60%, proceed automatically. If &lt;60%, Requirements Agent replies to the human with specific questions ("The document doesn't specify error handling for invalid card numbers — should the test expect a toast or inline error?").</div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-step-num bg-blue" style="color:white">5</div>
+          <div class="flow-step-content">
+            <div class="flow-step-title">Test Case Generation Agent creates test cases</div>
+            <div class="flow-step-desc">Receives Test Instruction JSON from ReqIQ. Calls your existing test automation website's generation API. BrowserUse crawls the live feature to discover UI elements and augment the test steps.</div>
+            <div class="flow-step-detail"><span class="code-comment"># Your existing API call</span><br><span class="code-key">POST</span> <span class="code-str">https://your-test-site/api/generate</span><br>{<br>  <span class="code-key">"instruction"</span>: { <span class="code-comment">/* Test Instruction JSON from ReqIQ */</span> },<br>  <span class="code-key">"crawl_url"</span>: <span class="code-str">"https://staging.yourapp.com/checkout"</span>,<br>  <span class="code-key">"mode"</span>: <span class="code-str">"browseruse_crawl"</span><br>}</div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-step-num bg-green" style="color:white">6</div>
+          <div class="flow-step-content">
+            <div class="flow-step-title">Dispatcher Agent sends to Windows PC</div>
+            <div class="flow-step-desc">Checks PC health endpoints. Routes test batch to least-loaded Windows PC. Calls your execution API (or SSHes to trigger the runner directly).</div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-step-num bg-purple" style="color:white">7</div>
+          <div class="flow-step-content">
+            <div class="flow-step-title">Reporter Agent delivers results to Telegram</div>
+            <div class="flow-step-desc">Aggregates results. Formats human-readable report. Attaches failure screenshots. Sends to the original requester. UAT team gets plain-English pass/fail; developer gets full technical detail.</div>
+            <div class="flow-step-detail"><span class="code-comment"># Telegram report (UAT-friendly version)</span><br>✅ Checkout Flow — 14/16 tests passed<br>❌ FAIL: Payment declined screen — expected toast, got redirect<br>❌ FAIL: Apple Pay button missing on mobile viewport<br>[📸 screenshot_fail_01.png]<br>[📸 screenshot_fail_02.png]<br>Full report: http://reqiq.local/reports/run_291</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FLOW B: Scheduled -->
+    <div class="card" style="margin-bottom:var(--space-6)">
+      <h3 style="font-size:var(--text-base);font-weight:700;margin-bottom:var(--space-4);display:flex;align-items:center;gap:var(--space-2)">
+        <span class="card-icon bg-gold" style="width:32px;height:32px;font-size:16px">⏰</span>
+        Flow B — Scheduled Nightly Regression (No Human Required)
+      </h3>
+      <div class="flow-step-detail" style="margin-top:0">
+        <span class="code-comment"># Cron job on Ubuntu mini PC</span><br>
+        <span class="code-key">0 2 * * *</span>  <span class="code-str">hermes "run full regression suite on staging"</span><br><br>
+        <span class="code-comment"># Hermes wakes up, checks ReqIQ feature registry for all active test suites</span><br>
+        <span class="code-comment"># Dispatcher routes all suites across available Windows PCs in parallel</span><br>
+        <span class="code-comment"># Reporter compares against last night's baseline, flags regressions only</span><br>
+        <span class="code-comment"># Sends summary to #qa-channel on Telegram at ~6am before team arrives</span>
+      </div>
+    </div>
+
+    <!-- FLOW C: Post-deploy -->
+    <div class="card">
+      <h3 style="font-size:var(--text-base);font-weight:700;margin-bottom:var(--space-4);display:flex;align-items:center;gap:var(--space-2)">
+        <span class="card-icon bg-red" style="width:32px;height:32px;font-size:16px">🚀</span>
+        Flow C — Post-Deploy Smoke Test (CI/CD Hook)
+      </h3>
+      <div class="flow-step-detail" style="margin-top:0">
+        <span class="code-comment"># From your CI/CD pipeline (GitHub Actions, Jenkins, etc.)</span><br>
+        <span class="code-key">curl</span> -X POST http://hermesminipc.local:8080/api/trigger \<br>
+        &nbsp;&nbsp;-d '{"trigger": "smoke_test", "env": "staging", "build": "v2.4.1"}'<br><br>
+        <span class="code-comment"># Hermes runs only smoke test suite (fastest ~5 min subset)</span><br>
+        <span class="code-comment"># Returns pass/fail webhook to CI/CD — can gate deployment on failure</span><br>
+        <span class="code-comment"># Notifies dev who triggered the deploy directly via Telegram DM</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- INTEGRATION TABLE -->
+  <section id="integration">
+    <h2 class="section-title">ReqIQ ↔ Hermes Integration Points</h2>
+    <p class="section-subtitle">Five REST API contracts between Hermes agents and ReqIQ. Add these endpoints when building ReqIQ in Cursor AI.</p>
+
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Endpoint</th>
+            <th>Called By</th>
+            <th>Purpose</th>
+            <th>Key Response Fields</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code style="font-family:var(--font-mono);font-size:var(--text-xs)">POST /api/v1/documents/upload</code></td>
+            <td>Requirements Agent</td>
+            <td>Upload PPTX, DOCX, PDF, or email text for a feature. Triggers async parsing pipeline.</td>
+            <td>doc_id, job_id, status</td>
+          </tr>
+          <tr>
+            <td><code style="font-family:var(--font-mono);font-size:var(--text-xs)">POST /api/v1/compile/{feature_id}</code></td>
+            <td>Requirements Agent</td>
+            <td>Run 5-stage compilation: parse → extract → RAG merge → score → export Test Instruction JSON</td>
+            <td>completeness_score, gaps[], test_instruction_json</td>
+          </tr>
+          <tr>
+            <td><code style="font-family:var(--font-mono);font-size:var(--text-xs)">GET /api/v1/features</code></td>
+            <td>Manager Agent, Dispatcher</td>
+            <td>List all features in the registry with last-run status, test count, coverage score</td>
+            <td>features[], total_tests, last_run_at</td>
+          </tr>
+          <tr>
+            <td><code style="font-family:var(--font-mono);font-size:var(--text-xs)">POST /api/v1/runs</code></td>
+            <td>Dispatcher Agent</td>
+            <td>Log a test run result — links run ID to feature, stores pass/fail, screenshots, duration</td>
+            <td>run_id, regression_count, new_failures[]</td>
+          </tr>
+          <tr>
+            <td><code style="font-family:var(--font-mono);font-size:var(--text:xs)">GET /api/v1/runs/{run_id}/report</code></td>
+            <td>Reporter Agent</td>
+            <td>Fetch structured report data for Telegram formatting and PDF generation</td>
+            <td>summary, failures[], screenshots[], pdf_url</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="highlight-box info" style="margin-top:var(--space-6)">
+      <h4>Hermes MCP Tool Configuration</h4>
+      <p>Each API above is registered as a Hermes MCP tool in <code style="font-family:var(--font-mono)">~/.hermes/tools/reqiq.yaml</code>. Agents call them by name: <code style="font-family:var(--font-mono)">reqiq_upload_document</code>, <code style="font-family:var(--font-mono)">reqiq_compile_feature</code>, <code style="font-family:var(--font-mono)">reqiq_list_features</code>, <code style="font-family:var(--font-mono)">reqiq_log_run</code>, <code style="font-family:var(--font-mono)">reqiq_get_report</code>.</p>
+    </div>
+  </section>
+
+  <!-- WHAT TO ADD TO YOUR WEBSITE -->
+  <section>
+    <h2 class="section-title">What to Add to Your Existing Test Website</h2>
+    <p class="section-subtitle">Your current website already has test case generation (BrowserUse crawl) and test execution (Stagehand + Playwright). Add these three API endpoints to complete the integration:</p>
+
+    <div class="card-grid card-grid-3">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-icon bg-green">➕</div>
+          <div><h3>POST /api/execute</h3><div class="card-meta">Already exists — just document it</div></div>
+        </div>
+        <p>Expose your existing Stagehand/Playwright runner as a REST endpoint accepting the Test Case JSON from ReqIQ. Returns run_id, status, result_url.</p>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-icon bg-blue">🔍</div>
+          <div><h3>GET /api/status/{run_id}</h3><div class="card-meta">New — needed for Dispatcher polling</div></div>
+        </div>
+        <p>Dispatcher Agent polls this every 15 seconds to check if a run is still in-progress, completed, or failed. Returns status, progress percentage, partial results.</p>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-icon bg-orange">❤️</div>
+          <div><h3>GET /api/health</h3><div class="card-meta">New — needed for load balancing</div></div>
+        </div>
+        <p>Returns machine load: active_runs, cpu_percent, available_slots. Dispatcher queries this on all Windows PCs before routing to determine least-loaded target.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- KEY DESIGN DECISIONS -->
+  <section>
+    <h2 class="section-title">Key Design Decisions</h2>
+    <p class="section-subtitle">Why the architecture is shaped this way — and the trade-offs involved.</p>
+
+    <div class="card-grid card-grid-2">
+      <div class="card">
+        <h3 style="margin-bottom:var(--space-3)">Why non-headless browser on Windows (not Ubuntu)?</h3>
+        <p>Windows PCs handle NTLM authentication, ActiveX legacy components, and Windows-specific rendering that Linux headless Chrome cannot replicate. Screenshots of actual browser windows also provide unambiguous visual evidence for UAT teams. The Ubuntu mini PC runs zero browser processes — it only orchestrates.</p>
+      </div>
+      <div class="card">
+        <h3 style="margin-bottom:var(--space-3)">Why local Ollama for ReqIQ, not OpenRouter?</h3>
+        <p>Requirement documents contain confidential business logic, UX specs, and unreleased feature details. Running all compilation locally in Ollama means this data never leaves the LAN. OpenRouter is reserved for the Manager Agent (routing decisions, low sensitivity) and Requirements Agent (multi-modal understanding with less sensitive context).</p>
+      </div>
+      <div class="card">
+        <h3 style="margin-bottom:var(--space-3)">Why 5 separate agents instead of one "super-agent"?</h3>
+        <p>Single-agent systems fail silently and are impossible to debug. When the Dispatcher fails to route correctly, you know exactly which agent and which prompt to fix. Each agent also uses the cheapest model appropriate for its task — the free Qwen handles dispatch, not GPT-4o. This reduces LLM cost by ~70% vs a single high-capability agent.</p>
+      </div>
+      <div class="card">
+        <h3 style="margin-bottom:var(--space-3)">Why ReqIQ as a separate webapp vs inside Hermes?</h3>
+        <p>ReqIQ has a human-facing web UI for uploading documents, reviewing compiled instructions, and editing test cases directly. Embedding it inside Hermes would make it unusable without Telegram. The separation also lets you build ReqIQ independently in Cursor AI and integrate it into Hermes progressively.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- DEPLOYMENT -->
+  <section id="deployment">
+    <h2 class="section-title">Docker Compose — Same-Machine Deployment</h2>
+    <p class="section-subtitle">All services on the Ubuntu mini PC start with one command. Hermes runs as a systemd service outside Docker for direct hardware access.</p>
+
+    <div class="code-block">
+<span class="code-comment"># docker-compose.yml — Ubuntu Mini PC</span><br>
+<span class="code-key">version</span>: <span class="code-str">'3.9'</span><br>
+<span class="code-key">services</span>:<br>
+<br>
+&nbsp;&nbsp;<span class="code-key">reqiq-api</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-key">build</span>: <span class="code-str">./reqiq</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-key">ports</span>: [<span class="code-str">"8000:8000"</span>]<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-key">volumes</span>: [<span class="code-str">"./data/chromadb:/app/chromadb"</span>, <span class="code-str">"./data/sqlite:/app/db"</span>]<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-key">environment</span>: {<span class="code-str">OLLAMA_HOST</span>: <span class="code-str">"http://ollama:11434"</span>}<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-key">depends_on</span>: [<span class="code-str">ollama</span>, <span class="code-str">redis</span>]<br>
+<br>
+&nbsp;&nbsp;<span class="code-key">reqiq-worker</span>: <span class="code-comment"># ARQ task queue worker</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-key">build</span>: <span class="code-str">./reqiq</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-key">command</span>: <span class="code-str">arq app.worker.WorkerSettings</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-key">depends_on</span>: [<span class="code-str">reqiq-api</span>, <span class="code-str">redis</span>]<br>
+<br>
+&nbsp;&nbsp;<span class="code-key">reqiq-ui</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-key">build</span>: <span class="code-str">./reqiq/frontend</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-key">ports</span>: [<span class="code-str">"3000:3000"</span>]<br>
+<br>
+&nbsp;&nbsp;<span class="code-key">ollama</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-key">image</span>: <span class="code-str">ollama/ollama:latest</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-key">ports</span>: [<span class="code-str">"11434:11434"</span>]<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-key">volumes</span>: [<span class="code-str">"ollama_data:/root/.ollama"</span>]<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-key">deploy</span>: {<span class="code-key">resources</span>: {<span class="code-key">limits</span>: {<span class="code-key">memory</span>: <span class="code-str">"8g"</span>}}}<br>
+<br>
+&nbsp;&nbsp;<span class="code-key">garage</span>: <span class="code-comment"># Self-hosted S3</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-key">image</span>: <span class="code-str">dxflrs/garage:v1.0</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-key">ports</span>: [<span class="code-str">"3900:3900"</span>]<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-key">volumes</span>: [<span class="code-str">"garage_data:/var/lib/garage"</span>]<br>
+<br>
+&nbsp;&nbsp;<span class="code-key">redis</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-key">image</span>: <span class="code-str">redis:7-alpine</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-key">command</span>: <span class="code-str">redis-server --maxmemory 256mb</span><br>
+<br>
+<span class="code-key">volumes</span>: {<span class="code-str">ollama_data</span>: {}, <span class="code-str">garage_data</span>: {}}<br>
+<br>
+<span class="code-comment"># Hermes Agent runs as systemd service (outside Docker)</span><br>
+<span class="code-comment"># sudo systemctl enable hermes && sudo systemctl start hermes</span>
+    </div>
+
+    <div class="highlight-box success" style="margin-top:var(--space-6)">
+      <h4>RAM Budget on Ubuntu Mini PC</h4>
+      <p>Ollama (qwen2.5:7b): ~5GB VRAM/RAM · ReqIQ API + Worker: ~400MB · ChromaDB: ~200MB · Redis: ~256MB · Garage S3: ~128MB · Total: ~6–7GB. A mini PC with 16GB RAM is comfortable; 12GB is minimum. Hermes Agent itself uses ~200MB additional.</p>
+    </div>
+  </section>
+
+  <!-- BUILD ORDER -->
+  <section>
+    <h2 class="section-title">Recommended Build Order</h2>
+    <p class="section-subtitle">Build and validate each phase before starting the next. Every phase is independently testable.</p>
+
+    <div class="card-grid card-grid-3">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-icon bg-teal">1</div>
+          <div><h3>Phase 1 — Wire Hermes to Your Existing APIs</h3><div class="card-meta">1–2 days</div></div>
+        </div>
+        <p>Register /api/execute, /api/status, and /api/health on your test website. Configure Hermes MCP tool YAML. Test: send "run smoke test" on Telegram and get results back. Validate the execution pipeline works end-to-end before adding requirement intelligence.</p>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-icon bg-orange">2</div>
+          <div><h3>Phase 2 — Build ReqIQ Core</h3><div class="card-meta">1–2 weeks in Cursor AI</div></div>
+        </div>
+        <p>Build SQLModel data models, document upload endpoint, and the 5-stage Ollama compilation pipeline. Test: upload a PPTX and get back a Test Instruction JSON. No agent integration yet — test ReqIQ as a standalone tool first.</p>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-icon bg-blue">3</div>
+          <div><h3>Phase 3 — Requirements Agent Profile</h3><div class="card-meta">2–3 days</div></div>
+        </div>
+        <p>Create the Requirements Agent Hermes profile. Register ReqIQ REST endpoints as MCP tools. Test full flow: "generate tests for checkout feature" → Telegram → Requirements Agent → ReqIQ → Test Instruction JSON → your existing generation API → results.</p>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-icon bg-green">4</div>
+          <div><h3>Phase 4 — Multi-PC Dispatcher</h3><div class="card-meta">2–3 days</div></div>
+        </div>
+        <p>Add /api/health endpoint to Windows test website. Build Dispatcher Agent profile with SSH/REST routing logic. Add second Windows PC. Test parallel execution of independent test suites.</p>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-icon bg-purple">5</div>
+          <div><h3>Phase 5 — Reporter + Scheduled Runs</h3><div class="card-meta">1–2 days</div></div>
+        </div>
+        <p>Build Reporter Agent. Configure cron job for nightly regression. Set up baseline comparison (first run = baseline, subsequent = diff). Validate UAT team can understand the Telegram report without IT help.</p>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-icon bg-gold">6</div>
+          <div><h3>Phase 6 — Hardening</h3><div class="card-meta">Ongoing</div></div>
+        </div>
+        <p>Add Tailscale for remote access. Enable ReqIQ completeness scoring and gap-asking behaviour. Build PDF report archiving. Add CI/CD webhook for post-deploy smoke tests. Monitor RAM usage on mini PC.</p>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+(function(){
+  const t=document.querySelector('[data-theme-toggle]');
+  const r=document.documentElement;
+  let d=matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';
+  r.setAttribute('data-theme',d);
+  if(t){
+    t.addEventListener('click',()=>{
+      d=d==='dark'?'light':'dark';
+      r.setAttribute('data-theme',d);
+    });
+  }
+})();
+</script>
+</body>
+</html>
