@@ -254,7 +254,7 @@ class StagehandExecutionService:
                         user_config.get("max_tokens", 4096),
                     )
                 
-            else:  # default to openrouter
+            elif model_provider == "openrouter":  # explicit openrouter
                 # Use OpenRouter (original behavior)
                 openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
                 # Use user's model selection if available, otherwise use .env default
@@ -332,6 +332,21 @@ class StagehandExecutionService:
                         user_config.get("temperature", 0.7),
                         user_config.get("max_tokens", 4096),
                     )
+
+            else:  # fallback to openrouter for any unrecognised provider
+                openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+                openrouter_model = user_config.get("model") if user_config else os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct")
+                if openrouter_model and openrouter_model.startswith("openrouter/"):
+                    openrouter_model = openrouter_model.split("/", 1)[1]
+                config = StagehandConfig(
+                    env="LOCAL",
+                    headless=self.headless,
+                    verbose=1,
+                    model_name=f"openrouter/{openrouter_model}",
+                    model_api_key=openrouter_key,
+                    local_browser_launch_options=launch_options,
+                )
+                logger.info(f"StagehandExecutionService: Fallback to OpenRouter with model: {openrouter_model}")
 
             
             logger.info(
