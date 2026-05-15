@@ -22,6 +22,7 @@
 10. [Error Codes](#10-error-codes)
 11. [Common Flows for ReqIQ](#11-common-flows-for-reqiq)
 12. [ReqIQ Proxy Endpoints](#12-reqiq-proxy-endpoints)
+    - [12.8 Project Readiness Check](#128-project-readiness-check)
 
 ---
 
@@ -44,8 +45,8 @@
           ▼                                         ▼
 ┌─────────────────────┐               ┌────────────────────────────┐
 │  REQIQ WEBAPP        │               │  AI WEB TEST WEBAPP         │
-│  Port 8090 (API)    │◄──────────────►│  Port 8000 (API)           │
-│  Port 3000 (UI)     │               │  Port 5173 (UI / dev)      │
+│  Port 3001 (API)    │◄──────────────►│  Port 8000 (API)           │
+│  Port 8080 (UI)     │               │  Port 5173 (UI / dev)      │
 │                     │               │                            │
 │  • Ingests PPTX,    │               │  • Crawls URLs with        │
 │    Figma, Word,     │               │    browser-use             │
@@ -86,7 +87,9 @@ This is the exact sequence Hermes runs for each QA cycle. Each agent calls a spe
 | AI Web Test API | Test case DB + executor | `http://localhost:8000` | `http://192.168.1.101:8000` |
 | AI Web Test UI | Dashboard | `http://localhost:5173` | `http://192.168.1.101:5173` |
 | ReqIQ API | Requirements hub | `http://localhost:3001` | `http://192.168.1.100:3001` |
-| ReqIQ UI | Requirements dashboard | `http://localhost:3000` | `http://192.168.1.100:3000` |
+| ReqIQ UI | Requirements dashboard | `http://localhost:8080` | `http://192.168.1.100:8080` |
+
+> **Port note:** ReqIQ UI port is set in `docker-compose.yml` under the `web` service (`ports: - '8080:80'`). To change it, update the host-side port in that file (e.g. `9090:80`) and restart Docker. No `.env` variable controls it — it is a Compose mapping only.
 
 All API calls in Sections 1–11 target the **AI Web Test** base URL (`port 8000`). **Section 12** below documents the ReqIQ proxy endpoints — AI Web Test backend calls ReqIQ on behalf of users so they never need to access ReqIQ directly.
 
@@ -937,7 +940,7 @@ where to stop — the browser follows it literally.
 ## Notes
 
 - **Server port:** `8000` (configurable via `uvicorn` startup)
-- **CORS origins allowed:** `http://localhost:5173` and `http://localhost:3000` by default — update `BACKEND_CORS_ORIGINS` in the server `.env` if ReqIQ is hosted on a different origin
+- **CORS origins allowed:** `http://localhost:5173` and `http://localhost:8080` by default — update `BACKEND_CORS_ORIGINS` in the server `.env` if ReqIQ UI is on a different port (set in ReqIQ `docker-compose.yml` `web.ports`)
 - **Full machine-readable spec:** `backend/openapi_spec.json` — import into Postman, Insomnia, or any OpenAPI-compatible tool
 - **All timestamps** are ISO 8601 UTC (`2026-05-14T09:00:00Z`)
 
@@ -1142,7 +1145,51 @@ The `steps[]` array maps directly to `user_instruction` in `crawl-and-save-test`
 
 ---
 
-### 12.7 Environment Variables (AI Web Test `.env`)
+### 12.8 Project Readiness Check
+
+Single-call gate that replaces the three-step pattern (RAG query + requirements list + IQ score). Returns everything needed to decide whether to proceed with test generation.
+
+```
+GET /api/v1/requirements/{projectId}/readiness?query={query}&feature={feature}
+Authorization: Bearer <token>
+```
+
+Proxies to ReqIQ `GET /api/v1/projects/{projectId}/readiness?query={query}&feature={feature}`.
+
+**Query parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `query` | Yes | Natural-language description of the feature/scenario you want to test |
+| `feature` | No | Feature name for more targeted matching (e.g. `5G Voucher Plan Purchase`) |
+
+**Response 200:**
+```json
+{
+  "projectId": "cmp0zdx4g0004alp8z77ess7a",
+  "readinessScore": 87,
+  "status": "ready",
+  "wikiContent": "## 5G Voucher Plan\n\n### Acceptance Criteria\n1. User can navigate to 5G Monthly Plan...",
+  "matchedRequirement": {
+    "id": "req_abc123",
+    "title": "5G Voucher Plan Purchase",
+    "state": "BASELINE",
+    "latestCompositeScore": 87
+  },
+  "missing": []
+}
+```
+
+`status` values:
+- `ready` — `readinessScore >= 60`, `wikiContent` populated, safe to proceed with test generation
+- `insufficient` — score below threshold; `missing[]` lists what documents/sections are absent
+- `no_sources` — no documents uploaded for this project yet
+
+> **This is the preferred entry point for Hermes `qa-requirements` agent** — one call replaces RAG query + requirements list + IQ score lookup.
+
+---
+
+### 12.9 Environment Variables (AI Web Test `.env`)
 
 ```bash
 # ReqIQ service account (server-side only — never exposed to browser)
