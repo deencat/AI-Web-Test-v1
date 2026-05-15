@@ -37,6 +37,23 @@ class UniversalLLMService:
             }
         }
 
+        # Sprint 10.13: Local vLLM per-model endpoint table (OpenAI-compatible, no real auth)
+        _local_api_key = getattr(settings, "LOCAL_VLLM_API_KEY", "local") or os.getenv("LOCAL_VLLM_API_KEY", "local")
+        self._local_vllm_model_endpoints: dict = {
+            "openai/gpt-oss-20b": {
+                "endpoint": getattr(settings, "LOCAL_VLLM_GPT_OSS_20B_ENDPOINT", "http://192.168.206.190:8000/openai--gpt-oss-20b/v1") or os.getenv("LOCAL_VLLM_GPT_OSS_20B_ENDPOINT", "http://192.168.206.190:8000/openai--gpt-oss-20b/v1"),
+                "api_key": _local_api_key,
+            },
+            "RedHatAI/Qwen3.6-35B-A3B-NVFP4": {
+                "endpoint": getattr(settings, "LOCAL_VLLM_QWEN3_35B_ENDPOINT", "http://192.168.206.190:8000/redhatai--qwen3.6-35b-a3b-nvfp4/v1") or os.getenv("LOCAL_VLLM_QWEN3_35B_ENDPOINT", "http://192.168.206.190:8000/redhatai--qwen3.6-35b-a3b-nvfp4/v1"),
+                "api_key": _local_api_key,
+            },
+            "DeepSeek-V4-Flash-4bit": {
+                "endpoint": getattr(settings, "LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164/v1") or os.getenv("LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164/v1"),
+                "api_key": _local_api_key,
+            },
+        }
+
         # OPT-1: HTTP Session Reuse - Create shared httpx client for connection pooling
         # This reduces connection overhead by 20-30% for multiple LLM calls
         self._http_client: Optional[httpx.AsyncClient] = None
@@ -74,6 +91,8 @@ class UniversalLLMService:
             return await self._call_cerebras(messages, model, temperature, max_tokens)
         elif provider == "azure":
             return await self._call_azure(messages, model, temperature, max_tokens)
+        elif provider == "local_vllm":
+            return await self._call_local_vllm(messages, model, temperature, max_tokens)
         else:  # default to openrouter
             return await self._call_openrouter(messages, model, temperature, max_tokens)
     
@@ -297,6 +316,7 @@ class UniversalLLMService:
         resolved_endpoint = (endpoint or self.azure_endpoint or "").rstrip("/")
         resolved_api_version = api_version or self.azure_api_version
         resource_base = resolved_endpoint.split("/openai")[0] if "/openai" in resolved_endpoint else resolved_endpoint
+        token_limit_field = "max_completion_tokens" if model.startswith("gpt-5") else "max_tokens"
 
         v1_base = resolved_endpoint if "/openai/v1" in resolved_endpoint else f"{resource_base}/openai/v1"
         v1_url = f"{v1_base.rstrip('/')}/chat/completions"
@@ -307,7 +327,7 @@ class UniversalLLMService:
             "temperature": temperature,
         }
         if max_tokens:
-            v1_payload["max_tokens"] = max_tokens
+            v1_payload[token_limit_field] = max_tokens
 
         deployment_url = (
             f"{resource_base}/openai/deployments/{model}/chat/completions"
@@ -318,14 +338,67 @@ class UniversalLLMService:
             "temperature": temperature,
         }
         if max_tokens:
-            deployment_payload["max_tokens"] = max_tokens
+            deployment_payload[token_limit_field] = max_tokens
 
         request_candidates: List[Dict[str, object]] = [
             {"url": v1_url, "payload": v1_payload},
             {"url": deployment_url, "payload": deployment_payload},
         ]
         return request_candidates
-    
+
+    async def _call_local_vllm(
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None
+    ) -> dict:
+        """Call an on-premises vLLM server (OpenAI-compatible /v1/chat/completions).
+
+        Sprint 10.13: supports three local models, each at its own endpoint.
+        Falls back to DeepSeek-V4-Flash-4bit when no model is specified.
+        """
+        if not model:
+            model = "DeepSeek-V4-Flash-4bit"
+
+        model_cfg = self._local_vllm_model_endpoints.get(model)
+        if not model_cfg:
+            raise ValueError(
+                f"Unknown local_vllm model '{model}'. "
+                f"Supported models: {list(self._local_vllm_model_endpoints.keys())}"
+            )
+
+        endpoint = model_cfg["endpoint"].rstrip("/")
+        api_key = model_cfg.get("api_key", "local")
+
+        payload: Dict[str, object] = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+        }
+        if max_tokens:
+            payload["max_tokens"] = max_tokens
+
+        client = await self._get_http_client()
+        try:
+            response = await client.post(
+                f"{endpoint}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.TimeoutException:
+            raise Exception(f"Local vLLM ({model}) request timed out (90s)")
+        except httpx.HTTPStatusError as e:
+            error_detail = e.response.text if e.response else "Unknown error"
+            raise Exception(f"Local vLLM ({model}) error ({e.response.status_code}): {error_detail}")
+        except httpx.HTTPError as e:
+            raise Exception(f"Local vLLM ({model}) connection error: {str(e)}")
+
     async def _call_openrouter(
         self,
         messages: List[Dict[str, str]],

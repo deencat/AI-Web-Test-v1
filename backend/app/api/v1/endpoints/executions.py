@@ -26,6 +26,7 @@ from app.services.stagehand_factory import get_stagehand_adapter
 from app.services.stagehand_adapter import StagehandAdapter
 from app.services.queue_manager import get_queue_manager
 from app.services.execution_queue import get_execution_queue
+from app.services.resume_guard import validate_resume_point
 
 router = APIRouter()
 
@@ -184,6 +185,35 @@ async def run_test_with_playwright(
 
     if request.browser_profile_data:
         trigger_details["browser_profile_data"] = request.browser_profile_data
+
+    # Sprint 10.12 Feature B: persist resume params in trigger_details for queue_manager
+    if request.resume_from_execution_id is not None:
+        trigger_details["resume_from_execution_id"] = request.resume_from_execution_id
+    if request.start_from_step is not None:
+        trigger_details["start_from_step"] = request.start_from_step
+
+    # Validate resume params before creating queue entry
+    if request.resume_from_execution_id is not None and request.start_from_step is not None:
+        from app.services.execution_service import ExecutionService
+        from app.models.test_case import TestCase as TestCaseModel
+        import json as _json
+
+        # Resolve the steps list for OTP detection
+        raw_steps = test_case.steps or []
+        if isinstance(raw_steps, str):
+            try:
+                raw_steps = _json.loads(raw_steps)
+            except Exception:
+                raw_steps = [raw_steps]
+        # Flat list of step descriptions (strings or dicts)
+        steps_for_guard = raw_steps if isinstance(raw_steps, list) else []
+
+        validate_resume_point(
+            db=db,
+            resume_from_execution_id=request.resume_from_execution_id,
+            start_from_step=request.start_from_step,
+            steps=steps_for_guard,
+        )
 
     if trigger_details:
         execution.trigger_details = json.dumps(trigger_details)

@@ -73,6 +73,17 @@ class UserSettingsService:
             ],
             "recommended": "ChatGPT-UAT",
             "api_key_env": "AZURE_OPENAI_API_KEY"
+        },
+        "local_vllm": {
+            "display_name": "Local vLLM (On-Premises)",
+            # Sprint 10.13: three on-prem vLLM servers; no API key required
+            "models": [
+                "openai/gpt-oss-20b",
+                "RedHatAI/Qwen3.6-35B-A3B-NVFP4",
+                "DeepSeek-V4-Flash-4bit",
+            ],
+            "recommended": "DeepSeek-V4-Flash-4bit",
+            "api_key_env": "LOCAL_VLLM_API_KEY"  # placeholder; vLLM ignores auth by default
         }
     }
     
@@ -87,8 +98,12 @@ class UserSettingsService:
         
         for name, config in self.PROVIDER_CONFIGS.items():
             # Check if API key is configured
+            # local_vllm needs no external API key — always mark as configured
             api_key_env = config["api_key_env"]
-            is_configured = bool(getattr(settings, api_key_env, None))
+            if name == "local_vllm":
+                is_configured = True
+            else:
+                is_configured = bool(getattr(settings, api_key_env, None))
 
             # Build rich model_options list; free models detected by :free suffix
             model_options = [
@@ -128,7 +143,8 @@ class UserSettingsService:
             "google": settings.GOOGLE_MODEL,
             "cerebras": settings.CEREBRAS_MODEL,
             "openrouter": settings.OPENROUTER_MODEL,
-            "azure": getattr(settings, "AZURE_OPENAI_MODEL", "ChatGPT-UAT")
+            "azure": getattr(settings, "AZURE_OPENAI_MODEL", "ChatGPT-UAT"),
+            "local_vllm": "DeepSeek-V4-Flash-4bit",
         }
         
         return {
@@ -371,6 +387,8 @@ class UserSettingsService:
             return os.getenv("AZURE_OPENAI_API_KEY")
         elif provider == "openrouter":
             return os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+        elif provider == "local_vllm":
+            return os.getenv("LOCAL_VLLM_API_KEY", "local")  # vLLM ignores auth by default
         else:
             # Default fallback
             return os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")

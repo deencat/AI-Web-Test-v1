@@ -154,6 +154,10 @@ export interface ExecutionStartRequest {
     username: string;
     password: string;
   };
+  /** Sprint 10.12 Feature B: Resume from a prior execution's step snapshot */
+  resume_from_execution_id?: number;
+  /** 1-based step index to resume from (minimum 2) */
+  start_from_step?: number;
 }
 
 export interface ExecutionStartResponse {

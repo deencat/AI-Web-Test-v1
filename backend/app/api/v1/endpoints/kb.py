@@ -126,7 +126,7 @@ async def upload_document(
     
     **Authentication required**
     
-    Accepts PDF, DOCX, TXT, or MD files up to 10MB.
+    Accepts PDF, DOCX, TXT, or MD files up to 25MB.
     Automatically extracts text content for search.
     
     **Form Data:**

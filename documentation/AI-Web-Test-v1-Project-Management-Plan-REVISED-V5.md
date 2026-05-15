@@ -9,9 +9,9 @@
 
 ## 📍 CURRENT STATUS
 
-**Phase:** 2 Complete 🎉 + Enhancements Complete (Week 14)  
-**Progress:** Phase 2 Core = 100% | Enhancement 1 = 100% ✅ | Enhancement 2 = 100% ✅ | Enhancement 3 = 100% ✅ | Enhancement 4 = 100% ✅ | Enhancement 5 = 100% ✅ | Enhancement 6 = 80% ⚠️  
-**Date:** February 7, 2026
+**Phase:** Phase 3 In Progress 🚀 (Sprint 10.12 complete)  
+**Progress:** Phase 2 Core = 100% ✅ | Phase 3 Active Sprints = Ongoing | Sprint 10.12 = 100% ✅  
+**Date:** May 13, 2026
 
 ### Phase 2 Sprint Summary
 
@@ -29,11 +29,23 @@ DEVELOPER B:
 │   ├─ Enhancement 3: Test Data Generator ✅ 100% (6 hours - Deployed Jan 23, 2026)
 │   ├─ Enhancement 4: Interactive Debug Mode ✅ 100% (8 hours - Deployed Jan 28, 2026)
 │   ├─ Enhancement 5: Browser Profile Session Persistence ✅ 100% (Deployed Feb 5, 2026)
-│   └─ Enhancement 6: Payment Gateway & Dropdown Optimization ⚠️ 80% (Feb 6-7, 2026)
+│   └─ Enhancement 6: Payment Gateway & Dropdown Optimization ✅ 100% (Feb 2026)
 └─ Sprint 6: Prompt A/B Testing ✅ 100%
 ```
 
-**Next Milestone:** Complete Enhancement 6 architectural refinement, then Phase 3 Multi-Agent Architecture kickoff
+### Phase 3 Sprint Summary (Active)
+
+```
+DEVELOPER B (Execution Engine Hardening & AI Features):
+├─ Sprint 10.7: UAT HTTP Credential Auto-Injection + Browser Profile Removal ✅ 100%
+├─ Sprint 10.8: Three HK Plan-Selection Recovery + Chrome UA Stealth ✅ 100%
+├─ Sprint 10.9: Three HK Plan-Tab SPA Stability (Spinner, T&C, Subscribe) ✅ 100%
+├─ Sprint 10.10: IMAP Email OTP Service + Per-Digit Step Expansion ✅ 100%
+├─ Sprint 10.11: Step Library @module: Syntax + Resolver Architecture ✅ 100%
+└─ Sprint 10.12: AI-Powered Failure Root Cause Analysis ✅ 100% (May 13, 2026)
+```
+
+**Next Milestone:** Sprint 10.13 — continue Phase 3 execution engine hardening
 
 ---
 
@@ -5759,7 +5771,7 @@ browser_profiles:
 ## Phase 3: Multi-Agent Architecture
 
 **Duration:** Weeks 15-26 (12 weeks)  
-**Status:** 📋 Planned
+**Status:** � In Progress
 
 ### Objective
 
@@ -5769,7 +5781,7 @@ Implement multi-agent collaboration for autonomous test planning, execution, and
 
 1. **Observation Agent** - Monitors execution, detects patterns
 2. **Requirements Agent** - Analyzes PRDs, extracts test scenarios
-3. **Analysis Agent** - Root cause analysis for failures
+3. **Analysis Agent** - Root cause analysis for failures *(Sprint 10.12 delivers first lightweight RCA)*
 4. **Evolution Agent** - Self-healing tests with rule-based strategies
 5. **Orchestration Agent** - Coordinates all agents, makes decisions
 6. **Reporting Agent** - Generates insights and recommendations
@@ -5789,6 +5801,61 @@ Implement multi-agent collaboration for autonomous test planning, execution, and
 - 90%+ test execution success rate
 - 80% reduction in manual test maintenance
 - Autonomous failure recovery (no human intervention)
+
+---
+
+### Sprint 10.12: AI-Powered Failure Root Cause Analysis (Feature A)
+
+**Status:** ✅ 100% Complete  
+**Date:** May 13, 2026  
+**Developer:** Developer B  
+**ADR:** [ADR-002-43](ADR-002-test-execution-engine.md#adr-002-43-ai-powered-failure-root-cause-analysis)
+
+#### Objective
+
+Surface an AI-generated plain-English explanation in the `ExecutionProgressPage` whenever all three execution tiers are exhausted (`error_type == "all_tiers_exhausted"`). Eliminates the need for QA engineers to read raw stack traces and per-tier error logs.
+
+#### Key Deliverables
+
+| Component | File | Status |
+|-----------|------|--------|
+| RCA service | `backend/app/services/root_cause_analysis_service.py` | ✅ New |
+| DB migration | `backend/migrations/add_root_cause_analysis_column.py` | ✅ Run |
+| ORM model update | `backend/app/models/execution_feedback.py` | ✅ Modified |
+| Pydantic schema update | `backend/app/schemas/execution_feedback.py` | ✅ Modified |
+| Execution service wiring | `backend/app/services/execution_service.py` | ✅ Modified |
+| Azure `max_completion_tokens` fix | `backend/app/services/universal_llm.py` | ✅ Bug fix |
+| Dev server reload scope fix | `backend/start_server.py` | ✅ Bug fix |
+| RCA panel component | `frontend/src/components/execution/RootCauseAnalysisPanel.tsx` | ✅ New |
+| ExecutionProgressPage integration | `frontend/src/pages/ExecutionProgressPage.tsx` | ✅ Modified |
+| Feedback service type | `frontend/src/services/feedbackService.ts` | ✅ Modified |
+
+#### Design Highlights
+
+- **Selective triggering**: RCA fires only on `all_tiers_exhausted`; zero LLM cost on Tier 1/2 failures.
+- **OTP exclusion**: `is_otp_step()` guard prevents spurious RCA for timing-sensitive digit steps.
+- **DOM snapshot capped at 16,000 chars** server-side (~4,000 tokens) before including in LLM prompt.
+- **Non-fatal by design**: LLM failures and DOM snapshot errors both return `None`; test execution is never interrupted.
+- **User's existing AI provider**: uses `three_tier_service.user_ai_config` to avoid OpenRouter free-tier rate limits.
+- **Amber collapsible panel**: collapsed by default; renders nothing when RCA is null.
+
+#### Bugs Fixed During Integration Testing
+
+1. **`error_type` dropped in `_execute_step()` legacy conversion** — the failed-result dict was missing `"error_type"`, so `_capture_execution_feedback` never received `all_tiers_exhausted`. Fixed by adding `"error_type": result.get("error_type")` to the return dict.
+2. **Azure `gpt-5.2` rejects `max_tokens`** — `_build_azure_request_candidates()` now uses `max_completion_tokens` for models starting with `gpt-5`.
+3. **`watchfiles` restarting server mid-execution** — `start_server.py` now passes `reload_dirs=["app"]` to scope file-watching to application code only.
+
+#### Test Coverage
+
+| Test file | Count | Type |
+|-----------|-------|------|
+| `tests/unit/test_root_cause_analysis.py` | 22 | Unit |
+| `tests/integration/test_rca_execution.py` | 5 | Integration |
+| `tests/test_execution_service_three_tier_logging.py` | +1 regression | Unit |
+| `tests/unit/test_universal_llm_azure.py` | +1 regression | Unit |
+| `frontend/.../ExecutionProgressPage.rca.test.tsx` | 8 | Frontend |
+
+**37 new tests. 235 frontend tests pass. No regression.**
 
 ---
 
@@ -5933,6 +6000,11 @@ Implement Reinforcement Learning from Human Feedback (RLHF) to enable continuous
 8. **Production Deployment (January 21, 2026):** Sprint 5.5 fully deployed to production - backend API, frontend UI, and queue system all operational with 3-tier execution
 9. **XPath Caching Strategy (January 17, 2026):** Tier 2 caches XPath selectors for 80-90% token savings on repeated executions
 10. **Phase 3 Readiness (January 21, 2026):** Phase 2 complete with all features deployed and operational, ready to begin multi-agent architecture
+11. **UAT Credential Auto-Injection (March 30, 2026):** `ExecutionService` resolves HTTP Basic Auth from URL hostname + step-text fallback scan; browser profile picker removed from `RunTestButton` (Sprint 10.7)
+12. **Chrome UA Stealth + Modal Auto-Dismiss (April 1, 2026):** Execution contexts use `STEALTH_USER_AGENT` and `--disable-blink-features=AutomationControlled`; `auto_dismiss_blocking_modals()` handles preprod gating dialogs (Sprint 10.8)
+13. **IMAP Email OTP Service (April 2026):** `EmailOTPService` polls IMAP with Fernet-encrypted credentials; JIT per-digit expansion for split-box OTP UIs (Sprint 10.10)
+14. **Step Library @module: Syntax (May 5, 2026):** `StepLibraryModule` entity + `resolve_steps()` enable reusable parameterized step sequences across test cases (Sprint 10.11)
+15. **AI-Powered Root Cause Analysis (May 13, 2026):** `generate_root_cause_analysis()` fires on `all_tiers_exhausted`; stores plain-English LLM explanation in `execution_feedback.root_cause_analysis`; amber collapsible panel in `ExecutionProgressPage` (Sprint 10.12)
 
 ---
 

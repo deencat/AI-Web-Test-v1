@@ -239,3 +239,22 @@ async def test_call_azure_gpt52_falls_back_to_default_endpoint_when_not_configur
 
     called_url = mock_client.post.await_args.args[0]
     assert "chatgpt-uat.openai.azure.com" in called_url
+
+
+def test_build_azure_request_candidates_uses_max_completion_tokens_for_gpt52():
+    """gpt-5.2 requires max_completion_tokens instead of max_tokens."""
+    service = UniversalLLMService()
+
+    candidates = service._build_azure_request_candidates(
+        messages=[{"role": "user", "content": "hello"}],
+        model="gpt-5.2",
+        temperature=0.2,
+        max_tokens=256,
+        endpoint="https://hutch-mkklgrll-eastus2.cognitiveservices.azure.com",
+        api_version="2024-12-01-preview",
+    )
+
+    assert candidates[0]["payload"]["max_completion_tokens"] == 256
+    assert "max_tokens" not in candidates[0]["payload"]
+    assert candidates[1]["payload"]["max_completion_tokens"] == 256
+    assert "max_tokens" not in candidates[1]["payload"]

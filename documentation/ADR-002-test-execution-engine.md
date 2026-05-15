@@ -40,6 +40,18 @@
 - `backend/tests/unit/test_email_otp_service.py`
 - `backend/tests/unit/test_email_credential_model.py`
 - `backend/tests/integration/test_email_otp_execution.py`
+- `backend/app/services/root_cause_analysis_service.py`
+- `backend/app/models/execution_feedback.py`
+- `backend/app/schemas/execution_feedback.py`
+- `backend/migrations/add_root_cause_analysis_column.py`
+- `backend/tests/unit/test_root_cause_analysis.py`
+- `backend/tests/integration/test_rca_execution.py`
+- `backend/tests/unit/test_universal_llm_azure.py`
+- `backend/tests/test_execution_service_three_tier_logging.py`
+- `frontend/src/components/execution/RootCauseAnalysisPanel.tsx`
+- `frontend/src/components/__tests__/ExecutionProgressPage.rca.test.tsx`
+- `frontend/src/pages/ExecutionProgressPage.tsx`
+- `frontend/src/services/feedbackService.ts`
 
 ---
 
@@ -87,6 +99,8 @@
 40. [ADR-002-40: JIT OTP Expansion — Poll IMAP at Step Execution Time, Not Upfront](#adr-002-40-jit-otp-expansion--poll-imap-at-step-execution-time-not-upfront)
 41. [ADR-002-41: Context-Aware OTP Extraction and Newest-First IMAP UID Search](#adr-002-41-context-aware-otp-extraction-and-newest-first-imap-uid-search)
 42. [ADR-002-42: Step Library @module: Syntax and Resolver Architecture](#adr-002-42-step-library-module-syntax-and-resolver-architecture)
+43. [ADR-002-43: AI-Powered Failure Root Cause Analysis](#adr-002-43-ai-powered-failure-root-cause-analysis)
+44. [ADR-002-44: Re-Run from Failed Step — Session Snapshot Persistence and Resume Architecture](#adr-002-44-re-run-from-failed-step--session-snapshot-persistence-and-resume-architecture)
 
 ---
 
@@ -797,6 +811,14 @@ Key properties:
 | 002-33 | Post-check `is_checked()` verification for `check` actions; immediate `ValueError` when Subscribe Now button stays permanently disabled | Accepted | Low |
 | 002-34 | Change navigate Tier 2 `wait_until` from `networkidle` to `domcontentloaded`; raise nav-click loading timeout to 20 s; cap non-nav networkidle wait at 3 s | Accepted | Low |
 | 002-35 | Move `'I understand'`, `'I Understand'`, and `'Close'` from `SAFE` to `CONDITIONAL` dismiss list; remove button-label tokens (`'i understand'`, `'got it'`, `'information'`) from `NUISANCE_MODAL_TEXT_TOKENS` | Accepted | Low |
+| 002-36 | Expand `THREE_HK_PLAN_TAB_LABELS` to cover 4.5G Monthly Plans and 5G Broadband tab categories | Accepted | Low |
+| 002-37 | Bounded DOM-ready wait in `_find_three_hk_plan_tab_locator`; post-Tier-3 tab-state verification via `_apply_tab_verification_after_tier3` | Accepted | Low |
+| 002-38 | IMAP-based `EmailOTPService` with Fernet-encrypted credential storage; `EmailCredential` ORM model; `/api/v1/email-credentials` CRUD API | Accepted | Low |
+| 002-39 | `format_otp_steps()` expands a resolved OTP into N per-digit step strings for both single-input and split-box OTP UIs | Accepted | Low |
+| 002-40 | JIT OTP expansion — poll IMAP at step execution time (not upfront); parallel `asyncio.wait_for` with timeout per digit step | Accepted | Low |
+| 002-41 | Context-aware OTP extraction with 40-char lookahead keyword proximity; newest-first IMAP UID iteration; `ALL`+`SINCE` search to handle read emails | Accepted | Low |
+| 002-42 | Step Library `@module:` inline syntax; `StepLibraryModule` entity; `resolve_steps()` called in `execution_service.py` and `stagehand_service.py` | Accepted | Low |
+| 002-43 | AI-generated root cause analysis for `all_tiers_exhausted` failures; stored in `execution_feedback.root_cause_analysis`; amber collapsible panel in `ExecutionProgressPage` | Accepted | Low |
 
 ADR-002-24 and ADR-002-25 are low risk: ADR-002-24's overlay guard only fires for the two generic overlay selectors, leaving all other loading indicators unchanged; ADR-002-25's fast-path requires both conditions — URL unchanged and interactive modal visible — to be true simultaneously, which is conservative. ADR-002-26 is a one-line wiring fix with no behavioural change to step execution. All three were applied together to fix the repeated 10–20 s per-step stalls in Execution #637 and to restore tier-level diagnostics.
 
@@ -3113,3 +3135,274 @@ OTP JIT expansion (Sprint 10.10) runs **inside** the loop after module expansion
 - `frontend/src/components/__tests__/InsertModulePicker.test.tsx` — 8 tests
 
 **Total: 52 backend + 18 frontend = 70 tests. 215 total frontend tests pass. No regression.**
+
+---
+
+## ADR-002-43: AI-Powered Failure Root Cause Analysis
+
+**Date:** May 13, 2026  
+**Sprint:** 10.12
+
+### Context
+
+When all three execution tiers are exhausted (`error_type == "all_tiers_exhausted"`), the execution log shows a raw stack trace or a terse `"No selector provided"` / `"Timeout"` string. Diagnosing the real root cause — whether the test step definition is wrong, the page has changed, or the selector is missing — requires manually correlating the per-tier error messages, the DOM structure, and the page URL. This is time-consuming and requires deep familiarity with the execution engine.
+
+The system already stores per-tier error strings in `execution_history` (ADR-002-26) and captures the page URL in `ExecutionFeedback`. What was missing was a single plain-English explanation tying these artefacts together, readable by a QA engineer without stack-trace expertise.
+
+### Decision
+
+**Core service — `root_cause_analysis_service.py`:**
+
+A standalone async service with three concerns:
+
+1. **`_cap_dom_snapshot(raw_html)`** — Caps the `page.inner_html("body")` result at 16,000 characters (≈4,000 tokens at 4 chars/token) before sending to the LLM. The truncation appends `... [truncated]`. This is a server-side safety measure; the DOM snapshot is never returned to the client.
+
+2. **`_build_rca_prompt(instruction, page_url, execution_history, dom_snapshot)`** — Assembles a structured prompt:
+   - Includes the failing step instruction and URL at failure.
+   - Includes per-tier errors extracted by `_extract_tier_error(execution_history, tier)` (returns `"N/A"` when a tier was not attempted).
+   - Includes the capped DOM snapshot when available.
+   - Requests a 2–3 sentence diagnosis and fix suggestion.
+
+3. **`generate_root_cause_analysis(page, step_data, execution_history, error_type, provider, model)`** — Main async entry point:
+   - Returns `None` immediately for any `error_type` other than `"all_tiers_exhausted"` — zero cost on partial failures.
+   - DOM snapshot fetch is non-fatal: a `try/except` logs at DEBUG and continues with an empty snapshot.
+   - LLM call uses `UniversalLLMService.chat_completion()` with `temperature=0.2`, `max_tokens=256`.
+   - Any LLM exception is caught and returns `None` — RCA must never interrupt test execution.
+
+**Database — `execution_feedback` table:**
+
+A new nullable `TEXT` column `root_cause_analysis` is added via migration `add_root_cause_analysis_column.py` (SQLite `ALTER TABLE`, idempotent). The `ExecutionFeedback` ORM model and Pydantic schemas (`ExecutionFeedbackCreate`, `ExecutionFeedbackResponse`) are updated accordingly.
+
+**Execution service wiring — `execution_service._capture_execution_feedback()`:**
+
+Two independent bug fixes were required before RCA could fire in production:
+
+- **Bug 1 — `error_type` dropped in `_execute_step()` legacy conversion**: The failed-result dict returned from `_execute_step()` omitted `error_type`, so `_capture_execution_feedback` always received `error_type=None`. Fixed by adding `"error_type": result.get("error_type")` to the failed-result return dict.
+
+- **Bug 2 — Azure `gpt-5.2` rejects `max_tokens`**: `_build_azure_request_candidates()` in `universal_llm.py` sent `max_tokens` for all models. Azure's `gpt-5.2` deployment requires `max_completion_tokens` instead. Fixed by branching on `model.startswith("gpt-5")` to select the correct field name.
+
+Once those bugs were fixed, the RCA call gate is:
+
+```python
+if error_type == "all_tiers_exhausted" and not is_otp_step(step_description):
+    rca_provider = self.three_tier_service.user_ai_config.get("provider", "openrouter")
+    rca_model    = self.three_tier_service.user_ai_config.get("model")
+    root_cause_analysis = await generate_root_cause_analysis(
+        page=page,
+        step_data={"instruction": step_description},
+        execution_history=tier_info or [],
+        error_type=error_type,
+        provider=rca_provider,
+        model=rca_model,
+    )
+```
+
+OTP digit steps are excluded because their failures carry timing-sensitive re-poll requirements that RCA cannot address.
+
+The provider and model are resolved from `self.three_tier_service.user_ai_config` (same configuration used by the execution engine itself) to avoid free-tier rate limits on the default OpenRouter model.
+
+**Dev server fix — `start_server.py`:**
+
+`watchfiles` (uvicorn `reload=True`) was watching all `.py` files by default, restarting the server whenever a test file was saved. This killed live executions mid-run. Fixed by passing `reload_dirs=["app"]` so only application code changes trigger a reload.
+
+**Frontend — `RootCauseAnalysisPanel.tsx` + `ExecutionProgressPage.tsx`:**
+
+`RootCauseAnalysisPanel` is a collapsible amber panel:
+- Renders nothing when `rootCauseAnalysis` is `null`, `undefined`, or an empty string.
+- Collapsed by default; header row shows `🔍 Root Cause Analysis` with a chevron toggle.
+- Expanded body renders the RCA text in an `<em>` italic block.
+
+`ExecutionProgressPage` fetches `feedbackService.getExecutionFeedback()` after loading execution detail, builds a `rcaByStepIndex: Record<number, string>` map keyed by 0-based `step_index`, and passes `rootCauseAnalysis={rcaByStepIndex[step.step_number - 1] ?? null}` to each `StepCard`. (`step_index` in feedback is 0-based; `step_number` in the step list is 1-based.)
+
+### Consequences
+
+**Positive**
+- QA engineers see a plain-English explanation directly below the failed step — no need to read stack traces.
+- Only fires on `all_tiers_exhausted` — zero LLM cost on Tier 1 or Tier 2 failures.
+- OTP steps are excluded — avoids spurious RCA for timing-sensitive re-poll failures.
+- LLM and DOM failures are both non-fatal — execution continues even if RCA generation fails.
+- DOM snapshot is capped server-side — no unbounded token cost even on large SPAs.
+- Uses the user's existing AI provider configuration — no new credentials or settings required.
+
+**Negative**
+- RCA adds one LLM call per `all_tiers_exhausted` step, increasing latency after already-failed steps. For Azure `gpt-5.2` this is typically 3–5 s.
+- LLM accuracy depends on prompt quality and the model's web-automation knowledge. Explanations are 2–3 sentences; they may be generic if the DOM snapshot does not contain the relevant element.
+- `max_tokens=256` cap keeps cost low but may truncate explanations for complex failures.
+- The amber panel is only shown on `ExecutionProgressPage`; the feedback viewer (`/executions/{id}/feedback`) does not yet surface it.
+
+**Alternatives Considered**
+- **Rule-based heuristic messages (no LLM)**: Fast and cheap but cannot handle the full variety of failure modes across arbitrary web applications.
+- **Fire RCA for all failure types**: Would add LLM cost to every Tier 1/2 failure; most Tier 1/2 failures are transient and already self-healed by the 3-tier cascade.
+- **Dedicated analysis agent (Phase 3)**: The correct long-term home; this feature is a lightweight precursor that uses the existing `UniversalLLMService` without a separate agent process.
+- **Real-time streaming in the UI**: Adds WebSocket complexity; polling the existing feedback endpoint on page load is sufficient for async diagnostics.
+
+### Related files
+
+- `backend/app/services/root_cause_analysis_service.py` — new service (`_cap_dom_snapshot`, `_build_rca_prompt`, `generate_root_cause_analysis`)
+- `backend/app/models/execution_feedback.py` — `root_cause_analysis = Column(Text, nullable=True)` added
+- `backend/app/schemas/execution_feedback.py` — `root_cause_analysis: Optional[str]` added to `ExecutionFeedbackCreate` and `ExecutionFeedbackResponse`
+- `backend/app/services/execution_service.py` — import, RCA call gate, and `error_type` propagation fix in `_execute_step()`
+- `backend/app/services/universal_llm.py` — `_build_azure_request_candidates()` uses `max_completion_tokens` for `gpt-5.x` models
+- `backend/start_server.py` — `reload_dirs=["app"]` to prevent test-file saves from restarting the server mid-execution
+- `backend/migrations/add_root_cause_analysis_column.py` — migration; already run ✅
+- `frontend/src/components/execution/RootCauseAnalysisPanel.tsx` — new collapsible amber panel component
+- `frontend/src/pages/ExecutionProgressPage.tsx` — fetches feedback, maps `step_index` → RCA, passes to `StepCard`
+- `frontend/src/services/feedbackService.ts` — `root_cause_analysis: string | null` added to `ExecutionFeedback` interface
+
+### Tests
+
+- `backend/tests/unit/test_root_cause_analysis.py` — 22 tests: `_cap_dom_snapshot` (5), `_build_rca_prompt` (7), `generate_root_cause_analysis` (10)
+- `backend/tests/integration/test_rca_execution.py` — 5 integration tests: end-to-end RCA flow, non-triggering error types, OTP exclusion, LLM failure resilience
+- `backend/tests/test_execution_service_three_tier_logging.py` — 1 regression test: `test_execute_step_preserves_error_type_for_failed_three_tier_results`
+- `backend/tests/unit/test_universal_llm_azure.py` — 1 regression test: `test_build_azure_request_candidates_uses_max_completion_tokens_for_gpt52`
+- `frontend/src/components/__tests__/ExecutionProgressPage.rca.test.tsx` — 8 frontend tests: panel renders/hides, expand/collapse, null guard, step-index mapping
+
+**Total: 29 backend + 8 frontend = 37 tests. 235 total frontend tests pass. No regression.**
+
+---
+
+## ADR-002-44: Re-Run from Failed Step — Session Snapshot Persistence and Resume Architecture
+
+### Context
+
+`execute_test()` always starts from `idx = 1`. For a 30-step checkout flow, a failure at step 24 forces re-running all 23 preceding steps (login, plan selection, cart, address) before reaching the failure point. Each full re-run costs 5–8 minutes in real test time.
+
+Feature A (ADR-002-43) identifies *why* a step failed. Feature B makes that insight actionable: the tester should be able to resume execution from any safe step, not from the beginning.
+
+### Decision
+
+**Part 1 — Session snapshot per passing step**
+
+After every passing step, `ExecutionService._save_step_snapshot()` calls the existing `export_profile_session()` method and persists the result to a new `step_session_snapshots` table via `save_step_session_snapshot()` (CRUD helper). The snapshot captures:
+
+- `cookies` — context-level cookies (from `page.context.cookies()`)
+- `localStorage` — via `page.evaluate()`
+- `sessionStorage` — via `page.evaluate()`
+- `exported_at` — ISO timestamp
+- `page_url` — `page.url` at snapshot time (used for re-navigation on resume)
+
+Snapshot save is **non-fatal**: exceptions are caught and logged as warnings; they never interrupt execution.
+
+**`step_session_snapshots` table design:**
+
+```sql
+CREATE TABLE step_session_snapshots (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    execution_id INTEGER NOT NULL,   -- no FK: snapshots from completed runs must outlive the execution row
+    step_number  INTEGER NOT NULL,   -- 1-based; snapshot taken *after* this step passed
+    page_url     TEXT,
+    session_data TEXT,               -- JSON: {cookies, localStorage, sessionStorage, exported_at}
+    created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX ix_step_session_snapshots_execution_id ON step_session_snapshots (execution_id);
+```
+
+`execution_id` is intentionally **not** a foreign key. Snapshots from prior completed executions must remain queryable even if the execution row is later pruned or the table is used across schema migrations.
+
+**Part 2 — Resume request parameters**
+
+`ExecutionStartRequest` gains two optional fields:
+
+| Field | Type | Constraint | Description |
+|-------|------|-----------|-------------|
+| `resume_from_execution_id` | `Optional[int]` | — | Source execution whose snapshot to restore |
+| `start_from_step` | `Optional[int]` | `ge=2` | 1-based step to resume from; minimum 2 (resuming from step 1 = full run) |
+
+Both must be supplied together; supplying only one is a no-op (treated as a full run).
+
+**Part 3 — Resume guard (`resume_guard.py`)**
+
+`validate_resume_point(db, resume_from_execution_id, start_from_step, steps)` is called in the API endpoint **before** the execution is queued. It raises HTTP 422 for two cases:
+
+1. **Failed source step**: any `TestExecutionStep` in `resume_from_execution_id` with `step_number < start_from_step` and result `FAIL` or `ERROR`.  
+   *"Cannot resume: step X failed in the source execution. Choose a safe resume point."*
+
+2. **OTP step in skipped range**: any step in positions `0..start_from_step-2` (0-based) of the incoming step list matches `is_otp_step()`.  
+   *"Cannot skip OTP steps — the OTP from the original run is consumed. Trigger a new run from before the OTP step."*
+
+**Part 4 — Resume execution flow**
+
+Resume params are stored in `execution.trigger_details` JSON alongside existing profile data. `queue_manager.py` extracts them and passes them to `execute_test()` as `resume_from_execution_id` and `start_from_step`.
+
+Inside `execute_test()`:
+
+```python
+is_resume = resume_from_execution_id is not None and start_from_step is not None
+if is_resume:
+    snapshot = get_step_session_snapshot(db, resume_from_execution_id, start_from_step - 1)
+    if snapshot:
+        await self._apply_resume_snapshot(page, snapshot)
+    self._create_skip_records(db, execution.id, steps, start_from_step, resume_from_execution_id)
+
+idx = start_from_step if is_resume else 1
+skipped_steps = (start_from_step - 1) if is_resume else 0
+```
+
+`_apply_resume_snapshot(page, snapshot)`:
+1. `_apply_profile_cookies(page, session_data)` — injects cookies into the browser context
+2. `page.goto(snapshot.page_url, timeout=30000, wait_until="domcontentloaded")` — navigates to the saved page
+3. `_apply_profile_storage(page, session_data)` — injects localStorage + sessionStorage via `page.evaluate()`
+
+`_create_skip_records(db, execution_id, steps, start_from_step, resumed_from_execution_id)`:
+- Creates `TestExecutionStep` rows with `result=ExecutionResult.SKIP` for all steps 1..start_from_step-1.
+- Description: `"(skipped — resumed from step {N} of execution {X}) {original_step_text}"`.
+
+`skipped_steps` is passed to `complete_execution()` (new parameter) so the execution summary accurately reflects how many steps were skipped.
+
+**Part 5 — Frontend `ReRunFromStepButton`**
+
+`ReRunFromStepButton` is a new component rendered inside `StepCard` in `ExecutionProgressPage`.
+
+- **Visibility**: renders only when `stepResult === 'fail'` or `stepResult === 'error'`; returns `null` otherwise.
+- **Confirmation dialog**: `role="dialog"` modal showing the source execution ID and step number. "Cancel" closes without API call. "Confirm re-run" calls `executionService.startExecution(testCaseId, { ..., resume_from_execution_id, start_from_step })`.
+- **Post-confirm navigation**: on success, navigates to `/executions/{newExecutionId}`.
+- **Error state**: API errors are displayed inside the dialog; the dialog stays open so the user can read the message (e.g., the guard rejection reason).
+
+### Consequences
+
+**Positive**
+- Reduces re-run time from 5–8 minutes (full flow) to ~30 seconds (resume from snapshot) for complex multi-step tests.
+- Snapshot save is zero-cost when resuming is not needed — it only adds one `export_profile_session()` call per passing step.
+- Guard ensures the user cannot resume from a logically inconsistent state (failed source steps, consumed OTP).
+- OTP guard prevents silent failures where the re-run would attempt to re-enter a one-time code that is no longer valid.
+- The `ReRunFromStepButton` is co-located with the RCA panel (ADR-002-43) — the user sees *why* the step failed directly above the *resume from here* button.
+
+**Negative**
+- `step_session_snapshots` grows indefinitely — a background TTL cleanup job (e.g. 30-day expiration) is a known follow-up item.
+- For SPAs that rely on non-serialisable in-memory state (e.g., Vuex/Redux stores that are not reflected in localStorage), re-navigation + storage injection may not fully restore the expected application state. The guard does not yet detect this case.
+- Snapshot injection is only wired in `execution_service.py` (Playwright/3-tier path). The Stagehand path (`stagehand_service.py`) does not yet support session snapshot persistence or resume.
+- `execution_id` in `step_session_snapshots` is denormalized (no FK). This is intentional but means orphaned rows are not automatically cleaned up if the related execution is deleted.
+
+**Alternatives Considered**
+
+| Option | Verdict | Reason |
+|--------|---------|--------|
+| Re-execute all prior steps silently (no snapshot, just re-run fast) | ❌ Rejected | Cannot guarantee idempotent side effects (form submissions, emails sent, charges triggered) |
+| Store snapshot only at failure point | ❌ Rejected | Only useful if failure is at the same step; provides no value for exploratory resume |
+| Checkpoint only at explicit "resume point" annotations in test steps | ❌ Rejected | Requires test authoring changes; snapshots after every passing step is zero-config |
+| Full browser profile clone (CDP persistent context) | ❌ Rejected | Heavyweight; requires filesystem management; existing `export_profile_session()` is sufficient |
+| Resume via `browser_profile_data` pass-through (existing mechanism) | Partially compatible | `browser_profile_data` is applied before the initial `page.goto()`; the resume path needs `page_url` from the snapshot to navigate to the correct page post-injection |
+
+### Related files
+
+- `backend/app/models/test_execution.py` — `StepSessionSnapshot` ORM model appended
+- `backend/migrations/add_step_session_snapshots_table.py` — migration; run ✅
+- `backend/app/crud/step_session_snapshot.py` — `save_step_session_snapshot`, `get_step_session_snapshot`
+- `backend/app/services/resume_guard.py` — `validate_resume_point()`
+- `backend/app/schemas/test_execution.py` — `resume_from_execution_id` + `start_from_step` on `ExecutionStartRequest`
+- `backend/app/services/execution_service.py` — `_save_step_snapshot`, `_apply_resume_snapshot`, `_create_skip_records`, resume branch in `execute_test()`
+- `backend/app/crud/test_execution.py` — `complete_execution()` gains `skipped_steps` parameter
+- `backend/app/api/v1/endpoints/executions.py` — `validate_resume_point` guard + resume params in `trigger_details`
+- `backend/app/services/queue_manager.py` — extracts + forwards resume params to `execute_test()`
+- `frontend/src/types/execution.ts` — `resume_from_execution_id` + `start_from_step` on `ExecutionStartRequest`
+- `frontend/src/components/execution/ReRunFromStepButton.tsx` — new component
+- `frontend/src/pages/ExecutionProgressPage.tsx` — `StepCard` wires `ReRunFromStepButton`
+
+### Tests
+
+- `backend/tests/unit/test_resume_execution.py` — 20 unit tests: `StepSessionSnapshot` model columns (8), `ExecutionStartRequest` schema fields (3), CRUD helpers (3), `validate_resume_point` guards (3), `_save_step_snapshot` (2), `_apply_resume_snapshot` (2), `_create_skip_records` (2) — *(note: 7 tests in classes, total 20)*
+- `backend/tests/integration/test_resume_e2e.py` — 13 integration tests: CRUD with real in-memory SQLite (2), snapshot save after passing step (2), `_apply_resume_snapshot` full inject cycle (1), guard integration (3), SKIP record counts and result values (2) — *(note: distributed across test classes, total 13)*
+- `frontend/src/components/__tests__/ReRunFromStepButton.test.tsx` — 10 frontend tests: visibility (4), confirmation dialog (4), API integration (2)
+
+**Total: 33 backend + 10 frontend = 43 new tests. 245 total frontend tests pass. No regression.**
+

@@ -254,7 +254,7 @@ class StagehandExecutionService:
                         user_config.get("max_tokens", 4096),
                     )
                 
-            else:  # default to openrouter
+            elif model_provider == "openrouter":  # explicit openrouter
                 # Use OpenRouter (original behavior)
                 openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
                 # Use user's model selection if available, otherwise use .env default
@@ -281,6 +281,72 @@ class StagehandExecutionService:
                         user_config.get("temperature", 0.7),
                         user_config.get("max_tokens", 4096),
                     )
+
+            elif model_provider == "local_vllm":
+                # Sprint 10.13: On-premises vLLM servers — OpenAI-compatible endpoints.
+                # Each model has its own base URL; LiteLLM routes via openai/ prefix.
+                local_model = (user_config.get("model") if user_config else None) or "DeepSeek-V4-Flash-4bit"
+                local_api_key = os.getenv("LOCAL_VLLM_API_KEY", "local")
+
+                # Resolve per-model endpoint from env (can be overridden in .env)
+                _endpoint_map = {
+                    "openai/gpt-oss-20b": os.getenv(
+                        "LOCAL_VLLM_GPT_OSS_20B_ENDPOINT",
+                        "http://192.168.206.190:8000/openai--gpt-oss-20b/v1",
+                    ),
+                    "RedHatAI/Qwen3.6-35B-A3B-NVFP4": os.getenv(
+                        "LOCAL_VLLM_QWEN3_35B_ENDPOINT",
+                        "http://192.168.206.190:8000/redhatai--qwen3.6-35b-a3b-nvfp4/v1",
+                    ),
+                    "DeepSeek-V4-Flash-4bit": os.getenv(
+                        "LOCAL_VLLM_DEEPSEEK_ENDPOINT",
+                        "http://192.168.206.164/v1",
+                    ),
+                }
+                local_endpoint = _endpoint_map.get(local_model, os.getenv("LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164/v1"))
+
+                # LiteLLM requires OPENAI_API_BASE + openai/<model> for custom endpoints.
+                # Clear Azure env vars so LiteLLM does not mis-route.
+                os.environ["OPENAI_API_BASE"] = local_endpoint.rstrip("/")
+                os.environ["OPENAI_API_KEY"] = local_api_key
+                os.environ.pop("AZURE_API_BASE", None)
+                os.environ.pop("AZURE_API_KEY", None)
+                os.environ.pop("AZURE_API_VERSION", None)
+
+                config = StagehandConfig(
+                    env="LOCAL",
+                    headless=self.headless,
+                    verbose=1,
+                    model_name=f"openai/{local_model}",
+                    model_api_key=local_api_key,
+                    local_browser_launch_options=launch_options,
+                )
+                logger.info(
+                    "StagehandExecutionService: Using local vLLM model=%s endpoint=%s",
+                    local_model,
+                    local_endpoint,
+                )
+                if user_config:
+                    logger.debug(
+                        "StagehandExecutionService: User config temp=%s max_tokens=%s",
+                        user_config.get("temperature", 0.7),
+                        user_config.get("max_tokens", 4096),
+                    )
+
+            else:  # fallback to openrouter for any unrecognised provider
+                openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+                openrouter_model = user_config.get("model") if user_config else os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct")
+                if openrouter_model and openrouter_model.startswith("openrouter/"):
+                    openrouter_model = openrouter_model.split("/", 1)[1]
+                config = StagehandConfig(
+                    env="LOCAL",
+                    headless=self.headless,
+                    verbose=1,
+                    model_name=f"openrouter/{openrouter_model}",
+                    model_api_key=openrouter_key,
+                    local_browser_launch_options=launch_options,
+                )
+                logger.info(f"StagehandExecutionService: Fallback to OpenRouter with model: {openrouter_model}")
 
             
             logger.info(
@@ -397,13 +463,53 @@ class StagehandExecutionService:
                     local_browser_launch_options=launch_options
                 )
                 print(f"[DEBUG] ✅ CDP connection with Azure OpenAI deployment: {azure_model}")
-                
-            else:  # openrouter
+
+            elif model_provider == "local_vllm":
+                # Sprint 10.13: On-premises vLLM — OpenAI-compatible endpoints via CDP
+                local_model = (user_config.get("model") if user_config else None) or "DeepSeek-V4-Flash-4bit"
+                local_api_key = os.getenv("LOCAL_VLLM_API_KEY", "local")
+
+                _endpoint_map = {
+                    "openai/gpt-oss-20b": os.getenv(
+                        "LOCAL_VLLM_GPT_OSS_20B_ENDPOINT",
+                        "http://192.168.206.190:8000/openai--gpt-oss-20b/v1",
+                    ),
+                    "RedHatAI/Qwen3.6-35B-A3B-NVFP4": os.getenv(
+                        "LOCAL_VLLM_QWEN3_35B_ENDPOINT",
+                        "http://192.168.206.190:8000/redhatai--qwen3.6-35b-a3b-nvfp4/v1",
+                    ),
+                    "DeepSeek-V4-Flash-4bit": os.getenv(
+                        "LOCAL_VLLM_DEEPSEEK_ENDPOINT",
+                        "http://192.168.206.164/v1",
+                    ),
+                }
+                local_endpoint = _endpoint_map.get(
+                    local_model,
+                    os.getenv("LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164/v1"),
+                )
+
+                os.environ["OPENAI_API_BASE"] = local_endpoint.rstrip("/")
+                os.environ["OPENAI_API_KEY"] = local_api_key
+                os.environ.pop("AZURE_API_BASE", None)
+                os.environ.pop("AZURE_API_KEY", None)
+                os.environ.pop("AZURE_API_VERSION", None)
+
+                config = StagehandConfig(
+                    env="LOCAL",
+                    headless=False,
+                    verbose=1,
+                    model_name=f"openai/{local_model}",
+                    model_api_key=local_api_key,
+                    local_browser_launch_options=launch_options,
+                )
+                print(f"[DEBUG] ✅ CDP connection with local vLLM model={local_model} endpoint={local_endpoint}")
+
+            else:  # openrouter / fallback
                 openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
                 openrouter_model = user_config.get("model") if user_config else os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct")
                 if openrouter_model and openrouter_model.startswith("openrouter/"):
                     openrouter_model = openrouter_model.split("/", 1)[1]
-                
+
                 config = StagehandConfig(
                     env="LOCAL",  # Use LOCAL env with cdpUrl to connect to existing browser
                     headless=False,  # Browser already running
@@ -413,7 +519,7 @@ class StagehandExecutionService:
                     local_browser_launch_options=launch_options
                 )
                 print(f"[DEBUG] ✅ CDP connection with OpenRouter: {openrouter_model}")
-            
+
             self.stagehand = Stagehand(config)
             await self.stagehand.init()
             self.page = self.stagehand.page
@@ -590,17 +696,53 @@ class StagehandExecutionService:
                     local_browser_launch_options=launch_options
                 )
                 print(f"[DEBUG] ✅ Using Azure OpenAI with deployment: {azure_model} (Debug Mode)")
-                
-            else:  # OpenRouter
+
+            elif model_provider == "local_vllm":
+                # Sprint 10.13: On-premises vLLM — debug persistent session
+                local_model = (user_config.get("model") if user_config else None) or "DeepSeek-V4-Flash-4bit"
+                local_api_key = os.getenv("LOCAL_VLLM_API_KEY", "local")
+
+                _endpoint_map = {
+                    "openai/gpt-oss-20b": os.getenv(
+                        "LOCAL_VLLM_GPT_OSS_20B_ENDPOINT",
+                        "http://192.168.206.190:8000/openai--gpt-oss-20b/v1",
+                    ),
+                    "RedHatAI/Qwen3.6-35B-A3B-NVFP4": os.getenv(
+                        "LOCAL_VLLM_QWEN3_35B_ENDPOINT",
+                        "http://192.168.206.190:8000/redhatai--qwen3.6-35b-a3b-nvfp4/v1",
+                    ),
+                    "DeepSeek-V4-Flash-4bit": os.getenv(
+                        "LOCAL_VLLM_DEEPSEEK_ENDPOINT",
+                        "http://192.168.206.164/v1",
+                    ),
+                }
+                local_endpoint = _endpoint_map.get(
+                    local_model,
+                    os.getenv("LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164/v1"),
+                )
+
+                os.environ["OPENAI_API_BASE"] = local_endpoint.rstrip("/")
+                os.environ["OPENAI_API_KEY"] = local_api_key
+                os.environ.pop("AZURE_API_BASE", None)
+                os.environ.pop("AZURE_API_KEY", None)
+                os.environ.pop("AZURE_API_VERSION", None)
+
+                config = StagehandConfig(
+                    env="LOCAL",
+                    headless=False,
+                    verbose=1,
+                    model_name=f"openai/{local_model}",
+                    model_api_key=local_api_key,
+                    local_browser_launch_options=launch_options,
+                )
+                print(f"[DEBUG] ✅ Using local vLLM model={local_model} endpoint={local_endpoint} (Debug Mode)")
+
+            else:  # openrouter / fallback
                 openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
                 openrouter_model = user_config.get("model") if user_config else os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct")
-                
-                # Strip provider prefix from model if present (e.g., "openrouter/model-name" -> "model-name")
-                # Note: OpenRouter models often include org/model format (e.g., "meta-llama/llama-3.3-70b")
-                # Only strip if it starts with "openrouter/"
                 if openrouter_model and openrouter_model.startswith("openrouter/"):
                     openrouter_model = openrouter_model.split("/", 1)[1]
-                
+
                 config = StagehandConfig(
                     env="LOCAL",
                     headless=False,  # Always visible for debug mode
@@ -610,7 +752,7 @@ class StagehandExecutionService:
                     local_browser_launch_options=launch_options
                 )
                 print(f"[DEBUG] ✅ Using OpenRouter with model: {openrouter_model} (Debug Mode)")
-            
+
             print(f"[DEBUG] Persistent browser settings: headless=False (debug mode), devtools={devtools}")
             
             self.stagehand = Stagehand(config)

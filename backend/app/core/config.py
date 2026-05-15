@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     AZURE_OPENAI_GPT52_API_KEY: str | None = None    # Defaults to AZURE_OPENAI_API_KEY when not set
     
     # Model Provider Selection (new unified approach)
-    # Options: "openrouter", "google", "cerebras", "azure"
+    # Options: "openrouter", "google", "cerebras", "azure", "local_vllm"
     MODEL_PROVIDER: str = "openrouter"  # Default provider
     
     # OpenAI API compatibility (for Stagehand/LiteLLM)
@@ -76,6 +76,13 @@ class Settings(BaseSettings):
     # Sprint 10.10: IMAP Email OTP polling
     EMAIL_OTP_POLL_TIMEOUT: int = 60    # seconds to wait for OTP email
     EMAIL_OTP_POLL_INTERVAL: int = 3    # seconds between polls
+
+    # Sprint 10.13: Local vLLM / on-premises OpenAI-compatible models
+    # Each model has its own endpoint; no auth key required by default (set to "local" or a real key)
+    LOCAL_VLLM_GPT_OSS_20B_ENDPOINT: str = "http://192.168.206.190:8000/openai--gpt-oss-20b/v1"
+    LOCAL_VLLM_QWEN3_35B_ENDPOINT: str = "http://192.168.206.190:8000/redhatai--qwen3.6-35b-a3b-nvfp4/v1"
+    LOCAL_VLLM_DEEPSEEK_ENDPOINT: str = "http://192.168.206.164/v1"
+    LOCAL_VLLM_API_KEY: str = "local"   # shared placeholder; vLLM ignores auth by default
 
     model_config = SettingsConfigDict(
         env_file=".env",

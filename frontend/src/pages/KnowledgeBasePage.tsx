@@ -103,9 +103,9 @@ export const KnowledgeBasePage: React.FC = () => {
   };
 
   const handleFileSelect = (file: File) => {
-    // Check file size (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      setUploadError('File size must be less than 10MB');
+    // Check file size (max 25MB)
+    if (file.size > 25 * 1024 * 1024) {
+      setUploadError('File size must be less than 25MB');
       return;
     }
 
@@ -474,7 +474,7 @@ export const KnowledgeBasePage: React.FC = () => {
                         Drag and drop a file here, or click to select
                       </p>
                       <p className="text-xs text-gray-500">
-                        Supported formats: PDF, DOCX, TXT (Max 10MB)
+                        Supported formats: PDF, DOCX, TXT (Max 25MB)
                       </p>
                       <input
                         type="file"

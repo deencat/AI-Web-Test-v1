@@ -63,6 +63,11 @@ class ExecutionFeedback(Base):
     anomaly_score = Column(Float, nullable=True)  # 0.0-1.0 anomaly confidence
     anomaly_type = Column(String(100), nullable=True)  # performance, flaky, environment, etc.
     
+    # AI-generated failure root cause analysis (Sprint 10.12)
+    # Populated only when error_type == "all_tiers_exhausted".
+    # LLM synthesises per-tier errors + page URL + DOM snapshot into plain English.
+    root_cause_analysis = Column(Text, nullable=True)
+
     # Metadata
     notes = Column(Text, nullable=True)  # Human-added notes about the failure
     tags = Column(JSON, nullable=True)  # Tags for categorization

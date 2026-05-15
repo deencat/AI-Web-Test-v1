@@ -15,13 +15,13 @@ class ModelOption(BaseModel):
 class UserSettingBase(BaseModel):
     """Base schema for user settings."""
     # Test Generation Configuration
-    generation_provider: str = Field(..., description="AI provider for test generation (google, cerebras, openrouter, azure)")
+    generation_provider: str = Field(..., description="AI provider for test generation (google, cerebras, openrouter, azure, local_vllm)")
     generation_model: str = Field(..., description="AI model for test generation")
     generation_temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="Temperature for generation (0.0-2.0)")
     generation_max_tokens: int = Field(default=4096, ge=100, le=32000, description="Max tokens for generation")
     
     # Test Execution Configuration
-    execution_provider: str = Field(..., description="AI provider for test execution (google, cerebras, openrouter, azure)")
+    execution_provider: str = Field(..., description="AI provider for test execution (google, cerebras, openrouter, azure, local_vllm)")
     execution_model: str = Field(..., description="AI model for test execution")
     execution_temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="Temperature for execution (0.0-2.0)")
     execution_max_tokens: int = Field(default=4096, ge=100, le=32000, description="Max tokens for execution")
@@ -42,7 +42,7 @@ class UserSettingBase(BaseModel):
 
     @validator('generation_provider', 'execution_provider')
     def validate_provider(cls, v):
-        allowed = ['google', 'cerebras', 'openrouter', 'azure']
+        allowed = ['google', 'cerebras', 'openrouter', 'azure', 'local_vllm']
         if v not in allowed:
             raise ValueError(f"Provider must be one of: {allowed}")
         return v
@@ -55,7 +55,7 @@ class UserSettingBase(BaseModel):
     def validate_agent_provider(cls, v):
         """Validate per-agent provider; None is allowed (means use default)."""
         if v is not None:
-            allowed = ['google', 'cerebras', 'openrouter', 'azure']
+            allowed = ['google', 'cerebras', 'openrouter', 'azure', 'local_vllm']
             if v not in allowed:
                 raise ValueError(f"Provider must be one of: {allowed}")
         return v
@@ -100,7 +100,7 @@ class UserSettingUpdate(BaseModel):
     @validator('generation_provider', 'execution_provider')
     def validate_provider(cls, v):
         if v is not None:
-            allowed = ['google', 'cerebras', 'openrouter', 'azure']
+            allowed = ['google', 'cerebras', 'openrouter', 'azure', 'local_vllm']
             if v not in allowed:
                 raise ValueError(f"Provider must be one of: {allowed}")
         return v
@@ -113,7 +113,7 @@ class UserSettingUpdate(BaseModel):
     def validate_agent_provider(cls, v):
         """Validate per-agent provider; None is allowed (means use default)."""
         if v is not None:
-            allowed = ['google', 'cerebras', 'openrouter', 'azure']
+            allowed = ['google', 'cerebras', 'openrouter', 'azure', 'local_vllm']
             if v not in allowed:
                 raise ValueError(f"Provider must be one of: {allowed}")
         return v

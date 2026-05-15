@@ -198,6 +198,16 @@ class ExecutionStartRequest(BaseModel):
         None,
         description="HTTP Basic Auth credentials for the execution run (not stored)"
     )
+    # Sprint 10.12 Feature B: Re-Run from Failed Step
+    resume_from_execution_id: Optional[int] = Field(
+        None,
+        description="Source execution ID to load the session snapshot from"
+    )
+    start_from_step: Optional[int] = Field(
+        None,
+        ge=2,
+        description="1-based step index to resume from (minimum 2; steps before this are SKIP records)"
+    )
 
 
 class ExecutionStartResponse(BaseModel):

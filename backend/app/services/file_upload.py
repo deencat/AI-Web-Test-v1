@@ -13,7 +13,7 @@ class FileUploadService:
     
     def __init__(self):
         self.upload_dir = Path("uploads/kb")
-        self.max_size = 10 * 1024 * 1024  # 10MB
+        self.max_size = 25 * 1024 * 1024  # 25MB
         self.allowed_types = {
             "application/pdf": FileType.PDF,
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document": FileType.DOCX,
