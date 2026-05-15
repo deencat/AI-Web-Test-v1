@@ -21,6 +21,7 @@
 9. [Convenience: Quick Test Generation (LLM-only, no browser crawl)](#9-convenience-quick-test-generation-llm-only-no-browser-crawl)
 10. [Error Codes](#10-error-codes)
 11. [Common Flows for ReqIQ](#11-common-flows-for-reqiq)
+12. [ReqIQ Proxy Endpoints](#12-reqiq-proxy-endpoints)
 
 ---
 
@@ -69,7 +70,7 @@ This is the exact sequence Hermes runs for each QA cycle. Each agent calls a spe
 
 | # | Hermes Agent | Calls | Endpoint | Purpose |
 |---|---|---|---|---|
-| 1 | `qa-requirements` | **ReqIQ** `POST /api/v1/query` | ReqIQ internal | Compiles requirement docs into wiki + completeness score |
+| 1 | `qa-requirements` | **ReqIQ** `POST /api/v1/projects/{id}/rag/query` | ReqIQ internal | RAG Q&A over uploaded source docs — returns answer + citations |
 | 2 | `qa-test-gen` | **AI Web Test** `POST /api/v2/crawl-and-save-test` | Section 3 below | Crawls the target URL, saves test case → returns `test_case_id` |
 | 3 | `qa-dispatcher` | **AI Web Test** `POST /api/v1/executions/tests/{id}/execute` | Section 7 below | Executes the saved test case → returns `execution_id` |
 | 4 | `qa-reporter` | **AI Web Test** `GET /api/v1/executions/{id}/step-results` | Section 8 below | Downloads results + AI RCA, sends Telegram summary |
@@ -84,10 +85,10 @@ This is the exact sequence Hermes runs for each QA cycle. Each agent calls a spe
 |---|---|---|---|
 | AI Web Test API | Test case DB + executor | `http://localhost:8000` | `http://192.168.1.101:8000` |
 | AI Web Test UI | Dashboard | `http://localhost:5173` | `http://192.168.1.101:5173` |
-| ReqIQ API | Requirements hub | `http://localhost:8090` | `http://192.168.1.101:8090` |
-| ReqIQ UI | Requirements dashboard | `http://localhost:3000` | `http://192.168.1.101:3000` |
+| ReqIQ API | Requirements hub | `http://localhost:3001` | `http://192.168.1.100:3001` |
+| ReqIQ UI | Requirements dashboard | `http://localhost:3000` | `http://192.168.1.100:3000` |
 
-All API calls in this guide target the **AI Web Test** base URL (`port 8000`). ReqIQ's own internal endpoints (`port 8090`) are not documented here.
+All API calls in Sections 1–11 target the **AI Web Test** base URL (`port 8000`). **Section 12** below documents the ReqIQ proxy endpoints — AI Web Test backend calls ReqIQ on behalf of users so they never need to access ReqIQ directly.
 
 ---
 
@@ -939,3 +940,215 @@ where to stop — the browser follows it literally.
 - **CORS origins allowed:** `http://localhost:5173` and `http://localhost:3000` by default — update `BACKEND_CORS_ORIGINS` in the server `.env` if ReqIQ is hosted on a different origin
 - **Full machine-readable spec:** `backend/openapi_spec.json` — import into Postman, Insomnia, or any OpenAPI-compatible tool
 - **All timestamps** are ISO 8601 UTC (`2026-05-14T09:00:00Z`)
+
+---
+
+## 12. ReqIQ Proxy Endpoints
+
+AI Web Test acts as a transparent proxy to ReqIQ. Users and agents call these endpoints on AI Web Test (port 8000) — the server forwards the request to ReqIQ (`localhost:3001`) using a service account, and returns the result. **Users never need to know ReqIQ exists or what port it runs on.**
+
+> All endpoints below require `Authorization: Bearer <AI_Web_Test_token>`.  
+> The server-side `.env` must have `REQIQ_URL=http://localhost:3001` and `REQIQ_SERVICE_TOKEN=<jwt from POST /api/v1/login>`.
+
+---
+
+### 12.1 List Projects
+
+```
+GET /api/v1/requirements/projects
+Authorization: Bearer <token>
+```
+
+Proxies to ReqIQ `GET /api/v1/projects`.
+
+**Response 200:**
+```json
+[
+  { "id": "clx1234abcd", "name": "Three-HK", "createdAt": "2026-01-10T08:00:00Z" },
+  { "id": "clx5678efgh", "name": "Internal Tools", "createdAt": "2026-02-01T08:00:00Z" }
+]
+```
+
+Note: `id` is a CUID string (not an integer). Use this `id` as `projectId` in all subsequent calls.
+
+---
+
+### 12.2 List Requirements for a Project
+
+```
+GET /api/v1/requirements/{projectId}/requirements
+Authorization: Bearer <token>
+```
+
+Proxies to ReqIQ `GET /api/v1/projects/{projectId}/requirements`.
+
+**Response 200 (array):**
+```json
+[
+  {
+    "id": "req_abc123",
+    "title": "5G Voucher Plan Purchase",
+    "body": "## Acceptance Criteria\n1. User can navigate to 5G Monthly Plan...",
+    "state": "BASELINE",
+    "createdAt": "2026-03-15T09:00:00Z",
+    "updatedAt": "2026-05-01T14:00:00Z"
+  }
+]
+```
+
+`state` values: `DRAFT` → `REVIEWED` → `BASELINE` (approved, use for test gen) → `SUPERSEDED`
+
+---
+
+### 12.3 RAG Query (Ask a Question About Requirements)
+
+This is the main way to retrieve requirement context for test generation. Ask a question in plain language; ReqIQ searches all uploaded source documents and returns an LLM-composed answer with citations.
+
+```
+POST /api/v1/requirements/{projectId}/query
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "query": "What is the acceptance criteria for the 5G Voucher Plan purchase flow?",
+  "limit": 8
+}
+```
+
+Proxies to ReqIQ `POST /api/v1/projects/{projectId}/rag/query`.
+
+**Response 200:**
+```json
+{
+  "content": "The 5G Voucher Plan purchase flow requires: 1. User must be able to navigate to 5G Monthly Plan section. 2. User can select the $288 voucher plan. 3. User completes subscription by choosing new or existing mobile number...",
+  "citations": [
+    { "sourceFilename": "5G_Plan_SRS_v2.docx", "chunkIndex": 3, "score": 0.91 },
+    { "sourceFilename": "UAT_Acceptance_Criteria.pdf", "chunkIndex": 7, "score": 0.87 }
+  ],
+  "suggestedTests": [
+    {
+      "title": "5G $288 Voucher Plan — new subscriber",
+      "steps": ["Navigate to 5G Monthly Plan", "Select $288 plan", "Click Subscribe Now", "Choose New mobile number", "Choose Physical SIM"],
+      "oracle": "SIM Card Setting page displayed",
+      "automation": { "viable": true }
+    }
+  ]
+}
+```
+
+> **Key field:** `suggestedTests[]` — if ReqIQ's IQ pipeline is active, this array contains LLM-generated test step suggestions ready to pass directly to `qa-test-gen` as `test_instructions`. No LLM extraction needed.
+
+---
+
+### 12.4 Upload a Source Document
+
+Allows QA engineers to upload requirement documents directly from the AI Web Test UI — proxied to ReqIQ's document store.
+
+```
+POST /api/v1/requirements/{projectId}/sources/upload
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+
+**Form fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `file` | binary | One or more files. Accepted: DOCX, PDF, MD, TXT, PPTX, PNG. Max size: `REQIQ_MAX_UPLOAD_BYTES` (default 25MB). |
+
+Multiple files in one request are supported (repeat the `file` field).
+
+Proxies to ReqIQ `POST /api/v1/projects/{projectId}/sources/upload`.
+
+**Response 201:**
+```json
+{
+  "projectId": "clx1234abcd",
+  "uploadedCount": 2,
+  "rejectedCount": 0,
+  "uploaded": [
+    { "id": "src_001", "originalFilename": "5G_Plan_SRS_v2.docx", "status": "processing" },
+    { "id": "src_002", "originalFilename": "UAT_Acceptance_Criteria.pdf", "status": "processing" }
+  ],
+  "rejected": []
+}
+```
+
+> After upload, ReqIQ processes and embeds the file automatically. The RAG query endpoint (`12.3`) will include the new document once `status` transitions from `processing` to `ready` (typically < 60 seconds).
+
+---
+
+### 12.5 List Source Documents
+
+```
+GET /api/v1/requirements/{projectId}/sources
+Authorization: Bearer <token>
+```
+
+Proxies to ReqIQ `GET /api/v1/projects/{projectId}/sources`.
+
+Returns the list of uploaded documents with their processing status.
+
+---
+
+### 12.6 Generate Suggested Tests from a Requirement (LLM)
+
+Triggers ReqIQ's LLM pipeline to generate 1–5 candidate test cases from a specific requirement. Returns structured test steps ready to pass to `crawl-and-save-test`.
+
+```
+POST /api/v1/requirements/{projectId}/requirements/{requirementId}/suggest-tests
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "maxTests": 3,
+  "hints": "Focus on the happy path and the SIM selection step"
+}
+```
+
+Proxies to ReqIQ `POST /api/v1/projects/{projectId}/suggested-tests/generate` with `{ requirementId, maxTests, hints }`.
+
+**Response 200:**
+```json
+{
+  "created": [
+    {
+      "id": "st_001",
+      "title": "5G $288 Voucher — new subscriber happy path",
+      "payload": {
+        "preconditions": ["User has a valid My3 account"],
+        "steps": [
+          { "action": "Navigate to 5G Monthly Plan", "expected": "Plan list page visible" },
+          { "action": "Select $288 Voucher plan", "expected": "Plan highlighted" },
+          { "action": "Click Subscribe Now", "expected": "T&C modal appears" },
+          { "action": "Agree to T&C", "expected": "Service Subscription options shown" },
+          { "action": "Choose New mobile number + Physical SIM", "expected": "SIM Card Setting page displayed" }
+        ],
+        "oracle": "SIM Card Setting page is displayed. No SIM fields are submitted.",
+        "automation": { "viable": true, "markers": ["e2e", "happy-path"] }
+      }
+    }
+  ],
+  "errors": [],
+  "model": "gpt-4o-mini"
+}
+```
+
+The `steps[]` array maps directly to `user_instruction` in `crawl-and-save-test` — join them with `\n` and append `STOP when {oracle}` as the final instruction.
+
+---
+
+### 12.7 Environment Variables (AI Web Test `.env`)
+
+```bash
+# ReqIQ service account (server-side only — never exposed to browser)
+REQIQ_URL=http://localhost:3001
+REQIQ_SERVICE_EMAIL=service@reqiq.internal
+REQIQ_SERVICE_PASSWORD=your-service-account-password
+# Or store the pre-issued JWT directly:
+# REQIQ_SERVICE_TOKEN=eyJhbGci...
+```

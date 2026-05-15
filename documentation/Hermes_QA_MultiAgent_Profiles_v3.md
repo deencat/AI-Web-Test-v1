@@ -1,6 +1,6 @@
 # Hermes Agent — QA Multi-Agent Profiles (v2)
 ### Redesigned for ReqIQ Integration
-**Version:** 2.2 | **Date:** 2026-05-15
+**Version:** 2.3 | **Date:** 2026-05-15
 
 ---
 
@@ -128,7 +128,7 @@ POST http://node1:8080/hermes/qa-manager/message
   "project": "Three-HK", "feature": "5G Voucher Plan Purchase",
   "trigger_type": "reqiq_compile_complete",
   "completeness_score": 87,
-  "wiki_url": "http://localhost:8090/api/v1/wiki/5g-voucher-plan" }
+  "wiki_url": "http://localhost:3001/api/v1/projects/{projectId}/requirements/{requirementId}" }
 ```
 
 ---
@@ -282,26 +282,34 @@ COMMUNICATION STYLE:
 ```yaml
 # ~/.hermes/profiles/qa-manager/mcp_tools.yaml
 tools:
-  reqiq_query:
+  reqiq_rag_query:
     type: http
     method: POST
-    url: "http://localhost:8090/api/v1/query"
+    url: "http://localhost:3001/api/v1/projects/{projectId}/rag/query"
     headers:
       Authorization: "Bearer ${REQIQ_API_KEY}"
-    description: "Query ReqIQ for compiled requirements of a specific feature"
+    description: "RAG Q&A over project sources — returns answer + citations. Use query field with feature name or acceptance criteria."
 
-  reqiq_feature_list:
+  reqiq_projects_list:
     type: http
     method: GET
-    url: "http://localhost:8090/api/v1/projects/{project}/features"
+    url: "http://localhost:3001/api/v1/projects"
     headers:
       Authorization: "Bearer ${REQIQ_API_KEY}"
-    description: "List all features and completeness scores for a project"
+    description: "List all projects in ReqIQ for this tenant — returns id, name, tenantId"
+
+  reqiq_requirements_list:
+    type: http
+    method: GET
+    url: "http://localhost:3001/api/v1/projects/{projectId}/requirements"
+    headers:
+      Authorization: "Bearer ${REQIQ_API_KEY}"
+    description: "List requirements for a project — each has id, title, body, state (DRAFT/REVIEWED/BASELINE/SUPERSEDED)"
 
   test_webapp_run:
     type: http
     method: POST
-    url: "http://{WINDOWS_RUNNER_IP}:{PORT}/api/execute"
+    url: "http://{WINDOWS_RUNNER_IP}:8000/api/v1/executions/tests/{test_case_id}/execute"
     headers:
       Authorization: "Bearer ${TEST_WEBAPP_API_KEY}"
     description: "Trigger test execution on a Windows test runner"
@@ -361,75 +369,99 @@ auto_approve: true
 ## Profile 2 — Requirements Agent
 
 **Profile name:** `qa-requirements`
-**Role:** Single-responsibility — query ReqIQ, assess completeness, format requirements into a Test Instruction JSON-ready context. Never calls the test execution API.
+**Role:** Automated-trigger fallback only. When cron or post-deploy webhooks fire (no human pre-loaded wiki), this agent fetches requirements directly from ReqIQ. For **human-triggered flows via AI Web Test Webapp**, this agent is **skipped** — the webapp pre-fetches the wiki before calling Hermes (see AI Web Test proxy endpoints in the integration guide).
+
+> **When it runs:** Only for Category 2 automated triggers (cron, CI/CD webhook, ReqIQ compile-complete event). Not invoked when `wiki_content` is already present in the delegate_task payload.
 
 ### Model Assignment
 
 ```yaml
 model: openai/gpt-4o   # via OpenRouter
-# Rationale: Needs strong reasoning for completeness assessment
-# and multi-document synthesis. Also handles vision for any
-# image-heavy documents if passed as base64.
-# Cost-optimised: only called once per feature per new document upload.
+# Rationale: Needs strong reasoning for completeness assessment.
+# Cost-optimised: only called for automated runs, not daily human use.
 ```
 
 ### System Prompt
 
 ```
-You are the Requirements Agent. Your sole job is to retrieve structured
-requirements from the ReqIQ knowledge base and assess whether they are
-sufficient for test case generation.
+You are the Requirements Agent. You are only invoked when the incoming
+trigger does NOT already contain wiki_content (automated cron/webhook runs).
+For human-triggered flows, skip this agent — the wiki arrives pre-loaded.
 
 WORKFLOW:
-1. Receive: project name + feature name (from qa-manager via delegate_task)
-2. Call reqiq_query tool with the project and feature
-3. Evaluate the response:
-   - If completeness_score < 60:
-     Return: { "status": "insufficient", "score": N, "missing": [...], "message": "..." }
-   - If contradictions_count > 0:
-     Return the wiki content AND flag contradictions for qa-manager to notify human
-   - If completeness_score >= 60:
-     Return: { "status": "ready", "score": N, "wiki_content": "...", "feature": "...", "project": "..." }
+1. Receive: projectId + requirementId (or feature name) from qa-manager
+2. Call reqiq_rag_query with query = feature name or acceptance criteria keywords
+3. Evaluate the RAG response:
+   - Check citations count — if zero hits: upload fallback (step 4)
+   - If answer is substantive (>100 chars): proceed
+   - Call reqiq_requirements_list to check if a Requirement row exists
+   - If a Requirement row exists in BASELINE state: fetch its body for structured data
+   - Assess completeness: does the answer describe the full user flow end-to-end?
+     - If insufficient: return { "status": "insufficient", "missing": [...] }
+     - If sufficient: return { "status": "ready", "wiki_content": "<RAG answer>",
+                               "requirement_id": "<id if found>",
+                               "iq_score": <compositeScore if available> }
 
-4. If ReqIQ returns no wiki page (feature has no documents at all):
-   a. Use browser_navigate to visit the feature URL if provided
-   b. Extract visible UI elements, form fields, and navigation flows
-   c. Call reqiq_upload tool to create a minimal "UI Crawl" document in ReqIQ
-   d. Wait 60 seconds for compilation
-   e. Re-query and return result
+4. If RAG returns no relevant hits:
+   a. Upload a minimal crawl stub via reqiq_sources_upload
+   b. Call reqiq_embedding_reindex to trigger re-embedding
+   c. Wait 30 seconds, then retry reqiq_rag_query once
+   d. If still no hits: return { "status": "insufficient", "missing": ["No source documents"] }
+
+5. Optionally call reqiq_suggested_tests_generate with requirementId to get
+   LLM-generated test step suggestions from ReqIQ — pass these to qa-manager
+   as test_instructions for qa-test-gen to use instead of extracting from wiki.
 
 IMPORTANT:
-- Never generate test cases yourself — that is qa-test-gen's job
-- Never trigger test execution — that is qa-dispatcher's job
-- Your output is always a structured JSON object, never free-form prose
-- If ReqIQ API is unreachable, return: { "status": "error", "message": "ReqIQ unavailable" }
+- Never generate test cases yourself
+- Your output is always a structured JSON object
+- If ReqIQ API returns 401: the service account token expired — notify qa-manager
+- If ReqIQ API is unreachable: return { "status": "error", "message": "ReqIQ unavailable" }
 ```
 
 ### MCP Tools
 
 ```yaml
 tools:
-  reqiq_query:
+  reqiq_rag_query:
     type: http
     method: POST
-    url: "http://localhost:8090/api/v1/query"
+    url: "http://localhost:3001/api/v1/projects/{projectId}/rag/query"
     headers:
       Authorization: "Bearer ${REQIQ_API_KEY}"
+    description: "RAG Q&A — returns answer (wiki-style) + citations from uploaded source documents"
 
-  reqiq_upload:
-    type: http
-    method: POST
-    url: "http://localhost:8090/api/v1/documents/upload"
-    headers:
-      Authorization: "Bearer ${REQIQ_API_KEY}"
-    description: "Upload a crawled UI document to ReqIQ as fallback source"
-
-  reqiq_status:
+  reqiq_requirements_list:
     type: http
     method: GET
-    url: "http://localhost:8090/api/v1/documents/{document_id}/status"
+    url: "http://localhost:3001/api/v1/projects/{projectId}/requirements"
     headers:
       Authorization: "Bearer ${REQIQ_API_KEY}"
+    description: "List structured requirements — each has id, title, body, state (BASELINE = approved)"
+
+  reqiq_suggested_tests_generate:
+    type: http
+    method: POST
+    url: "http://localhost:3001/api/v1/projects/{projectId}/suggested-tests/generate"
+    headers:
+      Authorization: "Bearer ${REQIQ_API_KEY}"
+    description: "LLM-generate 1–5 candidate test cases from a requirementId. Returns title, steps[], preconditions, oracle. Use these as test_instructions for qa-test-gen."
+
+  reqiq_sources_upload:
+    type: http
+    method: POST
+    url: "http://localhost:3001/api/v1/projects/{projectId}/sources/upload"
+    headers:
+      Authorization: "Bearer ${REQIQ_API_KEY}"
+    description: "Upload a document (DOCX/PDF/MD/TXT/PPTX) as a fallback source when no docs exist"
+
+  reqiq_embedding_reindex:
+    type: http
+    method: POST
+    url: "http://localhost:3001/api/v1/projects/{projectId}/embedding/reindex"
+    headers:
+      Authorization: "Bearer ${REQIQ_API_KEY}"
+    description: "Trigger re-embedding after a new source is uploaded"
 ```
 
 ---
@@ -858,9 +890,14 @@ TRIGGER (Option B — Telegram, for remote/mobile use):
 qa-manager
   │
   ├──► delegate_task → qa-requirements
-  │         │ Queries ReqIQ: POST /api/v1/query {project: "Project-X", feature: "Login"}
-  │         │ ReqIQ returns: completeness_score: 87, wiki_content: "..."
-  │         └─► Returns to qa-manager: { status: "ready", score: 87, wiki_content: "..." }
+  │         │ Queries ReqIQ: POST /api/v1/projects/{projectId}/rag/query
+  │         │   { "query": "5G Voucher Plan Purchase acceptance criteria" }
+  │         │ ReqIQ returns: answer (wiki-style), citations
+  │         │ Also checks: GET /api/v1/projects/{projectId}/requirements
+  │         │   for BASELINE requirement + iqSnapshot.compositeScore
+  │         │ Optionally: POST .../suggested-tests/generate → test_instructions[]
+  │         └─► Returns to qa-manager: { status: "ready", iq_score: 87, wiki_content: "...",
+  │                                     requirement_id: "uuid", test_instructions: [...] }
   │
   ├──► delegate_task → qa-test-gen
   │         │ Receives: wiki_content + feature_url + env_config
@@ -913,8 +950,9 @@ All profiles share access to these via `~/.hermes/.env`:
 
 ```bash
 # ReqIQ
-REQIQ_API_KEY=your-reqiq-api-key
-REQIQ_URL=http://localhost:8090
+REQIQ_API_KEY=your-reqiq-api-key    # service account JWT — from POST /api/v1/login
+REQIQ_URL=http://localhost:3001     # ReqIQ Fastify API port (NOT 8090)
+REQIQ_PROJECT_ID=your-project-uuid  # UUID from GET /api/v1/projects
 
 # Test Automation Webapp (AI Web Test — port 8000, NOT 3001)
 TEST_WEBAPP_URL=http://192.168.1.101:8000   # Node 2 primary runner
