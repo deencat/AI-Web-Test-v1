@@ -22,6 +22,7 @@
 10. [Error Codes](#10-error-codes)
 11. [Common Flows for ReqIQ](#11-common-flows-for-reqiq)
 12. [ReqIQ Proxy Endpoints](#12-reqiq-proxy-endpoints)
+    - [12.7 Get Latest IQ Score](#127-get-latest-iq-score-for-a-requirement)
     - [12.8 Project Readiness Check](#128-project-readiness-check)
 
 ---
@@ -1142,6 +1143,31 @@ Proxies to ReqIQ `POST /api/v1/projects/{projectId}/suggested-tests/generate` wi
 ```
 
 The `steps[]` array maps directly to `user_instruction` in `crawl-and-save-test` — join them with `\n` and append `STOP when {oracle}` as the final instruction.
+
+---
+
+### 12.7 Get Latest IQ Score for a Requirement
+
+Lightweight endpoint — returns only the IQ fields without the full requirement body. Useful when Hermes only needs to check the score before deciding to proceed.
+
+```
+GET /api/v1/requirements/{projectId}/requirements/{requirementId}/latest-iq
+Authorization: Bearer <token>
+```
+
+Proxies to ReqIQ `GET /api/v1/projects/{projectId}/requirements/{requirementId}/latest-iq`.
+
+**Response 200:**
+```json
+{
+  "requirementId": "req_abc123",
+  "latestCompositeScore": 87,
+  "latestRevisionIndex": 3,
+  "updatedAt": "2026-05-14T10:00:00Z"
+}
+```
+
+Use this instead of `12.8` when `wikiContent` is already available and you only need to re-check the score.
 
 ---
 
