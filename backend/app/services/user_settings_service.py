@@ -367,6 +367,8 @@ class UserSettingsService:
             return os.getenv("AZURE_OPENAI_API_KEY")
         elif provider == "openrouter":
             return os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+        elif provider == "local_vllm":
+            return os.getenv("LOCAL_VLLM_API_KEY", "local")  # vLLM ignores auth by default
         else:
             # Default fallback
             return os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
