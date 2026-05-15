@@ -217,6 +217,39 @@ def run_all_migrations():
     finally:
         db.close()
 
+def run_all_migrations_auto():
+    """Run all pending migrations non-interactively.
+
+    Used by app startup (main.py) so every developer/desktop gets a fully
+    up-to-date schema automatically when the server starts.  On failure the
+    error is logged but startup continues rather than blocking the server.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    init_migration_table()
+    db = SessionLocal()
+    try:
+        applied = get_applied_migrations(db)
+        available = get_available_migrations()
+        pending = [m for m in available if m.replace(".py", "") not in applied]
+
+        if not pending:
+            return  # nothing to do — fast path
+
+        logger.info(f"[migrations] {len(pending)} pending migration(s) — applying now …")
+        for migration in pending:
+            success = run_migration(migration, db)
+            if not success:
+                logger.error(
+                    f"[migrations] '{migration}' failed — skipping remaining migrations. "
+                    "Fix the error and restart the server."
+                )
+                break
+    finally:
+        db.close()
+
+
 def rollback_last_migration():
     """Rollback the last applied migration (if supported)"""
     print("⏪ Rolling back last migration...")

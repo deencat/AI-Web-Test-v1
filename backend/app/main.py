@@ -20,13 +20,26 @@ from app.db.init_db import init_db
 from app.services.queue_manager import start_queue_manager
 from app.db.init_templates import seed_system_templates
 
+# Ensure backend root is on sys.path so run_migrations.py is importable
+import sys as _sys
+from pathlib import Path as _Path
+_backend_root = str(_Path(__file__).parent.parent)
+if _backend_root not in _sys.path:
+    _sys.path.insert(0, _backend_root)
+from run_migrations import run_all_migrations_auto
+
 # Fix for Windows: Set event loop policy to support subprocess
 # This is required for Playwright to work on Windows
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-# Create database tables
+# Create database tables (base schema from SQLAlchemy models)
 Base.metadata.create_all(bind=engine)
+
+# Apply any pending migrations (column additions, new tables not in models).
+# This runs automatically so every developer/desktop stays in sync without
+# manually running run_migrations.py after a git pull.
+run_all_migrations_auto()
 
 # Initialize database with test data
 db = SessionLocal()
