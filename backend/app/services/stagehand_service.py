@@ -282,6 +282,57 @@ class StagehandExecutionService:
                         user_config.get("max_tokens", 4096),
                     )
 
+            elif model_provider == "local_vllm":
+                # Sprint 10.13: On-premises vLLM servers — OpenAI-compatible endpoints.
+                # Each model has its own base URL; LiteLLM routes via openai/ prefix.
+                local_model = (user_config.get("model") if user_config else None) or "DeepSeek-V4-Flash-4bit"
+                local_api_key = os.getenv("LOCAL_VLLM_API_KEY", "local")
+
+                # Resolve per-model endpoint from env (can be overridden in .env)
+                _endpoint_map = {
+                    "openai/gpt-oss-20b": os.getenv(
+                        "LOCAL_VLLM_GPT_OSS_20B_ENDPOINT",
+                        "http://192.168.206.190:8000/openai--gpt-oss-20b/v1",
+                    ),
+                    "RedHatAI/Qwen3.6-35B-A3B-NVFP4": os.getenv(
+                        "LOCAL_VLLM_QWEN3_35B_ENDPOINT",
+                        "http://192.168.206.190:8000/redhatai--qwen3.6-35b-a3b-nvfp4/v1",
+                    ),
+                    "DeepSeek-V4-Flash-4bit": os.getenv(
+                        "LOCAL_VLLM_DEEPSEEK_ENDPOINT",
+                        "http://192.168.206.164/v1",
+                    ),
+                }
+                local_endpoint = _endpoint_map.get(local_model, os.getenv("LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164/v1"))
+
+                # LiteLLM requires OPENAI_API_BASE + openai/<model> for custom endpoints.
+                # Clear Azure env vars so LiteLLM does not mis-route.
+                os.environ["OPENAI_API_BASE"] = local_endpoint.rstrip("/")
+                os.environ["OPENAI_API_KEY"] = local_api_key
+                os.environ.pop("AZURE_API_BASE", None)
+                os.environ.pop("AZURE_API_KEY", None)
+                os.environ.pop("AZURE_API_VERSION", None)
+
+                config = StagehandConfig(
+                    env="LOCAL",
+                    headless=self.headless,
+                    verbose=1,
+                    model_name=f"openai/{local_model}",
+                    model_api_key=local_api_key,
+                    local_browser_launch_options=launch_options,
+                )
+                logger.info(
+                    "StagehandExecutionService: Using local vLLM model=%s endpoint=%s",
+                    local_model,
+                    local_endpoint,
+                )
+                if user_config:
+                    logger.debug(
+                        "StagehandExecutionService: User config temp=%s max_tokens=%s",
+                        user_config.get("temperature", 0.7),
+                        user_config.get("max_tokens", 4096),
+                    )
+
             
             logger.info(
                 "StagehandExecutionService: Browser settings headless=%s slow_mo=%sms",

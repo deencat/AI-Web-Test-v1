@@ -3,8 +3,8 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials · ✅ Sprint 10.11 Developer B Step Library COMPLETE (May 6, 2026) — reusable `@module:` step sequences, Step Library sidebar page, Insert Module picker in TestStepEditor, backend `StepLibraryModule` CRUD, module rename Option C (Preview + Confirm Cascade) with `GET /{id}/rename-preview` dry-run + atomic cascade, dedicated Rename modal, name slug locked in Edit form · ✅ Sprint 10.12 Developer B **Feature A** AI-Powered Failure Root Cause Analysis COMPLETE (May 13, 2026) — `root_cause_analysis_service.py`, DOM snapshot capped at 16 000 chars, `execution_feedback.root_cause_analysis` TEXT column, amber collapsible panel in `ExecutionProgressPage`, 37 new tests, two production bugs fixed (Azure `max_completion_tokens`, `error_type` propagation) · 🔄 Sprint 10.12 **Feature B** Re-Run from Failed Step — PLANNED  
-**Last Updated:** May 13, 2026 (Sprint 10.12 Feature A COMPLETE — AI-Powered Failure Root Cause Analysis implemented and deployed)  
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials · ✅ Sprint 10.11 Developer B Step Library COMPLETE (May 6, 2026) — reusable `@module:` step sequences, Step Library sidebar page, Insert Module picker in TestStepEditor, backend `StepLibraryModule` CRUD, module rename Option C (Preview + Confirm Cascade) with `GET /{id}/rename-preview` dry-run + atomic cascade, dedicated Rename modal, name slug locked in Edit form · ✅ Sprint 10.12 Developer B **Feature A** AI-Powered Failure Root Cause Analysis COMPLETE (May 13, 2026) — `root_cause_analysis_service.py`, DOM snapshot capped at 16 000 chars, `execution_feedback.root_cause_analysis` TEXT column, amber collapsible panel in `ExecutionProgressPage`, 37 new tests, two production bugs fixed (Azure `max_completion_tokens`, `error_type` propagation) · ✅ Sprint 10.12 **Feature B** Re-Run from Failed Step COMPLETE (May 14, 2026) · ✅ Sprint 10.13 Developer B Local vLLM On-Premises Model Support COMPLETE (May 15, 2026) — `local_vllm` provider with GPT-OSS-20B, Qwen3.6-35B-A3B-NVFP4, DeepSeek-V4-Flash-4bit; per-model endpoint routing in `universal_llm.py` + Stagehand `initialize()`
+**Last Updated:** May 15, 2026 (Sprint 10.13 COMPLETE — Local vLLM on-premises model support: GPT-OSS-20B, Qwen3.6-35B-A3B-NVFP4, DeepSeek-V4-Flash-4bit)  
 **Version:** 3.6
 
 > **📖 When to Use This Document:**
@@ -2987,6 +2987,54 @@ Feature A tells the user *why* step 24 failed (e.g. *"The 'Pay Now' button was p
 | Resume on SPA with non-serialisable state | Guard: if `page_url` differs from expected step URL, show warning | 🔄 Future sprint |
 | RCA LLM cost | Only fires on `all_tiers_exhausted`; estimated <5% of total executions; single short prompt | ✅ By design |
 | Snapshot injection incompatible with HTTP Basic Auth flows | Existing `http_credentials` param applied before snapshot — ordering preserved | ✅ Verified |
+
+---
+
+### Sprint 10.13: Developer B — Local vLLM On-Premises Model Support (May 2026)
+
+**Focus:** Extend the Settings page model provider catalogue with three on-premises vLLM models available on the internal network, covering both test-case generation (UniversalLLM) and 3-tier test execution (Stagehand / LiteLLM).
+
+**New models added:**
+
+| Model ID | Endpoint | Max Context | Notes |
+|----------|----------|-------------|-------|
+| `openai/gpt-oss-20b` | `http://192.168.206.190:8000/openai--gpt-oss-20b/v1` | 131 072 | vLLM, owned by `vllm` |
+| `RedHatAI/Qwen3.6-35B-A3B-NVFP4` | `http://192.168.206.190:8000/redhatai--qwen3.6-35b-a3b-nvfp4/v1` | 262 144 | vLLM MoE, thinking-capable |
+| `DeepSeek-V4-Flash-4bit` | `http://192.168.206.164/v1` | 262 000 | OpenAI-compat, no auth required |
+
+**Provider name in DB / UI:** `local_vllm` — "Local vLLM (On-Premises)"
+
+#### Feature: Local vLLM Provider
+
+| Task | File(s) | Points | Status |
+|------|---------|--------|--------|
+| **10.13-1** Add `LOCAL_VLLM_*` env vars to `Settings` / `config.py` | `backend/app/core/config.py` | 1 | ✅ |
+| **10.13-2** Add `local_vllm` entry to `PROVIDER_CONFIGS`; always `is_configured=True` | `backend/app/services/user_settings_service.py` | 1 | ✅ |
+| **10.13-3** Add `_call_local_vllm()` + routing in `chat_completion()` | `backend/app/services/universal_llm.py` | 2 | ✅ |
+| **10.13-4** Add `local_vllm` branch in Stagehand `initialize()` (LiteLLM `openai/<model>` + `OPENAI_API_BASE`) | `backend/app/services/stagehand_service.py` | 2 | ✅ |
+
+**Sprint 10.13 total: 6 points / ~1.5 days (COMPLETE ✅ May 15, 2026)**
+
+#### Architecture notes
+
+- No API key required for vLLM by default. `LOCAL_VLLM_API_KEY` defaults to the placeholder string `"local"`.  All endpoints can be overridden in `.env` using the `LOCAL_VLLM_*_ENDPOINT` variables.
+- `universal_llm.py` holds a `_local_vllm_model_endpoints` dict (model_id → endpoint+key) built once in `__init__`.  Adding a fourth model requires only a new entry there and in `user_settings_service.PROVIDER_CONFIGS`.
+- Stagehand sets `OPENAI_API_BASE` via `os.environ` before creating `StagehandConfig` (same pattern as Azure `AZURE_API_BASE`) and unsets Azure-specific vars to avoid LiteLLM mis-routing.
+- `local_vllm` is available in all per-agent model override dropdowns (observation / requirements / analysis / evolution) via the existing `/api/v1/settings/providers` endpoint — no schema changes needed.
+
+#### ADR reference
+
+- **ADR-001-XX**: Local vLLM on-premises provider — `local_vllm` provider key, per-model endpoint table in `universal_llm._local_vllm_model_endpoints`, Stagehand `OPENAI_API_BASE` injection, no external API key — 🔄 **Pending** recording in `documentation/ADR-001-llm-provider.md`
+
+#### Sprint 10.13 Success Criteria
+
+- [x] Settings page shows "Local vLLM (On-Premises)" provider with three model options
+- [x] Provider is always marked as configured (no API key check)
+- [x] Test-case generation calls the correct per-model endpoint via `UniversalLLMService`
+- [x] 3-tier Stagehand execution sets `OPENAI_API_BASE` to the correct per-model endpoint
+- [x] Unknown model IDs return a descriptive `ValueError` (no silent mis-routing)
+- [x] All endpoints overridable via `.env` without code changes
+- [ ] Integration smoke test: generate one test case and run one execution with `DeepSeek-V4-Flash-4bit`
 
 ---
 
