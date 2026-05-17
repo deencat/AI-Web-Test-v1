@@ -133,8 +133,8 @@ export function CrawlAndSavePage() {
     const body: Record<string, unknown> = {
       url: form.url.trim(),
       user_instruction: form.user_instruction.trim(),
-      test_title: form.test_title.trim() || undefined,
-      test_description: form.test_description.trim() || undefined,
+      test_title: form.test_title.trim(),
+      test_description: form.test_description.trim(),
       subscriber_type_hint: form.subscriber_type_hint,
     };
 
@@ -372,10 +372,11 @@ export function CrawlAndSavePage() {
             <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Test Metadata</h2>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Test Title</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Test Title <span className="text-red-500">*</span></label>
               <input
                 type="text"
                 name="test_title"
+                required
                 value={form.test_title}
                 onChange={handleChange}
                 disabled={isRunning}
@@ -385,9 +386,10 @@ export function CrawlAndSavePage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Test Description</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Test Description <span className="text-red-500">*</span></label>
               <textarea
                 name="test_description"
+                required
                 rows={3}
                 value={form.test_description}
                 onChange={handleChange}
