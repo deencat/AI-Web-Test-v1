@@ -1,25 +1,26 @@
-"""
-ReqIQ proxy endpoints — transparent pass-through to ReqIQ (port 3001).
+﻿"""
+ReqIQ proxy endpoints -- transparent pass-through to ReqIQ (port 3001).
 
 All routes require a valid AI Web Test Bearer token.
-The server calls ReqIQ using a service account stored in .env — callers
+The server calls ReqIQ using a service account stored in .env so callers
 never need to know ReqIQ exists or what port it runs on.
 
 Routes:
   GET  /api/v1/requirements/projects
-  GET  /api/v1/requirements/{projectId}/requirements
-  POST /api/v1/requirements/{projectId}/query
-  POST /api/v1/requirements/{projectId}/sources/upload
-  GET  /api/v1/requirements/{projectId}/sources
-  POST /api/v1/requirements/{projectId}/requirements/{requirementId}/suggest-tests
-  GET  /api/v1/requirements/{projectId}/requirements/{requirementId}/latest-iq
-  GET  /api/v1/requirements/{projectId}/readiness
+  GET  /api/v1/requirements/{project_id}/requirements
+  POST /api/v1/requirements/{project_id}/query
+  POST /api/v1/requirements/{project_id}/sources/upload
+  GET  /api/v1/requirements/{project_id}/sources
+  POST /api/v1/requirements/{project_id}/requirements/{requirement_id}/suggest-tests
+  GET  /api/v1/requirements/{project_id}/requirements/{requirement_id}/latest-iq
+  GET  /api/v1/requirements/{project_id}/readiness
 """
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from app.api.deps import get_current_user
 from app.models.user import User
@@ -30,7 +31,6 @@ router = APIRouter()
 
 
 def _reqiq_unavailable() -> None:
-    """Check that ReqIQ credentials are configured."""
     from app.core.config import settings
     if not settings.REQIQ_SERVICE_EMAIL or not settings.REQIQ_SERVICE_PASSWORD:
         raise HTTPException(
@@ -39,8 +39,7 @@ def _reqiq_unavailable() -> None:
         )
 
 
-async def _proxy(coro):
-    """Run a reqiq_client coroutine and convert errors to HTTP exceptions."""
+async def _proxy(coro: Any) -> Any:
     try:
         return await coro
     except Exception as exc:
@@ -64,7 +63,7 @@ async def list_projects(
 
 
 # ---------------------------------------------------------------------------
-# 2. List requirements for a project
+# 2. List requirements
 # ---------------------------------------------------------------------------
 
 @router.get("/{project_id}/requirements", summary="List requirements for a project")
@@ -80,13 +79,6 @@ async def list_requirements(
 # 3. RAG query
 # ---------------------------------------------------------------------------
 
-class RagQueryBody(object):
-    pass
-
-
-from pydantic import BaseModel
-
-
 class RagQueryRequest(BaseModel):
     query: str
     limit: int = 8
@@ -100,35 +92,32 @@ async def rag_query(
 ) -> Any:
     _reqiq_unavailable()
     result = await _proxy(reqiq.rag_query(project_id, body.query, body.limit))
-    # If reqiq_client detected a 429, surface it properly
     if isinstance(result, dict) and result.get("_status") == 429:
         return JSONResponse(
             status_code=429,
-            content={"detail": "ReqIQ rate limit exceeded — try again later"},
+            content={"detail": "ReqIQ rate limit exceeded -- try again later"},
             headers={"Retry-After": str(result.get("_retry_after", "60"))},
         )
     return result
 
 
 # ---------------------------------------------------------------------------
-# 4. Upload source documents (multipart — stream directly to ReqIQ)
+# 4. Upload source documents
 # ---------------------------------------------------------------------------
 
 @router.post("/{project_id}/sources/upload", summary="Upload source documents to ReqIQ")
 async def upload_sources(
     project_id: str,
     files: list[UploadFile] = File(...),
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(get_current_user),
 ) -> Any:
     _reqiq_unavailable()
-
     files_payload = []
     for upload in files:
         content = await upload.read()
         files_payload.append(
             ("file", (upload.filename, content, upload.content_type or "application/octet-stream"))
         )
-
     return await _proxy(reqiq.upload_sources(project_id, files_payload))
 
 
@@ -146,7 +135,7 @@ async def list_sources(
 
 
 # ---------------------------------------------------------------------------
-# 6. Generate suggested tests for a requirement
+# 6. Generate suggested tests
 # ---------------------------------------------------------------------------
 
 class SuggestTestsRequest(BaseModel):
@@ -171,7 +160,7 @@ async def suggest_tests(
 
 
 # ---------------------------------------------------------------------------
-# 7. Get latest IQ score for a requirement
+# 7. Latest IQ score
 # ---------------------------------------------------------------------------
 
 @router.get(
@@ -188,7 +177,7 @@ async def get_latest_iq(
 
 
 # ---------------------------------------------------------------------------
-# 8. Project readiness check
+# 8. Project readiness
 # ---------------------------------------------------------------------------
 
 @router.get("/{project_id}/readiness", summary="Project readiness check")
