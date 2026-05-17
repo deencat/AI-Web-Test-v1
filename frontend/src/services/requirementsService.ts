@@ -1,9 +1,14 @@
 /**
- * Requirements Service — ReqIQ proxy (Phase 2)
+ * Requirements Service -- ReqIQ proxy (Phase 2 + s5.2 extensions)
  *
  * Calls the AI Web Test backend proxy endpoints at /api/v1/requirements/*
  * which forward requests to ReqIQ (port 3001) using a service account.
  * Callers never talk to ReqIQ directly.
+ *
+ * UI labels per handoff s6:
+ *   Project  -> Workspace
+ *   Source   -> Document
+ *   latestCompositeScore -> Quality score
  */
 import api from './api';
 
@@ -18,8 +23,19 @@ export interface ReqIQRequirement {
   title: string;
   body?: string;
   state: 'DRAFT' | 'REVIEWED' | 'BASELINE' | 'SUPERSEDED';
+  latestCompositeScore?: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ReqIQRevision {
+  id: string;
+  requirementId: string;
+  revisionIndex: number;
+  title: string;
+  body: string;
+  compositeScore?: number;
+  createdAt: string;
 }
 
 export interface RagCitation {
@@ -99,20 +115,108 @@ export interface SuggestTestsResult {
 const BASE = '/requirements';
 
 const requirementsService = {
+  // -- Workspaces -----------------------------------------------------------
+
   async listProjects(): Promise<ReqIQProject[]> {
     const res = await api.get<ReqIQProject[]>(`${BASE}/projects`);
     return res.data;
   },
+
+  async createProject(name: string): Promise<ReqIQProject> {
+    const res = await api.post<ReqIQProject>(`${BASE}/projects`, { name });
+    return res.data;
+  },
+
+  async getProject(projectId: string): Promise<ReqIQProject> {
+    const res = await api.get<ReqIQProject>(`${BASE}/projects/${projectId}`);
+    return res.data;
+  },
+
+  async updateProject(projectId: string, name: string): Promise<ReqIQProject> {
+    const res = await api.patch<ReqIQProject>(`${BASE}/projects/${projectId}`, { name });
+    return res.data;
+  },
+
+  // -- Requirements ---------------------------------------------------------
 
   async listRequirements(projectId: string): Promise<ReqIQRequirement[]> {
     const res = await api.get<ReqIQRequirement[]>(`${BASE}/${projectId}/requirements`);
     return res.data;
   },
 
+  async createRequirement(projectId: string, title: string, body = ''): Promise<ReqIQRequirement> {
+    const res = await api.post<ReqIQRequirement>(`${BASE}/${projectId}/requirements`, { title, body });
+    return res.data;
+  },
+
+  async getRequirement(projectId: string, requirementId: string): Promise<ReqIQRequirement> {
+    const res = await api.get<ReqIQRequirement>(`${BASE}/${projectId}/requirements/${requirementId}`);
+    return res.data;
+  },
+
+  async updateRequirement(
+    projectId: string,
+    requirementId: string,
+    fields: Partial<Pick<ReqIQRequirement, 'title' | 'body'>>,
+  ): Promise<ReqIQRequirement> {
+    const res = await api.patch<ReqIQRequirement>(
+      `${BASE}/${projectId}/requirements/${requirementId}`,
+      fields,
+    );
+    return res.data;
+  },
+
+  async transitionRequirement(projectId: string, requirementId: string, state: string): Promise<ReqIQRequirement> {
+    const res = await api.post<ReqIQRequirement>(
+      `${BASE}/${projectId}/requirements/${requirementId}/transition`,
+      { state },
+    );
+    return res.data;
+  },
+
+  async getRequirementAudit(projectId: string, requirementId: string): Promise<unknown[]> {
+    const res = await api.get<unknown[]>(`${BASE}/${projectId}/requirements/${requirementId}/audit`);
+    return res.data;
+  },
+
+  // -- Revisions + IQ -------------------------------------------------------
+
+  async listRevisions(projectId: string, requirementId: string): Promise<ReqIQRevision[]> {
+    const res = await api.get<ReqIQRevision[]>(
+      `${BASE}/${projectId}/requirements/${requirementId}/revisions`,
+    );
+    return res.data;
+  },
+
+  async getRevision(projectId: string, requirementId: string, revisionIndex: number): Promise<ReqIQRevision> {
+    const res = await api.get<ReqIQRevision>(
+      `${BASE}/${projectId}/requirements/${requirementId}/revisions/${revisionIndex}`,
+    );
+    return res.data;
+  },
+
+  async runStubIq(projectId: string, requirementId: string, revisionIndex: number): Promise<unknown> {
+    const res = await api.post(
+      `${BASE}/${projectId}/requirements/${requirementId}/revisions/${revisionIndex}/stub-iq`,
+    );
+    return res.data;
+  },
+
+  async runLlmIq(projectId: string, requirementId: string, revisionIndex: number): Promise<unknown> {
+    const res = await api.post(
+      `${BASE}/${projectId}/requirements/${requirementId}/revisions/${revisionIndex}/llm-iq`,
+    );
+    return res.data;
+  },
+
+  // -- RAG query ------------------------------------------------------------
+
   async ragQuery(projectId: string, query: string, limit = 8): Promise<RagQueryResult> {
     const res = await api.post<RagQueryResult>(`${BASE}/${projectId}/query`, { query, limit });
     return res.data;
   },
+
+  // -- Sources (Documents) --------------------------------------------------
 
   async uploadSources(projectId: string, files: File[]): Promise<UploadSourcesResult> {
     const form = new FormData();
@@ -130,6 +234,8 @@ const requirementsService = {
     return res.data;
   },
 
+  // -- Suggested tests ------------------------------------------------------
+
   async suggestTests(
     projectId: string,
     requirementId: string,
@@ -142,6 +248,15 @@ const requirementsService = {
     );
     return res.data;
   },
+
+  async listSuggestedTests(projectId: string, requirementId: string): Promise<SuggestedTest[]> {
+    const res = await api.get<SuggestedTest[]>(
+      `${BASE}/${projectId}/requirements/${requirementId}/suggested-tests`,
+    );
+    return res.data;
+  },
+
+  // -- IQ / readiness -------------------------------------------------------
 
   async getLatestIq(projectId: string, requirementId: string): Promise<LatestIqResult> {
     const res = await api.get<LatestIqResult>(

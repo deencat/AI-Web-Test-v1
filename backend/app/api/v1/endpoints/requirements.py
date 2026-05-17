@@ -5,7 +5,7 @@ All routes require a valid AI Web Test Bearer token.
 The server calls ReqIQ using a service account stored in .env so callers
 never need to know ReqIQ exists or what port it runs on.
 
-Routes:
+Phase 1 routes:
   GET  /api/v1/requirements/projects
   GET  /api/v1/requirements/{project_id}/requirements
   POST /api/v1/requirements/{project_id}/query
@@ -14,6 +14,22 @@ Routes:
   POST /api/v1/requirements/{project_id}/requirements/{requirement_id}/suggest-tests
   GET  /api/v1/requirements/{project_id}/requirements/{requirement_id}/latest-iq
   GET  /api/v1/requirements/{project_id}/readiness
+
+s5.2 extensions:
+  POST   /api/v1/requirements/projects
+  GET    /api/v1/requirements/projects/{id}
+  PATCH  /api/v1/requirements/projects/{id}
+  POST   /api/v1/requirements/{project_id}/requirements
+  GET    /api/v1/requirements/{project_id}/requirements/{req_id}
+  PATCH  /api/v1/requirements/{project_id}/requirements/{req_id}
+  POST   .../requirements/{req_id}/transition
+  GET    .../requirements/{req_id}/audit
+  GET    .../requirements/{req_id}/revisions
+  GET    .../requirements/{req_id}/revisions/{index}
+  POST   .../requirements/{req_id}/revisions/{index}/stub-iq
+  POST   .../requirements/{req_id}/revisions/{index}/llm-iq
+  GET    .../requirements/{req_id}/suggested-tests
+  POST   .../requirements/{req_id}/suggested-tests/import
 """
 import logging
 from typing import Any
@@ -189,3 +205,214 @@ async def get_readiness(
 ) -> Any:
     _reqiq_unavailable()
     return await _proxy(reqiq.get_readiness(project_id, query, feature))
+
+
+# ---------------------------------------------------------------------------
+# §5.2 — Workspace CRUD
+# ---------------------------------------------------------------------------
+
+class CreateProjectRequest(BaseModel):
+    name: str
+
+
+class UpdateProjectRequest(BaseModel):
+    name: str
+
+
+@router.post("/projects", summary="Create a workspace")
+async def create_project(
+    body: CreateProjectRequest,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    return await _proxy(reqiq.create_project(body.name))
+
+
+@router.get("/projects/{project_id}", summary="Get a workspace")
+async def get_project(
+    project_id: str,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    return await _proxy(reqiq.get_project(project_id))
+
+
+@router.patch("/projects/{project_id}", summary="Rename a workspace")
+async def update_project(
+    project_id: str,
+    body: UpdateProjectRequest,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    return await _proxy(reqiq.update_project(project_id, body.name))
+
+
+# ---------------------------------------------------------------------------
+# §5.2 — Requirement CRUD
+# ---------------------------------------------------------------------------
+
+class CreateRequirementRequest(BaseModel):
+    title: str
+    body: str = ""
+
+
+class UpdateRequirementRequest(BaseModel):
+    title: str | None = None
+    body: str | None = None
+
+
+class TransitionRequest(BaseModel):
+    state: str
+
+
+@router.post("/{project_id}/requirements", summary="Create a requirement")
+async def create_requirement(
+    project_id: str,
+    body: CreateRequirementRequest,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    return await _proxy(reqiq.create_requirement(project_id, body.title, body.body))
+
+
+@router.get("/{project_id}/requirements/{requirement_id}", summary="Get a requirement")
+async def get_requirement(
+    project_id: str,
+    requirement_id: str,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    return await _proxy(reqiq.get_requirement(project_id, requirement_id))
+
+
+@router.patch("/{project_id}/requirements/{requirement_id}", summary="Update a requirement")
+async def update_requirement(
+    project_id: str,
+    requirement_id: str,
+    body: UpdateRequirementRequest,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    return await _proxy(reqiq.update_requirement(project_id, requirement_id, **fields))
+
+
+@router.post(
+    "/{project_id}/requirements/{requirement_id}/transition",
+    summary="Transition requirement lifecycle state",
+)
+async def transition_requirement(
+    project_id: str,
+    requirement_id: str,
+    body: TransitionRequest,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    return await _proxy(reqiq.transition_requirement(project_id, requirement_id, body.state))
+
+
+@router.get(
+    "/{project_id}/requirements/{requirement_id}/audit",
+    summary="Get requirement audit trail",
+)
+async def get_requirement_audit(
+    project_id: str,
+    requirement_id: str,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    return await _proxy(reqiq.get_requirement_audit(project_id, requirement_id))
+
+
+# ---------------------------------------------------------------------------
+# §5.2 — Revisions + IQ
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{project_id}/requirements/{requirement_id}/revisions",
+    summary="List revisions for a requirement",
+)
+async def list_revisions(
+    project_id: str,
+    requirement_id: str,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    return await _proxy(reqiq.list_revisions(project_id, requirement_id))
+
+
+@router.get(
+    "/{project_id}/requirements/{requirement_id}/revisions/{revision_index}",
+    summary="Get a specific revision",
+)
+async def get_revision(
+    project_id: str,
+    requirement_id: str,
+    revision_index: int,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    return await _proxy(reqiq.get_revision(project_id, requirement_id, revision_index))
+
+
+@router.post(
+    "/{project_id}/requirements/{requirement_id}/revisions/{revision_index}/stub-iq",
+    summary="Run stub IQ (no LLM) on a revision",
+)
+async def run_stub_iq(
+    project_id: str,
+    requirement_id: str,
+    revision_index: int,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    return await _proxy(reqiq.run_stub_iq(project_id, requirement_id, revision_index))
+
+
+@router.post(
+    "/{project_id}/requirements/{requirement_id}/revisions/{revision_index}/llm-iq",
+    summary="Run LLM IQ on a revision",
+)
+async def run_llm_iq(
+    project_id: str,
+    requirement_id: str,
+    revision_index: int,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    return await _proxy(reqiq.run_llm_iq(project_id, requirement_id, revision_index))
+
+
+# ---------------------------------------------------------------------------
+# §5.2 — Suggested tests CRUD + import
+# ---------------------------------------------------------------------------
+
+class ImportSuggestedTestsRequest(BaseModel):
+    tests: list
+
+
+@router.get(
+    "/{project_id}/requirements/{requirement_id}/suggested-tests",
+    summary="List suggested tests for a requirement",
+)
+async def list_suggested_tests(
+    project_id: str,
+    requirement_id: str,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    return await _proxy(reqiq.list_suggested_tests(project_id, requirement_id))
+
+
+@router.post(
+    "/{project_id}/requirements/{requirement_id}/suggested-tests/import",
+    summary="Import suggested tests without LLM",
+)
+async def import_suggested_tests(
+    project_id: str,
+    requirement_id: str,
+    body: ImportSuggestedTestsRequest,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    return await _proxy(reqiq.import_suggested_tests(project_id, requirement_id, body.tests))

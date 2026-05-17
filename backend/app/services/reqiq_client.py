@@ -191,3 +191,128 @@ async def get_readiness(project_id: str, query: str = "", feature: str = "") -> 
     )
     resp.raise_for_status()
     return resp.json()
+
+
+# ---------------------------------------------------------------------------
+# §5.2 extensions — workspace + requirement CRUD, IQ, suggested-test ops
+# ---------------------------------------------------------------------------
+
+async def create_project(name: str) -> dict:
+    resp = await _request("POST", "/api/v1/projects", json={"name": name})
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def get_project(project_id: str) -> dict:
+    resp = await _request("GET", f"/api/v1/projects/{project_id}")
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def update_project(project_id: str, name: str) -> dict:
+    resp = await _request("PATCH", f"/api/v1/projects/{project_id}", json={"name": name})
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def create_requirement(project_id: str, title: str, body: str = "") -> dict:
+    resp = await _request(
+        "POST",
+        f"/api/v1/projects/{project_id}/requirements",
+        json={"title": title, "body": body},
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def get_requirement(project_id: str, requirement_id: str) -> dict:
+    resp = await _request(
+        "GET",
+        f"/api/v1/projects/{project_id}/requirements/{requirement_id}",
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def update_requirement(project_id: str, requirement_id: str, **fields: Any) -> dict:
+    resp = await _request(
+        "PATCH",
+        f"/api/v1/projects/{project_id}/requirements/{requirement_id}",
+        json=fields,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def transition_requirement(project_id: str, requirement_id: str, state: str) -> dict:
+    resp = await _request(
+        "POST",
+        f"/api/v1/projects/{project_id}/requirements/{requirement_id}/transition",
+        json={"state": state},
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def get_requirement_audit(project_id: str, requirement_id: str) -> dict:
+    resp = await _request(
+        "GET",
+        f"/api/v1/projects/{project_id}/requirements/{requirement_id}/audit",
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def list_revisions(project_id: str, requirement_id: str) -> dict:
+    resp = await _request(
+        "GET",
+        f"/api/v1/projects/{project_id}/requirements/{requirement_id}/revisions",
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def get_revision(project_id: str, requirement_id: str, revision_index: int) -> dict:
+    resp = await _request(
+        "GET",
+        f"/api/v1/projects/{project_id}/requirements/{requirement_id}/revisions/{revision_index}",
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def run_stub_iq(project_id: str, requirement_id: str, revision_index: int) -> dict:
+    resp = await _request(
+        "POST",
+        f"/api/v1/projects/{project_id}/requirements/{requirement_id}/revisions/{revision_index}/stub-iq",
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def run_llm_iq(project_id: str, requirement_id: str, revision_index: int) -> dict:
+    resp = await _request(
+        "POST",
+        f"/api/v1/projects/{project_id}/requirements/{requirement_id}/revisions/{revision_index}/llm-iq",
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def list_suggested_tests(project_id: str, requirement_id: str) -> dict:
+    resp = await _request(
+        "GET",
+        f"/api/v1/projects/{project_id}/requirements/{requirement_id}/suggested-tests",
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def import_suggested_tests(project_id: str, requirement_id: str, tests: list) -> dict:
+    resp = await _request(
+        "POST",
+        f"/api/v1/projects/{project_id}/requirements/{requirement_id}/suggested-tests/import",
+        json={"tests": tests},
+    )
+    resp.raise_for_status()
+    return resp.json()
