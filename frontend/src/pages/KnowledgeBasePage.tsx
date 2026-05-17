@@ -520,7 +520,7 @@ export const KnowledgeBasePage: React.FC = () => {
             </SectionCard>
 
             {/* Readiness */}
-            <SectionCard title="Readiness">
+            <SectionCard title="Ready for testing?">
               <div className="flex items-center gap-2">
                 <input
                   type="text"
