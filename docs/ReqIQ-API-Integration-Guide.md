@@ -24,7 +24,6 @@
 12. [ReqIQ Proxy Endpoints](#12-reqiq-proxy-endpoints)
     - [12.7 Get Latest IQ Score](#127-get-latest-iq-score-for-a-requirement)
     - [12.8 Project Readiness Check](#128-project-readiness-check)
-13. [ReqIQ KB Replacement — Development Plan](#13-reqiq-kb-replacement--development-plan)
 
 ---
 
@@ -950,6 +949,9 @@ where to stop — the browser follows it literally.
 
 ## 12. ReqIQ Proxy Endpoints
 
+> **Full handoff (standard vs power-user, proxy gaps, MVP order):** [`AI-Web-Test-Developer-Handoff.md`](AI-Web-Test-Developer-Handoff.md).  
+> §12 below is **partial** — implement the **§5.2 extensions** in that doc (create/rename project, requirements CRUD, revisions/IQ, full suggested-tests).
+
 AI Web Test acts as a transparent proxy to ReqIQ. Users and agents call these endpoints on AI Web Test (port 8000) — the server forwards the request to ReqIQ (`localhost:3001`) using a service account, and returns the result. **Users never need to know ReqIQ exists or what port it runs on.**
 
 > All endpoints below require `Authorization: Bearer <AI_Web_Test_token>`.  
@@ -1226,119 +1228,3 @@ REQIQ_SERVICE_PASSWORD=your-service-account-password
 # Or store the pre-issued JWT directly:
 # REQIQ_SERVICE_TOKEN=eyJhbGci...
 ```
-
----
-
-## 13. ReqIQ KB Replacement — Development Plan
-
-**Status:** Planned — implementation deferred until Crawl & Save UI page is complete.  
-**Decision:** Replace AI Web Test's local SQLite Knowledge Base with ReqIQ as the single document store and RAG engine across all AI Web Test instances.
-
-### Architecture Decision
-
-| Role | System | Responsibility |
-|------|--------|----------------|
-| **Brain** | ReqIQ (Node 1) | Single source of truth for all requirement documents, RAG, IQ scoring |
-| **Hands** | AI Web Test (Node 2/3) | Browser automation, test execution, step library, results storage |
-| **Nervous system** | Hermes | Orchestrates both, routes tasks, reports via Telegram |
-
-The existing AI Web Test KB (`POST /api/v1/kb/upload`, SQLite `kb_documents` table) was built before ReqIQ existed as a workaround to give the LLM document context. It does **not** chunk or embed documents — it pastes raw document text into the LLM prompt, which degrades as the KB grows. ReqIQ replaces this with proper vector-based RAG.
-
----
-
-### Phase 1 — Backend Proxy Endpoints (Section 12)
-
-**Goal:** Implement the FastAPI routes that proxy AI Web Test API calls through to ReqIQ. Credentials are already stored in `backend/.env`.
-
-**Files to create:**
-- `backend/app/services/reqiq_client.py` — ReqIQ JWT auth client: auto-login on startup, cache token, retry on 401, pass through 429 + `Retry-After`
-- `backend/app/api/v1/endpoints/requirements.py` — all proxy route handlers (mirrors Section 12 above)
-
-**Files to edit:**
-- `backend/app/api/v1/router.py` — register new router at prefix `/requirements`
-
-**Endpoints to implement** (all documented in Section 12):
-
-| AI Web Test route | Proxies to ReqIQ |
-|---|---|
-| `GET /api/v1/requirements/projects` | `GET /api/v1/projects` |
-| `GET /api/v1/requirements/{projectId}/requirements` | `GET /api/v1/projects/{id}/requirements` |
-| `POST /api/v1/requirements/{projectId}/query` | `POST /api/v1/projects/{id}/rag/query` |
-| `POST /api/v1/requirements/{projectId}/sources/upload` | `POST /api/v1/projects/{id}/sources/upload` (multipart passthrough) |
-| `GET /api/v1/requirements/{projectId}/sources` | `GET /api/v1/projects/{id}/sources` |
-| `POST /api/v1/requirements/{projectId}/requirements/{reqId}/suggest-tests` | `POST /api/v1/projects/{id}/suggested-tests/generate` |
-| `GET /api/v1/requirements/{projectId}/requirements/{reqId}/latest-iq` | `GET /api/v1/projects/{id}/requirements/{reqId}/latest-iq` |
-| `GET /api/v1/requirements/{projectId}/readiness` | `GET /api/v1/projects/{id}/readiness?query=&feature=` |
-
-**Key implementation notes:**
-- JWT TTL is 8h — client must cache token and re-login on 401
-- Rate limiting on `/rag/*` returns 429 — pass through `Retry-After` header to caller
-- Flat path `/api/v1/rag/query` does **not** exist — always use project-scoped path
-- Multipart upload: stream file bytes directly to ReqIQ, do not buffer to disk
-
-**Service account credentials** (already in `backend/.env`):
-```bash
-REQIQ_URL=http://localhost:3001
-REQIQ_SERVICE_EMAIL=aiwebtest@reqiq.local
-REQIQ_SERVICE_PASSWORD=f4sHy6A0DPFZvXUp7LYw5VcK
-REQIQ_TENANT_ID=cmp0zdrhd0000alp861l7l0lf
-REQIQ_PROJECT_ID_VOUCHER_PLAN=cmp0zdx4g0004alp8z77ess7a
-```
-
----
-
-### Phase 2 — KB Page Transformation (Frontend)
-
-**Goal:** Replace the `KnowledgeBasePage.tsx` content with a ReqIQ-backed requirements view. Keep the same route (`/knowledge-base`) and sidebar entry — only the page content changes.
-
-**Files to edit:**
-- `frontend/src/pages/KnowledgeBasePage.tsx` — rewrite content (keep filename + route)
-
-**Files to create:**
-- `frontend/src/services/requirementsService.ts` — calls the Phase 1 proxy endpoints
-
-**New UI panels:**
-1. Project selector — `GET /api/v1/requirements/projects`
-2. Sources list + upload button — `GET/POST .../sources`
-3. RAG query box — `POST .../query` — shows `content` + `citations`
-4. Requirements list — `GET .../requirements` — shows IQ score + state badge per row
-5. "Generate suggested tests" button per requirement — calls `.../suggest-tests`, pre-fills Crawl & Save form
-
-**What NOT to touch:**
-- `frontend/src/features/agent-workflow/*` — Developer B's Sprint 10 work
-- `frontend/src/services/agentWorkflowService.ts` — Developer B
-- `backend/app/api/v1/endpoints/kb.py` — keep alive, just hide from nav
-- `backend/app/models/kb_document.py` — keep, no data migration
-
----
-
-### Phase 3 — Replace `KBContextService` in Test Generation
-
-**Goal:** Before calling the LLM in test generation, query ReqIQ for the feature context. Fall back to SQLite KB if ReqIQ is unreachable.
-
-**Files to edit:**
-- `backend/app/services/kb_context.py` — add `get_reqiq_context(project_id, query)` method that calls `reqiq_client` → returns `wikiContent` if `readinessScore >= 60`
-- `backend/app/services/test_generation.py` — call `get_reqiq_context` first; use result instead of (or prepended to) existing SQLite KB context injection
-
-**Fallback behaviour:**
-```python
-try:
-    context = await reqiq_client.get_readiness(project_id, query=feature_name)
-    if context["readinessScore"] >= 60:
-        return context["wikiContent"]
-except Exception:
-    pass  # ReqIQ unreachable — fall through to SQLite KB
-return await sqlite_kb_context(db, category_id)  # existing behaviour
-```
-
----
-
-### Files NOT to delete
-
-| File | Reason |
-|------|--------|
-| `backend/app/api/v1/endpoints/kb.py` | Keep — Developer B may use `use_kb_context` flag |
-| `backend/app/models/kb_document.py` | Keep — no data migration needed |
-| `backend/app/crud/kb_document.py` | Keep — used by existing KB endpoints |
-| `frontend/src/services/knowledgeBaseService.ts` | Keep until Phase 2 is fully live |
-| `frontend/src/mock/knowledgeBase.ts` | Keep — test fixtures |
