@@ -275,7 +275,7 @@ export const KnowledgeBasePage: React.FC = () => {
                       <ul className="space-y-1">
                         {ragResult.citations.map((c, i) => (
                           <li key={i} className="text-xs text-gray-500">
-                            {c.sourceFilename} · chunk {c.chunkIndex} · score {c.score.toFixed(2)}
+                            {c.sourceFilename} · chunk {c.chunkIndex}{c.score != null ? ` · score ${c.score.toFixed(2)}` : ''}
                           </li>
                         ))}
                       </ul>

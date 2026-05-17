@@ -23,9 +23,13 @@ export interface ReqIQRequirement {
 }
 
 export interface RagCitation {
+  index?: number;
+  chunkId?: string;
+  sourceId?: string;
   sourceFilename: string;
   chunkIndex: number;
-  score: number;
+  score?: number;
+  excerpt?: string;
 }
 
 export interface SuggestedTestStep {
