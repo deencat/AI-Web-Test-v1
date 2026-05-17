@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import stepLibraryService from '../services/stepLibraryService';
 import type { StepLibraryModule } from '../types/stepLibrary.types';
@@ -72,7 +73,14 @@ function getAuthHeaders(): Record<string, string> {
 }
 
 export function CrawlAndSavePage() {
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [searchParams] = useSearchParams();
+
+  const [form, setForm] = useState<FormState>(() => ({
+    ...EMPTY_FORM,
+    test_title: searchParams.get('test_title') ?? '',
+    test_description: searchParams.get('test_description') ?? '',
+    user_instruction: searchParams.get('user_instruction') ?? '',
+  }));
   const [modules, setModules] = useState<StepLibraryModule[]>([]);
   const [workflowStatus, setWorkflowStatus] = useState<WorkflowStatus>('idle');
   const [workflowId, setWorkflowId] = useState<string | null>(null);
