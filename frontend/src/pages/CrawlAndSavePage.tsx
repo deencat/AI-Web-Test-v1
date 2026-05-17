@@ -3,7 +3,7 @@ import { Layout } from '../components/layout/Layout';
 import stepLibraryService from '../services/stepLibraryService';
 import type { StepLibraryModule } from '../types/stepLibrary.types';
 
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+const API_BASE = new URL(import.meta.env.VITE_API_URL ?? 'http://localhost:8000').origin;
 
 interface LoginCredentials {
   username: string;
