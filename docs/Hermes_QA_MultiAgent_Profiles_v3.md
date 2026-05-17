@@ -1,6 +1,6 @@
-# Hermes Agent — QA Multi-Agent Profiles (v2)
+# Hermes Agent — QA Multi-Agent Profiles (v3)
 ### Redesigned for ReqIQ Integration
-**Version:** 2.3 | **Date:** 2026-05-15
+**Version:** 3.0 | **Date:** 2026-05-15
 
 ---
 
@@ -17,8 +17,8 @@ This document defines all Hermes Agent profiles for the QA Multi-Agent System, r
 │  NODE 1 — Ubuntu Mini PC  (Server / Admin only — not daily human interface) │
 │                                                                             │
 │  • Hermes Agent (all 5 profiles)  — port 8080 HTTP gateway                 │
-│  • ReqIQ API                      — port 8090                               │
-│  • ReqIQ UI                       — port 3000                               │
+│  • ReqIQ API                      — port 3001 (Docker: 3001→3001)           │
+│  • ReqIQ UI                       — port 8080 (nginx → web container)       │
 │  • Ollama (qwen2.5:7b)            — port 11434                              │
 │  • Garage S3 (self-hosted)        — port 3900                               │
 │  • Redis                          — port 6379                               │
@@ -67,7 +67,7 @@ Every entry point that can start or advance the Hermes pipeline — external (hu
 |---|---|---|---|---|
 | H1 | Telegram message | QA engineer (mobile/remote) | qa-manager Telegram gateway | Full pipeline: requirements → test-gen → dispatch → report |
 | H2 | "Generate via Hermes" button | AI Web Test Webapp UI (Node 2) | `POST /api/v1/hermes/trigger` → Hermes HTTP gateway | Full pipeline |
-| H3 | ReqIQ webapp UI | ReqIQ frontend (Node 1 port 3000) | `POST http://node1:8080/hermes/qa-manager/message` | Full pipeline |
+| H3 | ReqIQ webapp UI | ReqIQ frontend (Node 1 port 8080) | `POST http://node1:8080/hermes/qa-manager/message` | Full pipeline |
 | H4 | Direct HTTP call | Developer / API client | `POST http://node1:8080/hermes/qa-manager/message` | Any pipeline path, depending on message content |
 
 **H1 — Telegram example:**
@@ -121,15 +121,23 @@ auto_approve: true
            "deploy_env": "uat", "deployed_by": "${{ github.actor }}"}'
 ```
 
-**A3 — ReqIQ document compile event** (ReqIQ backend calls Hermes when wiki is ready):
+**A3 — ReqIQ index-ready webhook** (ReqIQ calls Hermes after `POST …/embedding/reindex` succeeds):
+
+Configure per tenant: `PATCH /api/v1/admin/integration-config` with `hermesWebhookUrl` (full URL, e.g. `http://node1:8080/hermes/qa-manager/message`) and `hermesWebhookBearer`, **or** set env `REQIQ_HERMES_WEBHOOK_URL` / `REQIQ_HERMES_WEBHOOK_BEARER` on the API host.
+
+ReqIQ POST body:
 ```json
-POST http://node1:8080/hermes/qa-manager/message
-{ "message": "Requirements compilation complete for feature 5G Voucher Plan",
-  "project": "Three-HK", "feature": "5G Voucher Plan Purchase",
-  "trigger_type": "reqiq_compile_complete",
-  "completeness_score": 87,
-  "wiki_url": "http://localhost:3001/api/v1/projects/{projectId}/requirements/{requirementId}" }
+{
+  "message": "ReqIQ embedding index ready for project Voucher Plan (version 4)",
+  "trigger_type": "reqiq_index_ready",
+  "projectId": "cmp0zdx4g0004alp8z77ess7a",
+  "embeddingIndexVersion": 4,
+  "chunksProcessed": 120,
+  "vectorsUpserted": 120
+}
 ```
+
+For a single readiness gate (RAG + requirement + IQ), agents may call **`GET /api/v1/projects/{projectId}/readiness?query=…&feature=…`** instead of deriving `completeness_score` locally.
 
 ---
 
@@ -140,7 +148,7 @@ These are cascade triggers fired automatically within the Hermes pipeline. No hu
 | # | From agent | Condition | To agent | Payload passed |
 |---|---|---|---|---|
 | I1 | qa-manager | Received any trigger | qa-requirements | `{ project, feature }` |
-| I2 | qa-requirements | `completeness_score >= 60` | qa-test-gen | `{ wiki_content, feature_url, env_config, completeness_score }` |
+| I2 | qa-requirements | `readinessScore >= 60` (from ReqIQ readiness or agent heuristic) | qa-test-gen | `{ wiki_content, feature_url, env_config, readiness_score }` |
 | I3 | qa-test-gen | `status == "success"` | qa-dispatcher | `{ test_case_id, test_title }` |
 | I4 | qa-dispatcher | All runners complete | qa-reporter | `{ passed, failed, s3_results_path, run_timestamp }` |
 | I5 | qa-reporter | Report sent | qa-manager | `{ status: "done", telegram_message_ids: [...] }` |
@@ -149,7 +157,7 @@ These are cascade triggers fired automatically within the Hermes pipeline. No hu
 
 | # | Agent | Condition | Action |
 |---|---|---|---|
-| S1 | qa-requirements | `completeness_score < 60` | Notify human: "Missing documents for [feature]. Need: [list]" — pipeline stops |
+| S1 | qa-requirements | `readinessScore < 60` | Notify human: "Missing documents for [feature]. Need: [list]" — pipeline stops |
 | S2 | qa-requirements | ReqIQ API unreachable | Notify human: "ReqIQ unavailable" — pipeline stops |
 | S3 | qa-test-gen | Crawl `status == "failed"` | Notify human with error detail — pipeline stops, no dispatch |
 | S4 | qa-test-gen | API returns 401 | Notify qa-manager: "Token expired — re-authenticate" — pipeline stops |
@@ -188,11 +196,9 @@ Incoming trigger
        │         │
        │         └── YES → qa-reporter (retrieve from S3 and send)
        │
-       ├── trigger_type = "reqiq_compile_complete"?
+       ├── trigger_type = "reqiq_index_ready"?
        │         │
-       │         └── YES → check if auto-generate is enabled for this feature
-       │                   → if yes: qa-test-gen → qa-dispatcher → qa-reporter
-       │                   → if no: notify human "Requirements ready, trigger generation when ready"
+       │         └── YES → optional qa-requirements (readiness) → qa-test-gen → …
        │
        └── unknown intent → ask human for clarification
 ```
@@ -267,9 +273,9 @@ DECISION RULES:
    a. Retrieve from Garage S3 results bucket or delegate to qa-reporter
 
 4. If a human uploads requirements and requests knowledge base update:
-   a. Confirm the upload was received by ReqIQ via its API
-   b. Wait for compilation (poll /api/v1/documents/{id}/status)
-   c. Notify human when wiki is updated with new completeness score
+   a. Confirm upload via POST …/sources/upload (or upload-zip)
+   b. Run POST …/embedding/reindex; optional Hermes webhook fires when index is ready
+   c. Poll GET …/readiness?query=… or GET …/rag/query until readinessScore >= 60
 
 COMMUNICATION STYLE:
 - Always respond in the same language the human used
@@ -288,7 +294,15 @@ tools:
     url: "http://localhost:3001/api/v1/projects/{projectId}/rag/query"
     headers:
       Authorization: "Bearer ${REQIQ_API_KEY}"
-    description: "RAG Q&A over project sources — returns answer + citations. Use query field with feature name or acceptance criteria."
+    description: "RAG Q&A — body { query }. Response wiki text is field content (not answer), plus citations."
+
+  reqiq_project_readiness:
+    type: http
+    method: GET
+    url: "http://localhost:3001/api/v1/projects/{projectId}/readiness?query={query}&feature={feature}"
+    headers:
+      Authorization: "Bearer ${REQIQ_API_KEY}"
+    description: "Single readiness gate: readinessScore, status, wikiContent, matchedRequirement, missing[]. Default threshold 60."
 
   reqiq_projects_list:
     type: http
@@ -371,7 +385,7 @@ auto_approve: true
 **Profile name:** `qa-requirements`
 **Role:** Automated-trigger fallback only. When cron or post-deploy webhooks fire (no human pre-loaded wiki), this agent fetches requirements directly from ReqIQ. For **human-triggered flows via AI Web Test Webapp**, this agent is **skipped** — the webapp pre-fetches the wiki before calling Hermes (see AI Web Test proxy endpoints in the integration guide).
 
-> **When it runs:** Only for Category 2 automated triggers (cron, CI/CD webhook, ReqIQ compile-complete event). Not invoked when `wiki_content` is already present in the delegate_task payload.
+> **When it runs:** Only for Category 2 automated triggers (cron, CI/CD webhook, ReqIQ `reqiq_index_ready` webhook). Not invoked when `wiki_content` is already present in the delegate_task payload.
 
 ### Model Assignment
 
@@ -389,28 +403,27 @@ trigger does NOT already contain wiki_content (automated cron/webhook runs).
 For human-triggered flows, skip this agent — the wiki arrives pre-loaded.
 
 WORKFLOW:
-1. Receive: projectId + requirementId (or feature name) from qa-manager
-2. Call reqiq_rag_query with query = feature name or acceptance criteria keywords
-3. Evaluate the RAG response:
-   - Check citations count — if zero hits: upload fallback (step 4)
-   - If answer is substantive (>100 chars): proceed
-   - Call reqiq_requirements_list to check if a Requirement row exists
-   - If a Requirement row exists in BASELINE state: fetch its body for structured data
-   - Assess completeness: does the answer describe the full user flow end-to-end?
-     - If insufficient: return { "status": "insufficient", "missing": [...] }
-     - If sufficient: return { "status": "ready", "wiki_content": "<RAG answer>",
-                               "requirement_id": "<id if found>",
-                               "iq_score": <compositeScore if available> }
+1. Receive: projectId (cuid from GET /projects) + feature name from qa-manager
+2. Prefer reqiq_project_readiness with query = feature / acceptance criteria
+   - If readinessScore >= 60: return { "status": "ready", "wiki_content": "<wikiContent>",
+     "requirement_id": "<matchedRequirement.id>", "readiness_score": <score>,
+     "iq_score": <matchedRequirement.latestCompositeScore> }
+3. Or call reqiq_rag_query with body { "query": "..." } — wiki text is response field content
+4. Evaluate:
+   - Check citations length — if zero: upload fallback (step 5)
+   - GET …/requirements — rows include latestCompositeScore on list
+   - GET …/requirements/{id}/latest-iq if you need IQ only
+   - If insufficient: return { "status": "insufficient", "missing": [...] }
 
-4. If RAG returns no relevant hits:
+5. If RAG returns no relevant hits:
    a. Upload a minimal crawl stub via reqiq_sources_upload
    b. Call reqiq_embedding_reindex to trigger re-embedding
    c. Wait 30 seconds, then retry reqiq_rag_query once
    d. If still no hits: return { "status": "insufficient", "missing": ["No source documents"] }
 
-5. Optionally call reqiq_suggested_tests_generate with requirementId to get
-   LLM-generated test step suggestions from ReqIQ — pass these to qa-manager
-   as test_instructions for qa-test-gen to use instead of extracting from wiki.
+6. Optionally POST …/suggested-tests/generate with { requirementId, context } — returns
+   persisted created[].payload (title, steps, oracle). Or POST …/suggested-tests/import
+   with rag/query JSON when LLM generate is not needed.
 
 IMPORTANT:
 - Never generate test cases yourself
@@ -423,13 +436,21 @@ IMPORTANT:
 
 ```yaml
 tools:
+  reqiq_project_readiness:
+    type: http
+    method: GET
+    url: "http://localhost:3001/api/v1/projects/{projectId}/readiness?query={query}&feature={feature}"
+    headers:
+      Authorization: "Bearer ${REQIQ_API_KEY}"
+    description: "Preferred readiness gate — readinessScore, wikiContent, missing[], matched requirement + IQ"
+
   reqiq_rag_query:
     type: http
     method: POST
     url: "http://localhost:3001/api/v1/projects/{projectId}/rag/query"
     headers:
       Authorization: "Bearer ${REQIQ_API_KEY}"
-    description: "RAG Q&A — returns answer (wiki-style) + citations from uploaded source documents"
+    description: "RAG Q&A — body { query }; response wiki text in content + citations"
 
   reqiq_requirements_list:
     type: http
@@ -461,7 +482,15 @@ tools:
     url: "http://localhost:3001/api/v1/projects/{projectId}/embedding/reindex"
     headers:
       Authorization: "Bearer ${REQIQ_API_KEY}"
-    description: "Trigger re-embedding after a new source is uploaded"
+    description: "Trigger re-embedding after upload; may webhook Hermes (reqiq_index_ready) when configured"
+
+  reqiq_suggested_tests_import:
+    type: http
+    method: POST
+    url: "http://localhost:3001/api/v1/projects/{projectId}/suggested-tests/import"
+    headers:
+      Authorization: "Bearer ${REQIQ_API_KEY}"
+    description: "Import candidate tests from JSON or rag/query content — no LLM"
 ```
 
 ---
@@ -736,10 +765,10 @@ You are the Test Dispatcher Agent. You manage test execution across
 multiple Windows test runner instances.
 
 RUNNER REGISTRY:
-# Update this list as Windows runners are added/removed
-- runner-01: http://192.168.1.101:3001
-- runner-02: http://192.168.1.102:3001
-- runner-03: http://192.168.1.103:3001
+# AI Web Test API on Windows nodes (port 8000 — NOT ReqIQ 3001)
+- runner-01: http://192.168.1.101:8000
+- runner-02: http://192.168.1.102:8000
+- runner-03: http://192.168.1.103:8000
 
 WORKFLOW:
 1. Receive: list of test_case_ids from qa-manager
@@ -890,14 +919,12 @@ TRIGGER (Option B — Telegram, for remote/mobile use):
 qa-manager
   │
   ├──► delegate_task → qa-requirements
-  │         │ Queries ReqIQ: POST /api/v1/projects/{projectId}/rag/query
-  │         │   { "query": "5G Voucher Plan Purchase acceptance criteria" }
-  │         │ ReqIQ returns: answer (wiki-style), citations
-  │         │ Also checks: GET /api/v1/projects/{projectId}/requirements
-  │         │   for BASELINE requirement + iqSnapshot.compositeScore
-  │         │ Optionally: POST .../suggested-tests/generate → test_instructions[]
-  │         └─► Returns to qa-manager: { status: "ready", iq_score: 87, wiki_content: "...",
-  │                                     requirement_id: "uuid", test_instructions: [...] }
+  │         │ GET …/readiness?query=… OR POST …/rag/query { query }
+  │         │ ReqIQ returns: wikiContent / content, readinessScore, citations
+  │         │ Requirements list includes latestCompositeScore per row
+  │         │ Optionally: POST …/suggested-tests/generate → created[].payload
+  │         └─► Returns to qa-manager: { status: "ready", readiness_score: 87, wiki_content: "...",
+  │                                     requirement_id: "uuid", suggested_tests: [...] }
   │
   ├──► delegate_task → qa-test-gen
   │         │ Receives: wiki_content + feature_url + env_config
@@ -949,10 +976,10 @@ Human notification: Telegram when complete (fire-and-forget pattern)
 All profiles share access to these via `~/.hermes/.env`:
 
 ```bash
-# ReqIQ
-REQIQ_API_KEY=your-reqiq-api-key    # service account JWT — from POST /api/v1/login
-REQIQ_URL=http://localhost:3001     # ReqIQ Fastify API port (NOT 8090)
-REQIQ_PROJECT_ID=your-project-uuid  # UUID from GET /api/v1/projects
+# ReqIQ (obtain JWT: POST /api/v1/login → accessToken; default TTL 8h)
+REQIQ_API_KEY=your-reqiq-jwt        # Bearer token — service account e.g. aiwebtest@reqiq.local
+REQIQ_URL=http://localhost:3001     # API (Docker maps 3001). Web UI often :8080 behind nginx.
+REQIQ_PROJECT_ID=your-project-cuid  # id field from GET /api/v1/projects — NOT display name
 
 # Test Automation Webapp (AI Web Test — port 8000, NOT 3001)
 TEST_WEBAPP_URL=http://192.168.1.101:8000   # Node 2 primary runner
@@ -1095,10 +1122,10 @@ HERMES_HTTP_API_KEY=your-hermes-http-gateway-key
 | Area | v1 | v2 |
 |------|----|----|
 | Requirements source | Hermes reads files directly | Hermes queries ReqIQ API |
-| Document storage | Samba share / local filesystem | Garage S3 via ReqIQ |
-| Completeness scoring | Done inside Requirements Agent | Done by ReqIQ on ingest |
-| Knowledge accumulation | RAG-style re-parsing | LLM-Wiki compile-once pattern |
-| Contradiction detection | None | ReqIQ flags on wiki page |
+| Document storage | Samba share / local filesystem | ReqIQ sources (Postgres + volume); Garage for test results only |
+| Completeness scoring | Done inside Requirements Agent | GET …/readiness or latestCompositeScore on requirements |
+| Knowledge accumulation | RAG-style re-parsing | Sources upload + embedding reindex + RAG query |
+| Contradiction detection | None | Future ReqIQ / manual review (not automated yet) |
 | UAT team access | None | ReqIQ web UI + Telegram reports |
 | Dispatcher model cost | Cloud LLM | Local Qwen — zero API cost |
 | Report audiences | Single IT report | Separate IT + UAT reports |

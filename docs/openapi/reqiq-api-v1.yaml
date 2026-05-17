@@ -1,0 +1,1869 @@
+openapi: 3.0.3
+info:
+  title: ReqIQ HTTP API
+  description: |
+    **ReqIQ** — self-hosted QA requirements + RAG API (Fastify). This specification is intended for **external clients**:
+    agentic test automation, CI pipelines, partner integrations, and custom UIs.
+
+    ### Base URL
+    - Default in this file: `http://localhost:3001`
+    - **Replace the `servers` URL** with your deployment (e.g. `https://reqiq.example.com`) when importing into Postman, Insomnia, or codegen tools.
+    - **Web proxy path:** if users hit the SPA behind Nginx on port **8080**, API routes are often the same host with path prefix **`/api/v1`** (e.g. `https://host/api/v1/login`).
+
+    ### Authentication (JWT)
+    1. `POST /api/v1/login` with JSON `{ "email", "password" }` → response includes **`accessToken`** (JWT string).
+    2. For all secured routes, send header: **`Authorization: Bearer <accessToken>`**.
+    3. First-time bootstrap only: `POST /api/v1/register` with the same JSON shape **when the database has zero users** (disabled in production unless explicitly allowed).
+
+    ### Health (no JWT)
+    - `GET /live` — process up
+    - `GET /ready` — database connectivity (**503** if DB down)
+    - `GET /version` — build label
+
+    ### Document upload (multipart)
+    - **`POST .../sources/upload`**: `multipart/form-data` with **one or more file parts** (any field names; each part must be a binary file). Supports DOCX, PDF, MD, TXT, PPTX, PNG, etc. per server config. Returns **`uploaded`**, **`rejected`**, counts. **400** `no_files` if no file parts; **413** `file_too_large` if over limit (`REQIQ_MAX_UPLOAD_BYTES` in env).
+    - **`POST .../sources/upload-zip`**: single **`.zip`** file part (`application/zip` or filename ending in `.zip`).
+
+    ### RAG & rate limits
+    - **`POST .../rag/retrieve`** and **`POST .../rag/query`** (and thread routes) may return **429** with JSON **`{ "error": "rate_limited", ... }`** and **`Retry-After`** header (seconds). Tune or disable via **`REQIQ_RAG_RATE_*`** on the API host (`apps/api/.env.example`).
+
+    ### Normative implementation
+    If this document disagrees with the server, **`apps/api/src/routes/api.ts`** and **`apps/api/src/routes/health.ts`** win.
+
+    Related SRS: `docs/ReqIQ_Software_Requirements_Specification.md` (illustrative §6.2 may differ from this OpenAPI).
+  version: "0.0.1"
+  contact:
+    name: ReqIQ project
+
+externalDocs:
+  description: Integration guide for external automation teams
+  url: README.md
+
+servers:
+  - url: http://localhost:3001
+    description: Default local API (docker compose or `npm run dev` in apps/api)
+
+tags:
+  - name: Health
+  - name: Auth
+  - name: Profile
+  - name: LLM
+  - name: Admin
+  - name: Projects
+  - name: Sources
+  - name: Embeddings
+  - name: RAG
+  - name: IQ
+  - name: Requirements
+  - name: Chunks
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    ErrorBody:
+      type: object
+      properties:
+        error:
+          type: string
+        detail:
+          type: string
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+    LoginResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        expiresIn:
+          type: string
+        user:
+          type: object
+          properties:
+            id: { type: string }
+            email: { type: string }
+            role: { type: string, enum: [ADMIN, LIBRARIAN, ANALYST, AUDITOR] }
+            tenantId: { type: string }
+    MeResponse:
+      type: object
+      properties:
+        id: { type: string }
+        email: { type: string }
+        role: { type: string }
+        tenantId: { type: string }
+    ProjectCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+    Project:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        tenantId: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    SuggestedTestStep:
+      type: object
+      required: [action]
+      properties:
+        action: { type: string }
+        expected: { type: string }
+    SuggestedTestPayload:
+      type: object
+      required: [title, steps]
+      description: FR-IQ-02 candidate test; server validates with structural checks mirroring apps/api/src/schemas/suggested-test-payload.schema.ts
+      properties:
+        title: { type: string }
+        preconditions:
+          type: array
+          items: { type: string }
+        steps:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/SuggestedTestStep"
+        oracle: { type: string }
+        dataVariants:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              description: { type: string }
+        automation:
+          type: object
+          properties:
+            viable: { type: boolean }
+            markers:
+              type: array
+              items: { type: string }
+            notes: { type: string }
+    SuggestedTestCreateRequest:
+      type: object
+      required: [payload]
+      properties:
+        payload:
+          $ref: "#/components/schemas/SuggestedTestPayload"
+        requirementId:
+          type: string
+          nullable: true
+          description: Optional link to a Requirement in the same project (FR-IQ-02 extension).
+    SuggestedTestGenerateRequest:
+      type: object
+      description: >
+        S6-02+ — LLM generates one or more candidate tests. Provide a requirementId and/or freeform context
+        (at least one non-empty). Optional hints and maxTests (1–5, default 2).
+      properties:
+        requirementId:
+          type: string
+          nullable: true
+          description: Requirement in this project whose title/body are sent to the model.
+        context:
+          type: string
+          nullable: true
+          description: Freeform text when there is no requirement row (e.g. RAG excerpt from an agent).
+        hints:
+          type: string
+          nullable: true
+          description: Extra instructions for the model.
+        maxTests:
+          type: integer
+          minimum: 1
+          maximum: 5
+          default: 2
+    SuggestedTestGenerateResponse:
+      type: object
+      properties:
+        created:
+          type: array
+          items:
+            $ref: "#/components/schemas/SuggestedTestRow"
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              index: { type: integer }
+              code: { type: string }
+              issues:
+                type: array
+                items: { type: string }
+        model:
+          type: string
+          nullable: true
+        provider:
+          type: string
+          enum: [openai-compat, azure]
+    SuggestedTestImportRequest:
+      type: object
+      description: >
+        S6-02 refine — import candidate tests without an LLM call. Provide one of suggestedTests, json (raw text),
+        or ragQuery (full or partial POST …/rag/query response with content or suggestedTests).
+      properties:
+        requirementId:
+          type: string
+          nullable: true
+        maxTests:
+          type: integer
+          minimum: 1
+          maximum: 20
+          description: Cap imports (default all parsed items, max 20).
+        suggestedTests:
+          type: array
+          items:
+            $ref: "#/components/schemas/SuggestedTestPayload"
+        json:
+          type: string
+          description: Raw JSON or prose with fenced suggestedTests envelope.
+        ragQuery:
+          type: object
+          additionalProperties: true
+          description: Typically includes content (answer text) and/or suggestedTests.
+    SuggestedTestImportResponse:
+      type: object
+      properties:
+        created:
+          type: array
+          items:
+            $ref: "#/components/schemas/SuggestedTestRow"
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              index: { type: integer }
+              code: { type: string }
+              issues:
+                type: array
+                items: { type: string }
+        source:
+          type: string
+          enum: [suggestedTests, json, ragQuery]
+    SuggestedTestPatchRequest:
+      type: object
+      description: >
+        Full replace when `payload` is present (optional `requirementId` updates or clears the link).
+        Omit `payload` to PATCH only `requirementId` (set string id, or null to clear).
+      properties:
+        payload:
+          $ref: "#/components/schemas/SuggestedTestPayload"
+        requirementId:
+          type: string
+          nullable: true
+    SuggestedTestRow:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        payload:
+          $ref: "#/components/schemas/SuggestedTestPayload"
+        requirementId:
+          type: string
+          nullable: true
+        createdById: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    RequirementState:
+      type: string
+      enum: [DRAFT, REVIEWED, BASELINE, SUPERSEDED]
+    RequirementLatestIq:
+      type: object
+      description: Latest content revision IQ summary (S6 / Hermes agent ergonomics)
+      properties:
+        latestRevisionIndex:
+          type: integer
+          nullable: true
+        latestCompositeScore:
+          type: number
+          nullable: true
+          description: From latest revision iqSnapshot.compositeScore (stub or future LLM IQ)
+        hasLatestIqSnapshot: { type: boolean }
+        iqAlgorithm:
+          type: string
+          nullable: true
+    Requirement:
+      type: object
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        projectId: { type: string }
+        createdById: { type: string }
+        title: { type: string }
+        body: { type: string }
+        state:
+          $ref: "#/components/schemas/RequirementState"
+        supersededById: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        latestRevisionIndex:
+          type: integer
+          nullable: true
+        latestCompositeScore:
+          type: number
+          nullable: true
+        hasLatestIqSnapshot: { type: boolean }
+        iqAlgorithm:
+          type: string
+          nullable: true
+    ProjectReadinessResponse:
+      type: object
+      description: >
+        Hermes qa-requirements helper — combines RAG query, optional requirement match, and readinessScore (default threshold 60).
+      properties:
+        projectId: { type: string }
+        query: { type: string }
+        readinessScore: { type: number }
+        status:
+          type: string
+          enum: [ready, insufficient, no_sources, error]
+        threshold: { type: number }
+        missing:
+          type: array
+          items: { type: string }
+        wikiContent:
+          type: string
+          description: Same as rag.content — use as wiki_content for qa-test-gen
+        rag:
+          type: object
+          nullable: true
+          properties:
+            content: { type: string }
+            citationCount: { type: integer }
+            skippedLlm: { type: boolean }
+            abstained: { type: boolean }
+        matchedRequirement:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            title: { type: string }
+            state:
+              $ref: "#/components/schemas/RequirementState"
+            latestRevisionIndex: { type: integer, nullable: true }
+            latestCompositeScore: { type: number, nullable: true }
+            hasLatestIqSnapshot: { type: boolean }
+            iqAlgorithm: { type: string, nullable: true }
+    RequirementCreateRequest:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string }
+        body: { type: string }
+    RequirementPatchRequest:
+      type: object
+      properties:
+        title: { type: string }
+        body: { type: string }
+    RequirementTransitionRequest:
+      type: object
+      required: [to]
+      properties:
+        to:
+          $ref: "#/components/schemas/RequirementState"
+        supersededByRequirementId:
+          type: string
+          description: Required when to is SUPERSEDED; must reference another BASELINE requirement in the same project.
+    RequirementAuditEntry:
+      type: object
+      properties:
+        id: { type: string }
+        action:
+          type: string
+          enum: [CREATED, CONTENT_UPDATED, STATE_CHANGED]
+        fromState:
+          $ref: "#/components/schemas/RequirementState"
+          nullable: true
+        toState:
+          $ref: "#/components/schemas/RequirementState"
+          nullable: true
+        meta: { type: object, additionalProperties: true }
+        actorUserId: { type: string }
+        createdAt: { type: string, format: date-time }
+    RequirementContentRevisionSummary:
+      type: object
+      description: S6-04 / FR-IQ-05 — list entry without full body
+      properties:
+        revisionIndex: { type: integer }
+        titlePreview: { type: string }
+        bodyChars: { type: integer }
+        hasIqSnapshot: { type: boolean }
+        actorUserId: { type: string }
+        createdAt: { type: string, format: date-time }
+    RequirementContentRevision:
+      type: object
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        projectId: { type: string }
+        requirementId: { type: string }
+        revisionIndex: { type: integer }
+        title: { type: string }
+        body: { type: string }
+        iqSnapshot:
+          type: object
+          nullable: true
+          description: Stub or LLM IQ bundle; includes scores, normalizedWeights, compositeScore, algorithm, computedAt
+          properties:
+            algorithm: { type: string }
+            scores:
+              type: object
+              additionalProperties: { type: number }
+            normalizedWeights:
+              type: object
+              additionalProperties: { type: number }
+            compositeScore: { type: number }
+            computedAt: { type: string, format: date-time }
+          additionalProperties: true
+        actorUserId: { type: string }
+        createdAt: { type: string, format: date-time }
+    SourceUploadRejectedItem:
+      type: object
+      properties:
+        filename: { type: string }
+        error: { type: string }
+    SourceUploadBatchResponse:
+      type: object
+      properties:
+        projectId: { type: string }
+        uploadedCount: { type: integer }
+        rejectedCount: { type: integer }
+        uploaded:
+          type: array
+          items: { type: object, description: Prisma Source row (id, projectId, status, originalFilename, …) }
+        rejected:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceUploadRejectedItem"
+    RagRetrieveRequest:
+      type: object
+      required: [query]
+      properties:
+        query:
+          type: string
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 32
+        label:
+          type: string
+        traceRef:
+          type: string
+    RagQueryRequest:
+      allOf:
+        - $ref: "#/components/schemas/RagRetrieveRequest"
+        - type: object
+          properties:
+            max_completion_tokens:
+              type: integer
+            maxCompletionTokens:
+              type: integer
+            threadId:
+              type: string
+              description: Optional persisted RAG thread (owner-only).
+    RagThreadCreateRequest:
+      type: object
+      properties:
+        title:
+          type: string
+    RagThreadSummary:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        _count:
+          type: object
+          properties:
+            messages: { type: integer }
+    RateLimited:
+      type: object
+      properties:
+        error:
+          type: string
+          example: rate_limited
+        retryAfterSec: { type: integer }
+        limit: { type: integer }
+        windowSec: { type: integer }
+        role: { type: string }
+
+paths:
+  /live:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+
+  /ready:
+    get:
+      tags: [Health]
+      summary: Readiness (database check)
+      responses:
+        "200":
+          description: Database reachable
+        "503":
+          description: Database down
+
+  /version:
+    get:
+      tags: [Health]
+      summary: API build metadata
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string }
+                  version: { type: string }
+
+  /api/v1/register:
+    post:
+      tags: [Auth]
+      summary: Register first user (empty DB only; blocked in production unless configured)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Created user + JWT
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          description: invalid_body
+        "403":
+          description: registration_disabled | registration_closed
+        "500":
+          description: register_failed
+
+  /api/v1/login:
+    post:
+      tags: [Auth]
+      summary: Issue JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: JWT + user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          description: invalid_body
+        "401":
+          description: no_users_run_register_or_seed | invalid_credentials
+
+  /api/v1/me:
+    get:
+      tags: [Profile]
+      summary: Current user from JWT
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "401":
+          description: invalid_or_expired_token
+
+  /api/v1/llm/health:
+    get:
+      tags: [LLM]
+      summary: Chat / embeddings / Qdrant integration health
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Health payload (structured; see implementation)
+
+  /api/v1/llm/chat:
+    post:
+      tags: [LLM]
+      summary: Proxied chat completion (Azure or OpenAI-compat)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [messages]
+              properties:
+                messages:
+                  type: array
+                  items:
+                    type: object
+                    required: [role, content]
+                    properties:
+                      role:
+                        type: string
+                        enum: [system, user, assistant]
+                      content:
+                        type: string
+                max_completion_tokens:
+                  type: integer
+      responses:
+        "200":
+          description: completion payload
+        "400":
+          description: invalid_body
+        "401":
+          description: invalid_or_expired_token
+        "502":
+          description: upstream / adapter error
+
+  /api/v1/admin/integration-config:
+    get:
+      tags: [Admin]
+      summary: Get tenant integration URLs/models (ADMIN only)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: config object
+        "403":
+          description: forbidden
+    patch:
+      tags: [Admin]
+      summary: Patch tenant integration config (ADMIN only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                embeddingsUrl: { type: string, nullable: true }
+                embeddingsModel: { type: string, nullable: true }
+                qdrantUrl: { type: string, nullable: true }
+                qdrantCollection: { type: string, nullable: true }
+                hermesWebhookUrl:
+                  type: string
+                  nullable: true
+                  description: Full URL e.g. http://node1:8080/hermes/qa-manager/message — POST after embedding/reindex
+                hermesWebhookBearer:
+                  type: string
+                  nullable: true
+                  description: Bearer token for Hermes HTTP gateway (stored; GET masks as [configured])
+      responses:
+        "200":
+          description: updated
+        "400":
+          description: invalid_body
+        "403":
+          description: forbidden
+
+  /api/v1/admin/iq-scorecard-weights:
+    get:
+      tags: [Admin]
+      summary: RQ-IQ scorecard dimension weights for tenant (ADMIN only, SRS FR-IQ-01)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: dimensions, raw weights, normalizedWeights (sum 1), updatedAt
+        "403":
+          description: forbidden
+    patch:
+      tags: [Admin]
+      summary: Merge PATCH into tenant IQ weights (ADMIN only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [weights]
+              properties:
+                weights:
+                  type: object
+                  additionalProperties:
+                    type: number
+                  description: Partial map of dimension id to non-negative weight
+      responses:
+        "200":
+          description: updated payload (same shape as GET)
+        "400":
+          description: invalid_body (unknown dimension or negative weight)
+        "403":
+          description: forbidden
+
+  /api/v1/admin/iq-scorecard-weights/export:
+    get:
+      tags: [Admin]
+      summary: Download tenant IQ governance policy (ADMIN only, SRS FR-IQ-01)
+      description: |
+        Default response is JSON. Pass `format=yaml` or `format=yml` for a YAML attachment
+        (`application/yaml`) with the same fields.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [json, yaml, yml]
+            default: json
+      responses:
+        "200":
+          description: Policy attachment (JSON default, or YAML when format=yaml|yml)
+          content:
+            application/json:
+              schema:
+                type: object
+            application/yaml:
+              schema:
+                type: string
+        "403":
+          description: forbidden
+
+  /api/v1/admin/prompt-templates:
+    get:
+      tags: [Admin]
+      summary: List prompt template keys (ADMIN)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: list of keys / metadata
+
+  /api/v1/admin/prompt-templates/{key}/latest:
+    get:
+      tags: [Admin]
+      summary: Latest version for key (ADMIN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: template row
+        "404":
+          description: not_found
+
+  /api/v1/admin/prompt-templates/{key}:
+    get:
+      tags: [Admin]
+      summary: Version history for key (ADMIN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: versions array
+    post:
+      tags: [Admin]
+      summary: Append new template version (ADMIN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body:
+                  type: string
+      responses:
+        "201":
+          description: created
+        "400":
+          description: invalid_body
+
+  /api/v1/projects:
+    get:
+      tags: [Projects]
+      summary: List projects for tenant
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+    post:
+      tags: [Projects]
+      summary: Create project (mutating roles)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectCreateRequest"
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          description: invalid_body
+        "403":
+          description: forbidden
+
+  /api/v1/projects/{id}:
+    get:
+      tags: [Projects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          description: not_found
+    patch:
+      tags: [Projects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectCreateRequest"
+      responses:
+        "200":
+          description: updated
+        "403":
+          description: forbidden
+        "404":
+          description: not_found
+    delete:
+      tags: [Projects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: deleted
+        "403":
+          description: forbidden
+        "404":
+          description: not_found
+
+  /api/v1/projects/{projectId}/suggested-tests:
+    get:
+      tags: [IQ]
+      summary: List persisted candidate tests for a project (FR-IQ-02)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: array of SuggestedTestRow
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SuggestedTestRow"
+        "404":
+          description: not_found
+    post:
+      tags: [IQ]
+      summary: Create candidate test (payload validated against documented JSON Schema shape)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SuggestedTestCreateRequest"
+      responses:
+        "201":
+          description: created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuggestedTestRow"
+        "400":
+          description: invalid_body, schema_validation_failed, or invalid_requirement_id
+        "403":
+          description: forbidden
+        "404":
+          description: not_found
+
+  /api/v1/projects/{projectId}/suggested-tests/generate:
+    post:
+      tags: [IQ]
+      summary: LLM-generate candidate tests from a requirement and/or context (S6-02+ / FR-IQ-02)
+      description: >
+        Uses the same chat backend as POST /llm/chat. Returns persisted rows plus per-index validation errors
+        for any LLM items that failed schema checks. Hermes/agents should call this instead of external-only generators.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SuggestedTestGenerateRequest"
+      responses:
+        "200":
+          description: created zero or more rows; inspect `errors` for skipped items
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuggestedTestGenerateResponse"
+        "400":
+          description: invalid_body | invalid_llm_json
+        "403":
+          description: forbidden
+        "404":
+          description: not_found (unknown requirementId)
+        "502":
+          description: llm_failed
+        "503":
+          description: llm_not_configured
+
+  /api/v1/projects/{projectId}/suggested-tests/import:
+    post:
+      tags: [IQ]
+      summary: Import candidate tests from JSON or rag/query response (S6-02 refine / FR-IQ-02)
+      description: >
+        No LLM call. Parses suggestedTests array, JSON envelope text, or rag/query `content` field, validates each
+        item, and persists rows (optional requirementId link).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SuggestedTestImportRequest"
+      responses:
+        "200":
+          description: created zero or more rows; inspect errors for skipped items
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuggestedTestImportResponse"
+        "400":
+          description: invalid_body | invalid_import_json
+        "403":
+          description: forbidden
+        "404":
+          description: not_found (unknown requirementId)
+
+  /api/v1/projects/{projectId}/suggested-tests/{suggestedTestId}:
+    get:
+      tags: [IQ]
+      summary: Get one candidate test
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: suggestedTestId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuggestedTestRow"
+        "404":
+          description: not_found
+    patch:
+      tags: [IQ]
+      summary: Replace candidate test payload and/or requirement link
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: suggestedTestId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SuggestedTestPatchRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuggestedTestRow"
+        "400":
+          description: invalid_body, schema_validation_failed, or invalid_requirement_id
+        "403":
+          description: forbidden
+        "404":
+          description: not_found
+    delete:
+      tags: [IQ]
+      summary: Delete candidate test
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: suggestedTestId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: deleted
+        "403":
+          description: forbidden
+        "404":
+          description: not_found
+
+  /api/v1/projects/{projectId}/readiness:
+    get:
+      tags: [Requirements]
+      summary: Assess feature readiness for Hermes (RAG + requirement + IQ)
+      description: >
+        Runs POST …/rag/query internally and returns readinessScore (0–100), wikiContent, and matched requirement.
+        Default threshold 60 matches Hermes qa-requirements gate. Counts against RAG rate limits.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: query
+          in: query
+          required: true
+          schema: { type: string }
+          description: Feature or acceptance-criteria text
+        - name: feature
+          in: query
+          schema: { type: string }
+          description: Optional display name to improve requirement title matching
+        - name: threshold
+          in: query
+          schema: { type: number, minimum: 0, maximum: 100, default: 60 }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectReadinessResponse"
+        "400":
+          description: invalid_query | invalid_threshold
+        "404":
+          description: not_found
+        "429":
+          description: rate_limited
+        "502":
+          description: readiness_failed
+
+  /api/v1/projects/{projectId}/requirements:
+    get:
+      tags: [Requirements]
+      summary: List requirements for project (FR-RLM-01); includes latest IQ fields per row
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Requirement"
+        "404":
+          description: not_found
+    post:
+      tags: [Requirements]
+      summary: Create requirement in DRAFT with audit row
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequirementCreateRequest"
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Requirement"
+        "400":
+          description: invalid_body
+        "403":
+          description: forbidden
+        "404":
+          description: not_found
+
+  /api/v1/projects/{projectId}/requirements/{requirementId}:
+    get:
+      tags: [Requirements]
+      summary: Get one requirement
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: requirementId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Requirement"
+        "404":
+          description: not_found
+    patch:
+      tags: [Requirements]
+      summary: Update title/body when state is DRAFT or REVIEWED
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: requirementId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequirementPatchRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Requirement"
+        "400":
+          description: invalid_body
+        "403":
+          description: forbidden
+        "404":
+          description: not_found
+        "409":
+          description: state_forbidden
+
+  /api/v1/projects/{projectId}/requirements/{requirementId}/latest-iq:
+    get:
+      tags: [Requirements]
+      summary: Latest revision IQ summary only
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: requirementId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequirementLatestIq"
+        "404":
+          description: not_found
+
+  /api/v1/projects/{projectId}/requirements/{requirementId}/audit:
+    get:
+      tags: [Requirements]
+      summary: Append-only audit trail for requirement
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: requirementId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RequirementAuditEntry"
+        "404":
+          description: not_found
+
+  /api/v1/projects/{projectId}/requirements/{requirementId}/transition:
+    post:
+      tags: [Requirements]
+      summary: State transition (validated server-side)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: requirementId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequirementTransitionRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Requirement"
+        "400":
+          description: invalid_body | supersede_target_invalid
+        "403":
+          description: forbidden
+        "404":
+          description: not_found
+        "409":
+          description: invalid_transition
+
+  /api/v1/projects/{projectId}/requirements/{requirementId}/revisions:
+    get:
+      tags: [Requirements]
+      summary: List content revision summaries (S6-04 / FR-IQ-05)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: requirementId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RequirementContentRevisionSummary"
+        "404":
+          description: not_found
+
+  /api/v1/projects/{projectId}/requirements/{requirementId}/revisions/{revisionIndex}:
+    get:
+      tags: [Requirements]
+      summary: Get one full content revision (title, body, optional iqSnapshot)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: requirementId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: revisionIndex
+          in: path
+          required: true
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequirementContentRevision"
+        "400":
+          description: invalid_revision_index
+        "404":
+          description: not_found
+
+  /api/v1/projects/{projectId}/requirements/{requirementId}/revisions/{revisionIndex}/llm-iq:
+    post:
+      tags: [Requirements]
+      summary: Score revision via tenant LLM and persist IQ snapshot (SRS FR-IQ-01)
+      description: |
+        Invokes tenant-configured chat LLM with the latest `iq` prompt template (or built-in default).
+        Parses JSON `{ "scores": { dimension: 0-100, ... }, "rationale"?: string }`, applies tenant scorecard weights,
+        and stores snapshot on the revision (`algorithm` = `reqiq_llm_v1`).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: requirementId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: revisionIndex
+          in: path
+          required: true
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: revision with iqSnapshot
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/RequirementContentRevision"
+                  - type: object
+                    properties:
+                      model: { type: string, nullable: true }
+                      provider: { type: string }
+        "400":
+          description: invalid_revision_index or invalid_llm_json
+        "403":
+          description: forbidden
+        "404":
+          description: not_found
+        "502":
+          description: llm_failed
+        "503":
+          description: llm_not_configured
+
+  /api/v1/projects/{projectId}/requirements/{requirementId}/revisions/{revisionIndex}/stub-iq:
+    post:
+      tags: [Requirements]
+      summary: Persist deterministic stub IQ scores on revision (dev / tests without LLM)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: requirementId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: revisionIndex
+          in: path
+          required: true
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequirementContentRevision"
+        "400":
+          description: invalid_revision_index
+        "403":
+          description: forbidden
+        "404":
+          description: not_found
+
+  /api/v1/projects/{projectId}/sources/upload:
+    post:
+      tags: [Sources]
+      summary: Multipart file upload (one or more files per request)
+      description: |
+        `multipart/form-data` with **one or more file parts**. Part **field names are not fixed**—any standard file upload
+        fields are accepted as long as each part is a binary file stream. Multiple files in one request are supported.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              description: At least one file part (e.g. `file` or repeated parts).
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Example field name; additional file parts may use any name.
+      responses:
+        "201":
+          description: At least one file accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceUploadBatchResponse"
+        "400":
+          description: no_files | validation / unsupported type (see `rejected` when partial success uses 201)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+        "403":
+          description: forbidden
+        "413":
+          description: file_too_large
+        "404":
+          description: not_found
+        "500":
+          description: upload_failed
+
+  /api/v1/projects/{projectId}/sources:
+    get:
+      tags: [Sources]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: sources list
+
+  /api/v1/projects/{projectId}/sources/upload-zip:
+    post:
+      tags: [Sources]
+      summary: Upload a single ZIP archive
+      description: |
+        `multipart/form-data` with **one** file part containing a **.zip** archive (`application/zip` or filename ending in `.zip`).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceUploadBatchResponse"
+        "400":
+          description: no_files | invalid_zip_file | validation errors
+        "403":
+          description: forbidden
+        "413":
+          description: file_too_large
+        "500":
+          description: upload_failed
+
+  /api/v1/projects/{projectId}/embedding/reindex:
+    post:
+      tags: [Embeddings]
+      summary: Reindex embeddings for project
+      description: >
+        On success, optionally POSTs to Hermes HTTP gateway when hermesWebhookUrl (admin) or
+        REQIQ_HERMES_WEBHOOK_URL is set — trigger_type reqiq_index_ready.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: job summary
+        "403":
+          description: forbidden
+        "404":
+          description: not_found
+        "502":
+          description: embedding / Qdrant failure
+
+  /api/v1/projects/{projectId}/embedding/snapshot:
+    post:
+      tags: [Embeddings]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note:
+                  type: string
+      responses:
+        "201":
+          description: snapshot row
+        "403":
+          description: forbidden
+        "404":
+          description: not_found
+
+  /api/v1/projects/{projectId}/embedding/snapshots:
+    get:
+      tags: [Embeddings]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: list of snapshots
+
+  /api/v1/projects/{projectId}/embedding/rollback-hard:
+    post:
+      tags: [Embeddings]
+      summary: Hard rollback embeddings for project (no JSON body required)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: rollback result
+        "403":
+          description: forbidden
+        "404":
+          description: not_found
+        "502":
+          description: embedding_rollback_failed
+
+  /api/v1/projects/{projectId}/rag/retrieve:
+    post:
+      tags: [RAG]
+      summary: Hybrid dense + lexical retrieval (RRF)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RagRetrieveRequest"
+      responses:
+        "200":
+          description: hits + debug + embeddingIndexVersion
+        "400":
+          description: invalid_body
+        "404":
+          description: not_found
+        "429":
+          description: rate_limited
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateLimited"
+        "502":
+          description: rag_retrieve_failed
+
+  /api/v1/projects/{projectId}/rag/query:
+    post:
+      tags: [RAG]
+      summary: RAG Q&A (optional threadId for persisted turns)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RagQueryRequest"
+      responses:
+        "200":
+          description: answer + citations + optional abstention + optional threadId
+        "400":
+          description: invalid_body
+        "404":
+          description: not_found | thread_not_found
+        "429":
+          description: rate_limited
+        "502":
+          description: rag_query_failed
+
+  /api/v1/projects/{projectId}/rag/threads:
+    post:
+      tags: [RAG]
+      summary: Create RAG thread
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RagThreadCreateRequest"
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagThreadSummary"
+        "404":
+          description: not_found
+        "429":
+          description: rate_limited
+    get:
+      tags: [RAG]
+      summary: List caller's threads for project
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RagThreadSummary"
+        "429":
+          description: rate_limited
+
+  /api/v1/projects/{projectId}/rag/threads/{threadId}:
+    get:
+      tags: [RAG]
+      summary: Thread detail + messages
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: threadId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: thread + messages[]
+        "404":
+          description: not_found
+        "429":
+          description: rate_limited
+
+  /api/v1/projects/{projectId}/chunks:
+    get:
+      tags: [Chunks]
+      summary: List chunks (optional label / traceRef query params)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: label
+          in: query
+          schema: { type: string }
+        - name: traceRef
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          description: Max rows (1–500, default 200)
+          schema: { type: integer, minimum: 1, maximum: 500, default: 200 }
+      responses:
+        "200":
+          description: chunk rows
+
+  /api/v1/projects/{projectId}/chunks/{chunkId}:
+    patch:
+      tags: [Chunks]
+      summary: Patch chunk labels / traceRef
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: chunkId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                labels:
+                  type: array
+                  items: { type: string }
+                traceRef:
+                  type: string
+                  nullable: true
+      responses:
+        "200":
+          description: updated chunk
+        "400":
+          description: invalid_body
+        "404":
+          description: not_found
