@@ -416,3 +416,73 @@ async def import_suggested_tests(
 ) -> Any:
     _reqiq_unavailable()
     return await _proxy(reqiq.import_suggested_tests(project_id, requirement_id, body.tests))
+
+
+class CreateSuggestedTestRequest(BaseModel):
+    title: str
+    payload: dict | None = None
+
+
+class UpdateSuggestedTestRequest(BaseModel):
+    title: str | None = None
+    payload: dict | None = None
+
+
+@router.post(
+    "/{project_id}/requirements/{requirement_id}/suggested-tests",
+    summary="Create a single suggested test",
+)
+async def create_suggested_test(
+    project_id: str,
+    requirement_id: str,
+    body: CreateSuggestedTestRequest,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    return await _proxy(reqiq.create_suggested_test(project_id, requirement_id, **fields))
+
+
+@router.get(
+    "/{project_id}/requirements/{requirement_id}/suggested-tests/{suggested_test_id}",
+    summary="Get a single suggested test",
+)
+async def get_suggested_test(
+    project_id: str,
+    requirement_id: str,
+    suggested_test_id: str,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    return await _proxy(reqiq.get_suggested_test(project_id, requirement_id, suggested_test_id))
+
+
+@router.patch(
+    "/{project_id}/requirements/{requirement_id}/suggested-tests/{suggested_test_id}",
+    summary="Update a suggested test",
+)
+async def update_suggested_test(
+    project_id: str,
+    requirement_id: str,
+    suggested_test_id: str,
+    body: UpdateSuggestedTestRequest,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    return await _proxy(reqiq.update_suggested_test(project_id, requirement_id, suggested_test_id, **fields))
+
+
+@router.delete(
+    "/{project_id}/requirements/{requirement_id}/suggested-tests/{suggested_test_id}",
+    summary="Delete a suggested test",
+    status_code=204,
+)
+async def delete_suggested_test(
+    project_id: str,
+    requirement_id: str,
+    suggested_test_id: str,
+    _: User = Depends(get_current_user),
+) -> None:
+    _reqiq_unavailable()
+    await _proxy(reqiq.delete_suggested_test(project_id, requirement_id, suggested_test_id))

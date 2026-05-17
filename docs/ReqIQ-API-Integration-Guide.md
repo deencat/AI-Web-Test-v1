@@ -1227,4 +1227,210 @@ REQIQ_SERVICE_EMAIL=service@reqiq.internal
 REQIQ_SERVICE_PASSWORD=your-service-account-password
 # Or store the pre-issued JWT directly:
 # REQIQ_SERVICE_TOKEN=eyJhbGci...
+# Optional: ReqIQ web UI (for "Open ReqIQ Advanced" link in standard UI)
+# REQIQ_WEB_URL=http://localhost:8080
 ```
+
+---
+
+### 12.10 Create Workspace
+
+```http
+POST /api/v1/requirements/projects
+Authorization: Bearer <AI_WEB_TEST_JWT>
+Content-Type: application/json
+
+{ "name": "5G Voucher Plan" }
+```
+
+**Response 201**
+```json
+{ "id": "cmp0zdx4g0004alp8z77ess7a", "name": "5G Voucher Plan", "createdAt": "..." }
+```
+
+---
+
+### 12.11 Get / Rename Workspace
+
+```http
+GET   /api/v1/requirements/projects/{projectId}
+PATCH /api/v1/requirements/projects/{projectId}
+Authorization: Bearer <AI_WEB_TEST_JWT>
+Content-Type: application/json
+
+{ "name": "New Name" }    ← PATCH only
+```
+
+---
+
+### 12.12 Create Requirement
+
+```http
+POST /api/v1/requirements/{projectId}/requirements
+Authorization: Bearer <AI_WEB_TEST_JWT>
+Content-Type: application/json
+
+{ "title": "User can purchase 5G voucher plan", "body": "..." }
+```
+
+**Response 201** — `ReqIQRequirement` object with `id`, `state: "DRAFT"`, `latestCompositeScore`.
+
+---
+
+### 12.13 Get / Update Requirement
+
+```http
+GET   /api/v1/requirements/{projectId}/requirements/{requirementId}
+PATCH /api/v1/requirements/{projectId}/requirements/{requirementId}
+Authorization: Bearer <AI_WEB_TEST_JWT>
+Content-Type: application/json
+
+{ "title": "Updated title", "body": "Updated body" }    ← PATCH only
+```
+
+---
+
+### 12.14 Lifecycle Transition
+
+Moves a requirement through `DRAFT → REVIEWED → BASELINE → SUPERSEDED`.
+
+```http
+POST /api/v1/requirements/{projectId}/requirements/{requirementId}/transition
+Authorization: Bearer <AI_WEB_TEST_JWT>
+Content-Type: application/json
+
+{ "state": "BASELINE" }
+```
+
+**Response** — updated `ReqIQRequirement` object.
+
+---
+
+### 12.15 Requirement Audit Trail
+
+```http
+GET /api/v1/requirements/{projectId}/requirements/{requirementId}/audit
+Authorization: Bearer <AI_WEB_TEST_JWT>
+```
+
+Returns an array of audit events (who changed what and when).
+
+---
+
+### 12.16 List / Get Revisions
+
+Each IQ run creates a new revision. The latest revision index is in `getLatestIq` response.
+
+```http
+GET /api/v1/requirements/{projectId}/requirements/{requirementId}/revisions
+GET /api/v1/requirements/{projectId}/requirements/{requirementId}/revisions/{revisionIndex}
+Authorization: Bearer <AI_WEB_TEST_JWT>
+```
+
+---
+
+### 12.17 Run Stub IQ (no LLM)
+
+Fast structural check — counts defined fields, checks formatting. No LLM cost.
+
+```http
+POST /api/v1/requirements/{projectId}/requirements/{requirementId}/revisions/{revisionIndex}/stub-iq
+Authorization: Bearer <AI_WEB_TEST_JWT>
+```
+
+**Response** — IQ result with `compositeScore` and dimension scores.
+
+---
+
+### 12.18 Run LLM IQ
+
+Full AI quality assessment. Returns `503` if the LLM chat model is not configured in ReqIQ.
+
+```http
+POST /api/v1/requirements/{projectId}/requirements/{requirementId}/revisions/{revisionIndex}/llm-iq
+Authorization: Bearer <AI_WEB_TEST_JWT>
+```
+
+**Response** — IQ result with `compositeScore`, dimension scores, and AI commentary.
+
+After either IQ run, refresh the requirement's quality score via **§12.7 Latest IQ**.
+
+---
+
+### 12.19 Suggested Test CRUD
+
+Beyond generating suggested tests via LLM (§12.6), the full CRUD surface is:
+
+```http
+# List
+GET  /api/v1/requirements/{projectId}/requirements/{requirementId}/suggested-tests
+
+# Create (manual)
+POST /api/v1/requirements/{projectId}/requirements/{requirementId}/suggested-tests
+{ "title": "Test title", "payload": { "steps": [...], "oracle": "..." } }
+
+# Get one
+GET  /api/v1/requirements/{projectId}/requirements/{requirementId}/suggested-tests/{suggestedTestId}
+
+# Update
+PATCH /api/v1/requirements/{projectId}/requirements/{requirementId}/suggested-tests/{suggestedTestId}
+{ "title": "Updated title" }
+
+# Delete
+DELETE /api/v1/requirements/{projectId}/requirements/{requirementId}/suggested-tests/{suggestedTestId}
+```
+
+All return `SuggestedTest` (`{ id, title, payload: { steps, oracle, preconditions, automation } }`).
+
+---
+
+### 12.20 Import Suggested Tests (no LLM)
+
+Bulk-import pre-written test objects without calling the LLM.
+
+```http
+POST /api/v1/requirements/{projectId}/requirements/{requirementId}/suggested-tests/import
+Authorization: Bearer <AI_WEB_TEST_JWT>
+Content-Type: application/json
+
+{
+  "tests": [
+    { "title": "...", "payload": { "steps": [...], "oracle": "..." } }
+  ]
+}
+```
+
+---
+
+### 12.21 Proxy Route Summary (complete)
+
+| AI Web Test route | Method | ReqIQ target | Purpose |
+|---|---|---|---|
+| `/requirements/projects` | GET | `GET /api/v1/projects` | List workspaces |
+| `/requirements/projects` | POST | `POST /api/v1/projects` | Create workspace |
+| `/requirements/projects/{id}` | GET | `GET /api/v1/projects/{id}` | Get workspace |
+| `/requirements/projects/{id}` | PATCH | `PATCH /api/v1/projects/{id}` | Rename workspace |
+| `/requirements/{pid}/requirements` | GET | `GET …/requirements` | List requirements |
+| `/requirements/{pid}/requirements` | POST | `POST …/requirements` | Create requirement |
+| `/requirements/{pid}/requirements/{rid}` | GET | `GET …/requirements/{id}` | Get requirement |
+| `/requirements/{pid}/requirements/{rid}` | PATCH | `PATCH …/requirements/{id}` | Update requirement |
+| `/requirements/{pid}/requirements/{rid}/transition` | POST | `POST …/transition` | Lifecycle state change |
+| `/requirements/{pid}/requirements/{rid}/audit` | GET | `GET …/audit` | Audit trail |
+| `/requirements/{pid}/requirements/{rid}/revisions` | GET | `GET …/revisions` | List revisions |
+| `/requirements/{pid}/requirements/{rid}/revisions/{idx}` | GET | `GET …/revisions/{idx}` | Get revision |
+| `/requirements/{pid}/requirements/{rid}/revisions/{idx}/stub-iq` | POST | `POST …/stub-iq` | Stub IQ |
+| `/requirements/{pid}/requirements/{rid}/revisions/{idx}/llm-iq` | POST | `POST …/llm-iq` | LLM IQ |
+| `/requirements/{pid}/requirements/{rid}/latest-iq` | GET | `GET …/latest-iq` | Latest IQ score |
+| `/requirements/{pid}/readiness` | GET | `GET …/readiness` | Readiness check |
+| `/requirements/{pid}/query` | POST | `POST …/rag/query` | RAG query |
+| `/requirements/{pid}/sources/upload` | POST | `POST …/sources/upload` | Upload documents |
+| `/requirements/{pid}/sources` | GET | `GET …/sources` | List documents |
+| `/requirements/{pid}/requirements/{rid}/suggest-tests` | POST | `POST …/suggested-tests/generate` | LLM suggest tests |
+| `/requirements/{pid}/requirements/{rid}/suggested-tests` | GET | `GET …/suggested-tests` | List suggested tests |
+| `/requirements/{pid}/requirements/{rid}/suggested-tests` | POST | `POST …/suggested-tests` | Create suggested test |
+| `/requirements/{pid}/requirements/{rid}/suggested-tests/{sid}` | GET | `GET …/suggested-tests/{id}` | Get suggested test |
+| `/requirements/{pid}/requirements/{rid}/suggested-tests/{sid}` | PATCH | `PATCH …/suggested-tests/{id}` | Update suggested test |
+| `/requirements/{pid}/requirements/{rid}/suggested-tests/{sid}` | DELETE | `DELETE …/suggested-tests/{id}` | Delete suggested test |
+| `/requirements/{pid}/requirements/{rid}/suggested-tests/import` | POST | `POST …/suggested-tests/import` | Bulk import |
+
+> **Power-user only (not proxied):** RAG threads, chunk editor, embedding reindex/snapshot/rollback, admin scorecard. Link standard users to `REQIQ_WEB_URL/app`.

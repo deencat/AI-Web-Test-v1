@@ -256,6 +256,53 @@ const requirementsService = {
     return res.data;
   },
 
+  async createSuggestedTest(
+    projectId: string,
+    requirementId: string,
+    title: string,
+    payload?: SuggestedTest['payload'],
+  ): Promise<SuggestedTest> {
+    const res = await api.post<SuggestedTest>(
+      `${BASE}/${projectId}/requirements/${requirementId}/suggested-tests`,
+      { title, ...(payload ? { payload } : {}) },
+    );
+    return res.data;
+  },
+
+  async getSuggestedTest(
+    projectId: string,
+    requirementId: string,
+    suggestedTestId: string,
+  ): Promise<SuggestedTest> {
+    const res = await api.get<SuggestedTest>(
+      `${BASE}/${projectId}/requirements/${requirementId}/suggested-tests/${suggestedTestId}`,
+    );
+    return res.data;
+  },
+
+  async updateSuggestedTest(
+    projectId: string,
+    requirementId: string,
+    suggestedTestId: string,
+    fields: Partial<Pick<SuggestedTest, 'title' | 'payload'>>,
+  ): Promise<SuggestedTest> {
+    const res = await api.patch<SuggestedTest>(
+      `${BASE}/${projectId}/requirements/${requirementId}/suggested-tests/${suggestedTestId}`,
+      fields,
+    );
+    return res.data;
+  },
+
+  async deleteSuggestedTest(
+    projectId: string,
+    requirementId: string,
+    suggestedTestId: string,
+  ): Promise<void> {
+    await api.delete(
+      `${BASE}/${projectId}/requirements/${requirementId}/suggested-tests/${suggestedTestId}`,
+    );
+  },
+
   // -- IQ / readiness -------------------------------------------------------
 
   async getLatestIq(projectId: string, requirementId: string): Promise<LatestIqResult> {

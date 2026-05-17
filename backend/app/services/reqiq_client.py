@@ -316,3 +316,44 @@ async def import_suggested_tests(project_id: str, requirement_id: str, tests: li
     )
     resp.raise_for_status()
     return resp.json()
+
+
+async def create_suggested_test(project_id: str, requirement_id: str, **fields: Any) -> dict:
+    resp = await _request(
+        "POST",
+        f"/api/v1/projects/{project_id}/requirements/{requirement_id}/suggested-tests",
+        json=fields,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def get_suggested_test(project_id: str, requirement_id: str, suggested_test_id: str) -> dict:
+    resp = await _request(
+        "GET",
+        f"/api/v1/projects/{project_id}/requirements/{requirement_id}/suggested-tests/{suggested_test_id}",
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def update_suggested_test(
+    project_id: str, requirement_id: str, suggested_test_id: str, **fields: Any
+) -> dict:
+    resp = await _request(
+        "PATCH",
+        f"/api/v1/projects/{project_id}/requirements/{requirement_id}/suggested-tests/{suggested_test_id}",
+        json=fields,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def delete_suggested_test(
+    project_id: str, requirement_id: str, suggested_test_id: str
+) -> None:
+    resp = await _request(
+        "DELETE",
+        f"/api/v1/projects/{project_id}/requirements/{requirement_id}/suggested-tests/{suggested_test_id}",
+    )
+    resp.raise_for_status()
