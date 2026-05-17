@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/layout/Layout';
+import stepLibraryService from '../services/stepLibraryService';
+import type { StepLibraryModule } from '../types/stepLibrary.types';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
@@ -71,6 +73,7 @@ function getAuthHeaders(): Record<string, string> {
 
 export function CrawlAndSavePage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [modules, setModules] = useState<StepLibraryModule[]>([]);
   const [workflowStatus, setWorkflowStatus] = useState<WorkflowStatus>('idle');
   const [workflowId, setWorkflowId] = useState<string | null>(null);
   const [pollMessage, setPollMessage] = useState<string>('');
@@ -81,6 +84,10 @@ export function CrawlAndSavePage() {
     const { name, value } = e.target;
     setForm(prev => ({ ...prev, [name]: value }));
   }
+
+  useEffect(() => {
+    stepLibraryService.list().then(setModules).catch(() => {/* silently ignore if not logged in yet */});
+  }, []);
 
   async function pollWorkflow(id: string) {
     const interval = setInterval(async () => {
@@ -297,15 +304,18 @@ export function CrawlAndSavePage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Login Module</label>
-                <input
-                  type="text"
+                <select
                   name="login_module"
                   value={form.login_module}
                   onChange={handleChange}
                   disabled={isRunning}
-                  placeholder="e.g. login_my3_andrew"
                   className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-                />
+                >
+                  <option value="">— none —</option>
+                  {modules.map(m => (
+                    <option key={m.id} value={m.name}>{m.display_name} ({m.name})</option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -325,28 +335,34 @@ export function CrawlAndSavePage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Existing Subscriber Module</label>
-                <input
-                  type="text"
+                <select
                   name="existing_subscriber_module"
                   value={form.existing_subscriber_module}
                   onChange={handleChange}
                   disabled={isRunning}
-                  placeholder="e.g. plan_subscribe_flow_existing_preprod_andrew"
                   className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-                />
+                >
+                  <option value="">— none —</option>
+                  {modules.map(m => (
+                    <option key={m.id} value={m.name}>{m.display_name} ({m.name})</option>
+                  ))}
+                </select>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">New Subscriber Module</label>
-                <input
-                  type="text"
+                <select
                   name="new_subscriber_module"
                   value={form.new_subscriber_module}
                   onChange={handleChange}
                   disabled={isRunning}
-                  placeholder="e.g. plan_subscriber_flow_andrew"
                   className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-                />
+                >
+                  <option value="">— none —</option>
+                  {modules.map(m => (
+                    <option key={m.id} value={m.name}>{m.display_name} ({m.name})</option>
+                  ))}
+                </select>
               </div>
             </div>
           </section>
