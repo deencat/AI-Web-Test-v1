@@ -432,7 +432,8 @@ IMPORTANT: Return ONLY valid JSON, no additional text or explanation. Do NOT abb
         db: Optional[Session] = None,
         use_kb_context: bool = True,
         max_kb_docs: int = 10,
-        user_id: Optional[int] = None
+        user_id: Optional[int] = None,
+        reqiq_project_id: Optional[str] = None,
     ) -> Dict:
         """
         Generate test cases based on a requirement.
@@ -476,8 +477,22 @@ IMPORTANT: Return ONLY valid JSON, no additional text or explanation. Do NOT abb
         # Retrieve KB context if requested
         kb_context = ""
         kb_docs_used = 0
-        
-        if db and use_kb_context:
+
+        # Phase 3: Try ReqIQ first; fall back to SQLite KB
+        if reqiq_project_id and use_kb_context:
+            try:
+                reqiq_context = await self.kb_context.get_reqiq_context(
+                    project_id=reqiq_project_id,
+                    query=requirement[:500],
+                )
+                if reqiq_context:
+                    kb_context = f"=== Requirements Context (ReqIQ) ===\n\n{reqiq_context}\n"
+                    kb_docs_used = 1
+                    print(f"[DEBUG] ReqIQ context loaded ({len(reqiq_context)} chars)")
+            except Exception as e:
+                print(f"[DEBUG] ReqIQ context skipped: {e}")
+
+        if not kb_context and db and use_kb_context:
             try:
                 kb_context = await self.kb_context.get_category_context(
                     db=db,

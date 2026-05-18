@@ -84,6 +84,13 @@ class Settings(BaseSettings):
     LOCAL_VLLM_DEEPSEEK_ENDPOINT: str = "http://192.168.206.164:1235/v1"
     LOCAL_VLLM_API_KEY: str = "local"   # shared placeholder; vLLM ignores auth by default
 
+    # ReqIQ integration (server-to-server, credentials never exposed to browser)
+    REQIQ_URL: str = "http://localhost:3001"
+    REQIQ_SERVICE_EMAIL: str | None = None
+    REQIQ_SERVICE_PASSWORD: str | None = None
+    REQIQ_TENANT_ID: str | None = None
+    REQIQ_PROJECT_ID_VOUCHER_PLAN: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,

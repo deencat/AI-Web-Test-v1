@@ -13,6 +13,7 @@ import { FeedbackListPage } from './pages/FeedbackListPage';
 import { DebugSessionPage } from './pages/DebugSessionPage';
 import { AgentWorkflowPage } from './pages/AgentWorkflowPage';
 import { StepLibraryPage } from './pages/StepLibraryPage';
+import { CrawlAndSavePage } from './pages/CrawlAndSavePage';
 import './index.css';
 
 // Protected Route wrapper
@@ -124,6 +125,14 @@ function App() {
           element={
             <ProtectedRoute>
               <StepLibraryPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/crawl-and-save"
+          element={
+            <ProtectedRoute>
+              <CrawlAndSavePage />
             </ProtectedRoute>
           }
         />

@@ -761,6 +761,12 @@ class ObservationAgent(BaseAgent):
                         e,
                     )
 
+            if agent_kwargs.get("llm") is None:
+                raise RuntimeError(
+                    "ObservationAgent: no LLM adapter could be created for browser-use. "
+                    "Check MODEL_PROVIDER / OPENROUTER_API_KEY settings."
+                )
+
             agent = BrowserUseAgent(**agent_kwargs)
 
             # Per-run step cap (browser-use Agent.run(max_steps=...)); request can override via task payload.
@@ -872,6 +878,49 @@ class ObservationAgent(BaseAgent):
                                 "steps_total": effective_max_steps,
                             })
 
+                        # stop_at_page_hint: stop crawling when agent reaches the target page
+                        _stop_hint = task.payload.get("stop_at_page_hint", "")
+                        if _stop_hint:
+                            _hist_obj = getattr(agent, "history", None)
+                            _hist_items = getattr(_hist_obj, "history", []) or []
+                            if _hist_items:
+                                _latest = _hist_items[-1]
+                                _latest_state = getattr(_latest, "state", None)
+                                _cur_url = (getattr(_latest_state, "url", "") or "").lower() if _latest_state else ""
+                                _cur_title = (getattr(_latest_state, "title", "") or "").lower() if _latest_state else ""
+                                # Also check the LLM agent's memory/eval text — covers SPA pages
+                                # where document.title and URL don't change between steps
+                                _model_out = getattr(_latest, "model_output", None)
+                                _agent_state = getattr(_model_out, "current_state", None) if _model_out else None
+                                _memory_text = (getattr(_agent_state, "memory", "") or "").lower() if _agent_state else ""
+                                _eval_text = (getattr(_agent_state, "evaluation_previous_goal", "") or "").lower() if _agent_state else ""
+                                _next_goal = (getattr(_agent_state, "next_goal", "") or "").lower() if _agent_state else ""
+                                _hint_lower = _stop_hint.lower()
+                                _matched = (
+                                    _hint_lower in _cur_url
+                                    or _hint_lower in _cur_title
+                                    or _hint_lower in _memory_text
+                                    or _hint_lower in _eval_text
+                                    or _hint_lower in _next_goal
+                                )
+                                if _matched:
+                                    logger.info(
+                                        "ObservationAgent: stop_at_page_hint '%s' matched "
+                                        "(url='%s', title='%s', memory snippet='%s'). Stopping crawl early.",
+                                        _stop_hint,
+                                        _cur_url[:80],
+                                        _cur_title[:80],
+                                        _memory_text[:120],
+                                    )
+                                    run_task.cancel()
+                                    try:
+                                        await run_task
+                                    except asyncio.CancelledError:
+                                        pass
+                                    if hasattr(agent, "history") and agent.history:
+                                        history = agent.history
+                                    break
+
                         if elapsed >= max_flow_timeout:
                             raise asyncio.TimeoutError()
 
@@ -909,6 +958,25 @@ class ObservationAgent(BaseAgent):
                             "ObservationAgent: browser-use task cleanup after timeout: %s",
                             cleanup_err,
                         )
+            finally:
+                # Explicitly stop the browser so Chrome exits before the next crawl
+                # starts.  Without this, Chrome lingers on Windows and the next
+                # Browser() constructor connects to the dying process (WinError 1225).
+                # We only do this when NOT using a persistent CDP browser (keep_alive).
+                _using_cdp = bool(getattr(browser_profile, "cdp_url", None))
+                if not _using_cdp:
+                    try:
+                        _stop = getattr(browser, "stop", None) or getattr(browser, "close", None)
+                        if callable(_stop):
+                            _stop_result = _stop()
+                            if __import__("inspect").isawaitable(_stop_result):
+                                await _stop_result
+                            # Give Chrome a moment to fully release its port before
+                            # returning control so the next crawl doesn't race it.
+                            await asyncio.sleep(1.5)
+                            logger.info("ObservationAgent: browser stopped and port released")
+                    except Exception as _be:
+                        logger.debug("ObservationAgent: browser stop error (non-fatal): %s", _be)
 
             # Extract pages and elements from browser-use history
             # AgentHistoryList structure:
@@ -971,17 +1039,28 @@ class ObservationAgent(BaseAgent):
                     
                     # Convert DOMInteractedElement objects to UI element dicts
                     interacted = getattr(state, 'interacted_element', []) or []
-                    for elem in interacted:
+                    # Pair each interacted element with its action result to get extracted_content
+                    # (browser-use stores rich descriptions like "Clicked div 'Login'" there)
+                    step_results = getattr(history_item, 'result', []) or []
+                    for elem_idx, elem in enumerate(interacted):
                         if elem is None:
                             continue
-                        
+
+                        # Get the parallel extracted_content for this action
+                        _paired_result = step_results[elem_idx] if elem_idx < len(step_results) else None
+                        _extracted_content = ""
+                        if _paired_result:
+                            _ec = getattr(_paired_result, 'extracted_content', None)
+                            if _ec and isinstance(_ec, str):
+                                _extracted_content = _ec.strip()
+
                         # Map DOMInteractedElement attributes to our UI element format
                         attrs = getattr(elem, 'attributes', {}) or {}
                         node_name = getattr(elem, 'node_name', '').lower()
                         ax_name = getattr(elem, 'ax_name', '') or ''
                         node_value = getattr(elem, 'node_value', '') or ''
                         x_path = getattr(elem, 'x_path', '') or ''
-                        
+
                         # Build one flow step for RequirementsAgent (ordered crawl actions)
                         step_text = ax_name or node_value or attrs.get('aria-label', '') or attrs.get('title', '') or node_name
                         if node_name == 'input':
@@ -994,6 +1073,7 @@ class ObservationAgent(BaseAgent):
                                 "element_type": node_name,
                                 "input_type": attrs.get("type", "text"),
                                 "locator": _locator_for_elem(elem),
+                                "extracted_content": _extracted_content,
                             })
                         elif node_name in ('button', 'a') or attrs.get('role') in ('button', 'link'):
                             flow_steps.append({
@@ -1004,6 +1084,7 @@ class ObservationAgent(BaseAgent):
                                 "page_title": page_title or "",
                                 "element_type": node_name,
                                 "locator": _locator_for_elem(elem),
+                                "extracted_content": _extracted_content,
                             })
                         else:
                             flow_steps.append({
@@ -1014,6 +1095,7 @@ class ObservationAgent(BaseAgent):
                                 "page_title": page_title or "",
                                 "element_type": node_name,
                                 "locator": _locator_for_elem(elem),
+                                "extracted_content": _extracted_content,
                             })
                         
                         # Determine element type from tag name and attributes
@@ -1197,16 +1279,54 @@ class ObservationAgent(BaseAgent):
         browser_profile_data: Optional[Dict[str, Any]] = None,
     ):
         """Create browser-use profile with reliable defaults and optional auth/session state."""
+        import os as _os
         from browser_use import BrowserProfile
 
         headers = self._build_http_auth_headers(http_credentials)
 
-        profile_kwargs: Dict[str, Any] = {
+        # If BROWSER_CDP_URL is set, connect to the user-managed persistent Chrome
+        # instead of spawning a new browser process.  This avoids the race condition
+        # where browser-use's ephemeral Chrome is torn down between consecutive crawls
+        # (WinError 1225 / "All reconnection attempts failed").
+        _cdp_url = _os.getenv("BROWSER_CDP_URL", "").strip()
+        if _cdp_url:
+            logger.info("ObservationAgent: Using persistent CDP browser at %s", _cdp_url)
+            profile_kwargs: Dict[str, Any] = {
+                "cdp_url": _cdp_url,
+                "keep_alive": True,
+                "minimum_wait_page_load_time": 0.5,
+                "wait_for_network_idle_page_load_time": 1.0,
+                "wait_between_actions": 0.2,
+            }
+            if headers:
+                profile_kwargs["headers"] = headers
+            storage_state = self._build_storage_state(url, browser_profile_data)
+            if storage_state:
+                profile_kwargs["storage_state"] = storage_state
+            return BrowserProfile(**profile_kwargs)
+
+        # No CDP URL — spawn a fresh isolated Chrome process per crawl.
+        # Use a unique temporary user-data-dir so browser-use always launches a
+        # fresh, isolated Chrome process and never attaches to an existing window.
+        import tempfile, uuid as _uuid
+        _tmp_profile_dir = str(
+            (
+                __import__("pathlib").Path(tempfile.gettempdir())
+                / f"bu_profile_{_uuid.uuid4().hex[:8]}"
+            )
+        )
+
+        profile_kwargs = {
             "headless": False,
             "viewport": dict(DEFAULT_OBSERVATION_VIEWPORT),
             "window_size": dict(DEFAULT_OBSERVATION_VIEWPORT),
             "user_agent": DEFAULT_OBSERVATION_USER_AGENT,
-            "args": list(DEFAULT_OBSERVATION_BROWSER_ARGS),
+            "args": list(DEFAULT_OBSERVATION_BROWSER_ARGS) + [
+                f"--user-data-dir={_tmp_profile_dir}",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--disable-extensions",
+            ],
             "minimum_wait_page_load_time": 0.5,
             "wait_for_network_idle_page_load_time": 1.0,
             "wait_between_actions": 0.2,
@@ -1461,34 +1581,20 @@ class ObservationAgent(BaseAgent):
     
     def _create_browser_use_llm_adapter(self):
         """Create LLM adapter for browser-use from the configured LLM client.
-        
-        Preferred: Use browser-use's built-in ChatAzureOpenAI which provides:
-          - Proper JSON schema enforcement (ResponseFormatJSONSchema)
-          - Full compatibility with browser-use's AgentOutput parsing
-          - Async OpenAI client as expected by browser-use
-        
-        For non-Azure providers, skip ChatAzureOpenAI entirely and use the
-        provider-aware custom adapter.
+
+        Resolution order:
+          1. (Azure only) browser-use's built-in ChatAzureOpenAI
+          2. (Azure only) custom AzureOpenAIAdapter
+          3. OpenRouter via ChatOpenAI — always available as final fallback.
+             gpt-5.2 and other Azure reasoning/preview models often fail
+             AgentOutput JSON validation; OpenRouter chat models work reliably.
         """
         configured_provider = self.config.get("llm_provider", "azure")
         configured_model = self.config.get("llm_model", "ChatGPT-UAT")
 
+        # Non-Azure providers: go directly to OpenRouter fallback (skip Azure attempts)
         if configured_provider != "azure":
-            try:
-                from llm.browser_use_adapter import AzureOpenAIAdapter
-                adapter = AzureOpenAIAdapter(azure_client=self.llm_client)
-                logger.info(
-                    "Browser-use custom LLM adapter created: provider=%s model=%s",
-                    configured_provider,
-                    configured_model,
-                )
-                return adapter
-            except ImportError as e:
-                logger.warning(f"Browser-use adapter not available: {e}. Using default LLM.")
-                return None
-            except Exception as e:
-                logger.error(f"Error creating browser-use LLM adapter: {e}", exc_info=True)
-                return None
+            return self._create_openrouter_llm_adapter(configured_provider, configured_model)
 
         # --- Attempt 1: Use browser-use's built-in ChatAzureOpenAI ---
         try:
@@ -1505,13 +1611,20 @@ class ObservationAgent(BaseAgent):
                 endpoint = getattr(self.llm_client, 'endpoint', '')
                 deployment = getattr(self.llm_client, 'deployment', '')
             
-            # Fallback to env vars
+            # Always prefer env vars for deployment name: the DB/user-settings model name
+            # (e.g. "ChatGPT-UAT") may point to a decommissioned deployment.
+            # AZURE_OPENAI_MODEL is the authoritative deployment name for the current endpoint.
+            env_deployment = os.getenv("AZURE_OPENAI_MODEL", "")
+            if env_deployment:
+                deployment = env_deployment
+
+            # Fallback to env vars for key/endpoint if not available from llm_client
             if not api_key:
                 api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
             if not endpoint:
                 endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
             if not deployment:
-                deployment = os.getenv("AZURE_OPENAI_MODEL", "ChatGPT-UAT")
+                deployment = "ChatGPT-UAT"
             
             if not api_key or not endpoint:
                 raise ValueError("Azure OpenAI credentials not available")
@@ -1550,10 +1663,92 @@ class ObservationAgent(BaseAgent):
             )
             return adapter
         except ImportError as e:
-            logger.warning(f"Browser-use adapter not available: {e}. Using default LLM.")
-            return None
+            logger.warning(f"Browser-use adapter not available: {e}. Trying OpenRouter fallback...")
         except Exception as e:
-            logger.error(f"Error creating browser-use LLM adapter: {e}", exc_info=True)
+            logger.warning(f"Error creating browser-use LLM adapter (attempt 2): {e}. Trying OpenRouter fallback...")
+
+        # --- Attempt 3: OpenRouter via ChatOpenAI (works reliably with browser-use) ---
+        # gpt-5.2 and other reasoning/preview Azure models often fail AgentOutput validation.
+        # OpenRouter is already configured via OPENAI_API_KEY / OPENAI_API_BASE env vars.
+        return self._create_openrouter_llm_adapter(configured_provider, configured_model)
+
+    def _create_openrouter_llm_adapter(self, configured_provider: str, configured_model: str):
+        """Create an LLM adapter pointing at OpenRouter for browser-use.
+
+        browser-use's agent/service.py and token_cost_service both monkey-patch
+        arbitrary attributes (.provider, .ainvoke, …) onto the LLM object via
+        setattr(), which Pydantic v2 rejects for registered models like ChatOpenAI.
+        We wrap ChatOpenAI in a thin plain-Python proxy that allows free setattr
+        while delegating all real attribute/method access to the underlying instance.
+        """
+        try:
+            from langchain_openai import ChatOpenAI
+            import os as _os
+            _openai_base = _os.getenv("OPENAI_API_BASE", "https://openrouter.ai/api/v1")
+            _openai_key = _os.getenv("OPENAI_API_KEY", "")
+            _openrouter_model = _os.getenv("OPENROUTER_MODEL", "openai/gpt-4o")
+            if not _openai_key:
+                raise ValueError("OPENAI_API_KEY not set; cannot use OpenRouter fallback")
+
+            _inner = ChatOpenAI(
+                model=_openrouter_model,
+                api_key=_openai_key,
+                base_url=_openai_base,
+                temperature=0.2,
+                max_tokens=4096,
+            )
+
+            class _OpenRouterProxy:
+                """Plain-Python proxy around ChatOpenAI that allows unrestricted setattr.
+
+                browser-use monkey-patches .ainvoke and reads .provider / .model on the
+                LLM instance.  ChatOpenAI is a Pydantic v2 model that refuses unknown
+                fields via __setattr__, so we wrap it here.
+                """
+                def __init__(self, inner, provider_name: str):
+                    # Store directly on __dict__ to avoid our own __setattr__ recursion
+                    object.__setattr__(self, "_inner", inner)
+                    object.__setattr__(self, "_extra", {"provider": provider_name})
+
+                # --- attribute access -------------------------------------------------
+                def __getattr__(self, name):
+                    _extra = object.__getattribute__(self, "_extra")
+                    if name in _extra:
+                        return _extra[name]
+                    return getattr(object.__getattribute__(self, "_inner"), name)
+
+                def __setattr__(self, name, value):
+                    _extra = object.__getattribute__(self, "_extra")
+                    _inner = object.__getattribute__(self, "_inner")
+                    # If it's a real Pydantic field, delegate; otherwise stash in _extra
+                    try:
+                        object.__setattr__(_inner, name, value)
+                    except (ValueError, TypeError):
+                        _extra[name] = value
+
+                # --- async invoke (browser-use may replace this) ----------------------
+                async def ainvoke(self, *args, **kwargs):
+                    _extra = object.__getattribute__(self, "_extra")
+                    _inner = object.__getattribute__(self, "_inner")
+                    # If browser-use has monkey-patched ainvoke into _extra, call that
+                    if "ainvoke" in _extra and callable(_extra["ainvoke"]):
+                        return await _extra["ainvoke"](*args, **kwargs)
+                    return await _inner.ainvoke(*args, **kwargs)
+
+                # Ensure the proxy looks like the underlying type for isinstance checks
+                def __class_getitem__(cls, item):
+                    return _inner.__class_getitem__(item)
+
+            adapter = _OpenRouterProxy(_inner, provider_name="openrouter")
+            logger.info(
+                "Browser-use LLM adapter: OpenRouter/ChatOpenAI (provider=%s, model=%s → openrouter_model=%s)",
+                configured_provider,
+                configured_model,
+                _openrouter_model,
+            )
+            return adapter
+        except Exception as e:
+            logger.error(f"All browser-use LLM adapter attempts failed: {e}", exc_info=True)
             return None
     
     def _check_goal_reached(self, history, user_instruction: str, custom_indicators: List[str] = None) -> bool:

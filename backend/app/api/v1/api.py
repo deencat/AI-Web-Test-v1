@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import health, auth, users, test_generation, tests, kb, executions, test_templates, test_scenarios, test_suites, settings, debug, versions, execution_feedback, browser_profiles, uploads, email_credentials, step_library
+from app.api.v1.endpoints import health, auth, users, test_generation, tests, kb, executions, test_templates, test_scenarios, test_suites, settings, debug, versions, execution_feedback, browser_profiles, uploads, email_credentials, step_library, requirements
 
 api_router = APIRouter()
 
@@ -21,4 +21,5 @@ api_router.include_router(browser_profiles.router, tags=["browser-profiles"])
 api_router.include_router(uploads.router, tags=["uploads"])
 api_router.include_router(email_credentials.router, tags=["email-credentials"])
 api_router.include_router(step_library.router, tags=["step-library"])
+api_router.include_router(requirements.router, prefix="/requirements", tags=["reqiq-proxy"])
 

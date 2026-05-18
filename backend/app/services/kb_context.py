@@ -1,10 +1,13 @@
 """Knowledge Base Context Service for Test Generation Integration."""
+import logging
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.models.kb_document import KBDocument, KBCategory
 from app.crud.kb_document import get_documents
+
+logger = logging.getLogger(__name__)
 
 
 class KBContextService:
@@ -223,3 +226,40 @@ class KBContextService:
             return f"(per {document_title} Section {section})"
         else:
             return f"(ref: {document_title})"
+
+    async def get_reqiq_context(
+        self,
+        project_id: str,
+        query: str,
+        feature: str = "",
+        min_readiness_score: int = 60,
+    ) -> Optional[str]:
+        """
+        Query ReqIQ for feature context via the readiness endpoint.
+
+        Returns the wikiContent string if readinessScore >= min_readiness_score,
+        otherwise returns None so the caller falls back to the SQLite KB.
+
+        This method never raises — all errors are silently logged so a ReqIQ
+        outage does not break test generation.
+        """
+        if not project_id:
+            return None
+        try:
+            import app.services.reqiq_client as reqiq
+            data = await reqiq.get_readiness(project_id, query=query, feature=feature)
+            score = data.get("readinessScore", 0)
+            wiki = data.get("wikiContent", "")
+            if score >= min_readiness_score and wiki:
+                logger.info(
+                    "ReqIQ context loaded for project=%s score=%s (threshold=%s)",
+                    project_id, score, min_readiness_score,
+                )
+                return wiki
+            logger.debug(
+                "ReqIQ context not used: score=%s < threshold=%s or empty wikiContent",
+                score, min_readiness_score,
+            )
+        except Exception as exc:
+            logger.warning("ReqIQ context fetch failed (falling back to SQLite KB): %s", exc)
+        return None

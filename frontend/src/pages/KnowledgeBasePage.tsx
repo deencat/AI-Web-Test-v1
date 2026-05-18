@@ -1,1044 +1,892 @@
-import React, { useState, useEffect } from 'react';
+/**
+ * KnowledgeBasePage - ReqIQ-backed requirements workspace
+ *
+ * Labels per handoff s6:
+ *   Project -> Workspace
+ *   Source  -> Document
+ *   latestCompositeScore -> Quality score
+ *
+ * Features (Phase 2 + s5.2):
+ *   - Workspace select / create / rename
+ *   - Document upload + list
+ *   - Readiness panel
+ *   - RAG query (content field)
+ *   - Requirement list with state badge + quality score
+ *   - Create / edit / lifecycle-transition requirement
+ *   - Run Stub IQ / LLM IQ per requirement
+ *   - Suggest tests -> Crawl & Save pre-fill
+ *   - "Open ReqIQ Advanced" external link
+ */
+import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ExternalLink, Plus, Pencil, Check, X, ChevronDown } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
-import { Card } from '../components/common/Card';
-import { Button } from '../components/common/Button';
-import { Upload, Search, FileText, FolderPlus } from 'lucide-react';
-import knowledgeBaseService from '../services/knowledgeBaseService';
-import type { KBDocument, KBCategory, KBStatistics } from '../types/api';
+import requirementsService from '../services/requirementsService';
+import type {
+  ReqIQProject,
+  ReqIQRequirement,
+  ReqIQSource,
+  LatestIqResult,
+  ReadinessResult,
+  WikiResult,
+  RagQueryResult,
+  SuggestedTest,
+} from '../services/requirementsService';
+
+// ---------------------------------------------------------------------------
+// Tiny shared components
+// ---------------------------------------------------------------------------
+
+function StateBadge({ state }: { state: string }) {
+  const colours: Record<string, string> = {
+    DRAFT: 'bg-gray-100 text-gray-600',
+    REVIEWED: 'bg-blue-100 text-blue-700',
+    BASELINE: 'bg-green-100 text-green-700',
+    SUPERSEDED: 'bg-red-100 text-red-600',
+  };
+  return (
+    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${colours[state] ?? 'bg-gray-100 text-gray-600'}`}>
+      {state}
+    </span>
+  );
+}
+
+function QualityBadge({ score }: { score: number }) {
+  const colour = score >= 80 ? 'text-green-700' : score >= 60 ? 'text-yellow-600' : 'text-red-600';
+  return <span className={`text-xs font-bold ${colour}`}>Quality {score}</span>;
+}
+
+function SectionCard({ title, actions, children }: {
+  title: string;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">{title}</h2>
+        {actions}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function SmallBtn({ onClick, disabled, variant = 'default', children }: {
+  onClick: () => void;
+  disabled?: boolean;
+  variant?: 'default' | 'danger' | 'primary';
+  children: React.ReactNode;
+}) {
+  const base = 'text-xs font-medium px-2 py-1 rounded border transition-colors disabled:opacity-40';
+  const variants: Record<string, string> = {
+    default: 'border-gray-300 text-gray-600 hover:bg-gray-50',
+    primary: 'border-blue-600 text-blue-700 hover:bg-blue-50',
+    danger: 'border-red-300 text-red-600 hover:bg-red-50',
+  };
+  return (
+    <button className={`${base} ${variants[variant]}`} onClick={onClick} disabled={disabled}>
+      {children}
+    </button>
+  );
+}
+
+const REQIQ_APP_URL = 'http://localhost:8080/app';
+const LIFECYCLE_STATES = ['DRAFT', 'REVIEWED', 'BASELINE', 'SUPERSEDED'];
+
+// ---------------------------------------------------------------------------
+// Main page
+// ---------------------------------------------------------------------------
 
 export const KnowledgeBasePage: React.FC = () => {
-  // Data state
-  const [documents, setDocuments] = useState<KBDocument[]>([]);
-  const [categories, setCategories] = useState<KBCategory[]>([]);
-  const [stats, setStats] = useState<KBStatistics | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  
-  // UI state
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showUploadModal, setShowUploadModal] = useState(false);
-  const [uploadData, setUploadData] = useState({
-    file: null as File | null,
-    name: '',
-    description: '',
-    category_id: '',
-    document_type: 'system_guide' as 'system_guide' | 'product' | 'process' | 'reference',
-    tags: '',
-  });
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [dragActive, setDragActive] = useState(false);
-  
-  // Document viewer state
-  const [viewingDocument, setViewingDocument] = useState<KBDocument | null>(null);
-  
-  // Edit document modal state
-  const [editingDocument, setEditingDocument] = useState<KBDocument | null>(null);
-  const [editDocumentData, setEditDocumentData] = useState({
-    title: '',
-    description: '',
-    category_id: 0
-  });
-  const [updatingDocument, setUpdatingDocument] = useState(false);
-  
-  // Create category modal state
-  const [showCreateCategoryModal, setShowCreateCategoryModal] = useState(false);
-  const [newCategoryData, setNewCategoryData] = useState({
-    name: '',
-    description: '',
-    color: '#3B82F6',
-    icon: 'folder'
-  });
-  const [creatingCategory, setCreatingCategory] = useState(false);
-  
-  // Edit category modal state
-  const [editingCategory, setEditingCategory] = useState<KBCategory | null>(null);
-  const [editCategoryData, setEditCategoryData] = useState({
-    name: '',
-    description: '',
-    color: '#3B82F6',
-    icon: 'folder'
-  });
-  const [updatingCategory, setUpdatingCategory] = useState(false);
+  const navigate = useNavigate();
 
-  // Load data on mount
+  // -- workspaces -----------------------------------------------------------
+  const [projects, setProjects] = useState<ReqIQProject[]>([]);
+  const [projectId, setProjectId] = useState('');
+  const [projectsLoading, setProjectsLoading] = useState(true);
+  const [projectsError, setProjectsError] = useState<string | null>(null);
+  const [showNewProject, setShowNewProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [creatingProject, setCreatingProject] = useState(false);
+  const [renamingProject, setRenamingProject] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+
+  // -- documents ------------------------------------------------------------
+  const [sources, setSources] = useState<ReqIQSource[]>([]);
+  const [sourcesLoading, setSourcesLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<string | null>(null);
+  const [deletingSourceId, setDeletingSourceId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // -- readiness ------------------------------------------------------------
+  const [readiness, setReadiness] = useState<ReadinessResult | null>(null);
+  const [readinessLoading, setReadinessLoading] = useState(false);
+  const [readinessQuery, setReadinessQuery] = useState('');
+
+  // -- wiki (Test context) --------------------------------------------------
+  const [wiki, setWiki] = useState<WikiResult | null>(null);
+  const [wikiLoading, setWikiLoading] = useState(false);
+  const [compilingWiki, setCompilingWiki] = useState(false);
+  const [wikiError, setWikiError] = useState<string | null>(null);
+
+  // -- rag ------------------------------------------------------------------
+  const [ragQuery, setRagQuery] = useState('');
+  const [ragResult, setRagResult] = useState<RagQueryResult | null>(null);
+  const [ragLoading, setRagLoading] = useState(false);
+  const [ragError, setRagError] = useState<string | null>(null);
+
+  // -- requirements ---------------------------------------------------------
+  const [requirements, setRequirements] = useState<ReqIQRequirement[]>([]);
+  const [reqLoading, setReqLoading] = useState(false);
+  const [iqData, setIqData] = useState<Record<string, LatestIqResult>>({});
+  const [showNewReq, setShowNewReq] = useState(false);
+  const [newReqTitle, setNewReqTitle] = useState('');
+  const [newReqBody, setNewReqBody] = useState('');
+  const [creatingReq, setCreatingReq] = useState(false);
+  const [editingReqId, setEditingReqId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editBody, setEditBody] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [transitioningFor, setTransitioningFor] = useState<string | null>(null);
+  const [runningIqFor, setRunningIqFor] = useState<string | null>(null);
+  const [suggestingFor, setSuggestingFor] = useState<string | null>(null);
+
+  // -- load projects --------------------------------------------------------
   useEffect(() => {
-    loadData();
+    requirementsService.listProjects()
+      .then(data => {
+        setProjects(data);
+        if (data.length > 0) setProjectId(data[0].id);
+      })
+      .catch(err => setProjectsError(err?.response?.data?.detail ?? err.message ?? 'Failed to load workspaces'))
+      .finally(() => setProjectsLoading(false));
   }, []);
 
-  const loadData = async () => {
+  // -- load data when project changes ---------------------------------------
+  useEffect(() => {
+    if (!projectId) return;
+    setSourcesLoading(true);
+    setReqLoading(true);
+    setIqData({});
+    setReadiness(null);
+    setWiki(null);
+    setWikiError(null);
+
+    // Load wiki (Test context) immediately on workspace switch
+    setWikiLoading(true);
+    requirementsService.getWiki(projectId)
+      .then(setWiki)
+      .catch(() => setWiki(null))
+      .finally(() => setWikiLoading(false));
+
+    requirementsService.listSources(projectId)
+      .then(setSources)
+      .catch(() => setSources([]))
+      .finally(() => setSourcesLoading(false));
+
+    requirementsService.listRequirements(projectId)
+      .then(async reqs => {
+        setRequirements(reqs);
+        const scores: Record<string, LatestIqResult> = {};
+        await Promise.allSettled(
+          reqs.map(async r => {
+            try {
+              const iq = await requirementsService.getLatestIq(projectId, r.id);
+              scores[r.id] = iq;
+            } catch { /* ignore */ }
+          })
+        );
+        setIqData(scores);
+      })
+      .catch(() => setRequirements([]))
+      .finally(() => setReqLoading(false));
+  }, [projectId]);
+
+  // -- workspace actions ----------------------------------------------------
+  async function handleCreateProject(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newProjectName.trim()) return;
+    setCreatingProject(true);
     try {
-      setLoading(true);
-      setError(null);
-      
-      const [docsData, catsData, statsData] = await Promise.all([
-        knowledgeBaseService.getAllDocuments(),
-        knowledgeBaseService.getAllCategories(),
-        knowledgeBaseService.getStats(),
-      ]);
-      
-      setDocuments(docsData);
-      setCategories(catsData);
-      setStats(statsData);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load knowledge base');
-      console.error('Failed to load KB data:', err);
+      const p = await requirementsService.createProject(newProjectName.trim());
+      setProjects(prev => [...prev, p]);
+      setProjectId(p.id);
+      setNewProjectName('');
+      setShowNewProject(false);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      alert(`Failed to create workspace: ${msg ?? String(err)}`);
     } finally {
-      setLoading(false);
+      setCreatingProject(false);
     }
-  };
+  }
 
-  const handleUploadDocument = () => {
-    setShowUploadModal(true);
-    setUploadData({
-      file: null,
-      name: '',
-      description: '',
-      category_id: '',
-      document_type: 'system_guide',
-      tags: '',
-    });
-    setUploadError(null);
-  };
-
-  const handleFileSelect = (file: File) => {
-    // Check file size (max 25MB)
-    if (file.size > 25 * 1024 * 1024) {
-      setUploadError('File size must be less than 25MB');
-      return;
-    }
-
-    // Check file type
-    const allowedTypes = [
-      'application/pdf',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'text/plain',
-    ];
-    if (!allowedTypes.includes(file.type)) {
-      setUploadError('Only PDF, DOCX, and TXT files are allowed');
-      return;
-    }
-
-    setUploadData({ ...uploadData, file, name: uploadData.name || file.name });
-    setUploadError(null);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFileSelect(e.dataTransfer.files[0]);
-    }
-  };
-
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true);
-    } else if (e.type === 'dragleave') {
-      setDragActive(false);
-    }
-  };
-
-  const handleSubmitUpload = async () => {
-    if (!uploadData.file || !uploadData.name || !uploadData.category_id) {
-      setUploadError('Please fill in all required fields');
-      return;
-    }
-
-    setUploading(true);
-    setUploadError(null);
-
+  async function handleRenameProject() {
+    if (!renameValue.trim() || !projectId) return;
+    setRenamingProject(false);
     try {
-      await knowledgeBaseService.uploadDocument({
-        file: uploadData.file,
-        name: uploadData.name,
-        description: uploadData.description,
-        category_id: uploadData.category_id,
-        document_type: uploadData.document_type,
-        tags: uploadData.tags ? uploadData.tags.split(',').map((t) => t.trim()) : [],
-      });
+      const updated = await requirementsService.updateProject(projectId, renameValue.trim());
+      setProjects(prev => prev.map(p => p.id === projectId ? updated : p));
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      alert(`Rename failed: ${msg ?? String(err)}`);
+    }
+    setRenameValue('');
+  }
 
-      setShowUploadModal(false);
-      alert('Document uploaded successfully!');
-      
-      // Reload data to show new document
-      await loadData();
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Failed to upload document');
+  // -- document upload ------------------------------------------------------
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length || !projectId) return;
+    setUploading(true);
+    setUploadResult(null);
+    try {
+      const result = await requirementsService.uploadSources(projectId, files);
+      setUploadResult(`Uploaded ${result.uploadedCount} file(s). Processing...`);
+      setTimeout(() => {
+        requirementsService.listSources(projectId).then(setSources).catch(() => {});
+      }, 3000);
+    } catch (err: unknown) {
+      const data = (err as { response?: { data?: unknown } })?.response?.data;
+      const msg = typeof data === 'object' && data !== null && 'detail' in data
+        ? (typeof (data as { detail: unknown }).detail === 'string'
+            ? (data as { detail: string }).detail
+            : JSON.stringify((data as { detail: unknown }).detail))
+        : String(err);
+      setUploadResult(`Upload failed: ${msg}`);
     } finally {
       setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
-  };
+  }
 
-  const handleCreateCategory = () => {
-    setShowCreateCategoryModal(true);
-  };
-
-  const handleSaveCategory = async () => {
-    if (!newCategoryData.name.trim()) {
-      alert('Category name is required');
-      return;
-    }
-
+  // -- delete document ------------------------------------------------------
+  async function handleDeleteSource(sourceId: string, filename: string) {
+    if (!projectId) return;
+    if (!window.confirm(`Remove document "${filename}"?\n\nThis deletes the file and its search index entries. Other documents are not affected.`)) return;
+    setDeletingSourceId(sourceId);
     try {
-      setCreatingCategory(true);
-      await knowledgeBaseService.createCategory({
-        name: newCategoryData.name,
-        description: newCategoryData.description || undefined,
-        color: newCategoryData.color
-      });
-      
-      // Reload categories
-      const catsData = await knowledgeBaseService.getAllCategories();
-      setCategories(catsData);
-      
-      // Reset and close modal
-      setNewCategoryData({ name: '', description: '', color: '#3B82F6', icon: 'folder' });
-      setShowCreateCategoryModal(false);
-      alert('Category created successfully!');
-    } catch (err) {
-      alert(`Failed to create category: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      await requirementsService.deleteSource(projectId, sourceId);
+      setSources(prev => prev.filter(s => s.id !== sourceId));
+    } catch (err: unknown) {
+      const data = (err as { response?: { data?: unknown } })?.response?.data;
+      const msg = typeof data === 'object' && data !== null && 'detail' in data
+        ? JSON.stringify((data as { detail: unknown }).detail)
+        : String(err);
+      alert(`Delete failed: ${msg}`);
     } finally {
-      setCreatingCategory(false);
+      setDeletingSourceId(null);
     }
-  };
+  }
 
-  const handleCloseCategoryModal = () => {
-    setShowCreateCategoryModal(false);
-    setNewCategoryData({ name: '', description: '', color: '#3B82F6', icon: 'folder' });
-  };
-
-  const handleEditCategory = (category: KBCategory) => {
-    setEditingCategory(category);
-    setEditCategoryData({
-      name: category.name,
-      description: category.description || '',
-      color: category.color || '#3B82F6',
-      icon: category.icon || 'folder'
-    });
-  };
-
-  const handleUpdateCategory = async () => {
-    if (!editingCategory) return;
-    
-    if (!editCategoryData.name.trim()) {
-      alert('Category name is required');
-      return;
-    }
-
+  // -- readiness ------------------------------------------------------------
+  async function handleCheckReadiness() {
+    if (!projectId) return;
+    setReadinessLoading(true);
     try {
-      setUpdatingCategory(true);
-      await knowledgeBaseService.updateCategory(editingCategory.id, {
-        name: editCategoryData.name,
-        description: editCategoryData.description || undefined,
-        color: editCategoryData.color
-      });
-      
-      // Reload categories
-      const catsData = await knowledgeBaseService.getAllCategories();
-      setCategories(catsData);
-      
-      // Reset and close modal
-      setEditingCategory(null);
-      setEditCategoryData({ name: '', description: '', color: '#3B82F6', icon: 'folder' });
-      alert('Category updated successfully!');
-    } catch (err) {
-      alert(`Failed to update category: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      const result = await requirementsService.getReadiness(projectId, readinessQuery);
+      setReadiness(result);
+      // Sync wiki state from readiness wikiContent when wiki is not yet loaded
+      if (!wiki && result.wikiContent) {
+        setWiki({
+          projectId,
+          markdown: result.wikiContent,
+          compileStatus: 'ok',
+          wikiStale: result.wikiStale ?? false,
+          compiledAt: result.wikiCompiledAt,
+        });
+      }
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      alert(`Readiness check failed: ${msg ?? String(err)}`);
     } finally {
-      setUpdatingCategory(false);
+      setReadinessLoading(false);
     }
-  };
+  }
 
-  const handleCloseEditCategoryModal = () => {
-    setEditingCategory(null);
-    setEditCategoryData({ name: '', description: '', color: '#3B82F6', icon: 'folder' });
-  };
-
-  const handleEditDocument = (doc: KBDocument) => {
-    setEditingDocument(doc);
-    setEditDocumentData({
-      title: doc.title,
-      description: doc.description || '',
-      category_id: doc.category.id
-    });
-  };
-
-  const handleUpdateDocument = async () => {
-    if (!editingDocument) return;
-    
-    if (!editDocumentData.title.trim()) {
-      alert('Document title is required');
-      return;
-    }
-
+  // -- wiki (Test context) --------------------------------------------------
+  async function handleCompileWiki() {
+    if (!projectId) return;
+    setCompilingWiki(true);
+    setWikiError(null);
     try {
-      setUpdatingDocument(true);
-      await knowledgeBaseService.updateDocument(editingDocument.id, {
-        title: editDocumentData.title,
-        description: editDocumentData.description || undefined,
-        category_id: editDocumentData.category_id
-      });
-      
-      // Reload documents
-      const docsData = await knowledgeBaseService.getAllDocuments();
-      setDocuments(docsData);
-      
-      // Reset and close modal
-      setEditingDocument(null);
-      setEditDocumentData({ title: '', description: '', category_id: 0 });
-      alert('Document updated successfully!');
-    } catch (err) {
-      alert(`Failed to update document: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      const result = await requirementsService.compileWiki(projectId);
+      setWiki(result);
+    } catch (err: unknown) {
+      const data = (err as { response?: { data?: unknown } })?.response?.data;
+      const msg = typeof data === 'object' && data !== null && 'detail' in data
+        ? JSON.stringify((data as { detail: unknown }).detail)
+        : String(err);
+      setWikiError(`Compile failed: ${msg}`);
     } finally {
-      setUpdatingDocument(false);
+      setCompilingWiki(false);
     }
-  };
+  }
 
-  const handleCloseEditDocumentModal = () => {
-    setEditingDocument(null);
-    setEditDocumentData({ title: '', description: '', category_id: 0 });
-  };
-
-  const handleViewDocument = async (docId: number) => {
+  // -- rag ------------------------------------------------------------------
+  async function handleRagQuery(e: React.FormEvent) {
+    e.preventDefault();
+    if (!ragQuery.trim() || !projectId) return;
+    setRagLoading(true);
+    setRagError(null);
+    setRagResult(null);
     try {
-      const doc = await knowledgeBaseService.getDocumentById(docId.toString());
-      setViewingDocument(doc);
-    } catch (err) {
-      alert(`Failed to load document: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      const result = await requirementsService.ragQuery(projectId, ragQuery.trim());
+      setRagResult(result);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setRagError(msg ?? 'RAG query failed');
+    } finally {
+      setRagLoading(false);
     }
-  };
+  }
 
-  const handleCloseViewer = () => {
-    setViewingDocument(null);
-  };
-
-  const handleDownload = async (doc: KBDocument) => {
+  // -- requirement CRUD -----------------------------------------------------
+  async function handleCreateRequirement(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newReqTitle.trim() || !projectId) return;
+    setCreatingReq(true);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
-      const token = localStorage.getItem('token'); // Changed from 'access_token' to 'token'
-      
-      if (!token) {
-        alert('Please log in to download documents');
+      const req = await requirementsService.createRequirement(projectId, newReqTitle.trim(), newReqBody.trim());
+      setRequirements(prev => [req, ...prev]);
+      setNewReqTitle('');
+      setNewReqBody('');
+      setShowNewReq(false);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      alert(`Failed to create requirement: ${msg ?? String(err)}`);
+    } finally {
+      setCreatingReq(false);
+    }
+  }
+
+  function startEditReq(req: ReqIQRequirement) {
+    setEditingReqId(req.id);
+    setEditTitle(req.title);
+    setEditBody(req.body ?? '');
+  }
+
+  async function handleSaveEdit(req: ReqIQRequirement) {
+    if (!editTitle.trim() || !projectId) return;
+    setSavingEdit(true);
+    try {
+      const updated = await requirementsService.updateRequirement(projectId, req.id, {
+        title: editTitle.trim(),
+        body: editBody.trim(),
+      });
+      setRequirements(prev => prev.map(r => r.id === req.id ? updated : r));
+      setEditingReqId(null);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      alert(`Save failed: ${msg ?? String(err)}`);
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function handleTransition(req: ReqIQRequirement, state: string) {
+    if (!projectId) return;
+    setTransitioningFor(req.id);
+    try {
+      const updated = await requirementsService.transitionRequirement(projectId, req.id, state);
+      setRequirements(prev => prev.map(r => r.id === req.id ? updated : r));
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      alert(`Transition failed: ${msg ?? String(err)}`);
+    } finally {
+      setTransitioningFor(null);
+    }
+  }
+
+  // -- IQ actions -----------------------------------------------------------
+  async function handleRunIq(req: ReqIQRequirement, type: 'stub' | 'llm') {
+    if (!projectId) return;
+    setRunningIqFor(req.id);
+    try {
+      const revIdx = iqData[req.id]?.latestRevisionIndex ?? 0;
+      if (type === 'stub') {
+        await requirementsService.runStubIq(projectId, req.id, revIdx);
+      } else {
+        await requirementsService.runLlmIq(projectId, req.id, revIdx);
+      }
+      // refresh IQ score
+      const updated = await requirementsService.getLatestIq(projectId, req.id);
+      setIqData(prev => ({ ...prev, [req.id]: updated }));
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      alert(`IQ run failed: ${msg ?? String(err)}`);
+    } finally {
+      setRunningIqFor(null);
+    }
+  }
+
+  // -- suggest tests --------------------------------------------------------
+  async function handleSuggestTests(req: ReqIQRequirement) {
+    if (!projectId) return;
+    setSuggestingFor(req.id);
+    try {
+      const result = await requirementsService.suggestTests(projectId, req.id, 3);
+      const first: SuggestedTest | undefined = result.created[0];
+      if (!first) {
+        alert('No tests were suggested for this requirement.');
         return;
       }
-      
-      // Fetch the file from the backend
-      const response = await fetch(`${apiUrl}/kb/${doc.id}/download`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+      const steps = first.payload?.steps ?? [];
+      const oracle = first.payload?.oracle ?? '';
+      const instruction = [
+        ...steps.map(s => s.action),
+        oracle ? `STOP when: ${oracle}` : '',
+      ].filter(Boolean).join('\n');
+      const params = new URLSearchParams({
+        test_title: first.title,
+        test_description: `Generated from ReqIQ requirement: ${req.title}`,
+        user_instruction: instruction,
       });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Download error:', errorText);
-        throw new Error(`Download failed: ${response.status} ${response.statusText}`);
-      }
-      
-      // Get the blob from response
-      const blob = await response.blob();
-      
-      // Create temporary download link
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = doc.filename;
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      
-      // Cleanup
-      setTimeout(() => {
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      }, 100);
-      
-    } catch (err) {
-      console.error('Download error:', err);
-      alert(`Failed to download document: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      navigate(`/crawl-and-save?${params.toString()}`);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      alert(`Suggest tests failed: ${msg ?? String(err)}`);
+    } finally {
+      setSuggestingFor(null);
     }
-  };
+  }
 
-  // Filter documents based on selected category
-  const filteredDocuments = documents.filter((doc) => {
-    if (selectedCategory === 'all') return true;
-    return doc.category.id.toString() === selectedCategory;
-  });
-
-  // Further filter by search query if present
-  const displayedDocuments = filteredDocuments.filter((doc) => {
-    if (!searchQuery) return true;
-    return (
-      doc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (doc.description && doc.description.toLowerCase().includes(searchQuery.toLowerCase()))
-    );
-  });
-
-  const getCategoryColor = (category: KBCategory) => {
-    // Use the category's color field if available
-    return category.color || '#3B82F6'; // Default to blue if no color
-  };
-
+  // -- render ---------------------------------------------------------------
   return (
     <Layout>
-      <div className="space-y-6">
-        {/* Loading State */}
-        {loading && (
-          <div className="flex justify-center items-center py-12">
-            <div className="text-gray-600">Loading knowledge base...</div>
+      <div className="p-6 max-w-4xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-1">Knowledge Base</h1>
+            <p className="text-sm text-gray-500">Requirements, documents and RAG powered by ReqIQ.</p>
           </div>
-        )}
+          <a
+            href={REQIQ_APP_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 border border-blue-200 rounded-lg px-3 py-2 hover:bg-blue-50 transition-colors"
+          >
+            <ExternalLink className="w-3 h-3" />
+            Open ReqIQ Advanced
+          </a>
+        </div>
 
-        {/* Error State */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-            {error}
-          </div>
-        )}
-
-        {/* Content */}
-        {!loading && !error && (
-          <>
-            {/* Header */}
-            <div className="flex justify-between items-center">
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900">Knowledge Base</h1>
-                <p className="text-gray-600 mt-1">
-                  {stats?.total_documents || 0} documents • {stats?.total_size_mb?.toFixed(1) || '0'} MB
-                </p>
-              </div>
-              <div className="flex gap-3">
-                <Button variant="secondary" onClick={handleCreateCategory}>
-                  <FolderPlus className="w-5 h-5 mr-2" />
-                  Create Category
-                </Button>
-                <Button variant="primary" onClick={handleUploadDocument}>
-                  <Upload className="w-5 h-5 mr-2" />
-                  Upload Document
-                </Button>
-              </div>
-            </div>
-
-        {/* Upload Modal */}
-        {showUploadModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <Card className="max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <h2 className="text-2xl font-bold text-gray-900">Upload Document</h2>
-                  <button
-                    onClick={() => setShowUploadModal(false)}
-                    className="text-gray-500 hover:text-gray-700"
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                {/* Drag & Drop Zone */}
-                <div
-                  onDrop={handleDrop}
-                  onDragEnter={handleDrag}
-                  onDragLeave={handleDrag}
-                  onDragOver={handleDrag}
-                  className={`border-2 border-dashed rounded-lg p-8 text-center ${
-                    dragActive
-                      ? 'border-primary bg-blue-50'
-                      : 'border-gray-300 bg-gray-50'
-                  }`}
-                >
-                  {uploadData.file ? (
-                    <div className="space-y-2">
-                      <FileText className="w-12 h-12 mx-auto text-green-600" />
-                      <p className="font-semibold text-gray-900">{uploadData.file.name}</p>
-                      <p className="text-sm text-gray-600">
-                        {(uploadData.file.size / (1024 * 1024)).toFixed(2)} MB
-                      </p>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => setUploadData({ ...uploadData, file: null })}
-                      >
-                        Remove File
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <Upload className="w-12 h-12 mx-auto text-gray-400" />
-                      <p className="text-gray-700">
-                        Drag and drop a file here, or click to select
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        Supported formats: PDF, DOCX, TXT (Max 25MB)
-                      </p>
+        {/* Workspace selector */}
+        <SectionCard
+          title="Workspace"
+          actions={
+            <button
+              onClick={() => setShowNewProject(v => !v)}
+              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+            >
+              <Plus className="w-3 h-3" /> New
+            </button>
+          }
+        >
+          {projectsLoading ? (
+            <p className="text-sm text-gray-400">Loading workspaces...</p>
+          ) : projectsError ? (
+            <p className="text-sm text-red-600">{projectsError}</p>
+          ) : projects.length === 0 && !showNewProject ? (
+            <p className="text-sm text-gray-400">No workspaces found in ReqIQ.</p>
+          ) : (
+            <>
+              {projects.length > 0 && (
+                <div className="flex items-center gap-2">
+                  {renamingProject ? (
+                    <>
                       <input
-                        type="file"
-                        accept=".pdf,.docx,.txt"
-                        onChange={(e) =>
-                          e.target.files && handleFileSelect(e.target.files[0])
-                        }
-                        className="hidden"
-                        id="file-upload"
+                        autoFocus
+                        className="flex-1 max-w-xs border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={renameValue}
+                        onChange={e => setRenameValue(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleRenameProject(); if (e.key === 'Escape') setRenamingProject(false); }}
                       />
-                      <label htmlFor="file-upload" className="inline-block">
-                        <span className="inline-flex items-center px-4 py-2 bg-gray-200 text-gray-900 rounded-lg hover:bg-gray-300 cursor-pointer transition-colors">
-                          Select File
+                      <SmallBtn variant="primary" onClick={handleRenameProject}><Check className="w-3 h-3" /></SmallBtn>
+                      <SmallBtn onClick={() => setRenamingProject(false)}><X className="w-3 h-3" /></SmallBtn>
+                    </>
+                  ) : (
+                    <>
+                      <select
+                        value={projectId}
+                        onChange={e => setProjectId(e.target.value)}
+                        className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1 max-w-xs"
+                      >
+                        {projects.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                      <SmallBtn
+                        onClick={() => {
+                          const current = projects.find(p => p.id === projectId);
+                          setRenameValue(current?.name ?? '');
+                          setRenamingProject(true);
+                        }}
+                      >
+                        <Pencil className="w-3 h-3 inline" /> Rename
+                      </SmallBtn>
+                    </>
+                  )}
+                </div>
+              )}
+              {showNewProject && (
+                <form onSubmit={handleCreateProject} className="flex items-center gap-2">
+                  <input
+                    autoFocus
+                    placeholder="New workspace name"
+                    className="flex-1 max-w-xs border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={newProjectName}
+                    onChange={e => setNewProjectName(e.target.value)}
+                  />
+                  <SmallBtn variant="primary" onClick={() => {}} disabled={creatingProject}>
+                    {creatingProject ? '...' : 'Create'}
+                  </SmallBtn>
+                  <SmallBtn onClick={() => setShowNewProject(false)}><X className="w-3 h-3" /></SmallBtn>
+                </form>
+              )}
+            </>
+          )}
+        </SectionCard>
+
+        {projectId && (
+          <>
+            {/* Documents */}
+            <SectionCard title="Documents">
+              <div className="flex items-center gap-3">
+                <label className={`cursor-pointer px-4 py-2 bg-blue-700 text-white text-sm font-semibold rounded-lg hover:bg-blue-800 transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                  {uploading ? 'Uploading...' : 'Upload Files'}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    accept=".pdf,.docx,.doc,.md,.txt,.pptx,.png,.jpg"
+                    onChange={handleUpload}
+                    disabled={uploading}
+                  />
+                </label>
+                <span className="text-xs text-gray-400">PDF, DOCX, MD, TXT, PPTX, PNG</span>
+              </div>
+              {uploadResult && <p className="text-sm text-blue-700">{uploadResult}</p>}
+              {sourcesLoading ? (
+                <p className="text-sm text-gray-400">Loading documents...</p>
+              ) : sources.length === 0 ? (
+                <p className="text-sm text-gray-400">No documents yet. Upload a file to get started.</p>
+              ) : (
+                <ul className="divide-y divide-gray-100">
+                  {sources.map(s => (
+                    <li key={s.id} className="py-2 flex items-center justify-between gap-2">
+                      <span className="text-sm text-gray-800 truncate max-w-xs">{s.originalFilename}</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${s.status === 'ready' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                          {s.status}
                         </span>
-                      </label>
+                        <SmallBtn
+                          variant="danger"
+                          onClick={() => handleDeleteSource(s.id, s.originalFilename)}
+                          disabled={deletingSourceId === s.id}
+                        >
+                          {deletingSourceId === s.id ? 'Removing…' : 'Remove'}
+                        </SmallBtn>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </SectionCard>
+
+            {/* Readiness */}
+            {/* Test context (compiled wiki) */}
+            <SectionCard
+              title="Test context"
+              actions={
+                <SmallBtn
+                  onClick={handleCompileWiki}
+                  disabled={compilingWiki || !projectId}
+                  variant="default"
+                >
+                  {compilingWiki ? 'Refreshing…' : 'Refresh'}
+                </SmallBtn>
+              }
+            >
+              {wikiError && <p className="text-sm text-red-600">{wikiError}</p>}
+              {wikiLoading ? (
+                <p className="text-sm text-gray-400">Loading Test context…</p>
+              ) : !wiki ? (
+                <p className="text-sm text-gray-400">No Test context yet — upload documents and wait for indexing.</p>
+              ) : (
+                <div className="space-y-2">
+                  {/* wikiSource banner */}
+                  {wiki.wikiStale && (
+                    <div className="flex items-center gap-2 rounded-md bg-orange-50 border border-orange-200 px-3 py-2 text-xs text-orange-700">
+                      ⚠ Documents or index changed — Test context may be outdated. Click Refresh to recompile.
+                    </div>
+                  )}
+                  {/* compile status chip */}
+                  {wiki.compileStatus !== 'ok' && (
+                    <div className="flex items-center gap-2 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+                      {wiki.compileStatus === 'no_sources'
+                        ? 'No documents indexed yet. Upload a file and wait for reindex.'
+                        : 'Test context failed to compile. Try refreshing.'}
+                    </div>
+                  )}
+                  {wiki.compileStatus === 'ok' && wiki.markdown && (
+                    <div className="rounded-md bg-gray-50 border border-gray-200 p-3 text-xs text-gray-700 whitespace-pre-wrap max-h-64 overflow-y-auto font-mono leading-relaxed">
+                      {wiki.markdown}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3 text-xs text-gray-400">
+                    {wiki.citationCount != null && <span>Based on {wiki.citationCount} source excerpt{wiki.citationCount !== 1 ? 's' : ''}</span>}
+                    {wiki.compiledAt && <span>· Compiled {new Date(wiki.compiledAt).toLocaleString()}</span>}
+                  </div>
+                </div>
+              )}
+            </SectionCard>
+
+            {/* Ready for testing? */}
+            <SectionCard title="Ready for testing?">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={readinessQuery}
+                  onChange={e => setReadinessQuery(e.target.value)}
+                  placeholder="Optional: describe a feature to check (e.g. 5G voucher purchase)"
+                  className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  onClick={handleCheckReadiness}
+                  disabled={readinessLoading}
+                  className="px-4 py-2 bg-blue-700 text-white text-sm font-semibold rounded-lg hover:bg-blue-800 disabled:opacity-50 transition-colors"
+                >
+                  {readinessLoading ? '...' : 'Check'}
+                </button>
+              </div>
+              {readiness && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <span className={`text-2xl font-bold ${readiness.readinessScore >= 80 ? 'text-green-700' : readiness.readinessScore >= 60 ? 'text-yellow-600' : 'text-red-600'}`}>
+                      {readiness.readinessScore}%
+                    </span>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${readiness.status === 'ready' ? 'bg-green-100 text-green-700' : readiness.status === 'insufficient' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-600'}`}>
+                      {readiness.status.replace('_', ' ')}
+                    </span>
+                    {readiness.wikiSource === 'rag' && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-50 text-yellow-700 border border-yellow-200">
+                        provisional — upload documents and wait for indexing
+                      </span>
+                    )}
+                    {readiness.wikiStale && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200">
+                        ⚠ Test context may be outdated
+                      </span>
+                    )}
+                  </div>
+                  {readiness.missing && readiness.missing.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 mb-1">Missing coverage</p>
+                      <ul className="list-disc list-inside space-y-0.5">
+                        {readiness.missing.map((m, i) => (
+                          <li key={i} className="text-xs text-gray-500">{m}</li>
+                        ))}
+                      </ul>
                     </div>
                   )}
                 </div>
+              )}
+            </SectionCard>
 
-                {/* Form Fields */}
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-900 mb-2">
-                      Document Name <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={uploadData.name}
-                      onChange={(e) =>
-                        setUploadData({ ...uploadData, name: e.target.value })
-                      }
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                      placeholder="Enter document name"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-900 mb-2">
-                      Description
-                    </label>
-                    <textarea
-                      value={uploadData.description}
-                      onChange={(e) =>
-                        setUploadData({ ...uploadData, description: e.target.value })
-                      }
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary min-h-[80px]"
-                      placeholder="Brief description of the document"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-900 mb-2">
-                      Category <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      value={uploadData.category_id}
-                      onChange={(e) =>
-                        setUploadData({ ...uploadData, category_id: e.target.value })
-                      }
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                      <option value="">Select a category</option>
-                      {categories.map((cat) => (
-                        <option key={cat.id} value={cat.id}>
-                          {cat.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-900 mb-2">
-                      Document Type
-                    </label>
-                    <select
-                      value={uploadData.document_type}
-                      onChange={(e) =>
-                        setUploadData({
-                          ...uploadData,
-                          document_type: e.target.value as any,
-                        })
-                      }
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                      <option value="system_guide">System Guide</option>
-                      <option value="product">Product</option>
-                      <option value="process">Process</option>
-                      <option value="reference">Reference</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-900 mb-2">
-                      Tags (comma-separated)
-                    </label>
-                    <input
-                      type="text"
-                      value={uploadData.tags}
-                      onChange={(e) =>
-                        setUploadData({ ...uploadData, tags: e.target.value })
-                      }
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                      placeholder="e.g. billing, user-guide, api"
-                    />
-                  </div>
-                </div>
-
-                {uploadError && (
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
-                    {uploadError}
-                  </div>
-                )}
-
-                <div className="flex gap-3">
-                  <Button
-                    variant="primary"
-                    onClick={handleSubmitUpload}
-                    disabled={uploading || !uploadData.file}
-                    className="flex-1"
-                  >
-                    {uploading ? 'Uploading...' : 'Upload Document'}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => setShowUploadModal(false)}
-                    disabled={uploading}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          </div>
-        )}
-
-        {/* Search Bar */}
-        <Card>
-          <div className="flex gap-3">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                placeholder="Search knowledge base documents..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-            </div>
-          </div>
-        </Card>
-
-        {/* Category Filters */}
-        <div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Filter by Category</h2>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant={selectedCategory === 'all' ? 'primary' : 'secondary'}
-              onClick={() => setSelectedCategory('all')}
-            >
-              All Documents ({documents.length})
-            </Button>
-            {categories.map((category) => {
-              const count = documents.filter(d => d.category.id === category.id).length;
-              return (
-                <Button
-                  key={category.id}
-                  variant={selectedCategory === category.id.toString() ? 'primary' : 'secondary'}
-                  onClick={() => setSelectedCategory(category.id.toString())}
+            {/* RAG query */}
+            <SectionCard title="Ask a Question">
+              <form onSubmit={handleRagQuery} className="flex gap-2">
+                <input
+                  type="text"
+                  value={ragQuery}
+                  onChange={e => setRagQuery(e.target.value)}
+                  placeholder="What are the acceptance criteria for the 5G Voucher Plan purchase flow?"
+                  className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={ragLoading}
+                />
+                <button
+                  type="submit"
+                  disabled={ragLoading || !ragQuery.trim()}
+                  className="px-4 py-2 bg-blue-700 text-white text-sm font-semibold rounded-lg hover:bg-blue-800 disabled:opacity-50 transition-colors"
                 >
-                  {category.name} ({count})
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Category Cards */}
-        <div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Categories</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {categories.map((category) => {
-              const count = documents.filter(d => d.category.id === category.id).length;
-              const color = getCategoryColor(category);
-              return (
-                <Card key={category.id} padding={false}>
-                  <div className="p-4">
-                    <button
-                      onClick={() => setSelectedCategory(category.id.toString())}
-                      className="w-full flex items-center gap-3 text-left hover:bg-gray-50 transition-colors rounded-lg p-2"
-                    >
-                      <div
-                        className="w-12 h-12 rounded-lg flex items-center justify-center text-white font-bold text-xl"
-                        style={{ backgroundColor: color }}
-                      >
-                        {category.name[0]}
-                      </div>
-                      <div className="flex-1">
-                        <p className="font-semibold text-gray-900">{category.name}</p>
-                        <p className="text-sm text-gray-600">{count} documents</p>
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => handleEditCategory(category)}
-                      className="mt-2 w-full px-3 py-1.5 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
-                    >
-                      Edit Category
-                    </button>
+                  {ragLoading ? '...' : 'Ask'}
+                </button>
+              </form>
+              {ragError && <p className="text-sm text-red-600">{ragError}</p>}
+              {ragResult && (
+                <div className="space-y-3">
+                  <div className="rounded-md bg-gray-50 border border-gray-200 p-4 text-sm text-gray-800 whitespace-pre-wrap">
+                    {ragResult.content}
                   </div>
-                </Card>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Documents List */}
-        <Card>
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-gray-900">
-              {selectedCategory === 'all'
-                ? 'All Documents'
-                : `${selectedCategory} Documents`}
-            </h2>
-            <p className="text-sm text-gray-600">
-              Showing {displayedDocuments.length} of {documents.length} documents
-            </p>
-          </div>
-          <div className="space-y-3">
-            {displayedDocuments.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <FileText className="w-12 h-12 mx-auto mb-2 text-gray-400" />
-                <p>No documents found</p>
-                {searchQuery && <p className="text-sm">Try a different search term</p>}
-              </div>
-            ) : (
-              displayedDocuments.map((doc) => (
-                <div
-                  key={doc.id}
-                  className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-4 flex-1">
-                    <div className="text-4xl">📄</div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold text-gray-900">{doc.title}</p>
-                        <span className="text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded">
-                          #{doc.id}
-                        </span>
-                        {doc.category && (
-                          <span
-                            className="text-xs px-2 py-1 text-white rounded"
-                            style={{ backgroundColor: getCategoryColor(doc.category) }}
-                          >
-                            {doc.category.name}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-sm text-gray-600 mt-1">{doc.description || 'No description'}</p>
-                      <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
-                        <span>{(doc.file_size / (1024 * 1024)).toFixed(2)} MB</span>
-                        <span>•</span>
-                        <span>{doc.file_type.toUpperCase()}</span>
-                        <span>•</span>
-                        <span>{new Date(doc.created_at).toLocaleDateString()}</span>
-                        <span>•</span>
-                        <span>Referenced {doc.referenced_count} times</span>
-                      </div>
+                  {ragResult.citations.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 mb-1">Sources</p>
+                      <ul className="space-y-1">
+                        {ragResult.citations.map((c, i) => (
+                          <li key={i} className="text-xs text-gray-500">
+                            {c.sourceFilename} &middot; chunk {c.chunkIndex}{c.score != null ? ` \u00b7 score ${c.score.toFixed(2)}` : ''}
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => handleViewDocument(doc.id)}
-                    >
-                      View
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => handleEditDocument(doc)}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => handleDownload(doc)}
-                    >
-                      Download
-                    </Button>
-                  </div>
+                  )}
                 </div>
-              ))
-            )}
-          </div>
-        </Card>
+              )}
+            </SectionCard>
+
+            {/* Requirements */}
+            <SectionCard
+              title="Requirements"
+              actions={
+                <button
+                  onClick={() => setShowNewReq(v => !v)}
+                  className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+                >
+                  <Plus className="w-3 h-3" /> New
+                </button>
+              }
+            >
+              {/* New requirement form */}
+              {showNewReq && (
+                <form onSubmit={handleCreateRequirement} className="space-y-2 rounded-md border border-blue-200 bg-blue-50 p-3">
+                  <input
+                    autoFocus
+                    placeholder="Requirement title *"
+                    className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={newReqTitle}
+                    onChange={e => setNewReqTitle(e.target.value)}
+                    required
+                  />
+                  <textarea
+                    placeholder="Body / description (optional)"
+                    className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    rows={3}
+                    value={newReqBody}
+                    onChange={e => setNewReqBody(e.target.value)}
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      disabled={creatingReq || !newReqTitle.trim()}
+                      className="px-3 py-1.5 bg-blue-700 text-white text-xs font-semibold rounded-lg hover:bg-blue-800 disabled:opacity-50"
+                    >
+                      {creatingReq ? 'Creating...' : 'Create Requirement'}
+                    </button>
+                    <SmallBtn onClick={() => setShowNewReq(false)}>Cancel</SmallBtn>
+                  </div>
+                </form>
+              )}
+
+              {reqLoading ? (
+                <p className="text-sm text-gray-400">Loading requirements...</p>
+              ) : requirements.length === 0 ? (
+                <p className="text-sm text-gray-400">No requirements found. Create one above.</p>
+              ) : (
+                <ul className="divide-y divide-gray-100">
+                  {requirements.map(req => {
+                    const iq = iqData[req.id];
+                    const isEditing = editingReqId === req.id;
+                    const isRunningIq = runningIqFor === req.id;
+                    const isSuggesting = suggestingFor === req.id;
+                    const isTransitioning = transitioningFor === req.id;
+
+                    return (
+                      <li key={req.id} className="py-4 space-y-2">
+                        {isEditing ? (
+                          <div className="space-y-2">
+                            <input
+                              className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              value={editTitle}
+                              onChange={e => setEditTitle(e.target.value)}
+                            />
+                            <textarea
+                              className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              rows={3}
+                              value={editBody}
+                              onChange={e => setEditBody(e.target.value)}
+                              placeholder="Body / description"
+                            />
+                            <div className="flex gap-2">
+                              <SmallBtn variant="primary" onClick={() => handleSaveEdit(req)} disabled={savingEdit}>
+                                {savingEdit ? 'Saving...' : 'Save'}
+                              </SmallBtn>
+                              <SmallBtn onClick={() => setEditingReqId(null)}>Cancel</SmallBtn>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-gray-900">{req.title}</p>
+                                {req.body && (
+                                  <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{req.body}</p>
+                                )}
+                                <div className="flex items-center gap-2 mt-1">
+                                  <StateBadge state={req.state} />
+                                  {iq && <QualityBadge score={iq.latestCompositeScore} />}
+                                </div>
+                              </div>
+                              <SmallBtn onClick={() => startEditReq(req)}>
+                                <Pencil className="w-3 h-3 inline" /> Edit
+                              </SmallBtn>
+                            </div>
+
+                            {/* Lifecycle transition */}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-xs text-gray-400 mr-1">Transition:</span>
+                              {LIFECYCLE_STATES.filter(s => s !== req.state).map(s => (
+                                <SmallBtn
+                                  key={s}
+                                  onClick={() => handleTransition(req, s)}
+                                  disabled={isTransitioning}
+                                >
+                                  <ChevronDown className="w-3 h-3 inline" /> {s}
+                                </SmallBtn>
+                              ))}
+                            </div>
+
+                            {/* IQ + test actions */}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <SmallBtn
+                                variant="default"
+                                onClick={() => handleRunIq(req, 'stub')}
+                                disabled={isRunningIq}
+                              >
+                                {isRunningIq ? '...' : 'Run Stub IQ'}
+                              </SmallBtn>
+                              <SmallBtn
+                                variant="default"
+                                onClick={() => handleRunIq(req, 'llm')}
+                                disabled={isRunningIq}
+                              >
+                                {isRunningIq ? '...' : 'Run LLM IQ'}
+                              </SmallBtn>
+                              <SmallBtn
+                                variant="primary"
+                                onClick={() => handleSuggestTests(req)}
+                                disabled={isSuggesting}
+                              >
+                                {isSuggesting ? 'Generating...' : 'Suggest Tests'}
+                              </SmallBtn>
+                            </div>
+                          </>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </SectionCard>
           </>
         )}
       </div>
-
-      {/* Document Viewer Modal */}
-      {viewingDocument && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-            {/* Header */}
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                    {viewingDocument.title}
-                  </h2>
-                  <div className="flex items-center gap-3 text-sm text-gray-600">
-                    <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded">
-                      {viewingDocument.category.name}
-                    </span>
-                    <span>{viewingDocument.filename}</span>
-                    <span>•</span>
-                    <span>{(viewingDocument.file_size / 1024).toFixed(2)} KB</span>
-                    <span>•</span>
-                    <span>{new Date(viewingDocument.created_at).toLocaleDateString()}</span>
-                  </div>
-                  {viewingDocument.description && (
-                    <p className="mt-2 text-gray-600">{viewingDocument.description}</p>
-                  )}
-                </div>
-                <button
-                  onClick={handleCloseViewer}
-                  className="ml-4 text-gray-400 hover:text-gray-600"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-auto p-6">
-              <div className="prose max-w-none">
-                {viewingDocument.content ? (
-                  <pre className="whitespace-pre-wrap font-sans text-gray-700">
-                    {viewingDocument.content}
-                  </pre>
-                ) : (
-                  <div className="text-center py-12 text-gray-500">
-                    <FileText className="w-16 h-16 mx-auto mb-4 text-gray-400" />
-                    <p>Document content preview not available</p>
-                    <p className="text-sm mt-2">The full document is stored at: {viewingDocument.file_path}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="p-6 border-t border-gray-200 bg-gray-50">
-              <div className="flex justify-end gap-3">
-                <Button variant="secondary" onClick={handleCloseViewer}>
-                  Close
-                </Button>
-                <Button variant="primary" onClick={() => handleDownload(viewingDocument)}>
-                  Download
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Create Category Modal */}
-      {showCreateCategoryModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">Create New Category</h2>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Category Name *
-                </label>
-                <input
-                  type="text"
-                  value={newCategoryData.name}
-                  onChange={(e) => setNewCategoryData({ ...newCategoryData, name: e.target.value })}
-                  placeholder="e.g., Product Documentation"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Description
-                </label>
-                <textarea
-                  value={newCategoryData.description}
-                  onChange={(e) => setNewCategoryData({ ...newCategoryData, description: e.target.value })}
-                  placeholder="Brief description of this category"
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Color
-                </label>
-                <div className="flex gap-2 items-center">
-                  <input
-                    type="color"
-                    value={newCategoryData.color}
-                    onChange={(e) => setNewCategoryData({ ...newCategoryData, color: e.target.value })}
-                    className="h-10 w-20 border border-gray-300 rounded cursor-pointer"
-                  />
-                  <span className="text-sm text-gray-600">{newCategoryData.color}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 mt-6">
-              <Button variant="secondary" onClick={handleCloseCategoryModal} disabled={creatingCategory}>
-                Cancel
-              </Button>
-              <Button variant="primary" onClick={handleSaveCategory} disabled={creatingCategory}>
-                {creatingCategory ? 'Creating...' : 'Create Category'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Category Modal */}
-      {editingCategory && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">Edit Category</h2>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Category Name *
-                </label>
-                <input
-                  type="text"
-                  value={editCategoryData.name}
-                  onChange={(e) => setEditCategoryData({ ...editCategoryData, name: e.target.value })}
-                  placeholder="e.g., Product Documentation"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Description
-                </label>
-                <textarea
-                  value={editCategoryData.description}
-                  onChange={(e) => setEditCategoryData({ ...editCategoryData, description: e.target.value })}
-                  placeholder="Brief description of this category"
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Color
-                </label>
-                <div className="flex gap-2 items-center">
-                  <input
-                    type="color"
-                    value={editCategoryData.color}
-                    onChange={(e) => setEditCategoryData({ ...editCategoryData, color: e.target.value })}
-                    className="h-10 w-20 border border-gray-300 rounded cursor-pointer"
-                  />
-                  <span className="text-sm text-gray-600">{editCategoryData.color}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 mt-6">
-              <Button variant="secondary" onClick={handleCloseEditCategoryModal} disabled={updatingCategory}>
-                Cancel
-              </Button>
-              <Button variant="primary" onClick={handleUpdateCategory} disabled={updatingCategory}>
-                {updatingCategory ? 'Updating...' : 'Update Category'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Document Modal */}
-      {editingDocument && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">Edit Document</h2>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Title *
-                </label>
-                <input
-                  type="text"
-                  value={editDocumentData.title}
-                  onChange={(e) => setEditDocumentData({ ...editDocumentData, title: e.target.value })}
-                  placeholder="Document title"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Description
-                </label>
-                <textarea
-                  value={editDocumentData.description}
-                  onChange={(e) => setEditDocumentData({ ...editDocumentData, description: e.target.value })}
-                  placeholder="Brief description"
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Category *
-                </label>
-                <select
-                  value={editDocumentData.category_id}
-                  onChange={(e) => setEditDocumentData({ ...editDocumentData, category_id: parseInt(e.target.value) })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {categories.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="p-3 bg-gray-100 rounded-md">
-                <p className="text-sm text-gray-600">
-                  <strong>File:</strong> {editingDocument.filename}
-                </p>
-                <p className="text-sm text-gray-600">
-                  <strong>Type:</strong> {editingDocument.file_type.toUpperCase()}
-                </p>
-                <p className="text-sm text-gray-600">
-                  <strong>Size:</strong> {(editingDocument.file_size / (1024 * 1024)).toFixed(2)} MB
-                </p>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 mt-6">
-              <Button variant="secondary" onClick={handleCloseEditDocumentModal} disabled={updatingDocument}>
-                Cancel
-              </Button>
-              <Button variant="primary" onClick={handleUpdateDocument} disabled={updatingDocument}>
-                {updatingDocument ? 'Updating...' : 'Update Document'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </Layout>
   );
 };
+
+export default KnowledgeBasePage;

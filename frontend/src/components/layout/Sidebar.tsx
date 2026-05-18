@@ -1,11 +1,12 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Home, FileText, Database, Settings, PlayCircle, FolderOpen, Bot, Library } from 'lucide-react';
+import { Home, FileText, Database, Settings, PlayCircle, FolderOpen, Bot, Library, Globe } from 'lucide-react';
 
 const navItems = [
   { path: '/dashboard', icon: Home, label: 'Dashboard' },
   { path: '/tests', icon: FileText, label: 'Tests' },
   { path: '/step-library', icon: Library, label: 'Step Library' },
+  { path: '/crawl-and-save', icon: Globe, label: 'Crawl & Save' },
   { path: '/test-suites', icon: FolderOpen, label: 'Test Suites' },
   { path: '/executions', icon: PlayCircle, label: 'Executions' },
   { path: '/knowledge-base', icon: Database, label: 'Knowledge Base' },
