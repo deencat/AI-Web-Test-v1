@@ -59,10 +59,18 @@ async def _proxy(coro: Any) -> Any:
     try:
         return await coro
     except Exception as exc:
-        logger.error("ReqIQ proxy error: %s", exc)
+        # Include ReqIQ response body in the error detail when available
+        body: Any = None
+        if hasattr(exc, "response") and exc.response is not None:  # type: ignore[union-attr]
+            try:
+                body = exc.response.json()  # type: ignore[union-attr]
+            except Exception:
+                body = exc.response.text  # type: ignore[union-attr]
+        detail = body if body else str(exc)
+        logger.error("ReqIQ proxy error: %s | body: %s", exc, body)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"ReqIQ returned an error: {exc}",
+            detail=detail,
         )
 
 

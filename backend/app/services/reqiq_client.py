@@ -144,7 +144,13 @@ async def upload_sources(project_id: str, files_payload: list[tuple]) -> dict:
         f"/api/v1/projects/{project_id}/sources/upload",
         files=files_payload,
     )
-    resp.raise_for_status()
+    if not resp.is_success:
+        try:
+            body = resp.json()
+        except Exception:
+            body = resp.text
+        logger.error("ReqIQ upload error %s: %s", resp.status_code, body)
+        resp.raise_for_status()
     return resp.json()
 
 

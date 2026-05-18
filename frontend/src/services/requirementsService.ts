@@ -221,10 +221,10 @@ const requirementsService = {
   async uploadSources(projectId: string, files: File[]): Promise<UploadSourcesResult> {
     const form = new FormData();
     files.forEach(f => form.append('files', f, f.name));
+    // Do NOT set Content-Type manually — axios must auto-generate it with the multipart boundary.
     const res = await api.post<UploadSourcesResult>(
       `${BASE}/${projectId}/sources/upload`,
       form,
-      { headers: { 'Content-Type': 'multipart/form-data' } },
     );
     return res.data;
   },
