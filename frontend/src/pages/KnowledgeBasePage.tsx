@@ -232,8 +232,13 @@ export const KnowledgeBasePage: React.FC = () => {
         requirementsService.listSources(projectId).then(setSources).catch(() => {});
       }, 3000);
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setUploadResult(`Upload failed: ${msg ?? String(err)}`);
+      const data = (err as { response?: { data?: unknown } })?.response?.data;
+      const msg = typeof data === 'object' && data !== null && 'detail' in data
+        ? (typeof (data as { detail: unknown }).detail === 'string'
+            ? (data as { detail: string }).detail
+            : JSON.stringify((data as { detail: unknown }).detail))
+        : String(err);
+      setUploadResult(`Upload failed: ${msg}`);
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
