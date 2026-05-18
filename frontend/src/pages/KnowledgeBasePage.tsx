@@ -28,6 +28,7 @@ import type {
   ReqIQSource,
   LatestIqResult,
   ReadinessResult,
+  WikiResult,
   RagQueryResult,
   SuggestedTest,
 } from '../services/requirementsService';
@@ -124,6 +125,12 @@ export const KnowledgeBasePage: React.FC = () => {
   const [readinessLoading, setReadinessLoading] = useState(false);
   const [readinessQuery, setReadinessQuery] = useState('');
 
+  // -- wiki (Test context) --------------------------------------------------
+  const [wiki, setWiki] = useState<WikiResult | null>(null);
+  const [wikiLoading, setWikiLoading] = useState(false);
+  const [compilingWiki, setCompilingWiki] = useState(false);
+  const [wikiError, setWikiError] = useState<string | null>(null);
+
   // -- rag ------------------------------------------------------------------
   const [ragQuery, setRagQuery] = useState('');
   const [ragResult, setRagResult] = useState<RagQueryResult | null>(null);
@@ -164,6 +171,15 @@ export const KnowledgeBasePage: React.FC = () => {
     setReqLoading(true);
     setIqData({});
     setReadiness(null);
+    setWiki(null);
+    setWikiError(null);
+
+    // Load wiki (Test context) immediately on workspace switch
+    setWikiLoading(true);
+    requirementsService.getWiki(projectId)
+      .then(setWiki)
+      .catch(() => setWiki(null))
+      .finally(() => setWikiLoading(false));
 
     requirementsService.listSources(projectId)
       .then(setSources)
@@ -272,11 +288,40 @@ export const KnowledgeBasePage: React.FC = () => {
     try {
       const result = await requirementsService.getReadiness(projectId, readinessQuery);
       setReadiness(result);
+      // Sync wiki state from readiness wikiContent when wiki is not yet loaded
+      if (!wiki && result.wikiContent) {
+        setWiki({
+          projectId,
+          markdown: result.wikiContent,
+          compileStatus: 'ok',
+          wikiStale: result.wikiStale ?? false,
+          compiledAt: result.wikiCompiledAt,
+        });
+      }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       alert(`Readiness check failed: ${msg ?? String(err)}`);
     } finally {
       setReadinessLoading(false);
+    }
+  }
+
+  // -- wiki (Test context) --------------------------------------------------
+  async function handleCompileWiki() {
+    if (!projectId) return;
+    setCompilingWiki(true);
+    setWikiError(null);
+    try {
+      const result = await requirementsService.compileWiki(projectId);
+      setWiki(result);
+    } catch (err: unknown) {
+      const data = (err as { response?: { data?: unknown } })?.response?.data;
+      const msg = typeof data === 'object' && data !== null && 'detail' in data
+        ? JSON.stringify((data as { detail: unknown }).detail)
+        : String(err);
+      setWikiError(`Compile failed: ${msg}`);
+    } finally {
+      setCompilingWiki(false);
     }
   }
 
@@ -554,6 +599,54 @@ export const KnowledgeBasePage: React.FC = () => {
             </SectionCard>
 
             {/* Readiness */}
+            {/* Test context (compiled wiki) */}
+            <SectionCard
+              title="Test context"
+              actions={
+                <SmallBtn
+                  onClick={handleCompileWiki}
+                  disabled={compilingWiki || !projectId}
+                  variant="default"
+                >
+                  {compilingWiki ? 'Refreshing…' : 'Refresh'}
+                </SmallBtn>
+              }
+            >
+              {wikiError && <p className="text-sm text-red-600">{wikiError}</p>}
+              {wikiLoading ? (
+                <p className="text-sm text-gray-400">Loading Test context…</p>
+              ) : !wiki ? (
+                <p className="text-sm text-gray-400">No Test context yet — upload documents and wait for indexing.</p>
+              ) : (
+                <div className="space-y-2">
+                  {/* wikiSource banner */}
+                  {wiki.wikiStale && (
+                    <div className="flex items-center gap-2 rounded-md bg-orange-50 border border-orange-200 px-3 py-2 text-xs text-orange-700">
+                      ⚠ Documents or index changed — Test context may be outdated. Click Refresh to recompile.
+                    </div>
+                  )}
+                  {/* compile status chip */}
+                  {wiki.compileStatus !== 'ok' && (
+                    <div className="flex items-center gap-2 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+                      {wiki.compileStatus === 'no_sources'
+                        ? 'No documents indexed yet. Upload a file and wait for reindex.'
+                        : 'Test context failed to compile. Try refreshing.'}
+                    </div>
+                  )}
+                  {wiki.compileStatus === 'ok' && wiki.markdown && (
+                    <div className="rounded-md bg-gray-50 border border-gray-200 p-3 text-xs text-gray-700 whitespace-pre-wrap max-h-64 overflow-y-auto font-mono leading-relaxed">
+                      {wiki.markdown}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3 text-xs text-gray-400">
+                    {wiki.citationCount != null && <span>Based on {wiki.citationCount} source excerpt{wiki.citationCount !== 1 ? 's' : ''}</span>}
+                    {wiki.compiledAt && <span>· Compiled {new Date(wiki.compiledAt).toLocaleString()}</span>}
+                  </div>
+                </div>
+              )}
+            </SectionCard>
+
+            {/* Ready for testing? */}
             <SectionCard title="Ready for testing?">
               <div className="flex items-center gap-2">
                 <input
@@ -580,12 +673,17 @@ export const KnowledgeBasePage: React.FC = () => {
                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${readiness.status === 'ready' ? 'bg-green-100 text-green-700' : readiness.status === 'insufficient' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-600'}`}>
                       {readiness.status.replace('_', ' ')}
                     </span>
+                    {readiness.wikiSource === 'rag' && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-50 text-yellow-700 border border-yellow-200">
+                        provisional — upload documents and wait for indexing
+                      </span>
+                    )}
+                    {readiness.wikiStale && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200">
+                        ⚠ Test context may be outdated
+                      </span>
+                    )}
                   </div>
-                  {readiness.wikiContent && (
-                    <div className="rounded-md bg-gray-50 border border-gray-200 p-3 text-xs text-gray-700 whitespace-pre-wrap max-h-48 overflow-y-auto">
-                      {readiness.wikiContent}
-                    </div>
-                  )}
                   {readiness.missing && readiness.missing.length > 0 && (
                     <div>
                       <p className="text-xs font-semibold text-gray-500 mb-1">Missing coverage</p>

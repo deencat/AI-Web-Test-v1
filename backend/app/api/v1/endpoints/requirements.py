@@ -241,6 +241,29 @@ async def get_readiness(
 
 
 # ---------------------------------------------------------------------------
+# §5.6 — Compiled wiki (Test context)
+# ---------------------------------------------------------------------------
+
+@router.get("/projects/{project_id}/wiki", summary="Get compiled wiki (Test context)")
+async def get_wiki(
+    project_id: str,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    return await _proxy(reqiq.get_wiki(project_id))
+
+
+@router.post("/projects/{project_id}/wiki/compile", summary="Recompile wiki (Test context)")
+async def compile_wiki(
+    project_id: str,
+    feature: str = Query(default=""),
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    return await _proxy(reqiq.compile_wiki(project_id, feature))
+
+
+# ---------------------------------------------------------------------------
 # §5.2 — Workspace CRUD
 # ---------------------------------------------------------------------------
 

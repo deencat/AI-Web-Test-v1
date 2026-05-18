@@ -95,8 +95,13 @@ export interface LatestIqResult {
 export interface ReadinessResult {
   projectId: string;
   readinessScore: number;
-  status: 'ready' | 'insufficient' | 'no_sources';
+  status: 'ready' | 'insufficient' | 'no_sources' | 'error';
+  threshold?: number;
   wikiContent?: string;
+  wikiSource?: 'compiled' | 'rag' | 'none';
+  wikiStale?: boolean;
+  wikiCompiledAt?: string;
+  wikiEmbeddingIndexVersion?: number;
   matchedRequirement?: {
     id: string;
     title: string;
@@ -104,6 +109,17 @@ export interface ReadinessResult {
     latestCompositeScore: number;
   };
   missing?: string[];
+}
+
+export interface WikiResult {
+  projectId: string;
+  markdown: string;
+  compileStatus: 'ok' | 'no_sources' | 'failed';
+  wikiStale: boolean;
+  compiledAt?: string;
+  citationCount?: number;
+  embeddingIndexVersion?: number;
+  featureHint?: string | null;
 }
 
 export interface SuggestTestsResult {
@@ -323,6 +339,24 @@ const requirementsService = {
     if (query) params.query = query;
     if (feature) params.feature = feature;
     const res = await api.get<ReadinessResult>(`${BASE}/${projectId}/readiness`, { params });
+    return res.data;
+  },
+
+  // -- Wiki (Test context) --------------------------------------------------
+
+  async getWiki(projectId: string): Promise<WikiResult> {
+    const res = await api.get<WikiResult>(`${BASE}/projects/${projectId}/wiki`);
+    return res.data;
+  },
+
+  async compileWiki(projectId: string, feature = ''): Promise<WikiResult> {
+    const params: Record<string, string> = {};
+    if (feature) params.feature = feature;
+    const res = await api.post<WikiResult>(
+      `${BASE}/projects/${projectId}/wiki/compile`,
+      undefined,
+      { params },
+    );
     return res.data;
   },
 };

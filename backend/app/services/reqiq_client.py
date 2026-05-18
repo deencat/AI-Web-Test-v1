@@ -165,6 +165,23 @@ async def delete_source(project_id: str, source_id: str) -> None:
     resp.raise_for_status()
 
 
+async def get_wiki(project_id: str) -> dict:
+    """Return the compiled wiki (Test context) for a project.
+    Raises on 404 (wiki_not_compiled / not_found) so caller can handle.
+    """
+    resp = await _request("GET", f"/api/v1/projects/{project_id}/wiki")
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def compile_wiki(project_id: str, feature: str = "") -> dict:
+    """Trigger a manual wiki recompile (LIBRARIAN+).  Bodyless POST."""
+    params = {"feature": feature} if feature else None
+    resp = await _request("POST", f"/api/v1/projects/{project_id}/wiki/compile", params=params)
+    resp.raise_for_status()
+    return resp.json()
+
+
 async def reindex_embeddings(project_id: str) -> dict:
     """
     Trigger ReqIQ to re-embed all sources for a project.
