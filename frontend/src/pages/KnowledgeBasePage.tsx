@@ -116,6 +116,7 @@ export const KnowledgeBasePage: React.FC = () => {
   const [sourcesLoading, setSourcesLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<string | null>(null);
+  const [deletingSourceId, setDeletingSourceId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // -- readiness ------------------------------------------------------------
@@ -242,6 +243,25 @@ export const KnowledgeBasePage: React.FC = () => {
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  // -- delete document ------------------------------------------------------
+  async function handleDeleteSource(sourceId: string, filename: string) {
+    if (!projectId) return;
+    if (!window.confirm(`Remove document "${filename}"?\n\nThis deletes the file and its search index entries. Other documents are not affected.`)) return;
+    setDeletingSourceId(sourceId);
+    try {
+      await requirementsService.deleteSource(projectId, sourceId);
+      setSources(prev => prev.filter(s => s.id !== sourceId));
+    } catch (err: unknown) {
+      const data = (err as { response?: { data?: unknown } })?.response?.data;
+      const msg = typeof data === 'object' && data !== null && 'detail' in data
+        ? JSON.stringify((data as { detail: unknown }).detail)
+        : String(err);
+      alert(`Delete failed: ${msg}`);
+    } finally {
+      setDeletingSourceId(null);
     }
   }
 
@@ -513,11 +533,20 @@ export const KnowledgeBasePage: React.FC = () => {
               ) : (
                 <ul className="divide-y divide-gray-100">
                   {sources.map(s => (
-                    <li key={s.id} className="py-2 flex items-center justify-between">
+                    <li key={s.id} className="py-2 flex items-center justify-between gap-2">
                       <span className="text-sm text-gray-800 truncate max-w-xs">{s.originalFilename}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${s.status === 'ready' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                        {s.status}
-                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${s.status === 'ready' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                          {s.status}
+                        </span>
+                        <SmallBtn
+                          variant="danger"
+                          onClick={() => handleDeleteSource(s.id, s.originalFilename)}
+                          disabled={deletingSourceId === s.id}
+                        >
+                          {deletingSourceId === s.id ? 'Removing…' : 'Remove'}
+                        </SmallBtn>
+                      </div>
                     </li>
                   ))}
                 </ul>

@@ -173,6 +173,16 @@ async def list_sources(
     return await _proxy(reqiq.list_sources(project_id))
 
 
+@router.delete("/{project_id}/sources/{source_id}", status_code=204, summary="Delete a source document")
+async def delete_source(
+    project_id: str,
+    source_id: str,
+    _: User = Depends(get_current_user),
+) -> None:
+    _reqiq_unavailable()
+    await _proxy(reqiq.delete_source(project_id, source_id))
+
+
 # ---------------------------------------------------------------------------
 # 6. Generate suggested tests
 # ---------------------------------------------------------------------------

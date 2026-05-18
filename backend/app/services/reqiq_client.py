@@ -160,6 +160,11 @@ async def list_sources(project_id: str) -> dict:
     return resp.json()
 
 
+async def delete_source(project_id: str, source_id: str) -> None:
+    resp = await _request("DELETE", f"/api/v1/projects/{project_id}/sources/{source_id}")
+    resp.raise_for_status()
+
+
 async def reindex_embeddings(project_id: str) -> dict:
     """
     Trigger ReqIQ to re-embed all sources for a project.

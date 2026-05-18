@@ -236,6 +236,10 @@ const requirementsService = {
     return res.data;
   },
 
+  async deleteSource(projectId: string, sourceId: string): Promise<void> {
+    await api.delete(`${BASE}/${projectId}/sources/${sourceId}`);
+  },
+
   // -- Suggested tests ------------------------------------------------------
 
   async suggestTests(
