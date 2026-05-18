@@ -49,7 +49,7 @@ class UniversalLLMService:
                 "api_key": _local_api_key,
             },
             "DeepSeek-V4-Flash-4bit": {
-                "endpoint": getattr(settings, "LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164/v1") or os.getenv("LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164/v1"),
+                "endpoint": getattr(settings, "LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164:1235/v1") or os.getenv("LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164:1235/v1"),
                 "api_key": _local_api_key,
             },
         }

@@ -25,7 +25,7 @@ _DEFAULT_MODEL = "DeepSeek-V4-Flash-4bit"
 _DEFAULT_ENDPOINTS: dict = {
     "openai/gpt-oss-20b": "http://192.168.206.190:8000/openai--gpt-oss-20b/v1",
     "RedHatAI/Qwen3.6-35B-A3B-NVFP4": "http://192.168.206.190:8000/redhatai--qwen3.6-35b-a3b-nvfp4/v1",
-    "DeepSeek-V4-Flash-4bit": "http://192.168.206.164/v1",
+    "DeepSeek-V4-Flash-4bit": "http://192.168.206.164:1235/v1",
 }
 
 _ENV_ENDPOINT_KEYS: dict = {

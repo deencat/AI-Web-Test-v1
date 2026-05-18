@@ -300,10 +300,10 @@ class StagehandExecutionService:
                     ),
                     "DeepSeek-V4-Flash-4bit": os.getenv(
                         "LOCAL_VLLM_DEEPSEEK_ENDPOINT",
-                        "http://192.168.206.164/v1",
+                        "http://192.168.206.164:1235/v1",
                     ),
                 }
-                local_endpoint = _endpoint_map.get(local_model, os.getenv("LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164/v1"))
+                local_endpoint = _endpoint_map.get(local_model, os.getenv("LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164:1235/v1"))
 
                 # LiteLLM requires OPENAI_API_BASE + openai/<model> for custom endpoints.
                 # Clear Azure env vars so LiteLLM does not mis-route.
@@ -480,12 +480,12 @@ class StagehandExecutionService:
                     ),
                     "DeepSeek-V4-Flash-4bit": os.getenv(
                         "LOCAL_VLLM_DEEPSEEK_ENDPOINT",
-                        "http://192.168.206.164/v1",
+                        "http://192.168.206.164:1235/v1",
                     ),
                 }
                 local_endpoint = _endpoint_map.get(
                     local_model,
-                    os.getenv("LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164/v1"),
+                    os.getenv("LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164:1235/v1"),
                 )
 
                 os.environ["OPENAI_API_BASE"] = local_endpoint.rstrip("/")
@@ -713,12 +713,12 @@ class StagehandExecutionService:
                     ),
                     "DeepSeek-V4-Flash-4bit": os.getenv(
                         "LOCAL_VLLM_DEEPSEEK_ENDPOINT",
-                        "http://192.168.206.164/v1",
+                        "http://192.168.206.164:1235/v1",
                     ),
                 }
                 local_endpoint = _endpoint_map.get(
                     local_model,
-                    os.getenv("LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164/v1"),
+                    os.getenv("LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164:1235/v1"),
                 )
 
                 os.environ["OPENAI_API_BASE"] = local_endpoint.rstrip("/")

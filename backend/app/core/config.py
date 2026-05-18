@@ -81,7 +81,7 @@ class Settings(BaseSettings):
     # Each model has its own endpoint; no auth key required by default (set to "local" or a real key)
     LOCAL_VLLM_GPT_OSS_20B_ENDPOINT: str = "http://192.168.206.190:8000/openai--gpt-oss-20b/v1"
     LOCAL_VLLM_QWEN3_35B_ENDPOINT: str = "http://192.168.206.190:8000/redhatai--qwen3.6-35b-a3b-nvfp4/v1"
-    LOCAL_VLLM_DEEPSEEK_ENDPOINT: str = "http://192.168.206.164/v1"
+    LOCAL_VLLM_DEEPSEEK_ENDPOINT: str = "http://192.168.206.164:1235/v1"
     LOCAL_VLLM_API_KEY: str = "local"   # shared placeholder; vLLM ignores auth by default
 
     model_config = SettingsConfigDict(
