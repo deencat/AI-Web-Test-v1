@@ -9,6 +9,7 @@ Supported providers
   cerebras    — CerebrasClient (uses CEREBRAS_API_KEY)
   google      — GoogleClient (uses GOOGLE_API_KEY via generativelanguage.googleapis.com)
   openrouter  — OpenRouterClient (uses OPENROUTER_API_KEY via openrouter.ai)
+  local_vllm  — LocalVllmClient (on-premises vLLM OpenAI-compatible; no API key needed)
 
 Fallback behaviour
 ------------------
@@ -73,6 +74,9 @@ def get_llm_client(provider: Optional[str], model: str):
             )
             return _get_azure_client(_AZURE_DEFAULT_MODEL)
 
+        if provider_key == "local_vllm":
+            return _get_local_vllm_client(model)
+
         logger.warning(
             f"Unknown LLM provider '{provider}' — falling back to Azure/{_AZURE_DEFAULT_MODEL}"
         )
@@ -107,3 +111,8 @@ def _get_google_client(model: str):
 def _get_openrouter_client(model: str):
     from llm.openrouter_client import OpenRouterClient
     return OpenRouterClient(model=model)
+
+
+def _get_local_vllm_client(model: str):
+    from llm.local_vllm_client import LocalVllmClient
+    return LocalVllmClient(model=model)

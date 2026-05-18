@@ -9,6 +9,7 @@ Coverage:
 - Cerebras client returned for provider="cerebras"
 - Google client returned for provider="google" (when GOOGLE_API_KEY set)
 - OpenRouter client returned for provider="openrouter" (when OPENROUTER_API_KEY set)
+- LocalVllmClient returned for provider="local_vllm" (Sprint 10.13)
 - Unknown provider falls back to AzureClient
 - Google with missing env key falls back to AzureClient
 - OpenRouter with missing env key falls back to AzureClient
@@ -192,7 +193,75 @@ class TestOpenRouterProvider:
 
 
 # ---------------------------------------------------------------------------
-# 5. Unknown / fallback behaviour
+# 5. Local vLLM provider (Sprint 10.13)
+# ---------------------------------------------------------------------------
+
+class TestLocalVllmProvider:
+    def test_local_vllm_returns_local_vllm_client(self):
+        """get_llm_client('local_vllm', ...) returns a LocalVllmClient."""
+        from llm.local_vllm_client import LocalVllmClient
+        cf = _import_factory()
+        client = cf.get_llm_client("local_vllm", "DeepSeek-V4-Flash-4bit")
+        assert isinstance(client, LocalVllmClient)
+
+    def test_local_vllm_uses_specified_model(self):
+        """LocalVllmClient is configured with the model supplied to the factory."""
+        cf = _import_factory()
+        client = cf.get_llm_client("local_vllm", "openai/gpt-oss-20b")
+        assert client.model == "openai/gpt-oss-20b"
+
+    def test_local_vllm_exposes_deployment_alias(self):
+        """LocalVllmClient exposes .deployment for AzureClient compatibility."""
+        cf = _import_factory()
+        client = cf.get_llm_client("local_vllm", "DeepSeek-V4-Flash-4bit")
+        assert client.deployment == "DeepSeek-V4-Flash-4bit"
+
+    def test_local_vllm_has_enabled_attribute(self):
+        """LocalVllmClient exposes .enabled (bool)."""
+        cf = _import_factory()
+        client = cf.get_llm_client("local_vllm", "DeepSeek-V4-Flash-4bit")
+        assert hasattr(client, "enabled")
+        assert isinstance(client.enabled, bool)
+
+    def test_local_vllm_resolves_endpoint_from_env(self, monkeypatch):
+        """LocalVllmClient picks up per-model endpoint env overrides."""
+        monkeypatch.setenv("LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://10.0.0.1:9999/v1")
+        cf = _import_factory()
+        client = cf.get_llm_client("local_vllm", "DeepSeek-V4-Flash-4bit")
+        assert "10.0.0.1:9999" in client.endpoint
+
+    def test_local_vllm_case_insensitive(self):
+        """'Local_VLLM', 'LOCAL_VLLM' all return LocalVllmClient."""
+        from llm.local_vllm_client import LocalVllmClient
+        cf = _import_factory()
+        for variant in ("Local_Vllm", "LOCAL_VLLM", " local_vllm "):
+            result = cf.get_llm_client(variant, "DeepSeek-V4-Flash-4bit")
+            assert isinstance(result, LocalVllmClient), f"Failed for variant '{variant}'"
+
+    def test_local_vllm_does_not_fall_back_to_azure(self):
+        """local_vllm provider must NOT silently fall back to AzureClient."""
+        from llm.local_vllm_client import LocalVllmClient
+        from llm.azure_client import AzureClient
+        cf = _import_factory()
+        client = cf.get_llm_client("local_vllm", "DeepSeek-V4-Flash-4bit")
+        assert isinstance(client, LocalVllmClient)
+        assert not isinstance(client, AzureClient)
+
+    def test_local_vllm_default_api_key_is_local(self):
+        """When LOCAL_VLLM_API_KEY is unset, the client defaults to 'local'."""
+        import os as _os
+        cf = _import_factory()
+        old = _os.environ.pop("LOCAL_VLLM_API_KEY", None)
+        try:
+            client = cf.get_llm_client("local_vllm", "DeepSeek-V4-Flash-4bit")
+            assert client.api_key == "local"
+        finally:
+            if old is not None:
+                _os.environ["LOCAL_VLLM_API_KEY"] = old
+
+
+# ---------------------------------------------------------------------------
+# 6. Unknown / fallback behaviour
 # ---------------------------------------------------------------------------
 
 class TestFallbackBehaviour:
@@ -236,7 +305,7 @@ class TestFallbackBehaviour:
 
 
 # ---------------------------------------------------------------------------
-# 6. Agent parameterisation — agents read provider/model from config
+# 7. Agent parameterisation — agents read provider/model from config
 # ---------------------------------------------------------------------------
 
 class TestAgentParameterisation:
@@ -356,7 +425,7 @@ class TestAgentParameterisation:
 
 
 # ---------------------------------------------------------------------------
-# 7. AzureOpenAIAdapter — accepts provider/model constructor args
+# 8. AzureOpenAIAdapter — accepts provider/model constructor args
 # ---------------------------------------------------------------------------
 
 class TestAzureOpenAIAdapterFactory:
@@ -401,7 +470,7 @@ class TestAzureOpenAIAdapterFactory:
 
 
 # ---------------------------------------------------------------------------
-# 8. OrchestrationService — injects llm_provider/llm_model into agent configs
+# 9. OrchestrationService — injects llm_provider/llm_model into agent configs
 # ---------------------------------------------------------------------------
 
 class TestOrchestrationServiceAgentConfig:

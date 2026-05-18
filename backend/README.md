@@ -241,3 +241,15 @@ This creates realistic data for frontend development.
 
 Import `AI-Web-Test-Postman-Collection.json` into Postman to test all endpoints interactively.
 
+### Clear 3-tier execution xpath cache
+1. activate backend venv
+2. 
+python -c "
+from app.db.session import SessionLocal
+from app.models.execution_settings import XPathCache
+db = SessionLocal()
+n = db.query(XPathCache).delete()
+db.commit()
+db.close()
+print(f'Deleted {n} xpath cache entries')
+"
