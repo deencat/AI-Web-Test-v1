@@ -34,6 +34,7 @@ s5.2 extensions:
 import logging
 from typing import Any
 
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -142,7 +143,21 @@ async def upload_sources(
         files_payload.append(
             ("file", (upload.filename, content, upload.content_type or "application/octet-stream"))
         )
-    return await _proxy(reqiq.upload_sources(project_id, files_payload))
+    result = await _proxy(reqiq.upload_sources(project_id, files_payload))
+
+    # Automatically kick off embedding reindex in the background so RAG and
+    # readiness queries use the new documents without the user having to
+    # visit ReqIQ advanced manually.
+    async def _reindex() -> None:
+        try:
+            await reqiq.reindex_embeddings(project_id)
+            logger.info("ReqIQ reindex triggered for project %s", project_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ReqIQ reindex failed (non-fatal): %s", exc)
+
+    asyncio.create_task(_reindex())
+
+    return result
 
 
 # ---------------------------------------------------------------------------

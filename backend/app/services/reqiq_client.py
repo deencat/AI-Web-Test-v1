@@ -160,6 +160,17 @@ async def list_sources(project_id: str) -> dict:
     return resp.json()
 
 
+async def reindex_embeddings(project_id: str) -> dict:
+    """
+    Trigger ReqIQ to re-embed all sources for a project.
+    Called automatically after upload. Returns a job summary.
+    Returns an empty dict (silently) on error so upload success is not affected.
+    """
+    resp = await _request("POST", f"/api/v1/projects/{project_id}/embedding/reindex")
+    resp.raise_for_status()
+    return resp.json()
+
+
 async def suggest_tests(
     project_id: str,
     requirement_id: str,
