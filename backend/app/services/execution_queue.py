@@ -29,6 +29,8 @@ class QueuedExecution:
     test_case_id: int = field(default=0, compare=False)
     user_id: int = field(default=0, compare=False)
     http_credentials: Optional[Dict[str, Any]] = field(default=None, compare=False)
+    # Sprint 10.14: Ephemeral CRM credentials — in-memory only, never persisted
+    login_credentials: Optional[Dict[str, Any]] = field(default=None, compare=False)
 
 
 class ExecutionQueue:
@@ -59,7 +61,8 @@ class ExecutionQueue:
         test_case_id: int,
         user_id: int,
         priority: int = 5,
-        http_credentials: Optional[Dict[str, Any]] = None
+        http_credentials: Optional[Dict[str, Any]] = None,
+        login_credentials: Optional[Dict[str, Any]] = None,
     ) -> int:
         """
         Add an execution to the queue.
@@ -69,6 +72,8 @@ class ExecutionQueue:
             test_case_id: Test case ID
             user_id: User who triggered the execution
             priority: Priority level (1=high, 5=medium, 10=low)
+            http_credentials: Optional HTTP Basic Auth credentials
+            login_credentials: Optional ephemeral CRM form-login credentials (never persisted)
             
         Returns:
             Queue position (1-indexed)
@@ -80,7 +85,8 @@ class ExecutionQueue:
                 execution_id=execution_id,
                 test_case_id=test_case_id,
                 user_id=user_id,
-                http_credentials=http_credentials
+                http_credentials=http_credentials,
+                login_credentials=login_credentials,
             )
             
             self._queue.put(queued_execution)

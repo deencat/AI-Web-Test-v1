@@ -180,6 +180,19 @@ class HttpCredentials(BaseModel):
     username: str = Field(..., min_length=1, max_length=255, description="Basic auth username")
     password: str = Field(..., min_length=1, max_length=255, description="Basic auth password")
 
+
+class LoginCredentials(BaseModel):
+    """Ephemeral application-level CRM login credentials.
+
+    Sprint 10.14 — these are NEVER persisted to the database, logs, or stored
+    test steps.  They are resolved at run-time to auto-generated navigate/fill/click
+    steps and discarded immediately after execution starts.
+    """
+
+    username: str = Field(..., min_length=1, max_length=255, description="CRM login username")
+    password: str = Field(..., min_length=1, max_length=500, description="CRM login password — masked in all logs")
+
+
 class ExecutionStartRequest(BaseModel):
     """Schema for starting a test execution."""
     browser: str = Field(default="chromium", pattern="^(chromium|firefox|webkit)$", description="Browser to use")
@@ -197,6 +210,11 @@ class ExecutionStartRequest(BaseModel):
     http_credentials: Optional[HttpCredentials] = Field(
         None,
         description="HTTP Basic Auth credentials for the execution run (not stored)"
+    )
+    # Sprint 10.14: Ephemeral CRM login credentials (not persisted to DB)
+    login_credentials: Optional["LoginCredentials"] = Field(
+        None,
+        description="Ephemeral CRM application-level credentials — never written to DB or logs",
     )
     # Sprint 10.12 Feature B: Re-Run from Failed Step
     resume_from_execution_id: Optional[int] = Field(

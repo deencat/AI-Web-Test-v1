@@ -12,6 +12,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { RunTestButton } from '../RunTestButton';
 import { isUatUrl } from '../../utils/urlUtils';
+import { EphemeralCredentialProvider } from '../../context/EphemeralCredentialContext';
 
 // ---------------------------------------------------------------------------
 // Mock executionService so tests never make real HTTP calls
@@ -51,10 +52,12 @@ describe('RunTestButton', () => {
   // (a) UAT URL: Run button + badge present, no profile picker
   it('shows Run button and UAT badge for a UAT URL', () => {
     render(
-      <RunTestButton
-        testCaseId={1}
-        testUrl="https://wwwuat.three.com.hk/some/path"
-      />
+      <EphemeralCredentialProvider>
+        <RunTestButton
+          testCaseId={1}
+          testUrl="https://wwwuat.three.com.hk/some/path"
+        />
+      </EphemeralCredentialProvider>
     );
 
     expect(screen.getByRole('button', { name: /run test/i })).toBeInTheDocument();
@@ -65,10 +68,12 @@ describe('RunTestButton', () => {
   // (b) Non-UAT URL: Run button only, no badge, no picker
   it('shows only Run button for a non-UAT URL — no badge, no picker', () => {
     render(
-      <RunTestButton
-        testCaseId={2}
-        testUrl="https://www.example.com/"
-      />
+      <EphemeralCredentialProvider>
+        <RunTestButton
+          testCaseId={2}
+          testUrl="https://www.example.com/"
+        />
+      </EphemeralCredentialProvider>
     );
 
     expect(screen.getByRole('button', { name: /run test/i })).toBeInTheDocument();
@@ -78,7 +83,11 @@ describe('RunTestButton', () => {
 
   // also verify no picker when testUrl is omitted entirely
   it('shows no profile picker when testUrl is omitted', () => {
-    render(<RunTestButton testCaseId={3} />);
+    render(
+      <EphemeralCredentialProvider>
+        <RunTestButton testCaseId={3} />
+      </EphemeralCredentialProvider>
+    );
 
     expect(screen.getByRole('button', { name: /run test/i })).toBeInTheDocument();
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();

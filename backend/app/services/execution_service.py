@@ -386,6 +386,42 @@ class ExecutionService:
         except Exception:
             return [str(raw_steps)]
 
+    def _build_crm_login_steps(self, username: str, password: str) -> List[Dict[str, Any]]:
+        """
+        Build auto-generated CRM form-login step dicts.
+
+        Sprint 10.14 — The step_description stored in ExecutionStep uses the
+        ``{{CRM_PASSWORD}}`` placeholder so the actual password is NEVER serialised to
+        the database.  The ``value`` field in the returned dict carries the live
+        password for the execution engine only; it is discarded after execution.
+        """
+        return [
+            {
+                "action": "fill",
+                "instruction": f"Enter CRM username: {username}",
+                "selector": "input[name='username'], input[type='text'][id*='user'], input[id*='username']",
+                "value": username,
+                "_crm_step": True,
+                "_step_description_override": f"Enter CRM username: {username}",
+            },
+            {
+                "action": "fill",
+                "instruction": "Enter CRM password",
+                "selector": "input[name='password'], input[type='password']",
+                "value": password,
+                "_crm_step": True,
+                # Stored description uses placeholder — plaintext never reaches DB
+                "_step_description_override": "Enter CRM password: {{CRM_PASSWORD}}",
+            },
+            {
+                "action": "click",
+                "instruction": "Click CRM login/submit button",
+                "selector": "button[type='submit'], input[type='submit'], button:has-text('Login'), button:has-text('Sign in')",
+                "_crm_step": True,
+                "_step_description_override": "Click CRM login/submit button",
+            },
+        ]
+
     def _extract_urls_from_step(self, step: Any) -> List[str]:
         """Extract literal URLs from a single step string or dict."""
         candidate_texts: List[str] = []
@@ -557,7 +593,8 @@ class ExecutionService:
         http_credentials: Optional[Dict[str, Any]] = None,
         resume_from_execution_id: Optional[int] = None,
         start_from_step: Optional[int] = None,
-    ) -> TestExecution:
+        login_credentials: Optional[Dict[str, Any]] = None,
+    ) -> "TestExecution":
         """
         Execute a test case and track results.
         
@@ -604,6 +641,18 @@ class ExecutionService:
             steps = self._normalize_test_steps(test_case.steps)
             # Expand any @module: references to concrete steps before execution.
             steps = resolve_steps(steps, db=db, user_id=user_id)
+
+            # Sprint 10.14: prepend ephemeral CRM login steps when credentials are provided.
+            # Stored step text uses {{CRM_PASSWORD}} placeholder — plaintext is NEVER serialised.
+            if login_credentials:
+                crm_username = login_credentials.get("username", "")
+                crm_password = login_credentials.get("password", "")
+                logger.info(
+                    "[CRM] Prepending 3 auto-generated login steps for user=%s password=***",
+                    crm_username,
+                )
+                login_steps = self._build_crm_login_steps(crm_username, crm_password)
+                steps = login_steps + steps
             detailed_steps = None
             loop_blocks = []
             if test_case.test_data:
@@ -773,7 +822,8 @@ class ExecutionService:
 
                 # JIT OTP expansion: poll IMAP only when we reach the OTP placeholder
                 # step and only if this index is NOT inside a previously-expanded range.
-                if idx > otp_expanded_end and is_otp_step(step_desc):
+                # CRM step dicts are never OTP steps — guard with isinstance check.
+                if idx > otp_expanded_end and isinstance(step_desc, str) and is_otp_step(step_desc):
                     expanded = self._fetch_otp_and_format_steps(step_desc, db, user_id)
                     steps[idx - 1:idx] = expanded
                     total_steps = len(steps)
@@ -949,21 +999,37 @@ class ExecutionService:
                     continue
                 
                 # Execute single step normally (not in a loop)
-                # Get detailed step data by matching instruction field
-                detailed_step = find_detailed_step_for_step(step_desc, detailed_steps)
-                
-                if detailed_step:
-                    # Apply test data generation to detailed step
-                    detailed_step = self._apply_test_data_generation(
-                        detailed_step,
+                # Sprint 10.14: CRM login step dicts carry their own detailed_step data
+                # and a description override to ensure the password is never stored
+                # in the DB as plaintext.
+                if isinstance(step_desc, dict) and step_desc.get("_crm_step"):
+                    # Use placeholder description for DB storage (no plaintext password)
+                    stored_step_desc = step_desc.get("_step_description_override") or step_desc.get("instruction", str(step_desc))
+                    step_desc_substituted = stored_step_desc
+                    # Build detailed_step from CRM dict (strip private _-prefixed keys)
+                    detailed_step = {k: v for k, v in step_desc.items() if not k.startswith("_")}
+                    # Use clean instruction for the 3-tier AI engine (no placeholder)
+                    detailed_step["instruction"] = step_desc.get("instruction", stored_step_desc)
+                    # execution_instruction is what _execute_step receives as step_description
+                    execution_instruction = detailed_step["instruction"]
+                else:
+                    execution_instruction = None  # will be set below
+                    # Get detailed step data by matching instruction field
+                    detailed_step = find_detailed_step_for_step(step_desc, detailed_steps)
+
+                    if detailed_step:
+                        # Apply test data generation to detailed step
+                        detailed_step = self._apply_test_data_generation(
+                            detailed_step,
+                            execution.id
+                        )
+
+                    # Apply test data generation to step description
+                    step_desc_substituted = self._substitute_test_data_patterns(
+                        step_desc,
                         execution.id
                     )
-                
-                # Apply test data generation to step description
-                step_desc_substituted = self._substitute_test_data_patterns(
-                    step_desc,
-                    execution.id
-                )
+                    execution_instruction = step_desc_substituted
 
                 try:
                     if progress_callback:
@@ -974,8 +1040,10 @@ class ExecutionService:
                             "message": f"Executing step {idx}: {step_desc_substituted}"
                         })
                     
-                    # Execute the step with detailed data
-                    result = await self._execute_step(page, step_desc_substituted, idx, base_url, detailed_step, execution.id)
+                    # Execute the step with detailed data.
+                    # execution_instruction is the clean instruction for the 3-tier engine;
+                    # step_desc_substituted is stored in the DB (may differ for CRM steps).
+                    result = await self._execute_step(page, execution_instruction, idx, base_url, detailed_step, execution.id)
                     
                     step_end = datetime.utcnow()
                     duration = (step_end - step_start).total_seconds()

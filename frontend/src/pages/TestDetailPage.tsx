@@ -26,6 +26,7 @@ interface TestDetail {
   updated_at: string;
   created_by?: string;
   current_version?: number;
+  requires_runtime_credentials?: boolean;
   test_data?: {
     loop_blocks?: LoopBlock[];
     [key: string]: any;
@@ -226,6 +227,7 @@ export const TestDetailPage: React.FC = () => {
               testCaseId={typeof test.id === 'string' ? parseInt(test.id) : test.id}
               testCaseName={test.title || test.name}
               testUrl={(test as { url?: string }).url ?? ''}
+              requiresRuntimeCredentials={test.requires_runtime_credentials ?? false}
               onExecutionStart={handleExecutionStart}
             />
           </div>
