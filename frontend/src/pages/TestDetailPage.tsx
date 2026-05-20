@@ -10,7 +10,7 @@ import { VersionHistoryPanel } from '../components/VersionHistoryPanel';
 import { VersionCompareDialog } from '../components/VersionCompareDialog';
 import { RollbackConfirmDialog } from '../components/RollbackConfirmDialog';
 import testsService from '../services/testsService';
-import { Loader2, ArrowLeft, Calendar, User, Clock, History } from 'lucide-react';
+import { Loader2, ArrowLeft, Calendar, User, Clock, History, Lock } from 'lucide-react';
 
 interface TestDetail {
   id: string | number;
@@ -69,6 +69,21 @@ export const TestDetailPage: React.FC = () => {
 
   const handleExecutionStart = (executionId: number) => {
     navigate(`/executions/${executionId}`);
+  };
+
+  const handleToggleRuntimeCredentials = async () => {
+    if (!test) return;
+    const newValue = !(test.requires_runtime_credentials ?? false);
+    const testIdNum = typeof test.id === 'string' ? parseInt(test.id) : test.id;
+    try {
+      await testsService.updateTest(String(testIdNum), {
+        requires_runtime_credentials: newValue,
+      });
+      setTest({ ...test, requires_runtime_credentials: newValue });
+    } catch (err) {
+      console.error('Failed to update requires_runtime_credentials:', err);
+      alert('Failed to save setting. Please try again.');
+    }
   };
 
   const handleBack = () => {
@@ -289,6 +304,37 @@ export const TestDetailPage: React.FC = () => {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Sprint 10.14: CRM credential toggle */}
+          <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200 px-1">
+            <div className="flex items-center gap-2">
+              <Lock className="w-4 h-4 text-amber-500" />
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Requires CRM Login</p>
+                <p className="text-xs text-gray-500">
+                  Show credential prompt before each run — credentials are never stored
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={test.requires_runtime_credentials ?? false}
+              onClick={handleToggleRuntimeCredentials}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 ${
+                (test.requires_runtime_credentials ?? false)
+                  ? 'bg-amber-500'
+                  : 'bg-gray-200'
+              }`}
+              data-testid="crm-toggle-switch"
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  (test.requires_runtime_credentials ?? false) ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
           </div>
         </Card>
 
