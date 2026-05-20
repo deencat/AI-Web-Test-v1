@@ -59,6 +59,9 @@ export const SettingsPage: React.FC = () => {
     typescript: { status: 'checking' }
   });
 
+  // Sprint 10.15: vLLM Thinking Mode Toggle
+  const [localVllmEnableThinking, setLocalVllmEnableThinking] = useState<boolean>(false);
+
   // Load settings on mount
   useEffect(() => {
     loadSettings();
@@ -157,6 +160,9 @@ export const SettingsPage: React.FC = () => {
       setAnalysisModel(settings.analysis_model ?? null);
       setEvolutionProvider(settings.evolution_provider ?? null);
       setEvolutionModel(settings.evolution_model ?? null);
+
+      // Sprint 10.15: thinking mode toggle (defaults to false when not in DB yet)
+      setLocalVllmEnableThinking(settings.local_vllm_enable_thinking ?? false);
     } catch (error: any) {
       console.error('Failed to load settings:', error);
       setSaveMessage({ type: 'error', text: 'Failed to load settings' });
@@ -189,6 +195,8 @@ export const SettingsPage: React.FC = () => {
         analysis_model: analysisModel,
         evolution_provider: evolutionProvider,
         evolution_model: evolutionModel,
+        // Sprint 10.15: vLLM thinking mode toggle
+        local_vllm_enable_thinking: localVllmEnableThinking,
       };
       
       await settingsService.updateUserProviderSettings(updateData);
@@ -292,6 +300,22 @@ export const SettingsPage: React.FC = () => {
 
   const isAvailableProvider = (providerName: string): boolean =>
     availableProviders.some((provider) => provider.name === providerName);
+
+  /**
+   * Sprint 10.15: Return true when the given provider+model combination supports
+   * chain-of-thought thinking mode (thinking_capable flag in the model metadata).
+   */
+  const isThinkingCapableModel = (providerName: string, modelId: string): boolean => {
+    if (providerName !== 'local_vllm') return false;
+    const provider = availableProviders.find(p => p.name === 'local_vllm');
+    if (!provider?.model_options) return false;
+    return provider.model_options.some(m => m.id === modelId && m.thinking_capable === true);
+  };
+
+  /** True when the thinking toggle should be visible to the user. */
+  const showThinkingToggle: boolean =
+    isThinkingCapableModel(generationProvider, generationModel) ||
+    isThinkingCapableModel(executionProvider, executionModel);
 
   if (isLoading) {
     return (
@@ -672,6 +696,52 @@ export const SettingsPage: React.FC = () => {
             onEvolutionChange={(p, m) => { setEvolutionProvider(p); setEvolutionModel(m); }}
           />
         </Card>
+
+        {/* Sprint 10.15: vLLM Thinking Mode Toggle — visible only for thinking-capable models */}
+        {showThinkingToggle && (
+          <Card>
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">vLLM Thinking Mode</h2>
+                <p className="text-sm text-gray-600 mt-1">
+                  Enable chain-of-thought reasoning for{' '}
+                  <span className="font-mono text-xs bg-gray-100 px-1 rounded">
+                    RedHatAI/Qwen3.6-35B-A3B-NVFP4
+                  </span>
+                </p>
+              </div>
+              <div className="px-3 py-1 bg-indigo-100 text-indigo-700 text-xs font-medium rounded-full">
+                Sprint 10.15
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between py-3 border border-gray-200 rounded-lg px-4">
+              <div>
+                <p className="font-medium text-gray-900">Enable Thinking Mode</p>
+                <p className="text-sm text-gray-600 mt-0.5">
+                  Injects <span className="font-mono text-xs bg-gray-100 px-1 rounded">chat_template_kwargs: &#123;enable_thinking: true&#125;</span> into
+                  every vLLM request. Only active when the selected model supports it.
+                </p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer ml-4 flex-shrink-0">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={localVllmEnableThinking}
+                  onChange={(e) => setLocalVllmEnableThinking(e.target.checked)}
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+              </label>
+            </div>
+
+            <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+              <strong>Note:</strong> Thinking mode is automatically disabled for models that do not support it
+              (e.g. <span className="font-mono text-xs">gpt-oss-20b</span>,{' '}
+              <span className="font-mono text-xs">DeepSeek-V4-Flash-4bit</span>), even if this toggle is on.
+              Click <strong>Save All Settings</strong> below to persist the change.
+            </div>
+          </Card>
+        )}
 
         {/* Sprint 5: Stagehand Provider Selection */}
         <Card>

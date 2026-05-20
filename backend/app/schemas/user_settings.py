@@ -10,6 +10,8 @@ class ModelOption(BaseModel):
     id: str = Field(..., description="Model identifier (e.g. 'google/gemini-2.0-flash-exp:free')")
     display_name: str = Field(..., description="Human-readable label shown in dropdowns")
     is_free: bool = Field(..., description="True if the model is $0/M input and $0/M output")
+    # Sprint 10.15: vLLM thinking mode — True only for models that support chat_template_kwargs
+    thinking_capable: bool = Field(default=False, description="True if the model supports chain-of-thought thinking mode via chat_template_kwargs")
 
 
 class UserSettingBase(BaseModel):
@@ -28,6 +30,10 @@ class UserSettingBase(BaseModel):
     
     # Stagehand Provider Configuration (Sprint 5: Dual Stagehand Provider System)
     stagehand_provider: str = Field(default="python", description="Stagehand implementation to use (python, typescript)")
+
+    # Sprint 10.15: vLLM Thinking Mode Toggle
+    # Global flag — only used when local_vllm provider is selected and the model supports thinking
+    local_vllm_enable_thinking: bool = Field(default=False, description="Enable chain-of-thought thinking mode for capable vLLM models")
 
     # Per-Agent Model Overrides (Sprint 10.6: Per-Agent Model Provider & Model Selection)
     # Optional — None means "use Azure default (ChatGPT-UAT)"
@@ -86,6 +92,9 @@ class UserSettingUpdate(BaseModel):
     execution_max_tokens: Optional[int] = Field(None, ge=100, le=32000)
 
     stagehand_provider: Optional[str] = None
+
+    # Sprint 10.15: vLLM Thinking Mode Toggle
+    local_vllm_enable_thinking: Optional[bool] = None
 
     # Per-Agent Model Overrides (Sprint 10.6)
     observation_provider: Optional[str] = None

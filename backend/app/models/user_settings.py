@@ -1,5 +1,5 @@
 """User settings model for AI provider configuration."""
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime
+from sqlalchemy import Boolean, Column, Integer, String, Float, ForeignKey, DateTime
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.db.base import Base
@@ -27,6 +27,10 @@ class UserSetting(Base):
     # Stagehand Provider Selection (Sprint 5: Dual Stagehand Provider System)
     # Options: 'python' (default, current implementation) or 'typescript' (official library)
     stagehand_provider = Column(String(20), nullable=False, default="python")
+
+    # Sprint 10.15: vLLM Thinking Mode Toggle
+    # DEFAULT FALSE — safe for existing rows; no data loss on migration.
+    local_vllm_enable_thinking = Column(Boolean, nullable=False, default=False)
 
     # Per-Agent Model Overrides (Sprint 10.6: Per-Agent Model Provider & Model Selection)
     # NULL = use Azure default (ChatGPT-UAT) — no data migration required.

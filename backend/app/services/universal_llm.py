@@ -7,6 +7,11 @@ import os
 from typing import List, Dict, Optional
 from app.core.config import settings
 
+# Sprint 10.15: vLLM models that accept chat_template_kwargs: { enable_thinking }
+_THINKING_CAPABLE_VLLM_MODELS: frozenset = frozenset({
+    "RedHatAI/Qwen3.6-35B-A3B-NVFP4",
+})
+
 
 class UniversalLLMService:
     """Service for interacting with multiple LLM providers."""
@@ -64,7 +69,8 @@ class UniversalLLMService:
         provider: str = "openrouter",
         model: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None
+        max_tokens: Optional[int] = None,
+        enable_thinking: bool = False,
     ) -> dict:
         """
         Call LLM API for chat completion with provider selection.
@@ -75,6 +81,9 @@ class UniversalLLMService:
             model: Model to use (provider-specific)
             temperature: Sampling temperature (0-2)
             max_tokens: Maximum tokens to generate
+            enable_thinking: Sprint 10.15 — when True and provider is local_vllm
+                and the model supports it, injects chat_template_kwargs into the
+                request payload.  Ignored for all other providers.
             
         Returns:
             Unified API response dict with choices, usage, etc.
@@ -92,7 +101,7 @@ class UniversalLLMService:
         elif provider == "azure":
             return await self._call_azure(messages, model, temperature, max_tokens)
         elif provider == "local_vllm":
-            return await self._call_local_vllm(messages, model, temperature, max_tokens)
+            return await self._call_local_vllm(messages, model, temperature, max_tokens, enable_thinking=enable_thinking)
         else:  # default to openrouter
             return await self._call_openrouter(messages, model, temperature, max_tokens)
     
@@ -351,12 +360,17 @@ class UniversalLLMService:
         messages: List[Dict[str, str]],
         model: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None
+        max_tokens: Optional[int] = None,
+        enable_thinking: bool = False,
     ) -> dict:
         """Call an on-premises vLLM server (OpenAI-compatible /v1/chat/completions).
 
         Sprint 10.13: supports three local models, each at its own endpoint.
         Falls back to DeepSeek-V4-Flash-4bit when no model is specified.
+
+        Sprint 10.15: when enable_thinking=True AND the model is thinking-capable,
+        injects chat_template_kwargs: { enable_thinking: true } into the request body.
+        For non-capable models this flag is silently ignored regardless of the setting.
         """
         if not model:
             model = "DeepSeek-V4-Flash-4bit"
@@ -378,6 +392,10 @@ class UniversalLLMService:
         }
         if max_tokens:
             payload["max_tokens"] = max_tokens
+
+        # Sprint 10.15: inject thinking flag only for capable models
+        if enable_thinking and model in _THINKING_CAPABLE_VLLM_MODELS:
+            payload["chat_template_kwargs"] = {"enable_thinking": True}
 
         client = await self._get_http_client()
         try:
