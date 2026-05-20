@@ -1467,11 +1467,15 @@ export const KnowledgeBasePage: React.FC = () => {
 
               {reqLoading ? (
                 <p className="text-sm text-gray-400">Loading requirements...</p>
-              ) : requirements.length === 0 ? (
-                <p className="text-sm text-gray-400">No requirements found. Create one above.</p>
+              ) : requirements.filter(r => !(r.isWikiSuggest && r.state === 'DRAFT')).length === 0 ? (
+                <p className="text-sm text-gray-400">
+                  {requirements.some(r => r.isWikiSuggest && r.state === 'DRAFT')
+                    ? 'All current scenarios are pending wiki draft review above.'
+                    : 'No requirements found. Create one above.'}
+                </p>
               ) : (
                 <ul className="divide-y divide-gray-100">
-                  {requirements.map(req => {
+                  {requirements.filter(r => !(r.isWikiSuggest && r.state === 'DRAFT')).map(req => {
                     const iq = iqData[req.id];
                     const isEditing = editingReqId === req.id;
                     const isRunningIq = runningIqFor === req.id;
