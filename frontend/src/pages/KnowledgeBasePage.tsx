@@ -169,6 +169,12 @@ export const KnowledgeBasePage: React.FC = () => {
     created: number; dedupeDropped: number; feedbackApplied: number; batchId: string;
   } | null>(null);
 
+  // inline edit inside review panel
+  const [reviewEditId, setReviewEditId] = useState<string | null>(null);
+  const [reviewEditTitle, setReviewEditTitle] = useState('');
+  const [reviewEditOutcome, setReviewEditOutcome] = useState('');
+  const [savingReviewEdit, setSavingReviewEdit] = useState(false);
+
   // generate form inputs
   const [draftHints, setDraftHints] = useState('');
   const [draftCapabilityKeys, setDraftCapabilityKeys] = useState('');
@@ -495,6 +501,13 @@ export const KnowledgeBasePage: React.FC = () => {
         feedbackApplied: result.feedbackApplied,
         batchId: result.batchId,
       });
+      if (result.created.length === 0) {
+        // Surface this clearly — don't leave the user wondering why nothing appeared
+        const why = (result.dedupeDropped ?? 0) > 0
+          ? `All ${result.dedupeDropped} generated scenario(s) were removed by deduplication (identical journey steps already exist).`
+          : 'No scenarios were created. The wiki may not be compiled yet, or the LLM returned no usable output — try again or adjust hints.';
+        alert(`No drafts created. ${why}`);
+      }
       // Reload full list so all computed fields (latestCompositeScore, etc.) are present
       setReqLoading(true);
       requirementsService.listRequirements(pid)
@@ -646,6 +659,26 @@ export const KnowledgeBasePage: React.FC = () => {
       alert(`Save failed: ${msg ?? String(err)}`);
     } finally {
       setSavingEdit(false);
+    }
+  }
+
+  // Save edit from the review panel — patches title+customerOutcome, auto-records accept_edited feedback
+  async function handleReviewSaveEdit(req: ReqIQRequirement) {
+    if (!reviewEditTitle.trim() || !projectId) return;
+    setSavingReviewEdit(true);
+    try {
+      const updated = await requirementsService.updateRequirement(projectId, req.id, {
+        title: reviewEditTitle.trim(),
+        customerOutcome: reviewEditOutcome.trim() || undefined,
+      });
+      // Mark isWikiSuggest false locally so it leaves the review panel
+      setRequirements(prev => prev.map(r => r.id === req.id ? { ...updated, isWikiSuggest: false } : r));
+      setReviewEditId(null);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      alert(`Save failed: ${msg ?? String(err)}`);
+    } finally {
+      setSavingReviewEdit(false);
     }
   }
 
@@ -1234,13 +1267,112 @@ export const KnowledgeBasePage: React.FC = () => {
                       <span className="font-semibold">✦ {lastBatchResult.created} draft{lastBatchResult.created !== 1 ? 's' : ''} created</span>
                       {lastBatchResult.dedupeDropped > 0 && <span className="text-violet-600"> · {lastBatchResult.dedupeDropped} deduped</span>}
                       {lastBatchResult.feedbackApplied > 0 && <span className="text-violet-600"> · {lastBatchResult.feedbackApplied} feedback applied</span>}
-                      <span className="text-violet-500 ml-2">— scroll down to review in Requirements</span>
+                      <span className="text-violet-500 ml-2">— review below</span>
                     </div>
                     <button onClick={() => setLastBatchResult(null)} className="text-violet-400 hover:text-violet-700 text-xs shrink-0">✕</button>
                   </div>
                 )}
               </div>
             </SectionCard>
+
+            {/* Wiki draft review panel — clean ReqIQ-style Keep/Edit/Reject list */}
+            {(() => {
+              const wikiDrafts = requirements.filter(r => r.isWikiSuggest && r.state === 'DRAFT');
+              if (wikiDrafts.length === 0) return null;
+              return (
+                <SectionCard title={`Wiki draft review (${wikiDrafts.length})`}>
+                  <ul className="space-y-4">
+                    {wikiDrafts.map(req => {
+                      const isEditingInReview = reviewEditId === req.id;
+                      const busy = givingFeedbackFor === req.id || savingReviewEdit;
+                      return (
+                        <li key={req.id} className="flex gap-2">
+                          <span className="text-gray-400 mt-0.5 shrink-0">•</span>
+                          <div className="flex-1 min-w-0 space-y-2">
+                            {isEditingInReview ? (
+                              <>
+                                <input
+                                  autoFocus
+                                  className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-violet-400"
+                                  value={reviewEditTitle}
+                                  onChange={e => setReviewEditTitle(e.target.value)}
+                                  placeholder="Title *"
+                                />
+                                <textarea
+                                  className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-400 text-gray-600 italic"
+                                  rows={3}
+                                  value={reviewEditOutcome}
+                                  onChange={e => setReviewEditOutcome(e.target.value)}
+                                  placeholder="Customer outcome (italic description)"
+                                />
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => handleReviewSaveEdit(req)}
+                                    disabled={savingReviewEdit || !reviewEditTitle.trim()}
+                                    className="text-xs px-3 py-1 rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                                  >
+                                    {savingReviewEdit ? 'Saving…' : 'Save'}
+                                  </button>
+                                  <button
+                                    onClick={() => setReviewEditId(null)}
+                                    className="text-xs px-3 py-1 rounded border border-gray-300 hover:bg-gray-50"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </>
+                            ) : (
+                              <p className="text-sm">
+                                <span className="font-semibold text-gray-900">{req.title}</span>
+                                {req.customerOutcome && (
+                                  <span className="text-gray-500 italic"> — {req.customerOutcome}</span>
+                                )}
+                              </p>
+                            )}
+                            {!isEditingInReview && (
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <button
+                                  onClick={() => handleWikiFeedback(req, 'accept')}
+                                  disabled={busy}
+                                  className="text-xs px-3 py-1 rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                                >
+                                  Keep
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setReviewEditId(req.id);
+                                    setReviewEditTitle(req.title);
+                                    setReviewEditOutcome(req.customerOutcome ?? '');
+                                  }}
+                                  disabled={busy}
+                                  className="text-xs px-3 py-1 rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => handleWikiFeedback(req, 'reject')}
+                                  disabled={busy}
+                                  className="text-xs px-3 py-1 rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                                >
+                                  Reject
+                                </button>
+                                <button
+                                  onClick={() => setRejectDialogReq(req)}
+                                  disabled={busy}
+                                  className="text-xs px-3 py-1 rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                                >
+                                  Reject with reasons…
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </SectionCard>
+              );
+            })()}
 
             {/* Requirements */}
             <SectionCard
