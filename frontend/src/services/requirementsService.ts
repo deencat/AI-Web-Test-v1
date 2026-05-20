@@ -18,6 +18,27 @@ export interface ReqIQProject {
   createdAt: string;
 }
 
+export interface CapabilityItem {
+  key: string;
+  label: string;
+  description?: string;
+  sortOrder?: number;
+}
+
+export interface CoverageMatrixCapability {
+  key: string;
+  label: string;
+  counts: { DRAFT: number; REVIEWED: number; BASELINE: number; SUPERSEDED: number };
+  total: number;
+}
+
+export interface CoverageMatrix {
+  projectId: string;
+  capabilities: CoverageMatrixCapability[];
+  uncategorized: { counts: { DRAFT: number; REVIEWED: number; BASELINE: number; SUPERSEDED: number }; total: number };
+  totals: { DRAFT: number; REVIEWED: number; BASELINE: number; SUPERSEDED: number; total: number };
+}
+
 export interface ReqIQRequirement {
   id: string;
   title: string;
@@ -146,8 +167,8 @@ const requirementsService = {
     return res.data;
   },
 
-  async listCapabilities(projectId: string): Promise<unknown[]> {
-    const res = await api.get<unknown[]>(`${BASE}/${projectId}/capabilities`);
+  async listCapabilities(projectId: string): Promise<CapabilityItem[]> {
+    const res = await api.get<CapabilityItem[]>(`${BASE}/${projectId}/capabilities`);
     return res.data;
   },
 
@@ -419,8 +440,8 @@ const requirementsService = {
 
   // -- Inc 3: Coverage matrix, source-refs, export (Sprint 8c) -------------
 
-  async getCoverageMatrix(projectId: string): Promise<unknown> {
-    const res = await api.get(`${BASE}/${projectId}/coverage-matrix`);
+  async getCoverageMatrix(projectId: string): Promise<CoverageMatrix> {
+    const res = await api.get<CoverageMatrix>(`${BASE}/${projectId}/coverage-matrix`);
     return res.data;
   },
 

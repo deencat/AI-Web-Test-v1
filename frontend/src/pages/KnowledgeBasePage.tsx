@@ -31,6 +31,8 @@ import type {
   WikiResult,
   RagQueryResult,
   SuggestedTest,
+  CapabilityItem,
+  CoverageMatrix,
 } from '../services/requirementsService';
 
 // ---------------------------------------------------------------------------
@@ -164,9 +166,12 @@ export const KnowledgeBasePage: React.FC = () => {
   const [givingFeedbackFor, setGivingFeedbackFor] = useState<string | null>(null);
 
   // -- coverage + export (Inc 3) --------------------------------------------
-  const [coverageMatrix, setCoverageMatrix] = useState<unknown | null>(null);
+  const [coverageMatrix, setCoverageMatrix] = useState<CoverageMatrix | null>(null);
   const [loadingCoverage, setLoadingCoverage] = useState(false);
   const [exportingProject, setExportingProject] = useState(false);
+
+  // -- capabilities list (Sprint 8a) ----------------------------------------
+  const [capabilities, setCapabilities] = useState<CapabilityItem[]>([]);
 
   // -- load projects --------------------------------------------------------
   useEffect(() => {
@@ -217,6 +222,10 @@ export const KnowledgeBasePage: React.FC = () => {
       })
       .catch(() => setRequirements([]))
       .finally(() => setReqLoading(false));
+
+    requirementsService.listCapabilities(projectId)
+      .then(setCapabilities)
+      .catch(() => setCapabilities([]));
   }, [projectId]);
 
   // -- workspace actions ----------------------------------------------------
@@ -887,9 +896,44 @@ export const KnowledgeBasePage: React.FC = () => {
               }
             >
               {coverageMatrix ? (
-                <pre className="text-xs text-gray-700 bg-gray-50 rounded-md p-3 overflow-auto max-h-48 whitespace-pre-wrap">
-                  {JSON.stringify(coverageMatrix, null, 2)}
-                </pre>
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-gray-100 text-gray-600">
+                      <th className="text-left px-2 py-1 font-semibold">Capability</th>
+                      <th className="px-2 py-1 text-center">Draft</th>
+                      <th className="px-2 py-1 text-center">Reviewed</th>
+                      <th className="px-2 py-1 text-center">Baseline</th>
+                      <th className="px-2 py-1 text-center">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {coverageMatrix.capabilities.map(cap => (
+                      <tr key={cap.key} className="border-t border-gray-100 hover:bg-gray-50">
+                        <td className="px-2 py-1 font-medium text-gray-800">{cap.label}</td>
+                        <td className={`px-2 py-1 text-center ${cap.counts.DRAFT > 0 ? 'text-yellow-700 font-semibold' : 'text-gray-400'}`}>{cap.counts.DRAFT}</td>
+                        <td className={`px-2 py-1 text-center ${cap.counts.REVIEWED > 0 ? 'text-blue-700 font-semibold' : 'text-gray-400'}`}>{cap.counts.REVIEWED}</td>
+                        <td className={`px-2 py-1 text-center ${cap.counts.BASELINE > 0 ? 'text-green-700 font-semibold' : 'text-gray-400'}`}>{cap.counts.BASELINE}</td>
+                        <td className="px-2 py-1 text-center font-semibold">{cap.total}</td>
+                      </tr>
+                    ))}
+                    {coverageMatrix.uncategorized.total > 0 && (
+                      <tr className="border-t border-gray-100 italic text-gray-500">
+                        <td className="px-2 py-1">Uncategorized</td>
+                        <td className="px-2 py-1 text-center">{coverageMatrix.uncategorized.counts.DRAFT}</td>
+                        <td className="px-2 py-1 text-center">{coverageMatrix.uncategorized.counts.REVIEWED}</td>
+                        <td className="px-2 py-1 text-center">{coverageMatrix.uncategorized.counts.BASELINE}</td>
+                        <td className="px-2 py-1 text-center font-semibold">{coverageMatrix.uncategorized.total}</td>
+                      </tr>
+                    )}
+                    <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold">
+                      <td className="px-2 py-1">Total</td>
+                      <td className="px-2 py-1 text-center">{coverageMatrix.totals.DRAFT}</td>
+                      <td className="px-2 py-1 text-center">{coverageMatrix.totals.REVIEWED}</td>
+                      <td className="px-2 py-1 text-center">{coverageMatrix.totals.BASELINE}</td>
+                      <td className="px-2 py-1 text-center">{coverageMatrix.totals.total}</td>
+                    </tr>
+                  </tbody>
+                </table>
               ) : (
                 <p className="text-xs text-gray-400">Click "Refresh coverage" to load the coverage matrix.</p>
               )}
@@ -940,12 +984,25 @@ export const KnowledgeBasePage: React.FC = () => {
                     value={newReqCustomerOutcome}
                     onChange={e => setNewReqCustomerOutcome(e.target.value)}
                   />
-                  <input
-                    placeholder="Capability key (optional, e.g. purchase_journey)"
-                    className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={newReqCapabilityKey}
-                    onChange={e => setNewReqCapabilityKey(e.target.value)}
-                  />
+                  {capabilities.length > 0 ? (
+                    <select
+                      className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={newReqCapabilityKey}
+                      onChange={e => setNewReqCapabilityKey(e.target.value)}
+                    >
+                      <option value="">Capability (optional)</option>
+                      {capabilities.map(cap => (
+                        <option key={cap.key} value={cap.key}>{cap.label}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      placeholder="Capability key (optional, e.g. purchase_journey)"
+                      className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={newReqCapabilityKey}
+                      onChange={e => setNewReqCapabilityKey(e.target.value)}
+                    />
+                  )}
                   <div className="grid grid-cols-2 gap-2">
                     <select
                       className="border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
