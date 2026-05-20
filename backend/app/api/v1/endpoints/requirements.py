@@ -373,20 +373,6 @@ async def update_requirement(
 
 
 @router.delete(
-    "/{project_id}/requirements/{requirement_id}",
-    status_code=204,
-    summary="Delete a DRAFT requirement (Sprint 8a)",
-)
-async def delete_requirement(
-    project_id: str,
-    requirement_id: str,
-    _: User = Depends(get_current_user),
-) -> None:
-    _reqiq_unavailable()
-    await _proxy(reqiq.delete_requirement(project_id, requirement_id))
-
-
-@router.delete(
     "/{project_id}/requirements/drafts",
     summary="Bulk delete all DRAFT requirements (Sprint 8b)",
 )
@@ -399,6 +385,20 @@ async def delete_draft_requirements(
     if confirm != "1":
         raise HTTPException(status_code=400, detail="Pass confirm=1 to confirm bulk delete")
     return await _proxy(reqiq.delete_draft_requirements(project_id))
+
+
+@router.delete(
+    "/{project_id}/requirements/{requirement_id}",
+    status_code=204,
+    summary="Delete a DRAFT requirement (Sprint 8a)",
+)
+async def delete_requirement(
+    project_id: str,
+    requirement_id: str,
+    _: User = Depends(get_current_user),
+) -> None:
+    _reqiq_unavailable()
+    await _proxy(reqiq.delete_requirement(project_id, requirement_id))
 
 
 @router.post(
