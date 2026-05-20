@@ -1,27 +1,38 @@
 # AI Web Test — ReqIQ integration handoff
 
 **Audience:** AI Web Test backend/frontend developers  
-**Version:** 1.3 · **Date:** 2026-05-18  
-**ReqIQ contract:** [`openapi/reqiq-api-v1.yaml`](openapi/reqiq-api-v1.yaml) · [`openapi/README.md`](openapi/README.md)  
-**AI Web Test API (crawl, execute, KB):** [`ReqIQ-API-Integration-Guide.md`](ReqIQ-API-Integration-Guide.md) · **§12** ReqIQ proxy (partial — extend per below)
+**Version:** 2.2 · **Date:** 2026-05-19  
+
+**This is the single handoff document.** It contains product split, proxy checklist, ReqIQ HTTP essentials (auth, uploads, limits), shipped ReqIQ APIs, and verification — you do **not** need a separate `openapi/README.md` to integrate.
+
+| Also useful (optional) | Purpose |
+| --- | --- |
+| [`openapi/reqiq-api-v1.yaml`](openapi/reqiq-api-v1.yaml) | Postman / codegen only — machine-readable paths and schemas |
+| [`ReqIQ-API-Integration-Guide.md`](ReqIQ-API-Integration-Guide.md) | **Your** AI Web Test API (crawl, execute, KB) · extend **§12** with proxies from §5 |
 
 ---
 
-## 0. What changed in ReqIQ (give this section to your team)
+## 0. ReqIQ shipped (2026-05) — what exists today
 
-| Change | ReqIQ API | AI Web Test action |
+| Feature | ReqIQ API (all on `/api/v1`) | AI Web Test proxy |
 | --- | --- | --- |
-| **Delete uploaded document** | `DELETE /api/v1/projects/{projectId}/sources/{sourceId}` → **204** | Add proxy + UI “Remove document” (see §5.4) |
-| **Collaboration (comments)** | `GET/POST …/requirements/{id}/comments` | Optional v1.1 — review threads, `@email` mentions |
-| **Trace links** | `GET/POST/DELETE …/requirements/{id}/trace-links` | Optional — link requirement ↔ test case / Jira / defect |
-| **Multi-pass LLM IQ** | `POST …/revisions/{index}/llm-iq-multipass` | Optional / power-user — needs admin flag (§5.5) |
-| **Docker uploads** | Upload dir `/var/lib/reqiq/uploads` in Compose | No proxy change — ensure `REQIQ_URL` hits a **running** API (`GET /live`) |
-| **Sprint 7 live harness** | `npm run test:sprint7:live` in ReqIQ repo | Use to validate ReqIQ before blaming the proxy |
-| **Compiled wiki (Sprint 7.5)** | `GET …/wiki`, `POST …/wiki/compile`, readiness **`wikiSource`** | **Implement §5.6** — proxy wiki + surface **Test context** from readiness |
+| **Compiled wiki (7.5)** | `GET/POST …/wiki`, readiness `wikiSource` / `wikiStale` | **Yes — §5.6** |
+| **Business UAT fields (8a)** | `capabilityKey`, `scenarioKind`, `verificationLevel`, `customerOutcome` | **Yes — §5.1** |
+| **Wiki → scenario drafts (8b)** | `POST …/requirements/suggest-from-wiki` | **Yes — §5.1a** (Inc 2+) |
+| **Wiki suggest feedback (8c)** | `POST …/wiki-feedback`, `GET/PATCH/DELETE …/wiki-suggest-feedback`, `GET …/wiki-suggest-profile` | **Yes — §5.1a** (Inc 2+); `PATCH …/requirements` records `accept_edited` |
+| **Delete DRAFT scenario** | `DELETE …/requirements/{id}` → **204** | **Yes — §5.1a** |
+| **Delete all DRAFT scenarios** | `DELETE …/requirements/drafts?confirm=1` → `{ deleted }` | **Yes — §5.1a** |
+| **Coverage matrix (9)** | `GET …/coverage-matrix` | **Yes — §5.1a** (Inc 3) |
+| **Document citations (9)** | `GET/POST/DELETE …/requirements/{id}/source-refs` | **Yes — §5.1a** (Inc 3) |
+| **BASELINE snapshot (9)** | `baselineSnapshot` on requirement after BASELINE transition | Forward on `GET …/requirements` |
+| **Export bundle (8)** | `GET …/export?format=markdown\|pdf\|manifest` | **Yes — §5.1a** (Inc 3); stream attachment to browser |
+| **Delete uploaded document** | `DELETE …/sources/{sourceId}` → **204** | **Yes — §5.4** |
+| **Comments / trace links (7)** | `…/comments`, `…/trace-links` | Optional v1.1 (§5.2) |
+| **Multi-pass LLM IQ** | `POST …/revisions/{index}/llm-iq-multipass` | Power-user / ReqIQ only (§5.5) |
 
-**Validated (2026-05-17):** AI Web Test → ReqIQ `POST …/rag/query` returns **200** when ReqIQ is up. **502** from your API usually means ReqIQ is down or wrong base URL (see §4, §9).
+**Validated (2026-05-17):** AI Web Test → ReqIQ `POST …/rag/query` returns **200** when ReqIQ is up. **502** from your proxy usually means ReqIQ is down or wrong `REQIQ_URL` (§4, §9).
 
-**Wiki strategy (PO locked):** [Wiki-Compile-Strategy.md](Wiki-Compile-Strategy.md). **ReqIQ Sprint 7.5 is shipped:** after upload + **reindex**, ReqIQ auto-compiles a **persisted wiki** per workspace. **`GET …/readiness`** returns stable **`wikiContent`** when `wikiSource: "compiled"`. AI Web Test **must** proxy readiness (already in §5.1) and **should** add **`GET …/wiki`** (and optionally compile) per §5.6.
+**Wiki (PO locked):** [Wiki-Compile-Strategy.md](Wiki-Compile-Strategy.md). After upload + **reindex**, ReqIQ **auto-compiles** persisted wiki. **`GET …/readiness`** returns stable **`wikiContent`** when `wikiSource: "compiled"`.
 
 ---
 
@@ -38,14 +49,13 @@
 
 ---
 
-## 2. Documents to read (order)
+## 2. What to read (minimal set)
 
-1. **This file** — scope, proxy checklist, MVP flows, deliverables.
-2. [`openapi/reqiq-api-v1.yaml`](openapi/reqiq-api-v1.yaml) — machine-readable ReqIQ contract. **Includes wiki (§5.6), readiness `wikiSource`/`wikiStale`, DELETE source, comments, trace-links.**
-3. [`openapi/README.md`](openapi/README.md) — login, multipart upload, rate limits.
-4. [`ReqIQ-API-Integration-Guide.md`](ReqIQ-API-Integration-Guide.md) — AI Web Test endpoints (§1–11) + existing §12 proxies.
+1. **This file (start to finish)** — everything required to proxy ReqIQ for standard users.
+2. **`reqiq-api-v1.yaml`** — only if you use Postman/OpenAPI codegen; optional.
+3. **`ReqIQ-API-Integration-Guide.md`** — your crawl/execute/KB API; mirror §5 proxies under your §12.
 
-Optional (agents only, not main UI): [`Hermes_QA_MultiAgent_Profiles_v3.md`](Hermes_QA_MultiAgent_Profiles_v3.md).
+Hermes / MCP (separate track): [`Hermes_QA_MultiAgent_Profiles_v3.md`](Hermes_QA_MultiAgent_Profiles_v3.md).
 
 ---
 
@@ -103,6 +113,58 @@ REQIQ_WEB_URL=http://localhost:8080
 
 After document upload, call ReqIQ `POST …/embedding/reindex` **in the background** (server-side from your API is fine). ReqIQ then **auto-compiles the project wiki** when vectors are upserted. Standard users see document **`status`** and **Test context** via readiness (§5.6) — they do not need to know about “RAG” or “reindex”.
 
+### 4.1 Health checks (no JWT)
+
+Paths are at the **API root**, not under `/api/v1`:
+
+| Method | Path | Use |
+| --- | --- | --- |
+| `GET` | `/live` | Liveness → `{"status":"ok"}` |
+| `GET` | `/ready` | Postgres readiness → **503** if DB down |
+| `GET` | `/version` | Build label |
+
+### 4.2 Quick ReqIQ sequence (service account)
+
+1. `POST {REQIQ_URL}/api/v1/login` — body `{"email":"…","password":"…"}` → **`accessToken`** (JWT, ~8h TTL; **401** when expired).
+2. All secured calls: `Authorization: Bearer <accessToken>`.
+3. `GET /api/v1/projects` → use field **`id`** (cuid) as **`projectId`**, not display name.
+4. `POST …/sources/upload` (multipart) → `POST …/embedding/reindex` (server-side, no UI).
+5. `GET …/readiness?query=…` and/or `GET …/wiki` for **Test context** (§5.6).
+6. `GET …/requirements` — pick **BASELINE** scenarios for test generation.
+
+**Roles:** **ADMIN**, **LIBRARIAN**, **ANALYST** may upload, mutate requirements, export. **AUDITOR** is read-only (no POST/PATCH/DELETE on ReqIQ).
+
+### 4.3 Multipart document upload
+
+| Endpoint | Body |
+| --- | --- |
+| `POST /api/v1/projects/{projectId}/sources/upload` | `multipart/form-data`, one or more **file** parts (field names not prescribed: `file`, `file1`, …) |
+| `POST …/sources/upload-zip` | Single `.zip` part |
+
+**Response:** `uploadedCount`, `rejectedCount`, `uploaded[]`, `rejected[]`.
+
+**Errors:** `400` `no_files`; `413` `file_too_large`.
+
+**Supported types:** DOCX, PDF, Markdown, TXT, PPTX, PNG (see YAML `SourceUploadBatchResponse`).
+
+Forward multipart **as-is** from AI Web Test — do not JSON-wrap files.
+
+### 4.4 RAG rate limiting
+
+Paths under `/api/v1/projects/{projectId}/rag/*` are rate-limited per tenant/role.
+
+| Response | Meaning |
+| --- | --- |
+| **429** | `error: rate_limited` + **`Retry-After`** (seconds) |
+
+Retry with backoff. Standard users should use **readiness** + **wiki**, not raw RAG, in the main UI.
+
+### 4.5 OpenAPI import (optional)
+
+- Import [`reqiq-api-v1.yaml`](openapi/reqiq-api-v1.yaml) into Postman; set server URL to `{REQIQ_URL}`.
+- Collection variable `accessToken` from login.
+- If YAML and a running server disagree, implementation wins (`apps/api/src/routes/api.ts`).
+
 ---
 
 ## 5. Standard-user API — proxy from AI Web Test
@@ -117,8 +179,9 @@ Implement **backend** routes (suggested prefix `/api/v1/requirements/…`, match
 | `POST /api/v1/requirements/projects` | `POST /api/v1/projects` | Create workspace `{ "name" }` |
 | `PATCH /api/v1/requirements/projects/{id}` | `PATCH /api/v1/projects/{id}` | Rename workspace |
 | `GET /api/v1/requirements/projects/{id}` | `GET /api/v1/projects/{id}` | Get one workspace |
-| `GET …/requirements/{projectId}/requirements` | `GET …/requirements` | List requirements (`latestCompositeScore`) |
-| `POST …/requirements` | `POST …/requirements` | Create `{ "title", "body" }` |
+| `GET …/requirements/{projectId}/capabilities` | `GET …/capabilities` | Telecom capability map (Sprint 8a) |
+| `GET …/requirements/{projectId}/requirements` | `GET …/requirements` | List UAT scenarios (`latestCompositeScore`, scenario fields) |
+| `POST …/requirements` | `POST …/requirements` | Create scenario (`title` and/or `customerOutcome`, `capabilityKey`, …) |
 | `GET/PATCH …/requirements/{requirementId}` | `GET/PATCH …/requirements/{id}` | Get / update |
 | `POST …/requirements/{id}/transition` | `POST …/transition` | Lifecycle (DRAFT → REVIEWED → BASELINE, etc.) |
 | `GET …/requirements/{id}/audit` | `GET …/audit` | Audit trail |
@@ -138,6 +201,14 @@ Implement **backend** routes (suggested prefix `/api/v1/requirements/…`, match
 | `POST …/…/suggest-tests` | `POST …/suggested-tests/generate` | LLM suggested tests |
 | `GET/POST/PATCH/DELETE …/suggested-tests` | same under `…/suggested-tests` | Suggested test CRUD |
 | `POST …/suggested-tests/import` | `POST …/import` | Import without LLM |
+| **`DELETE …/requirements/{requirementId}`** | **`DELETE …/requirements/{id}`** | Remove **DRAFT** scenario only → **204**; **409** if not DRAFT |
+| **`DELETE …/requirements/drafts?confirm=1`** | **`DELETE …/requirements/drafts?confirm=1`** | Bulk remove all **DRAFT** → `{ "deleted": N }` |
+| **`GET …/coverage-matrix`** | **`GET …/coverage-matrix`** | Optional — capability × state counts (§5.7) |
+| **`GET …/projects/{id}/export?format=…`** | same | Markdown / PDF / manifest — **§5.1a** |
+| **`GET/POST/DELETE …/source-refs`** | same under `…/requirements/{id}/source-refs` | URS citations — **§5.1a** |
+| **`POST …/requirements/suggest-from-wiki`** | same | Wiki drafts — **§5.1a** |
+
+See **§5.1a** for the full Sprint 8 / 8c proxy table (wiki feedback, export query params, `isWikiSuggest` on list).
 
 **Bodyless POSTs:** do not send `Content-Type: application/json` without a body (Fastify returns `FST_ERR_CTP_EMPTY_JSON_BODY`).
 
@@ -154,6 +225,34 @@ Implement **backend** routes (suggested prefix `/api/v1/requirements/…`, match
 | `DELETE …/trace-links/{linkId}` | `DELETE …/trace-links/{linkId}` | **204** |
 
 **AUDITOR** role: read-only on ReqIQ — no POST/PATCH/DELETE.
+
+### 5.1a Sprint 8 / 8c — full API proxy table (integrate in AI Web Test backend)
+
+**All paths below exist on ReqIQ today** ([`openapi/reqiq-api-v1.yaml`](openapi/reqiq-api-v1.yaml)). Add matching routes on AI Web Test API (prefix `/api/v1/requirements/…`) that forward the **same method, path suffix, query string, and body** to ReqIQ with the service Bearer token. Return the same status code; for downloads, forward `Content-Type`, `Content-Disposition`, and `X-ReqIQ-Content-SHA256`.
+
+| AI Web Test (proposed) | ReqIQ | Method | Notes |
+| --- | --- | --- | --- |
+| `…/requirements/suggest-from-wiki` | `POST /api/v1/projects/{projectId}/requirements/suggest-from-wiki` | POST | Body: `capabilityKeys?`, `maxScenarios?`, `hints?`. **201:** `batchId`, `created[]`, `dedupeDropped`, `feedbackApplied` |
+| `…/requirements/{id}/wiki-feedback` | `POST …/requirements/{requirementId}/wiki-feedback` | POST | `{ "decision": "accept"\|"reject", "reason?", "reasonTags?" }`. **Reject** deletes DRAFT |
+| `…/wiki-suggest-profile` | `GET …/wiki-suggest-profile` | GET | Aggregated learning stats |
+| `…/wiki-suggest-feedback` | `GET …/wiki-suggest-feedback` | GET | `limit`, `offset` → `{ items[], total }` |
+| `…/wiki-suggest-feedback` | `DELETE …/wiki-suggest-feedback?confirm=1` | DELETE | LIBRARIAN+ clear all |
+| `…/wiki-suggest-feedback/{feedbackId}` | `DELETE` / `PATCH` | DELETE / PATCH | **204** delete; patch `reason` / `reasonTags` |
+| `…/requirements/{id}` | `PATCH …/requirements/{requirementId}` | PATCH | Wiki DRAFT edit → **`accept_edited`** feedback (automatic) |
+| `…/requirements/{id}` | `DELETE …/requirements/{requirementId}` | DELETE | **204** if DRAFT only |
+| `…/requirements/drafts?confirm=1` | `DELETE …/requirements/drafts?confirm=1` | DELETE | Bulk **Delete all DRAFT scenarios** → `{ deleted }` |
+| `…/requirements` | `GET …/requirements` | GET | **`isWikiSuggest`**, **`wikiSuggestBatchId`** on wiki-generated rows |
+| `…/requirements/{id}/transition` | `POST …/requirements/{id}/transition` | POST | `{ "to": "REVIEWED" \| "BASELINE" \| … }` — lifecycle after Keep/edit |
+| `…/coverage-matrix` | `GET …/coverage-matrix` | GET | Capability × state counts |
+| `…/requirements/{id}/source-refs` | `GET/POST/DELETE …/source-refs` | * | Citation CRUD |
+| `…/projects/{id}/export` | `GET /api/v1/projects/{projectId}/export` | GET | `format=markdown\|pdf\|manifest` + filters (below) |
+| `…/requirements/{id}/export` | `GET …/requirements/{requirementId}/export` | GET | Single scenario: `format=markdown\|pdf` |
+
+**Export query params (forward verbatim):** `states`, `capabilityKeys`, `includeWiki`, `includeWikiSuggestFeedback`, `sign`, `detachedSig=1` (manifest signature file).
+
+**File download proxy:** stream or buffer ReqIQ response; pass through attachment headers.
+
+**Minimum proxy sets:** Inc 2 — suggest + wiki-feedback + requirements CRUD; Inc 3 — export + coverage-matrix + source-refs.
 
 ### 5.3 Power-user only — do **not** expose in standard UI
 
@@ -336,6 +435,115 @@ $env:REQIQ_PROJECT_ID = "<cuid>"
 npm run test:sprint7_5:live
 ```
 
+### 5.8 UAT scenarios screen (ReqIQ `/app`) → API map
+
+**All rows below are implemented on ReqIQ today** (`http://localhost:3001/api/v1/...`). AI Web Test does **not** get them automatically — your **backend must proxy** the same paths (§5.1a) with the service Bearer token. ReqIQ `/app` is the reference UI.
+
+| ReqIQ UI (UAT scenarios panel) | ReqIQ API | AI Web Test proxy (proposed) |
+| --- | --- | --- |
+| **Coverage matrix** table | `GET /api/v1/projects/{projectId}/coverage-matrix` | `GET …/requirements/{projectId}/coverage-matrix` |
+| **Export handoff bundle** — Markdown / PDF / Manifest | `GET …/export?format=markdown\|pdf\|manifest` + query filters | `GET …/requirements/projects/{id}/export?…` (stream attachment headers) |
+| **Create scenario** (capability, outcome, Given/When/Then) | `POST …/requirements` | `POST …/requirements` |
+| **Insert UAT template** | *(client-only)* | Ship same template string in your UI |
+| **Generate drafts from wiki** | `POST …/requirements/suggest-from-wiki` | same |
+| **Review history (N)** / **Clear all feedback** | `GET/DELETE …/wiki-suggest-feedback` | same |
+| **Wiki draft review** — Keep | `POST …/requirements/{id}/wiki-feedback` `{ "decision": "accept" }` | same |
+| **Reject** / **Reject with reasons…** | `POST …/wiki-feedback` `{ "decision": "reject", "reason?", "reasonTags?" }` | same (reject deletes DRAFT) |
+| **Edit** draft | `PATCH …/requirements/{id}` | same (`accept_edited` recorded automatically) |
+| **Delete** one DRAFT | `DELETE …/requirements/{id}` | same |
+| **Delete all DRAFT scenarios** | `DELETE …/requirements/drafts?confirm=1` | same |
+| Promote to **REVIEWED** / **BASELINE** | `POST …/requirements/{id}/transition` `{ "to": "REVIEWED" }` etc. | same |
+| Capability dropdown | `GET …/capabilities` | `GET …/requirements/{projectId}/capabilities` |
+| List + quality score | `GET …/requirements` | same (`latestCompositeScore`, `isWikiSuggest`) |
+| URS **citations** on scenario | `GET/POST/DELETE …/requirements/{id}/source-refs` | same (Inc 3) |
+
+**Prerequisites for wiki drafts:** documents uploaded → `POST …/embedding/reindex` (your backend, silent) → compiled wiki (`GET …/wiki` or readiness `wikiSource: "compiled"`).
+
+**Not the same metric:** **`latestCompositeScore`** = RQ‑IQ on requirement text. **Keep/Reject** = wiki-suggest reviewer feedback for the *next* generation run.
+
+### 5.9 UAT / wiki API reference (deep dive)
+
+These endpoints are **live on ReqIQ** (`http://localhost:8080/app` is the reference UI). AI Web Test **Inc 1** can skip wiki review; **Inc 2–3** should proxy via §5.1a (or link **“Review wiki drafts in ReqIQ”** until proxies ship).
+
+#### `POST …/requirements/suggest-from-wiki` (Sprint 8b)
+
+LLM drafts **DRAFT** UAT scenarios from the **compiled wiki** (not live RAG).
+
+**Prerequisites:** sources uploaded → `POST …/embedding/reindex` → wiki `compileStatus: ok` (`GET …/wiki`).
+
+**Request:**
+
+```json
+{
+  "hints": "3HK 5G Voucher plan; journey 01→08; map URS FR-PS…",
+  "maxScenarios": 12,
+  "capabilityKeys": ["purchase_journey", "pricing_promo", "terms_content", "partner_vas"]
+}
+```
+
+| Response | Meaning |
+| --- | --- |
+| **201** | `{ "batchId", "created", "errors", "wikiStale", "feedbackApplied", "dedupeDropped" }` — `dedupeDropped` = scenarios removed by journeyStep dedupe (S8c-07) |
+| **409** `wiki_not_compiled` | Compile wiki first |
+| **422** `invalid_llm_json` | LLM output truncated — retry with `maxScenarios` ≤ 10 |
+| **503** `llm_not_configured` | ReqIQ server has no chat LLM |
+
+**Delete drafts:** `DELETE …/requirements/{id}` — **204** only when `state === "DRAFT"`. **Bulk:** `DELETE …/requirements/drafts?confirm=1` → `{ "deleted": N }`.
+
+**Journey labels in drafts:** LLM may set **`journeyStep`** (`01`–`08`). Server dedupes to at most one positive + one negative per step before create; response includes **`dedupeDropped`** when extras were removed. Re-rank uses capability accept rates from feedback profile.
+
+#### Wiki suggest reviewer feedback (Sprint 8c — **shipped**, ReqIQ only)
+
+Reviewer **Keep** / **Reject** trains the next wiki suggest run (separate from **`latestCompositeScore`** / RQ‑IQ).
+
+| UI area | Purpose |
+| --- | --- |
+| Yellow **Wiki draft review** | Latest generate batch only; **Keep** / **Reject** / **Reject with reasons…**; queue restored from `localStorage` per project |
+| Main requirements list | All scenarios; wiki DRAFTs show **Keep/Reject** when `isWikiSuggest`; manual DRAFTs keep **Delete** only (no learning) |
+| **Review history (N)** | Browse/edit/delete feedback rows; **Clear all feedback** (LIBRARIAN+) |
+
+**BA workflow (ReqIQ `/app`):** upload → reindex → compile wiki → **Generate drafts from wiki** → review (yellow box and/or main list) → **Review history** to fix mistakes → edit survivors (records **`accept_edited`** feedback) → **REVIEWED** → **BASELINE** → **Markdown / PDF / Manifest** export.
+
+**ReqIQ APIs** (shipped `b7f0807`, `3c353ce`, `dd2e90e` — see OpenAPI + [sprint plan](ReqIQ_Project_Management_and_Sprint_Plan.md) § Sprint 8c):
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST …/requirements/{id}/wiki-feedback` | `decision`: `accept` \| `reject`; optional `reason`, `reasonTags[]`. **Reject** deletes DRAFT after snapshot. |
+| *(automatic)* | `PATCH …/requirements/{id}` on wiki-suggested **DRAFT** creates **`accept_edited`** feedback when title/body/outcome changes meaningfully |
+| `GET …/projects/{projectId}/wiki-suggest-profile` | Aggregated stats + snippets for prompt injection / UI hint |
+| `GET …/projects/{projectId}/wiki-suggest-feedback` | Paginated feedback list (`?limit`, `?cursor`) |
+| `PATCH …/projects/{projectId}/wiki-suggest-feedback/{id}` | Edit `reason` / `reasonTags` on a stored row |
+| `DELETE …/projects/{projectId}/wiki-suggest-feedback/{id}` | Remove one row from learning history |
+| `DELETE …/projects/{projectId}/wiki-suggest-feedback?confirm=1` | Clear all feedback for project (LIBRARIAN+) |
+
+**Requirements list enrichment:** `GET …/requirements` and `GET …/requirements/{id}` include **`isWikiSuggest`** and **`wikiSuggestBatchId`** when the scenario was created by `suggest-from-wiki` (from CREATED audit `meta.source === 'wiki_suggest'`).
+
+**AI Web Test:** All endpoints above are on ReqIQ — implement proxies in **§5.1a** / **§5.8** so users never need ReqIQ `/app` for the UAT panel. Until proxies ship, link **“Review wiki drafts in ReqIQ”** → `{REQIQ_WEB_URL}/app`.
+
+#### `GET …/coverage-matrix` (Sprint 9)
+
+Returns per-capability counts: `DRAFT`, `REVIEWED`, `BASELINE`, `SUPERSEDED`. Use for a read-only “coverage” widget.
+
+#### `GET/POST/DELETE …/requirements/{id}/source-refs` (Sprint 9)
+
+Link a scenario to an ingested document chunk (URS section, filename, `traceRef`). Body on create: `{ "sourceChunkId", "citationNote?" }`.
+
+#### Project export bundle (Sprint 8 — **shipped** `dd2e90e`)
+
+`GET /api/v1/projects/{projectId}/export` — **LIBRARIAN+** (not **AUDITOR**). AppShell: **Markdown**, **PDF**, **Manifest** buttons.
+
+| `format` | Response | Notes |
+| --- | --- | --- |
+| `markdown` | `text/markdown` | YAML frontmatter + `content_sha256`; header **`X-ReqIQ-Content-SHA256`** |
+| `pdf` | `application/pdf` | Selectable text; TOC when ≥3 headings; optional **`REQIQ_PDF_WATERMARK`** |
+| `manifest` | `application/json` | Per-requirement fingerprints; use **`sign=true`** + **`REQIQ_EXPORT_SIGNING_KEY`** for HMAC |
+
+**Common query params:** `states=REVIEWED,BASELINE`, `capabilityKeys=…`, `includeWiki=true|false`, `includeWikiSuggestFeedback=true|false` (review history section in MD).
+
+**Manifest verify (ops):** `node --import tsx apps/api/scripts/verify-export-manifest.mts path/to/export.manifest.json` (same signing key as API).
+
+**Optional proxy for AI Web Test Inc 3:** “Download requirements pack” — proxy `format=markdown` or `pdf`; manifest only if you run compliance checks server-side.
+
 ---
 
 ## 6. User-facing labels (standard UI)
@@ -345,7 +553,9 @@ npm run test:sprint7_5:live
 | Project | **Workspace** |
 | Source | **Document** |
 | Requirement | **Requirement** |
-| `latestCompositeScore` | **Quality score** |
+| `latestCompositeScore` | **Quality score** (RQ‑IQ on requirement text — not wiki draft accept/reject) |
+| Wiki draft **Keep** / **Reject** | **Review wiki drafts in ReqIQ** (power user); **Review history** for past decisions |
+| `isWikiSuggest` | *(internal)* scenario came from wiki suggest — show ReqIQ link for review |
 | `readinessScore` / `status` | **Ready for testing?** |
 | `wikiContent` | **Test context** — Markdown wiki for test generation |
 | `wikiSource` | *(internal)* `compiled` = stable; `rag` = show “provisional” banner |
@@ -468,4 +678,66 @@ Authorization: Bearer <accessToken>
 
 ## 12. One-line summary
 
-> Build AI Web Test as the primary QA app: **proxy ReqIQ** (projects, documents, requirements, IQ, **readiness + compiled wiki / Test context** per §5.6) from your **backend**; pass **`wikiContent`** into test generation; hide RAG/chunks/reindex from normal users; link **ReqIQ advanced** at `:8080/app`; use **`reqiq-api-v1.yaml`** and extend **integration guide §12** until §5.1 + §5.6 are implemented.
+> Build AI Web Test as the primary QA app: **proxy ReqIQ** (§5.1 + §5.6 + §5.8) from your **backend** using this document; pass **`wikiContent`** into test generation; hide RAG/chunks from standard users; **UAT scenarios (coverage, export, wiki drafts, lifecycle) are already on the ReqIQ API** — proxy §5.1a or link **ReqIQ advanced** at `:8080/app` until your UI catches up; optional **`reqiq-api-v1.yaml`** for Postman only.
+
+---
+
+## 13. Agile increments — AI Web Test checklist
+
+ReqIQ **8a / 8b / 9 / Markdown export** are **shipped** on the ReqIQ API. Your work is **which proxies to build** in AI Web Test.
+
+### Increment 1 — **Your MVP** (build now)
+
+| # | Task | ReqIQ API |
+| --- | --- | --- |
+| 1 | Proxy **`GET …/readiness`** — `wikiContent`, `wikiSource`, `wikiStale`, `wikiCompiledAt` | §5.6 |
+| 2 | Proxy **`GET …/wiki`** — Test context panel | §5.6 |
+| 3 | UI: readiness gate + expandable Test context | §6 |
+| 4 | Banners: `wikiSource=rag`, `wikiStale` | §6 |
+| 5 | Proxy **`GET …/capabilities`** | §5.1 |
+| 6 | Proxy **`GET/POST/PATCH …/requirements`** + lifecycle **`POST …/transition`** | §5.1 |
+| 7 | List: **`customerOutcome`**, **`capabilityKey`**, **`latestCompositeScore`**, state | — |
+| 8 | Proxy upload + **`DELETE …/sources/{id}`** | §5.4 |
+| 9 | Background **`POST …/embedding/reindex`** after upload | §4.2 |
+| 10 | Test gen uses **`wikiContent`** + **BASELINE** scenario body | Integration guide §12.8 |
+
+**Requirement fields to forward:**
+
+| Field | Type |
+| --- | --- |
+| `capabilityKey` | string |
+| `scenarioKind` | `positive` \| `negative` \| `edge` \| `smoke` |
+| `verificationLevel` | `document_grounded` \| `behaviour_only` \| `smoke` |
+| `customerOutcome` | string |
+
+**Definition of done:** Upload → Test context → readiness **ready** → pick BASELINE scenario → run test. No “RAG” in standard UI.
+
+### Increment 2 — Wiki drafts + review (proxy §5.1a)
+
+| # | AI Web Test builds | Proxy ReqIQ endpoints |
+| --- | --- | --- |
+| 1 | **Generate drafts** button | `POST …/suggest-from-wiki` |
+| 2 | Draft list with `isWikiSuggest` badge | `GET …/requirements` |
+| 3 | **Keep** / **Reject** actions | `POST …/requirements/{id}/wiki-feedback` |
+| 4 | Edit draft text | `PATCH …/requirements/{id}` (learning via `accept_edited`) |
+| 5 | Learning hint / stats | `GET …/wiki-suggest-profile` |
+| 6 | Review history admin | `GET/PATCH/DELETE …/wiki-suggest-feedback` |
+| 7 | Remove unwanted DRAFT | `DELETE …/requirements/{id}` |
+| 8 | **Delete all DRAFT scenarios** | `DELETE …/requirements/drafts?confirm=1` |
+| 9 | Promote kept drafts | `POST …/requirements/{id}/transition` |
+
+**Definition of done:** User never opens ReqIQ for the wiki draft loop (optional link to ReqIQ advanced remains).
+
+### Increment 3 — Sign-off pack (proxy §5.1a)
+
+| # | AI Web Test builds | Proxy ReqIQ endpoints |
+| --- | --- | --- |
+| 1 | Coverage widget | `GET …/coverage-matrix` |
+| 2 | Document citations on scenario | `…/source-refs` |
+| 3 | **Download pack** (MD / PDF / manifest) | `GET …/projects/{id}/export?format=…` |
+
+### ReqIQ `/app` only (no ReqIQ API gap — optional link)
+
+Chunk editor, RAG threads, IQ diff/multipass, full Collab editor — power-user tier (§1). Wiki review **can** be proxied (§5.1a); ReqIQ `/app` is the reference UI.
+
+**Progress tracking:** ReqIQ delivery — [ReqIQ_Project_Management_and_Sprint_Plan.md](ReqIQ_Project_Management_and_Sprint_Plan.md) (v2.32). **OpenAPI:** [`reqiq-api-v1.yaml`](openapi/reqiq-api-v1.yaml) — import for Postman/codegen.
