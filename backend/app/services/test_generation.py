@@ -547,7 +547,9 @@ IMPORTANT: Return ONLY valid JSON, no additional text or explanation. Do NOT abb
                 provider=provider,
                 model=generation_model,
                 temperature=temperature,
-                max_tokens=max_tokens_val
+                max_tokens=max_tokens_val,
+                # Sprint 10.15: forward thinking flag from user settings (default False)
+                enable_thinking=user_config.get("enable_thinking", False) if user_config else False,
             )
             
             # Extract content

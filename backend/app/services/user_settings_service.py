@@ -432,7 +432,9 @@ class UserSettingsService:
                     "model": user_settings.generation_model,
                     "api_key": api_key,  # From environment variables
                     "temperature": user_settings.generation_temperature,
-                    "max_tokens": user_settings.generation_max_tokens
+                    "max_tokens": user_settings.generation_max_tokens,
+                    # Sprint 10.15: pass thinking flag so call sites can forward it
+                    "enable_thinking": bool(getattr(user_settings, "local_vllm_enable_thinking", False)),
                 }
             else:  # execution
                 provider = user_settings.execution_provider
@@ -442,7 +444,9 @@ class UserSettingsService:
                     "model": user_settings.execution_model,
                     "api_key": api_key,  # From environment variables
                     "temperature": user_settings.execution_temperature,
-                    "max_tokens": user_settings.execution_max_tokens
+                    "max_tokens": user_settings.execution_max_tokens,
+                    # Sprint 10.15: pass thinking flag so call sites can forward it
+                    "enable_thinking": bool(getattr(user_settings, "local_vllm_enable_thinking", False)),
                 }
         
         # Fallback to environment settings
