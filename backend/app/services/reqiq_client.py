@@ -115,6 +115,12 @@ async def list_projects() -> dict:
     return resp.json()
 
 
+async def list_capabilities(project_id: str) -> dict:
+    resp = await _request("GET", f"/api/v1/projects/{project_id}/capabilities")
+    resp.raise_for_status()
+    return resp.json()
+
+
 async def list_requirements(project_id: str) -> dict:
     resp = await _request("GET", f"/api/v1/projects/{project_id}/requirements")
     resp.raise_for_status()
@@ -254,11 +260,11 @@ async def update_project(project_id: str, name: str) -> dict:
     return resp.json()
 
 
-async def create_requirement(project_id: str, title: str, body: str = "") -> dict:
+async def create_requirement(project_id: str, **fields: Any) -> dict:
     resp = await _request(
         "POST",
         f"/api/v1/projects/{project_id}/requirements",
-        json={"title": title, "body": body},
+        json=fields,
     )
     resp.raise_for_status()
     return resp.json()
@@ -281,6 +287,15 @@ async def update_requirement(project_id: str, requirement_id: str, **fields: Any
     )
     resp.raise_for_status()
     return resp.json()
+
+
+async def delete_requirement(project_id: str, requirement_id: str) -> None:
+    """Delete a DRAFT requirement. ReqIQ returns 409 if not DRAFT."""
+    resp = await _request(
+        "DELETE",
+        f"/api/v1/projects/{project_id}/requirements/{requirement_id}",
+    )
+    resp.raise_for_status()
 
 
 async def transition_requirement(project_id: str, requirement_id: str, state: str) -> dict:
@@ -396,3 +411,144 @@ async def delete_suggested_test(
         f"/api/v1/projects/{project_id}/requirements/{requirement_id}/suggested-tests/{suggested_test_id}",
     )
     resp.raise_for_status()
+
+
+# ---------------------------------------------------------------------------
+# Inc 2 — Wiki-suggest (Sprint 8b / 8c)
+# ---------------------------------------------------------------------------
+
+async def suggest_from_wiki(project_id: str, **kwargs: Any) -> dict:
+    """POST /projects/{id}/requirements/suggest-from-wiki — generate DRAFT requirements from compiled wiki."""
+    resp = await _request(
+        "POST",
+        f"/api/v1/projects/{project_id}/requirements/suggest-from-wiki",
+        json=kwargs,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def wiki_feedback(project_id: str, requirement_id: str, decision: str, **kwargs: Any) -> dict:
+    """POST /projects/{id}/requirements/{req_id}/wiki-feedback — accept/reject a wiki-suggested draft."""
+    resp = await _request(
+        "POST",
+        f"/api/v1/projects/{project_id}/requirements/{requirement_id}/wiki-feedback",
+        json={"decision": decision, **kwargs},
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def get_wiki_suggest_profile(project_id: str) -> dict:
+    """GET /projects/{id}/wiki-suggest-profile — aggregated learning stats."""
+    resp = await _request(
+        "GET",
+        f"/api/v1/projects/{project_id}/wiki-suggest-profile",
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def list_wiki_suggest_feedback(project_id: str) -> list:
+    """GET /projects/{id}/wiki-suggest-feedback — feedback history."""
+    resp = await _request(
+        "GET",
+        f"/api/v1/projects/{project_id}/wiki-suggest-feedback",
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def patch_wiki_suggest_feedback(project_id: str, feedback_id: str, **kwargs: Any) -> dict:
+    """PATCH /projects/{id}/wiki-suggest-feedback/{feedback_id}."""
+    resp = await _request(
+        "PATCH",
+        f"/api/v1/projects/{project_id}/wiki-suggest-feedback/{feedback_id}",
+        json=kwargs,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def delete_wiki_suggest_feedback(project_id: str, feedback_id: str) -> None:
+    """DELETE /projects/{id}/wiki-suggest-feedback/{feedback_id}."""
+    resp = await _request(
+        "DELETE",
+        f"/api/v1/projects/{project_id}/wiki-suggest-feedback/{feedback_id}",
+    )
+    resp.raise_for_status()
+
+
+async def delete_all_wiki_suggest_feedback(project_id: str) -> None:
+    """DELETE /projects/{id}/wiki-suggest-feedback — clear all feedback."""
+    resp = await _request(
+        "DELETE",
+        f"/api/v1/projects/{project_id}/wiki-suggest-feedback",
+    )
+    resp.raise_for_status()
+
+
+# ---------------------------------------------------------------------------
+# Inc 3 — Coverage matrix, source-refs, export (Sprint 8c)
+# ---------------------------------------------------------------------------
+
+async def get_coverage_matrix(project_id: str) -> dict:
+    """GET /projects/{id}/coverage-matrix — scenario coverage across capabilities."""
+    resp = await _request(
+        "GET",
+        f"/api/v1/projects/{project_id}/coverage-matrix",
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def list_source_refs(project_id: str, requirement_id: str) -> list:
+    """GET /projects/{id}/requirements/{req_id}/source-refs."""
+    resp = await _request(
+        "GET",
+        f"/api/v1/projects/{project_id}/requirements/{requirement_id}/source-refs",
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def create_source_ref(project_id: str, requirement_id: str, **fields: Any) -> dict:
+    """POST /projects/{id}/requirements/{req_id}/source-refs."""
+    resp = await _request(
+        "POST",
+        f"/api/v1/projects/{project_id}/requirements/{requirement_id}/source-refs",
+        json=fields,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def delete_source_ref(project_id: str, requirement_id: str, ref_id: str) -> None:
+    """DELETE /projects/{id}/requirements/{req_id}/source-refs/{ref_id}."""
+    resp = await _request(
+        "DELETE",
+        f"/api/v1/projects/{project_id}/requirements/{requirement_id}/source-refs/{ref_id}",
+    )
+    resp.raise_for_status()
+
+
+async def export_project(project_id: str, **params: Any) -> httpx.Response:
+    """GET /projects/{id}/export — returns raw response for streaming."""
+    resp = await _request(
+        "GET",
+        f"/api/v1/projects/{project_id}/export",
+        params=params,
+    )
+    resp.raise_for_status()
+    return resp
+
+
+async def export_requirement(project_id: str, requirement_id: str, **params: Any) -> httpx.Response:
+    """GET /projects/{id}/requirements/{req_id}/export — returns raw response for streaming."""
+    resp = await _request(
+        "GET",
+        f"/api/v1/projects/{project_id}/requirements/{requirement_id}/export",
+        params=params,
+    )
+    resp.raise_for_status()
+    return resp

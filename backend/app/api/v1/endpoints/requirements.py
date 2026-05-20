@@ -35,8 +35,8 @@ import logging
 from typing import Any
 
 import asyncio
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, status
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 from app.api.deps import get_current_user
@@ -90,6 +90,15 @@ async def list_projects(
 # ---------------------------------------------------------------------------
 # 2. List requirements
 # ---------------------------------------------------------------------------
+
+@router.get("/{project_id}/capabilities", summary="List telecom capabilities (Sprint 8a)")
+async def list_capabilities(
+    project_id: str,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    return await _proxy(reqiq.list_capabilities(project_id))
+
 
 @router.get("/{project_id}/requirements", summary="List requirements for a project")
 async def list_requirements(
@@ -310,11 +319,20 @@ async def update_project(
 class CreateRequirementRequest(BaseModel):
     title: str
     body: str = ""
+    # Sprint 8a UAT scenario fields (all optional for backward compat)
+    capabilityKey: str | None = None
+    scenarioKind: str | None = None          # positive | negative | edge | smoke
+    verificationLevel: str | None = None     # document_grounded | behaviour_only | smoke
+    customerOutcome: str | None = None
 
 
 class UpdateRequirementRequest(BaseModel):
     title: str | None = None
     body: str | None = None
+    capabilityKey: str | None = None
+    scenarioKind: str | None = None
+    verificationLevel: str | None = None
+    customerOutcome: str | None = None
 
 
 class TransitionRequest(BaseModel):
@@ -328,7 +346,8 @@ async def create_requirement(
     _: User = Depends(get_current_user),
 ) -> Any:
     _reqiq_unavailable()
-    return await _proxy(reqiq.create_requirement(project_id, body.title, body.body))
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    return await _proxy(reqiq.create_requirement(project_id, **fields))
 
 
 @router.get("/{project_id}/requirements/{requirement_id}", summary="Get a requirement")
@@ -351,6 +370,20 @@ async def update_requirement(
     _reqiq_unavailable()
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
     return await _proxy(reqiq.update_requirement(project_id, requirement_id, **fields))
+
+
+@router.delete(
+    "/{project_id}/requirements/{requirement_id}",
+    status_code=204,
+    summary="Delete a DRAFT requirement (Sprint 8a)",
+)
+async def delete_requirement(
+    project_id: str,
+    requirement_id: str,
+    _: User = Depends(get_current_user),
+) -> None:
+    _reqiq_unavailable()
+    await _proxy(reqiq.delete_requirement(project_id, requirement_id))
 
 
 @router.post(
@@ -542,3 +575,239 @@ async def delete_suggested_test(
 ) -> None:
     _reqiq_unavailable()
     await _proxy(reqiq.delete_suggested_test(project_id, requirement_id, suggested_test_id))
+
+
+# ---------------------------------------------------------------------------
+# Inc 2 — Wiki-suggest (Sprint 8b / 8c)
+# ---------------------------------------------------------------------------
+
+class SuggestFromWikiRequest(BaseModel):
+    capabilityKeys: list[str] | None = None
+    maxScenarios: int | None = None
+    hints: str | None = None
+
+
+@router.post(
+    "/{project_id}/requirements/suggest-from-wiki",
+    status_code=201,
+    summary="Generate DRAFT requirements from compiled wiki (Sprint 8b)",
+)
+async def suggest_from_wiki(
+    project_id: str,
+    body: SuggestFromWikiRequest,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    return await _proxy(reqiq.suggest_from_wiki(project_id, **fields))
+
+
+class WikiFeedbackRequest(BaseModel):
+    decision: str   # accept | reject
+    reason: str | None = None
+    reasonTags: list[str] | None = None
+
+
+@router.post(
+    "/{project_id}/requirements/{requirement_id}/wiki-feedback",
+    status_code=200,
+    summary="Accept or reject a wiki-suggested DRAFT requirement (Sprint 8b)",
+)
+async def wiki_feedback(
+    project_id: str,
+    requirement_id: str,
+    body: WikiFeedbackRequest,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    kwargs = {k: v for k, v in body.model_dump().items() if k != "decision" and v is not None}
+    return await _proxy(reqiq.wiki_feedback(project_id, requirement_id, body.decision, **kwargs))
+
+
+@router.get(
+    "/{project_id}/wiki-suggest-profile",
+    summary="Get wiki-suggest learning profile / aggregated stats (Sprint 8c)",
+)
+async def get_wiki_suggest_profile(
+    project_id: str,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    return await _proxy(reqiq.get_wiki_suggest_profile(project_id))
+
+
+@router.get(
+    "/{project_id}/wiki-suggest-feedback",
+    summary="List wiki-suggest feedback history (Sprint 8c)",
+)
+async def list_wiki_suggest_feedback(
+    project_id: str,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    return await _proxy(reqiq.list_wiki_suggest_feedback(project_id))
+
+
+class PatchWikiSuggestFeedbackRequest(BaseModel):
+    reason: str | None = None
+    reasonTags: list[str] | None = None
+
+
+@router.patch(
+    "/{project_id}/wiki-suggest-feedback/{feedback_id}",
+    summary="Update a wiki-suggest feedback entry (Sprint 8c)",
+)
+async def patch_wiki_suggest_feedback(
+    project_id: str,
+    feedback_id: str,
+    body: PatchWikiSuggestFeedbackRequest,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    return await _proxy(reqiq.patch_wiki_suggest_feedback(project_id, feedback_id, **fields))
+
+
+@router.delete(
+    "/{project_id}/wiki-suggest-feedback/{feedback_id}",
+    status_code=204,
+    summary="Delete a single wiki-suggest feedback entry (Sprint 8c)",
+)
+async def delete_wiki_suggest_feedback(
+    project_id: str,
+    feedback_id: str,
+    _: User = Depends(get_current_user),
+) -> None:
+    _reqiq_unavailable()
+    await _proxy(reqiq.delete_wiki_suggest_feedback(project_id, feedback_id))
+
+
+@router.delete(
+    "/{project_id}/wiki-suggest-feedback",
+    status_code=204,
+    summary="Clear all wiki-suggest feedback for a project (Sprint 8c)",
+)
+async def delete_all_wiki_suggest_feedback(
+    project_id: str,
+    _: User = Depends(get_current_user),
+) -> None:
+    _reqiq_unavailable()
+    await _proxy(reqiq.delete_all_wiki_suggest_feedback(project_id))
+
+
+# ---------------------------------------------------------------------------
+# Inc 3 — Coverage matrix, source-refs, export (Sprint 8c)
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{project_id}/coverage-matrix",
+    summary="Scenario coverage matrix across capabilities (Sprint 8c)",
+)
+async def get_coverage_matrix(
+    project_id: str,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    return await _proxy(reqiq.get_coverage_matrix(project_id))
+
+
+@router.get(
+    "/{project_id}/requirements/{requirement_id}/source-refs",
+    summary="List source document references for a requirement (Sprint 8c)",
+)
+async def list_source_refs(
+    project_id: str,
+    requirement_id: str,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    return await _proxy(reqiq.list_source_refs(project_id, requirement_id))
+
+
+class CreateSourceRefRequest(BaseModel):
+    sourceId: str
+    excerpt: str | None = None
+    pageNumber: int | None = None
+
+
+@router.post(
+    "/{project_id}/requirements/{requirement_id}/source-refs",
+    status_code=201,
+    summary="Link a source document reference to a requirement (Sprint 8c)",
+)
+async def create_source_ref(
+    project_id: str,
+    requirement_id: str,
+    body: CreateSourceRefRequest,
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    return await _proxy(reqiq.create_source_ref(project_id, requirement_id, **fields))
+
+
+@router.delete(
+    "/{project_id}/requirements/{requirement_id}/source-refs/{ref_id}",
+    status_code=204,
+    summary="Remove a source reference from a requirement (Sprint 8c)",
+)
+async def delete_source_ref(
+    project_id: str,
+    requirement_id: str,
+    ref_id: str,
+    _: User = Depends(get_current_user),
+) -> None:
+    _reqiq_unavailable()
+    await _proxy(reqiq.delete_source_ref(project_id, requirement_id, ref_id))
+
+
+_EXPORT_FORWARD_HEADERS = {
+    "content-disposition",
+    "content-type",
+    "x-reqiq-content-sha256",
+}
+
+_EXPORT_QUERY_PARAMS = {
+    "format",
+    "states",
+    "capabilityKeys",
+    "includeWiki",
+    "includeWikiSuggestFeedback",
+    "sign",
+    "detachedSig",
+}
+
+
+@router.get(
+    "/{project_id}/export",
+    summary="Export project sign-off pack (Sprint 8c)",
+    response_class=Response,
+)
+async def export_project(
+    project_id: str,
+    request: Request,
+    _: User = Depends(get_current_user),
+) -> Response:
+    _reqiq_unavailable()
+    params = {k: v for k, v in request.query_params.items() if k in _EXPORT_QUERY_PARAMS}
+    raw = await reqiq.export_project(project_id, **params)
+    headers = {k: v for k, v in raw.headers.items() if k.lower() in _EXPORT_FORWARD_HEADERS}
+    return Response(content=raw.content, status_code=raw.status_code, headers=headers, media_type=raw.headers.get("content-type"))
+
+
+@router.get(
+    "/{project_id}/requirements/{requirement_id}/export",
+    summary="Export single requirement (Sprint 8c)",
+    response_class=Response,
+)
+async def export_requirement(
+    project_id: str,
+    requirement_id: str,
+    request: Request,
+    _: User = Depends(get_current_user),
+) -> Response:
+    _reqiq_unavailable()
+    params = {k: v for k, v in request.query_params.items() if k in _EXPORT_QUERY_PARAMS}
+    raw = await reqiq.export_requirement(project_id, requirement_id, **params)
+    headers = {k: v for k, v in raw.headers.items() if k.lower() in _EXPORT_FORWARD_HEADERS}
+    return Response(content=raw.content, status_code=raw.status_code, headers=headers, media_type=raw.headers.get("content-type"))

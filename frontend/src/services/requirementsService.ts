@@ -24,6 +24,14 @@ export interface ReqIQRequirement {
   body?: string;
   state: 'DRAFT' | 'REVIEWED' | 'BASELINE' | 'SUPERSEDED';
   latestCompositeScore?: number;
+  // Sprint 8a UAT scenario fields
+  capabilityKey?: string;
+  scenarioKind?: 'positive' | 'negative' | 'edge' | 'smoke';
+  verificationLevel?: 'document_grounded' | 'behaviour_only' | 'smoke';
+  customerOutcome?: string;
+  // Sprint 8b wiki-suggest fields
+  isWikiSuggest?: boolean;
+  wikiSuggestBatchId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -138,6 +146,11 @@ const requirementsService = {
     return res.data;
   },
 
+  async listCapabilities(projectId: string): Promise<unknown[]> {
+    const res = await api.get<unknown[]>(`${BASE}/${projectId}/capabilities`);
+    return res.data;
+  },
+
   async createProject(name: string): Promise<ReqIQProject> {
     const res = await api.post<ReqIQProject>(`${BASE}/projects`, { name });
     return res.data;
@@ -155,13 +168,16 @@ const requirementsService = {
 
   // -- Requirements ---------------------------------------------------------
 
-  async listRequirements(projectId: string): Promise<ReqIQRequirement[]> {
-    const res = await api.get<ReqIQRequirement[]>(`${BASE}/${projectId}/requirements`);
+  async listRequirements(projectId: string, params?: { isWikiSuggest?: boolean; wikiSuggestBatchId?: string }): Promise<ReqIQRequirement[]> {
+    const res = await api.get<ReqIQRequirement[]>(`${BASE}/${projectId}/requirements`, { params });
     return res.data;
   },
 
-  async createRequirement(projectId: string, title: string, body = ''): Promise<ReqIQRequirement> {
-    const res = await api.post<ReqIQRequirement>(`${BASE}/${projectId}/requirements`, { title, body });
+  async createRequirement(
+    projectId: string,
+    fields: Pick<ReqIQRequirement, 'title'> & Partial<Pick<ReqIQRequirement, 'body' | 'capabilityKey' | 'scenarioKind' | 'verificationLevel' | 'customerOutcome'>>,
+  ): Promise<ReqIQRequirement> {
+    const res = await api.post<ReqIQRequirement>(`${BASE}/${projectId}/requirements`, fields);
     return res.data;
   },
 
@@ -173,13 +189,17 @@ const requirementsService = {
   async updateRequirement(
     projectId: string,
     requirementId: string,
-    fields: Partial<Pick<ReqIQRequirement, 'title' | 'body'>>,
+    fields: Partial<Pick<ReqIQRequirement, 'title' | 'body' | 'capabilityKey' | 'scenarioKind' | 'verificationLevel' | 'customerOutcome'>>,
   ): Promise<ReqIQRequirement> {
     const res = await api.patch<ReqIQRequirement>(
       `${BASE}/${projectId}/requirements/${requirementId}`,
       fields,
     );
     return res.data;
+  },
+
+  async deleteRequirement(projectId: string, requirementId: string): Promise<void> {
+    await api.delete(`${BASE}/${projectId}/requirements/${requirementId}`);
   },
 
   async transitionRequirement(projectId: string, requirementId: string, state: string): Promise<ReqIQRequirement> {
@@ -358,6 +378,71 @@ const requirementsService = {
       { params },
     );
     return res.data;
+  },
+
+  // -- Inc 2: Wiki-suggest (Sprint 8b / 8c) --------------------------------
+
+  async suggestFromWiki(
+    projectId: string,
+    opts?: { capabilityKeys?: string[]; maxScenarios?: number; hints?: string },
+  ): Promise<{ batchId: string; created: ReqIQRequirement[]; dedupeDropped: number; feedbackApplied: number }> {
+    const res = await api.post(`${BASE}/${projectId}/requirements/suggest-from-wiki`, opts ?? {});
+    return res.data;
+  },
+
+  async wikiFeedback(
+    projectId: string,
+    requirementId: string,
+    decision: 'accept' | 'reject',
+    opts?: { reason?: string; reasonTags?: string[] },
+  ): Promise<unknown> {
+    const res = await api.post(`${BASE}/${projectId}/requirements/${requirementId}/wiki-feedback`, {
+      decision,
+      ...opts,
+    });
+    return res.data;
+  },
+
+  async getWikiSuggestProfile(projectId: string): Promise<unknown> {
+    const res = await api.get(`${BASE}/${projectId}/wiki-suggest-profile`);
+    return res.data;
+  },
+
+  async listWikiSuggestFeedback(projectId: string): Promise<unknown[]> {
+    const res = await api.get<unknown[]>(`${BASE}/${projectId}/wiki-suggest-feedback`);
+    return res.data;
+  },
+
+  async deleteAllWikiSuggestFeedback(projectId: string): Promise<void> {
+    await api.delete(`${BASE}/${projectId}/wiki-suggest-feedback`);
+  },
+
+  // -- Inc 3: Coverage matrix, source-refs, export (Sprint 8c) -------------
+
+  async getCoverageMatrix(projectId: string): Promise<unknown> {
+    const res = await api.get(`${BASE}/${projectId}/coverage-matrix`);
+    return res.data;
+  },
+
+  async listSourceRefs(projectId: string, requirementId: string): Promise<unknown[]> {
+    const res = await api.get<unknown[]>(`${BASE}/${projectId}/requirements/${requirementId}/source-refs`);
+    return res.data;
+  },
+
+  async exportProject(projectId: string, params?: Record<string, string>): Promise<Blob> {
+    const res = await api.get(`${BASE}/${projectId}/export`, {
+      params,
+      responseType: 'blob',
+    });
+    return res.data as Blob;
+  },
+
+  async exportRequirement(projectId: string, requirementId: string, params?: Record<string, string>): Promise<Blob> {
+    const res = await api.get(`${BASE}/${projectId}/requirements/${requirementId}/export`, {
+      params,
+      responseType: 'blob',
+    });
+    return res.data as Blob;
   },
 };
 

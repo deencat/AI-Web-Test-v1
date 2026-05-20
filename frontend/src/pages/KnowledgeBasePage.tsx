@@ -144,7 +144,12 @@ export const KnowledgeBasePage: React.FC = () => {
   const [showNewReq, setShowNewReq] = useState(false);
   const [newReqTitle, setNewReqTitle] = useState('');
   const [newReqBody, setNewReqBody] = useState('');
+  const [newReqCapabilityKey, setNewReqCapabilityKey] = useState('');
+  const [newReqScenarioKind, setNewReqScenarioKind] = useState('');
+  const [newReqVerificationLevel, setNewReqVerificationLevel] = useState('');
+  const [newReqCustomerOutcome, setNewReqCustomerOutcome] = useState('');
   const [creatingReq, setCreatingReq] = useState(false);
+  const [deletingReqId, setDeletingReqId] = useState<string | null>(null);
   const [editingReqId, setEditingReqId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editBody, setEditBody] = useState('');
@@ -152,6 +157,16 @@ export const KnowledgeBasePage: React.FC = () => {
   const [transitioningFor, setTransitioningFor] = useState<string | null>(null);
   const [runningIqFor, setRunningIqFor] = useState<string | null>(null);
   const [suggestingFor, setSuggestingFor] = useState<string | null>(null);
+
+  // -- wiki-suggest (Inc 2) -------------------------------------------------
+  const [generatingWikiDrafts, setGeneratingWikiDrafts] = useState(false);
+  const [wikiDraftBatchId, setWikiDraftBatchId] = useState<string | null>(null);
+  const [givingFeedbackFor, setGivingFeedbackFor] = useState<string | null>(null);
+
+  // -- coverage + export (Inc 3) --------------------------------------------
+  const [coverageMatrix, setCoverageMatrix] = useState<unknown | null>(null);
+  const [loadingCoverage, setLoadingCoverage] = useState(false);
+  const [exportingProject, setExportingProject] = useState(false);
 
   // -- load projects --------------------------------------------------------
   useEffect(() => {
@@ -349,10 +364,21 @@ export const KnowledgeBasePage: React.FC = () => {
     if (!newReqTitle.trim() || !projectId) return;
     setCreatingReq(true);
     try {
-      const req = await requirementsService.createRequirement(projectId, newReqTitle.trim(), newReqBody.trim());
+      const req = await requirementsService.createRequirement(projectId, {
+        title: newReqTitle.trim(),
+        body: newReqBody.trim() || undefined,
+        capabilityKey: newReqCapabilityKey.trim() || undefined,
+        scenarioKind: (newReqScenarioKind || undefined) as ReqIQRequirement['scenarioKind'],
+        verificationLevel: (newReqVerificationLevel || undefined) as ReqIQRequirement['verificationLevel'],
+        customerOutcome: newReqCustomerOutcome.trim() || undefined,
+      });
       setRequirements(prev => [req, ...prev]);
       setNewReqTitle('');
       setNewReqBody('');
+      setNewReqCapabilityKey('');
+      setNewReqScenarioKind('');
+      setNewReqVerificationLevel('');
+      setNewReqCustomerOutcome('');
       setShowNewReq(false);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
@@ -366,6 +392,91 @@ export const KnowledgeBasePage: React.FC = () => {
     setEditingReqId(req.id);
     setEditTitle(req.title);
     setEditBody(req.body ?? '');
+  }
+
+  async function handleLoadCoverage() {
+    if (!projectId) return;
+    setLoadingCoverage(true);
+    try {
+      const matrix = await requirementsService.getCoverageMatrix(projectId);
+      setCoverageMatrix(matrix);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      alert(`Coverage matrix failed: ${msg ?? String(err)}`);
+    } finally {
+      setLoadingCoverage(false);
+    }
+  }
+
+  async function handleExportProject(format: 'markdown' | 'pdf' | 'manifest') {
+    if (!projectId) return;
+    setExportingProject(true);
+    try {
+      const blob = await requirementsService.exportProject(projectId, { format });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `export.${format === 'markdown' ? 'md' : format === 'pdf' ? 'pdf' : 'json'}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      alert(`Export failed: ${msg ?? String(err)}`);
+    } finally {
+      setExportingProject(false);
+    }
+  }
+
+  async function handleGenerateWikiDrafts() {
+    if (!projectId) return;
+    setGeneratingWikiDrafts(true);
+    try {
+      const result = await requirementsService.suggestFromWiki(projectId);
+      setWikiDraftBatchId(result.batchId);
+      // prepend newly created requirements
+      setRequirements(prev => [...result.created, ...prev]);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      alert(`Generate drafts failed: ${msg ?? String(err)}`);
+    } finally {
+      setGeneratingWikiDrafts(false);
+    }
+  }
+
+  async function handleWikiFeedback(req: ReqIQRequirement, decision: 'accept' | 'reject') {
+    if (!projectId) return;
+    setGivingFeedbackFor(req.id);
+    try {
+      await requirementsService.wikiFeedback(projectId, req.id, decision);
+      if (decision === 'reject') {
+        setRequirements(prev => prev.filter(r => r.id !== req.id));
+      } else {
+        // accepted — just remove the wiki-suggest badge by re-fetching or toggling local state
+        setRequirements(prev =>
+          prev.map(r => r.id === req.id ? { ...r, isWikiSuggest: false } : r),
+        );
+      }
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      alert(`Feedback failed: ${msg ?? String(err)}`);
+    } finally {
+      setGivingFeedbackFor(null);
+    }
+  }
+
+  async function handleDeleteRequirement(req: ReqIQRequirement) {
+    if (!projectId) return;
+    if (!confirm(`Delete requirement "${req.title}"? This cannot be undone.`)) return;
+    setDeletingReqId(req.id);
+    try {
+      await requirementsService.deleteRequirement(projectId, req.id);
+      setRequirements(prev => prev.filter(r => r.id !== req.id));
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      alert(`Delete failed: ${msg ?? String(err)}`);
+    } finally {
+      setDeletingReqId(null);
+    }
   }
 
   async function handleSaveEdit(req: ReqIQRequirement) {
@@ -739,16 +850,70 @@ export const KnowledgeBasePage: React.FC = () => {
               )}
             </SectionCard>
 
+            {/* Coverage matrix + Export (Inc 3) */}
+            <SectionCard
+              title="Coverage & Export"
+              actions={
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleLoadCoverage}
+                    disabled={loadingCoverage}
+                    className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                  >
+                    {loadingCoverage ? '...' : 'Refresh coverage'}
+                  </button>
+                  <button
+                    onClick={() => handleExportProject('markdown')}
+                    disabled={exportingProject}
+                    className="text-xs text-green-600 hover:text-green-800 disabled:opacity-50"
+                  >
+                    ↓ MD
+                  </button>
+                  <button
+                    onClick={() => handleExportProject('pdf')}
+                    disabled={exportingProject}
+                    className="text-xs text-green-600 hover:text-green-800 disabled:opacity-50"
+                  >
+                    ↓ PDF
+                  </button>
+                  <button
+                    onClick={() => handleExportProject('manifest')}
+                    disabled={exportingProject}
+                    className="text-xs text-green-600 hover:text-green-800 disabled:opacity-50"
+                  >
+                    ↓ Manifest
+                  </button>
+                </div>
+              }
+            >
+              {coverageMatrix ? (
+                <pre className="text-xs text-gray-700 bg-gray-50 rounded-md p-3 overflow-auto max-h-48 whitespace-pre-wrap">
+                  {JSON.stringify(coverageMatrix, null, 2)}
+                </pre>
+              ) : (
+                <p className="text-xs text-gray-400">Click "Refresh coverage" to load the coverage matrix.</p>
+              )}
+            </SectionCard>
+
             {/* Requirements */}
             <SectionCard
               title="Requirements"
               actions={
-                <button
-                  onClick={() => setShowNewReq(v => !v)}
-                  className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
-                >
-                  <Plus className="w-3 h-3" /> New
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleGenerateWikiDrafts}
+                    disabled={generatingWikiDrafts}
+                    className="flex items-center gap-1 text-xs text-purple-600 hover:text-purple-800 disabled:opacity-50"
+                  >
+                    {generatingWikiDrafts ? '...' : '✦ Generate drafts'}
+                  </button>
+                  <button
+                    onClick={() => setShowNewReq(v => !v)}
+                    className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    <Plus className="w-3 h-3" /> New
+                  </button>
+                </div>
               }
             >
               {/* New requirement form */}
@@ -769,6 +934,41 @@ export const KnowledgeBasePage: React.FC = () => {
                     value={newReqBody}
                     onChange={e => setNewReqBody(e.target.value)}
                   />
+                  <input
+                    placeholder="Customer outcome (optional)"
+                    className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={newReqCustomerOutcome}
+                    onChange={e => setNewReqCustomerOutcome(e.target.value)}
+                  />
+                  <input
+                    placeholder="Capability key (optional, e.g. purchase_journey)"
+                    className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={newReqCapabilityKey}
+                    onChange={e => setNewReqCapabilityKey(e.target.value)}
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      className="border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={newReqScenarioKind}
+                      onChange={e => setNewReqScenarioKind(e.target.value)}
+                    >
+                      <option value="">Scenario kind (optional)</option>
+                      <option value="positive">positive</option>
+                      <option value="negative">negative</option>
+                      <option value="edge">edge</option>
+                      <option value="smoke">smoke</option>
+                    </select>
+                    <select
+                      className="border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={newReqVerificationLevel}
+                      onChange={e => setNewReqVerificationLevel(e.target.value)}
+                    >
+                      <option value="">Verification level (optional)</option>
+                      <option value="document_grounded">document_grounded</option>
+                      <option value="behaviour_only">behaviour_only</option>
+                      <option value="smoke">smoke</option>
+                    </select>
+                  </div>
                   <div className="flex gap-2">
                     <button
                       type="submit"
@@ -794,6 +994,14 @@ export const KnowledgeBasePage: React.FC = () => {
                     const isRunningIq = runningIqFor === req.id;
                     const isSuggesting = suggestingFor === req.id;
                     const isTransitioning = transitioningFor === req.id;
+                    const isDeleting = deletingReqId === req.id;
+
+                    const scenarioKindColor: Record<string, string> = {
+                      positive: 'bg-green-50 text-green-700 border-green-200',
+                      negative: 'bg-red-50 text-red-700 border-red-200',
+                      edge: 'bg-orange-50 text-orange-700 border-orange-200',
+                      smoke: 'bg-gray-50 text-gray-600 border-gray-200',
+                    };
 
                     return (
                       <li key={req.id} className="py-4 space-y-2">
@@ -823,18 +1031,68 @@ export const KnowledgeBasePage: React.FC = () => {
                             <div className="flex items-start justify-between gap-4">
                               <div className="min-w-0">
                                 <p className="text-sm font-medium text-gray-900">{req.title}</p>
+                                {req.customerOutcome && (
+                                  <p className="text-xs text-blue-600 mt-0.5 italic">{req.customerOutcome}</p>
+                                )}
                                 {req.body && (
                                   <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{req.body}</p>
                                 )}
-                                <div className="flex items-center gap-2 mt-1">
+                                <div className="flex items-center gap-2 mt-1 flex-wrap">
                                   <StateBadge state={req.state} />
                                   {iq && <QualityBadge score={iq.latestCompositeScore} />}
+                                  {req.scenarioKind && (
+                                    <span className={`text-xs px-1.5 py-0.5 rounded-full border ${scenarioKindColor[req.scenarioKind] ?? 'bg-gray-50 text-gray-500 border-gray-200'}`}>
+                                      {req.scenarioKind}
+                                    </span>
+                                  )}
+                                  {req.capabilityKey && (
+                                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                                      {req.capabilityKey}
+                                    </span>
+                                  )}
+                                  {req.isWikiSuggest && (
+                                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200">
+                                      ✦ wiki draft
+                                    </span>
+                                  )}
                                 </div>
                               </div>
-                              <SmallBtn onClick={() => startEditReq(req)}>
-                                <Pencil className="w-3 h-3 inline" /> Edit
-                              </SmallBtn>
+                              <div className="flex items-center gap-1">
+                                <SmallBtn onClick={() => startEditReq(req)}>
+                                  <Pencil className="w-3 h-3 inline" /> Edit
+                                </SmallBtn>
+                                {req.state === 'DRAFT' && (
+                                  <SmallBtn
+                                    variant="danger"
+                                    onClick={() => handleDeleteRequirement(req)}
+                                    disabled={isDeleting}
+                                  >
+                                    {isDeleting ? '...' : 'Delete'}
+                                  </SmallBtn>
+                                )}
+                              </div>
                             </div>
+
+                            {/* Wiki-suggest review actions */}
+                            {req.isWikiSuggest && req.state === 'DRAFT' && (
+                              <div className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-violet-50 border border-violet-200">
+                                <span className="text-xs text-violet-700 flex-1">AI-generated draft — review and accept or reject</span>
+                                <SmallBtn
+                                  variant="primary"
+                                  onClick={() => handleWikiFeedback(req, 'accept')}
+                                  disabled={givingFeedbackFor === req.id}
+                                >
+                                  ✓ Keep
+                                </SmallBtn>
+                                <SmallBtn
+                                  variant="danger"
+                                  onClick={() => handleWikiFeedback(req, 'reject')}
+                                  disabled={givingFeedbackFor === req.id}
+                                >
+                                  ✗ Reject
+                                </SmallBtn>
+                              </div>
+                            )}
 
                             {/* Lifecycle transition */}
                             <div className="flex items-center gap-1.5 flex-wrap">
