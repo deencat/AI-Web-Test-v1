@@ -313,7 +313,7 @@ async def transition_requirement(project_id: str, requirement_id: str, state: st
     resp = await _request(
         "POST",
         f"/api/v1/projects/{project_id}/requirements/{requirement_id}/transition",
-        json={"state": state},
+        json={"to": state},
     )
     resp.raise_for_status()
     return resp.json()

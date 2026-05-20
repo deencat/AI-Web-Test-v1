@@ -547,15 +547,23 @@ export const KnowledgeBasePage: React.FC = () => {
     try {
       await requirementsService.wikiFeedback(projectId, req.id, decision, opts);
       if (decision === 'reject') {
+        // Reject deletes the requirement on ReqIQ — remove locally
         setRequirements(prev => prev.filter(r => r.id !== req.id));
       } else {
-        setRequirements(prev =>
-          prev.map(r => r.id === req.id ? { ...r, isWikiSuggest: false } : r),
-        );
+        // Accept records feedback but leaves state=DRAFT+isWikiSuggest=true on ReqIQ.
+        // Transition to REVIEWED so it survives a page reload outside the review panel.
+        try {
+          const transitioned = await requirementsService.transitionRequirement(projectId, req.id, 'REVIEWED');
+          setRequirements(prev => prev.map(r => r.id === req.id ? transitioned : r));
+        } catch {
+          // If transition fails (e.g. already transitioned), just update local flag
+          setRequirements(prev => prev.map(r => r.id === req.id ? { ...r, isWikiSuggest: false } : r));
+        }
       }
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      alert(`Feedback failed: ${msg ?? String(err)}`);
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      const msg = detail ? (typeof detail === 'string' ? detail : JSON.stringify(detail)) : String(err);
+      alert(`Feedback failed: ${msg}`);
     } finally {
       setGivingFeedbackFor(null);
     }
@@ -667,16 +675,25 @@ export const KnowledgeBasePage: React.FC = () => {
     if (!reviewEditTitle.trim() || !projectId) return;
     setSavingReviewEdit(true);
     try {
-      const updated = await requirementsService.updateRequirement(projectId, req.id, {
+      // PATCH records accept_edited feedback automatically on ReqIQ
+      await requirementsService.updateRequirement(projectId, req.id, {
         title: reviewEditTitle.trim(),
         customerOutcome: reviewEditOutcome.trim() || undefined,
       });
-      // Mark isWikiSuggest false locally so it leaves the review panel
-      setRequirements(prev => prev.map(r => r.id === req.id ? { ...updated, isWikiSuggest: false } : r));
+      // Transition to REVIEWED so it leaves the review panel on reload
+      let final: ReqIQRequirement;
+      try {
+        final = await requirementsService.transitionRequirement(projectId, req.id, 'REVIEWED');
+      } catch {
+        // If already transitioned, re-fetch the patched version
+        final = await requirementsService.getRequirement(projectId, req.id);
+      }
+      setRequirements(prev => prev.map(r => r.id === req.id ? final : r));
       setReviewEditId(null);
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      alert(`Save failed: ${msg ?? String(err)}`);
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      const msg = detail ? (typeof detail === 'string' ? detail : JSON.stringify(detail)) : String(err);
+      alert(`Save failed: ${msg}`);
     } finally {
       setSavingReviewEdit(false);
     }
