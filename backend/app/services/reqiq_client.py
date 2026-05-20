@@ -298,6 +298,17 @@ async def delete_requirement(project_id: str, requirement_id: str) -> None:
     resp.raise_for_status()
 
 
+async def delete_draft_requirements(project_id: str) -> dict:
+    """DELETE /projects/{id}/requirements/drafts?confirm=1 — bulk delete all DRAFTs."""
+    resp = await _request(
+        "DELETE",
+        f"/api/v1/projects/{project_id}/requirements/drafts",
+        params={"confirm": "1"},
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
 async def transition_requirement(project_id: str, requirement_id: str, state: str) -> dict:
     resp = await _request(
         "POST",
@@ -449,11 +460,17 @@ async def get_wiki_suggest_profile(project_id: str) -> dict:
     return resp.json()
 
 
-async def list_wiki_suggest_feedback(project_id: str) -> list:
-    """GET /projects/{id}/wiki-suggest-feedback — feedback history."""
+async def list_wiki_suggest_feedback(project_id: str, limit: int | None = None, offset: int | None = None) -> dict:
+    """GET /projects/{id}/wiki-suggest-feedback — paginated feedback list."""
+    params: dict[str, Any] = {}
+    if limit is not None:
+        params["limit"] = limit
+    if offset is not None:
+        params["offset"] = offset
     resp = await _request(
         "GET",
         f"/api/v1/projects/{project_id}/wiki-suggest-feedback",
+        params=params,
     )
     resp.raise_for_status()
     return resp.json()
@@ -480,10 +497,11 @@ async def delete_wiki_suggest_feedback(project_id: str, feedback_id: str) -> Non
 
 
 async def delete_all_wiki_suggest_feedback(project_id: str) -> None:
-    """DELETE /projects/{id}/wiki-suggest-feedback — clear all feedback."""
+    """DELETE /projects/{id}/wiki-suggest-feedback?confirm=1 — clear all feedback."""
     resp = await _request(
         "DELETE",
         f"/api/v1/projects/{project_id}/wiki-suggest-feedback",
+        params={"confirm": "1"},
     )
     resp.raise_for_status()
 

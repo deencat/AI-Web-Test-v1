@@ -39,6 +39,16 @@ export interface CoverageMatrix {
   totals: { DRAFT: number; REVIEWED: number; BASELINE: number; SUPERSEDED: number; total: number };
 }
 
+export interface WikiSuggestFeedbackItem {
+  id: string;
+  decision: 'accept' | 'reject' | 'accept_edited';
+  reason?: string;
+  reasonTags?: string[];
+  requirementTitle?: string;
+  capabilityKey?: string;
+  createdAt: string;
+}
+
 export interface ReqIQRequirement {
   id: string;
   title: string;
@@ -429,13 +439,18 @@ const requirementsService = {
     return res.data;
   },
 
-  async listWikiSuggestFeedback(projectId: string): Promise<unknown[]> {
-    const res = await api.get<unknown[]>(`${BASE}/${projectId}/wiki-suggest-feedback`);
+  async listWikiSuggestFeedback(projectId: string, opts?: { limit?: number; offset?: number }): Promise<{ items: WikiSuggestFeedbackItem[]; total: number }> {
+    const res = await api.get(`${BASE}/${projectId}/wiki-suggest-feedback`, { params: opts });
     return res.data;
   },
 
   async deleteAllWikiSuggestFeedback(projectId: string): Promise<void> {
-    await api.delete(`${BASE}/${projectId}/wiki-suggest-feedback`);
+    await api.delete(`${BASE}/${projectId}/wiki-suggest-feedback`, { params: { confirm: '1' } });
+  },
+
+  async deleteDraftRequirements(projectId: string): Promise<{ deleted: number }> {
+    const res = await api.delete<{ deleted: number }>(`${BASE}/${projectId}/requirements/drafts`, { params: { confirm: '1' } });
+    return res.data;
   },
 
   // -- Inc 3: Coverage matrix, source-refs, export (Sprint 8c) -------------

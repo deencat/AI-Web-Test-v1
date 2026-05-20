@@ -386,6 +386,21 @@ async def delete_requirement(
     await _proxy(reqiq.delete_requirement(project_id, requirement_id))
 
 
+@router.delete(
+    "/{project_id}/requirements/drafts",
+    summary="Bulk delete all DRAFT requirements (Sprint 8b)",
+)
+async def delete_draft_requirements(
+    project_id: str,
+    confirm: str = Query(default=""),
+    _: User = Depends(get_current_user),
+) -> Any:
+    _reqiq_unavailable()
+    if confirm != "1":
+        raise HTTPException(status_code=400, detail="Pass confirm=1 to confirm bulk delete")
+    return await _proxy(reqiq.delete_draft_requirements(project_id))
+
+
 @router.post(
     "/{project_id}/requirements/{requirement_id}/transition",
     summary="Transition requirement lifecycle state",
@@ -642,10 +657,12 @@ async def get_wiki_suggest_profile(
 )
 async def list_wiki_suggest_feedback(
     project_id: str,
+    limit: int | None = Query(default=None),
+    offset: int | None = Query(default=None),
     _: User = Depends(get_current_user),
 ) -> Any:
     _reqiq_unavailable()
-    return await _proxy(reqiq.list_wiki_suggest_feedback(project_id))
+    return await _proxy(reqiq.list_wiki_suggest_feedback(project_id, limit=limit, offset=offset))
 
 
 class PatchWikiSuggestFeedbackRequest(BaseModel):

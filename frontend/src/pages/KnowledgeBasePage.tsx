@@ -33,6 +33,7 @@ import type {
   SuggestedTest,
   CapabilityItem,
   CoverageMatrix,
+  WikiSuggestFeedbackItem,
 } from '../services/requirementsService';
 
 // ---------------------------------------------------------------------------
@@ -164,6 +165,21 @@ export const KnowledgeBasePage: React.FC = () => {
   const [generatingWikiDrafts, setGeneratingWikiDrafts] = useState(false);
   const [wikiDraftBatchId, setWikiDraftBatchId] = useState<string | null>(null);
   const [givingFeedbackFor, setGivingFeedbackFor] = useState<string | null>(null);
+
+  // reject-with-reasons dialog
+  const [rejectDialogReq, setRejectDialogReq] = useState<ReqIQRequirement | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectTags, setRejectTags] = useState<string[]>([]);
+
+  // delete all DRAFT
+  const [deletingAllDrafts, setDeletingAllDrafts] = useState(false);
+
+  // review history panel
+  const [showReviewHistory, setShowReviewHistory] = useState(false);
+  const [feedbackHistory, setFeedbackHistory] = useState<WikiSuggestFeedbackItem[]>([]);
+  const [feedbackTotal, setFeedbackTotal] = useState(0);
+  const [loadingFeedback, setLoadingFeedback] = useState(false);
+  const [clearingFeedback, setClearingFeedback] = useState(false);
 
   // -- coverage + export (Inc 3) --------------------------------------------
   const [coverageMatrix, setCoverageMatrix] = useState<CoverageMatrix | null>(null);
@@ -452,15 +468,14 @@ export const KnowledgeBasePage: React.FC = () => {
     }
   }
 
-  async function handleWikiFeedback(req: ReqIQRequirement, decision: 'accept' | 'reject') {
+  async function handleWikiFeedback(req: ReqIQRequirement, decision: 'accept' | 'reject', opts?: { reason?: string; reasonTags?: string[] }) {
     if (!projectId) return;
     setGivingFeedbackFor(req.id);
     try {
-      await requirementsService.wikiFeedback(projectId, req.id, decision);
+      await requirementsService.wikiFeedback(projectId, req.id, decision, opts);
       if (decision === 'reject') {
         setRequirements(prev => prev.filter(r => r.id !== req.id));
       } else {
-        // accepted — just remove the wiki-suggest badge by re-fetching or toggling local state
         setRequirements(prev =>
           prev.map(r => r.id === req.id ? { ...r, isWikiSuggest: false } : r),
         );
@@ -470,6 +485,70 @@ export const KnowledgeBasePage: React.FC = () => {
       alert(`Feedback failed: ${msg ?? String(err)}`);
     } finally {
       setGivingFeedbackFor(null);
+    }
+  }
+
+  async function handleRejectWithReasons() {
+    if (!rejectDialogReq || !projectId) return;
+    await handleWikiFeedback(rejectDialogReq, 'reject', {
+      reason: rejectReason.trim() || undefined,
+      reasonTags: rejectTags.length > 0 ? rejectTags : undefined,
+    });
+    setRejectDialogReq(null);
+    setRejectReason('');
+    setRejectTags([]);
+  }
+
+  function toggleRejectTag(tag: string) {
+    setRejectTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
+  }
+
+  async function handleDeleteAllDrafts() {
+    if (!projectId) return;
+    if (!confirm('Delete all DRAFT scenarios? This cannot be undone.')) return;
+    setDeletingAllDrafts(true);
+    try {
+      const result = await requirementsService.deleteDraftRequirements(projectId);
+      setRequirements(prev => prev.filter(r => r.state !== 'DRAFT'));
+      alert(`Deleted ${result.deleted} DRAFT scenario(s).`);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      alert(`Delete all failed: ${msg ?? String(err)}`);
+    } finally {
+      setDeletingAllDrafts(false);
+    }
+  }
+
+  async function handleLoadFeedbackHistory() {
+    if (!projectId) return;
+    setLoadingFeedback(true);
+    try {
+      const result = await requirementsService.listWikiSuggestFeedback(projectId, { limit: 50 });
+      const items = Array.isArray(result) ? result : (result as { items: WikiSuggestFeedbackItem[] }).items ?? [];
+      const total = Array.isArray(result) ? items.length : (result as { total: number }).total ?? items.length;
+      setFeedbackHistory(items);
+      setFeedbackTotal(total);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      alert(`Failed to load feedback history: ${msg ?? String(err)}`);
+    } finally {
+      setLoadingFeedback(false);
+    }
+  }
+
+  async function handleClearAllFeedback() {
+    if (!projectId) return;
+    if (!confirm('Clear all wiki-suggest feedback history? This resets learning data.')) return;
+    setClearingFeedback(true);
+    try {
+      await requirementsService.deleteAllWikiSuggestFeedback(projectId);
+      setFeedbackHistory([]);
+      setFeedbackTotal(0);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      alert(`Clear failed: ${msg ?? String(err)}`);
+    } finally {
+      setClearingFeedback(false);
     }
   }
 
@@ -943,13 +1022,29 @@ export const KnowledgeBasePage: React.FC = () => {
             <SectionCard
               title="Requirements"
               actions={
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap justify-end">
                   <button
                     onClick={handleGenerateWikiDrafts}
                     disabled={generatingWikiDrafts}
                     className="flex items-center gap-1 text-xs text-purple-600 hover:text-purple-800 disabled:opacity-50"
                   >
                     {generatingWikiDrafts ? '...' : '✦ Generate drafts'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowReviewHistory(v => !v);
+                      if (!showReviewHistory) handleLoadFeedbackHistory();
+                    }}
+                    className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700"
+                  >
+                    Review history {feedbackTotal > 0 ? `(${feedbackTotal})` : ''}
+                  </button>
+                  <button
+                    onClick={handleDeleteAllDrafts}
+                    disabled={deletingAllDrafts}
+                    className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
+                  >
+                    {deletingAllDrafts ? '...' : 'Delete all DRAFTs'}
                   </button>
                   <button
                     onClick={() => setShowNewReq(v => !v)}
@@ -960,6 +1055,53 @@ export const KnowledgeBasePage: React.FC = () => {
                 </div>
               }
             >
+              {/* Review history panel */}
+              {showReviewHistory && (
+                <div className="rounded-md border border-gray-200 bg-gray-50 p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-gray-600">Wiki-suggest feedback history ({feedbackTotal})</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleLoadFeedbackHistory}
+                        disabled={loadingFeedback}
+                        className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                      >
+                        {loadingFeedback ? '...' : 'Refresh'}
+                      </button>
+                      <button
+                        onClick={handleClearAllFeedback}
+                        disabled={clearingFeedback}
+                        className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
+                      >
+                        {clearingFeedback ? '...' : 'Clear all'}
+                      </button>
+                    </div>
+                  </div>
+                  {feedbackHistory.length === 0 ? (
+                    <p className="text-xs text-gray-400">{loadingFeedback ? 'Loading…' : 'No feedback history yet.'}</p>
+                  ) : (
+                    <ul className="divide-y divide-gray-100 max-h-48 overflow-y-auto">
+                      {feedbackHistory.map(fb => (
+                        <li key={fb.id} className="py-1.5 flex items-start gap-2">
+                          <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${fb.decision === 'accept' || fb.decision === 'accept_edited' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                            {fb.decision === 'accept_edited' ? 'edited' : fb.decision}
+                          </span>
+                          <div className="min-w-0">
+                            {fb.requirementTitle && <p className="text-xs text-gray-700 truncate">{fb.requirementTitle}</p>}
+                            {fb.reason && <p className="text-xs text-gray-500 italic">{fb.reason}</p>}
+                            {fb.reasonTags && fb.reasonTags.length > 0 && (
+                              <div className="flex gap-1 flex-wrap mt-0.5">
+                                {fb.reasonTags.map(t => <span key={t} className="text-xs bg-gray-100 text-gray-600 px-1 rounded">{t}</span>)}
+                              </div>
+                            )}
+                          </div>
+                          <span className="text-xs text-gray-400 ml-auto shrink-0">{new Date(fb.createdAt).toLocaleDateString()}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
               {/* New requirement form */}
               {showNewReq && (
                 <form onSubmit={handleCreateRequirement} className="space-y-2 rounded-md border border-blue-200 bg-blue-50 p-3">
@@ -1143,10 +1285,10 @@ export const KnowledgeBasePage: React.FC = () => {
                                 </SmallBtn>
                                 <SmallBtn
                                   variant="danger"
-                                  onClick={() => handleWikiFeedback(req, 'reject')}
+                                  onClick={() => setRejectDialogReq(req)}
                                   disabled={givingFeedbackFor === req.id}
                                 >
-                                  ✗ Reject
+                                  ✗ Reject…
                                 </SmallBtn>
                               </div>
                             )}
@@ -1200,6 +1342,53 @@ export const KnowledgeBasePage: React.FC = () => {
           </>
         )}
       </div>
+
+      {/* Reject-with-reasons dialog */}
+      {rejectDialogReq && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md space-y-4">
+            <p className="text-sm font-semibold text-gray-800">Reject wiki draft</p>
+            <p className="text-xs text-gray-500 line-clamp-2">{rejectDialogReq.title}</p>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-gray-600">Reason (optional)</label>
+              <textarea
+                className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-red-400"
+                rows={2}
+                placeholder="Why is this draft not useful?"
+                value={rejectReason}
+                onChange={e => setRejectReason(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">Reason tags (optional)</label>
+              <div className="flex flex-wrap gap-1.5">
+                {['wrong_step', 'duplicate', 'out_of_scope', 'wrong_capability', 'too_vague', 'incorrect_outcome'].map(tag => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => toggleRejectTag(tag)}
+                    className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${rejectTags.includes(tag) ? 'bg-red-100 text-red-700 border-red-300' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-gray-400'}`}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <SmallBtn onClick={() => { setRejectDialogReq(null); setRejectReason(''); setRejectTags([]); }}>
+                Cancel
+              </SmallBtn>
+              <SmallBtn
+                variant="danger"
+                onClick={handleRejectWithReasons}
+                disabled={givingFeedbackFor === rejectDialogReq.id}
+              >
+                {givingFeedbackFor === rejectDialogReq.id ? 'Rejecting…' : 'Reject'}
+              </SmallBtn>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 };
