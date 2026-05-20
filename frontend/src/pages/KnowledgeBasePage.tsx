@@ -536,10 +536,14 @@ export const KnowledgeBasePage: React.FC = () => {
     try {
       const result = await requirementsService.deleteDraftRequirements(projectId);
       setRequirements(prev => prev.filter(r => r.state !== 'DRAFT'));
-      alert(`Deleted ${result.deleted} DRAFT scenario(s).`);
+      const n = typeof result?.deleted === 'number' ? result.deleted : '?';
+      alert(`Deleted ${n} DRAFT scenario(s).`);
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      alert(`Delete all failed: ${msg ?? String(err)}`);
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      const msg = detail
+        ? (typeof detail === 'string' ? detail : JSON.stringify(detail))
+        : String(err);
+      alert(`Delete all failed: ${msg}`);
     } finally {
       setDeletingAllDrafts(false);
     }
