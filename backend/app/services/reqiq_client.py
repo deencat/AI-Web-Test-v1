@@ -299,34 +299,14 @@ async def delete_requirement(project_id: str, requirement_id: str) -> None:
 
 
 async def delete_draft_requirements(project_id: str) -> dict:
-    """Bulk delete all DRAFT requirements by listing then deleting individually.
-
-    ReqIQ has no dedicated bulk-delete endpoint so we fetch all DRAFTs and
-    call DELETE on each one, returning {deleted: N}.
-    """
-    list_resp = await _request(
-        "GET",
-        f"/api/v1/projects/{project_id}/requirements",
-        params={"state": "DRAFT"},
+    """DELETE /projects/{id}/requirements/drafts?confirm=1 — bulk delete all DRAFTs."""
+    resp = await _request(
+        "DELETE",
+        f"/api/v1/projects/{project_id}/requirements/drafts",
+        params={"confirm": "1"},
     )
-    list_resp.raise_for_status()
-    drafts = list_resp.json()
-    if not isinstance(drafts, list):
-        drafts = drafts.get("items") or drafts.get("data") or []
-
-    deleted = 0
-    for req in drafts:
-        req_id = req.get("id")
-        if not req_id:
-            continue
-        del_resp = await _request(
-            "DELETE",
-            f"/api/v1/projects/{project_id}/requirements/{req_id}",
-        )
-        if del_resp.status_code in (200, 204):
-            deleted += 1
-
-    return {"deleted": deleted}
+    resp.raise_for_status()
+    return resp.json()
 
 
 async def transition_requirement(project_id: str, requirement_id: str, state: str) -> dict:
