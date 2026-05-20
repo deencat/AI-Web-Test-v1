@@ -3,9 +3,9 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials · ✅ Sprint 10.11 Developer B Step Library COMPLETE (May 6, 2026) — reusable `@module:` step sequences, Step Library sidebar page, Insert Module picker in TestStepEditor, backend `StepLibraryModule` CRUD, module rename Option C (Preview + Confirm Cascade) with `GET /{id}/rename-preview` dry-run + atomic cascade, dedicated Rename modal, name slug locked in Edit form · ✅ Sprint 10.12 Developer B **Feature A** AI-Powered Failure Root Cause Analysis COMPLETE (May 13, 2026) — `root_cause_analysis_service.py`, DOM snapshot capped at 16 000 chars, `execution_feedback.root_cause_analysis` TEXT column, amber collapsible panel in `ExecutionProgressPage`, 37 new tests, two production bugs fixed (Azure `max_completion_tokens`, `error_type` propagation) · ✅ Sprint 10.12 **Feature B** Re-Run from Failed Step COMPLETE (May 14, 2026) · ✅ Sprint 10.13 Developer B Local vLLM On-Premises Model Support COMPLETE (May 15, 2026) — `local_vllm` provider with GPT-OSS-20B, Qwen3.6-35B-A3B-NVFP4, DeepSeek-V4-Flash-4bit; per-model endpoint routing in `universal_llm.py` + Stagehand `initialize()`
-**Last Updated:** May 15, 2026 (Sprint 10.13 COMPLETE — Local vLLM on-premises model support: GPT-OSS-20B, Qwen3.6-35B-A3B-NVFP4, DeepSeek-V4-Flash-4bit)  
-**Version:** 3.6
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials · ✅ Sprint 10.11 Developer B Step Library COMPLETE (May 6, 2026) — reusable `@module:` step sequences, Step Library sidebar page, Insert Module picker in TestStepEditor, backend `StepLibraryModule` CRUD, module rename Option C (Preview + Confirm Cascade) with `GET /{id}/rename-preview` dry-run + atomic cascade, dedicated Rename modal, name slug locked in Edit form · ✅ Sprint 10.12 Developer B **Feature A** AI-Powered Failure Root Cause Analysis COMPLETE (May 13, 2026) — `root_cause_analysis_service.py`, DOM snapshot capped at 16 000 chars, `execution_feedback.root_cause_analysis` TEXT column, amber collapsible panel in `ExecutionProgressPage`, 37 new tests, two production bugs fixed (Azure `max_completion_tokens`, `error_type` propagation) · ✅ Sprint 10.12 **Feature B** Re-Run from Failed Step COMPLETE (May 14, 2026) · ✅ Sprint 10.13 Developer B Local vLLM On-Premises Model Support COMPLETE (May 15, 2026) — `local_vllm` provider with GPT-OSS-20B, Qwen3.6-35B-A3B-NVFP4, DeepSeek-V4-Flash-4bit; per-model endpoint routing in `universal_llm.py` + Stagehand `initialize()` · 🔄 Sprint 10.14 Developer B Ephemeral CRM Login Credentials — JIT credential prompt at Run-time; `requires_runtime_credentials` flag on TestCase; `CredentialPromptModal` in `RunTestButton`; backend `LoginCredentials` schema (never persisted); password masked in logs and step text; session-level in-memory cache IN PROGRESS (May 20, 2026) · 📋 Sprint 10.15 Developer B vLLM Thinking Mode Toggle — `local_vllm_enable_thinking` user setting; `thinking_capable` model metadata; `chat_template_kwargs` injection in `universal_llm.py` + `local_vllm_client.py`; conditional toggle in Settings UI — PLANNED
+**Last Updated:** May 20, 2026 (Sprint 10.15 PLANNED — vLLM Thinking Mode Toggle: per-user enable/disable for Qwen3 chain-of-thought)  
+**Version:** 3.8
 
 > **📖 When to Use This Document:**
 > - **Sprint Planning:** Task assignments, story point estimates, dependencies
@@ -84,6 +84,9 @@ For detailed analysis, strategies, and agent-specific documentation, see the [Su
       - Sprint 10.10: IMAP-Based Email OTP Service
       - Sprint 10.11: Step Library (Reusable Modular Steps)
       - Sprint 10.12: AI-Powered Failure Root Cause Analysis + Re-Run from Failed Step
+      - Sprint 10.13: Local vLLM On-Premises Model Support
+      - Sprint 10.14: Ephemeral CRM Login Credentials (JIT Prompt, Never-Persist)
+      - Sprint 10.15: vLLM Thinking Mode Toggle
       - Sprint 11: Learning System Activation
       - Sprint 12: Security & Production Readiness
 
@@ -3038,6 +3041,163 @@ Feature A tells the user *why* step 24 failed (e.g. *"The 'Pay Now' button was p
 
 ---
 
+### Sprint 10.14: Developer B — Ephemeral CRM Login Credentials (May 2026)
+
+**Focus:** Allow testers to run tests against internal CRM systems (e.g. `crm-frontend-ogp-crm.apps.ocpppd.three.com.hk`) that require an application-level username/password login without ever persisting the password to the database, logs, or stored test steps.
+
+**Status:** 🔄 IN PROGRESS (May 20, 2026)
+
+#### Background & Problem Statement
+
+The existing credential mechanisms cover two specific cases:
+
+| Mechanism | Used For | Persistence |
+|-----------|----------|-------------|
+| `http_credentials` (UAT HTTP Basic) | `wwwuat.three.com.hk` — network-level 401 challenge | Hardcoded constant / Fernet-encrypted in browser profile |
+| IMAP OTP (`imap_password_encrypted`) | Email OTP retrieval — one account per user | Fernet-encrypted in DB permanently |
+| `login_credentials` (ObservationAgent payload) | ObservationAgent form-login step generation | In-memory only during observation task |
+
+The CRM system requires **form-level application login** (username + password typed into the CRM login page). This is a 4th category: **ephemeral run-time credentials** that:
+- Differ per tester (individual CRM accounts)
+- Must not be stored anywhere (rotation, GDPR, internal policy)
+- Need to be re-prompted at every test run, or optionally cached for the browser-tab session lifetime
+
+#### Security Requirements (Non-Negotiable)
+
+- **No DB persistence** — `login_credentials` must never appear in `execution.payload`, `execution_feedback`, or any audit table column
+- **No log exposure** — password always masked: `logger.info("CRM login as user=%s password=***", username)`
+- **No test-step serialization of plaintext password** — stored step text uses `{{CRM_PASSWORD}}` placeholder; value resolved at run-time only, then discarded
+- **Frontend ephemeral state only** — credentials held in React `useState`; cleared immediately after `POST /v1/executions/{id}/run` is dispatched; never written to `localStorage`/`sessionStorage`/`redux-persist`
+- **HTTPS transport** — internal CRM domain already HTTPS; no additional action needed
+
+#### Architecture: JIT Credential Prompt
+
+```
+User clicks "Run" on a test with requires_runtime_credentials = true
+        │
+        ▼
+RunTestButton detects flag → shows <CredentialPromptModal>
+  Username [          ]   Password [••••••••]   [Cancel] [Run]
+        │  (type="password" — never rendered as plaintext)
+        ▼
+POST /v1/executions/{id}/run
+  body: { login_credentials: { username, password } }   ← HTTPS, never stored
+        │
+        ▼
+ExecutionService (in-memory only):
+  → Prepend auto-generated login steps before test steps
+  → Tier 1 Playwright / Tier 2 Hybrid / Tier 3 Stagehand: inject at execution time
+  → login_credentials object GC'd when execution completes
+Password NEVER written to: execution table, execution_feedback, payload, logs
+```
+
+**Session-level cache (optional UX improvement):** credentials survive multiple "Run" clicks within the same browser session (React Context, TTL = tab lifetime); cleared on tab close or manual sign-out. Never written to persistent storage.
+
+#### Implementation Tasks
+
+| Task | File(s) | Points | Status |
+|------|---------|--------|--------|
+| **10.14-1** Add `requires_runtime_credentials: bool = False` field to `TestCase` model + Alembic migration | `backend/app/models/test_case.py`, `backend/alembic/versions/` | 1 | ☐ |
+| **10.14-2** Add `LoginCredentials` Pydantic schema + extend `RunExecutionRequest` | `backend/app/schemas/execution.py` | 1 | ☐ |
+| **10.14-3** Strip `login_credentials` from payload before any DB write in `ExecutionService.run_execution()` | `backend/app/services/execution_service.py` | 1 | ☐ |
+| **10.14-4** Prepend login steps from `login_credentials` before test steps in execution step loop; mask password in log lines | `backend/app/services/execution_service.py`, `backend/app/services/stagehand_service.py` | 2 | ☐ |
+| **10.14-5** Store `{{CRM_PASSWORD}}` placeholder (not plaintext) in generated test step text when `login_credentials` used | `backend/app/services/execution_service.py` | 1 | ☐ |
+| **10.14-6** Frontend: add `requires_runtime_credentials` toggle to Test edit form | `frontend/src/components/TestCaseEditor.tsx` (or equivalent) | 1 | ☐ |
+| **10.14-7** Frontend: `<CredentialPromptModal>` component — username + password fields, type="password", clears state on dispatch | `frontend/src/components/CredentialPromptModal.tsx` | 2 | ☐ |
+| **10.14-8** Frontend: update `RunTestButton` to show modal gate when `requires_runtime_credentials = true`; show `🔐 Login required` badge | `frontend/src/components/RunTestButton.tsx` | 1 | ☐ |
+| **10.14-9** Frontend: optional session-level credential cache via React Context (TTL = tab lifetime) | `frontend/src/context/EphemeralCredentialContext.tsx` | 1 | ☐ |
+| **10.14-10** Backend tests: assert `login_credentials` absent from DB payload after run; assert password masked in captured logs | `backend/tests/test_crm_ephemeral_credentials.py` | 2 | ☐ |
+| **10.14-11** Frontend tests: assert modal clears state after dispatch; assert password not in LocalStorage | `frontend/src/components/__tests__/CredentialPromptModal.test.tsx` | 1 | ☐ |
+
+**Sprint 10.14 total: 14 points / ~3 days**
+
+#### Key Design Decisions
+
+**Why NOT reuse IMAP Fernet-encrypted storage:**  
+IMAP OTP credentials belong to a persistent system integration (one account per registered user). CRM credentials are per-tester, per-run, and must expire immediately — fundamentally incompatible with Fernet-encrypted DB storage.
+
+**Why NOT embed in test step text:**  
+The existing `login_credentials` flow in ObservationAgent risks writing `"Enter password: mypassword123"` as a saved step. Sprint 10.14 enforces `{{CRM_PASSWORD}}` placeholder in any persisted step and resolves it only at execution time.
+
+**Why NOT URL-embed the password:**  
+The `embed_auth_in_url()` helper is designed for HTTP Basic Auth (network-level, `WWW-Authenticate: Basic` header). CRM login is a form submit — embedding credentials in the URL has no effect and would expose them in access logs.
+
+#### ADR Reference
+
+- **ADR-CRM-01**: Ephemeral CRM login credentials — `requires_runtime_credentials` flag, `LoginCredentials` in-memory schema, `{{CRM_PASSWORD}}` placeholder policy, session-level React Context cache — 🔄 **Pending** recording in `documentation/ADR-crm-credentials.md`
+
+#### Sprint 10.14 Success Criteria
+
+- [ ] Test cases with `requires_runtime_credentials = true` show a credential prompt before Run
+- [ ] Password field is type="password" — never rendered in plaintext in the UI
+- [ ] `POST /v1/executions/{id}/run` accepts `login_credentials` in request body
+- [ ] `login_credentials` is **absent** from `execution.payload` column after run completes
+- [ ] Password is **masked** (`***`) in all backend log output
+- [ ] Stored test steps use `{{CRM_PASSWORD}}` placeholder, not the actual password value
+- [ ] Frontend component state is cleared immediately after `POST` is dispatched
+- [ ] Session-level credential cache works within a browser tab; does not survive tab close
+- [ ] All new backend + frontend tests pass
+- [ ] CRM test can execute end-to-end: login steps auto-prepended, CRM dashboard reached
+
+---
+
+### Sprint 10.15: Developer B — vLLM Thinking Mode Toggle (May 2026)
+
+**Focus:** Add a per-user `local_vllm_enable_thinking` setting that lets users enable or disable chain-of-thought ("thinking") mode on vLLM models that support it — currently `RedHatAI/Qwen3.6-35B-A3B-NVFP4`. When enabled, the backend injects `chat_template_kwargs: { enable_thinking: true }` into the OpenAI-compatible request payload; when disabled (default), the flag is omitted so behaviour is unchanged for all other models.
+
+**Status:** 📋 PLANNED
+
+**Scope decision:** One global `local_vllm_enable_thinking` flag rather than per-scope (generation / execution) flags, matching the precedent set by `stagehand_provider`. Split into per-scope fields only if user demand warrants it.
+
+**Thinking-capable models:**
+
+| Model ID | Thinking support | Mechanism |
+|----------|------------------|-----------|
+| `RedHatAI/Qwen3.6-35B-A3B-NVFP4` | ✅ Yes | `chat_template_kwargs: { enable_thinking: true/false }` |
+| `openai/gpt-oss-20b` | ❌ No | Flag has no effect; never sent |
+| `DeepSeek-V4-Flash-4bit` | ❌ No | Flag has no effect; never sent |
+
+#### Feature: vLLM Thinking Mode Toggle
+
+| Task | File(s) | Points | Status |
+|------|---------|--------|--------|
+| **10.15-1** Add `thinking_capable: bool` to `ModelOption` schema; populate `thinking_capable_models` list in `local_vllm` PROVIDER_CONFIGS entry | `backend/app/schemas/user_settings.py`, `backend/app/services/user_settings_service.py` | 1 | 📋 |
+| **10.15-2** Add `local_vllm_enable_thinking: bool = False` to `UserSettingBase` + `UserSettingUpdate`; add `Boolean` column to `UserSetting` ORM model | `backend/app/schemas/user_settings.py`, `backend/app/models/user_settings.py` | 1 | 📋 |
+| **10.15-3** Write DB migration: `ALTER TABLE user_settings ADD COLUMN local_vllm_enable_thinking BOOLEAN NOT NULL DEFAULT FALSE` | `backend/migrate_sprint10_15.py` | 1 | 📋 |
+| **10.15-4** Thread `enable_thinking` param through `chat_completion()` → `_call_local_vllm()`; inject `chat_template_kwargs` only for thinking-capable models when flag is `True` | `backend/app/services/universal_llm.py` | 2 | 📋 |
+| **10.15-5** Add `enable_thinking` constructor param to `LocalVllmClient`; inject `extra_body={"chat_template_kwargs":{"enable_thinking":True}}` in SDK `.create()` call | `backend/llm/local_vllm_client.py` | 1 | 📋 |
+| **10.15-6** Add `thinking_capable` to `ModelOption` TypeScript type; add `localVllmEnableThinking` to settings API types and state | `frontend/src/types/api.ts` | 1 | 📋 |
+| **10.15-7** Add conditional toggle in Settings page: show only when `local_vllm` provider is selected **and** the selected model appears in `thinking_capable_models`; wire to save payload | `frontend/src/pages/SettingsPage.tsx` | 2 | 📋 |
+| **10.15-8** Unit tests: `_call_local_vllm` injects flag when enabled; omits flag when disabled; omits flag for non-thinking-capable models regardless | `backend/tests/unit/test_universal_llm_thinking.py` | 2 | 📋 |
+
+**Sprint 10.15 total: 11 points / ~2.5 days (PLANNED)**
+
+#### Architecture notes
+
+- `chat_template_kwargs` is a vLLM-specific extension to the OpenAI `/v1/chat/completions` body. It is forwarded by vLLM's server but ignored by real OpenAI/Azure endpoints, so there is no risk of accidental leakage to external providers.
+- The flag is gated twice: first the user setting must be `True`, second the model must be in the `thinking_capable_models` list. Non-thinking models are unaffected regardless of the user setting.
+- `UniversalLLMService.chat_completion()` callers (all agents) already pass `provider` and `model`; `enable_thinking` is an additional optional kwarg defaulting to `False` — no existing call sites need updating.
+- `LocalVllmClient` is used by the LLM client factory path (`llm/factory.py`); the flag is stored as `self.enable_thinking` and applied in `chat_completion()` via `extra_body`, which the OpenAI Python SDK forwards as-is.
+- The UI toggle is hidden unless: (a) `local_vllm` is the active provider for generation or execution, and (b) the selected model's `thinking_capable` metadata field is `True`. This prevents confusion for users on other providers.
+
+#### ADR reference
+
+- **ADR-001-XX+1**: vLLM thinking mode — `local_vllm_enable_thinking` user setting; `chat_template_kwargs` injection gated on `thinking_capable_models` list; no external provider impact — 🔄 **Pending** recording in `documentation/ADR-001-llm-provider.md`
+
+#### Sprint 10.15 Success Criteria
+
+- [ ] `ModelOption` API response includes `thinking_capable: true` for `RedHatAI/Qwen3.6-35B-A3B-NVFP4`, `false` for all others
+- [ ] Settings page shows the thinking toggle **only** when `local_vllm` + a thinking-capable model is selected
+- [ ] Toggle state persists across page reloads via the existing user settings API
+- [ ] When enabled: `chat_template_kwargs: { enable_thinking: true }` is present in the HTTP request to vLLM
+- [ ] When disabled: `chat_template_kwargs` is **absent** from the request
+- [ ] Non-thinking-capable models (`gpt-oss-20b`, `DeepSeek-V4-Flash-4bit`) never receive the flag, even if `local_vllm_enable_thinking = true`
+- [ ] All other providers (azure, openrouter, google, cerebras) are completely unaffected
+- [ ] DB migration runs cleanly on existing databases (DEFAULT FALSE — no data loss)
+- [ ] All new backend unit tests pass
+
+---
+
 ### Sprint 11: Autonomous Learning System Activation (Mar 26 - Apr 2, 2026)
 
 **Focus:** Achieve true autonomous self-improvement through automated learning mechanisms  
@@ -3877,13 +4037,14 @@ Blockers Requiring CTO Decision:
 
 ## 📚 Document Control
 
-**Document Version:** 3.2  
-**Last Updated:** March 16, 2026  
-**Next Review:** Sprint 10.7 start (Mar 16, 2026)  
+**Document Version:** 3.7  
+**Last Updated:** May 20, 2026  
+**Next Review:** Sprint 10.14 completion  
 **Document Owner:** Developer A (Project Manager)  
 **Approval:** CTO (Sponsor)
 
 **Change Log:**
+- v3.7 (May 20, 2026): Added Sprint 10.14 — Ephemeral CRM Login Credentials. Addresses application-level form login for internal CRM system (`crm-frontend-ogp-crm.apps.ocpppd.three.com.hk`). Design decisions: `requires_runtime_credentials` flag on `TestCase`; `LoginCredentials` Pydantic schema in `RunExecutionRequest` (never persisted to DB); `CredentialPromptModal` frontend component (type="password", state cleared on dispatch); password masked in all log lines; `{{CRM_PASSWORD}}` placeholder in stored step text; optional session-level React Context cache (TTL = tab lifetime, never written to LocalStorage). 14 points / ~3 days. Security policy: no DB persistence, no log exposure, no URL embedding, HTTPS transport only.
 - v3.2 (Mar 16, 2026): Expanded Sprint 10.7 scope from 4 → 10 points to close all four HTTP credentials gaps end-to-end: (G1) auto-generate `CREDENTIAL_ENCRYPTION_KEY` at startup if absent/placeholder — no Python command needed; (G2) fix `GET /session` 404 for credential-only profiles so 4-agent workflow can load them; (G3) relax `has_session_data`-only guard in `executions.py` for saved-test runs; (G4) `AgentWorkflowTrigger` collapses manual HTTP fields and shows badge when profile covers auth, `RunTestButton` gets three-way `✓`/`🔐`/`⚠️` icon and corrected info message. Branch: `feature/sprint10-7-profile-http-creds-everywhere`.
 - v3.1 (Mar 9, 2026): Added Sprint 10.5 Developer B plan — OpenRouter Free Models (19 verified $0/$0 models from openrouter.ai/models, grouped dropdown UI, `qwen/qwen3-coder-480b-a35b:free` recommended) + Batch Delete Saved Tests (checkbox multi-select, batch endpoint, confirmation modal). 13 points / 6 days. Updated v3.1 (Mar 9, 2026 revision 2): Replaced stale model list with user-confirmed list from OpenRouter pricing page.
 - v2.6 (Feb 9, 2026): Sprint 9 completion - Feedback loop tested and verified, 4-agent E2E test passed, all 17 test cases generated successfully, feedback loop generating insights (70% pass rate, 2 insights). Updated test results and Sprint 9 status.
