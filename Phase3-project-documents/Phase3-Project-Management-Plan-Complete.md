@@ -3,8 +3,8 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials · ✅ Sprint 10.11 Developer B Step Library COMPLETE (May 6, 2026) — reusable `@module:` step sequences, Step Library sidebar page, Insert Module picker in TestStepEditor, backend `StepLibraryModule` CRUD, module rename Option C (Preview + Confirm Cascade) with `GET /{id}/rename-preview` dry-run + atomic cascade, dedicated Rename modal, name slug locked in Edit form · ✅ Sprint 10.12 Developer B **Feature A** AI-Powered Failure Root Cause Analysis COMPLETE (May 13, 2026) — `root_cause_analysis_service.py`, DOM snapshot capped at 16 000 chars, `execution_feedback.root_cause_analysis` TEXT column, amber collapsible panel in `ExecutionProgressPage`, 37 new tests, two production bugs fixed (Azure `max_completion_tokens`, `error_type` propagation) · ✅ Sprint 10.12 **Feature B** Re-Run from Failed Step COMPLETE (May 14, 2026) · ✅ Sprint 10.13 Developer B Local vLLM On-Premises Model Support COMPLETE (May 15, 2026) — `local_vllm` provider with GPT-OSS-20B, Qwen3.6-35B-A3B-NVFP4, DeepSeek-V4-Flash-4bit; per-model endpoint routing in `universal_llm.py` + Stagehand `initialize()` · 🔄 Sprint 10.14 Developer B Ephemeral CRM Login Credentials — JIT credential prompt at Run-time; `requires_runtime_credentials` flag on TestCase; `CredentialPromptModal` in `RunTestButton`; backend `LoginCredentials` schema (never persisted); password masked in logs and step text; session-level in-memory cache IN PROGRESS (May 20, 2026) · 📋 Sprint 10.15 Developer B vLLM Thinking Mode Toggle — `local_vllm_enable_thinking` user setting; `thinking_capable` model metadata; `chat_template_kwargs` injection in `universal_llm.py` + `local_vllm_client.py`; conditional toggle in Settings UI — PLANNED
-**Last Updated:** May 20, 2026 (Sprint 10.15 PLANNED — vLLM Thinking Mode Toggle: per-user enable/disable for Qwen3 chain-of-thought)  
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials · ✅ Sprint 10.11 Developer B Step Library COMPLETE (May 6, 2026) — reusable `@module:` step sequences, Step Library sidebar page, Insert Module picker in TestStepEditor, backend `StepLibraryModule` CRUD, module rename Option C (Preview + Confirm Cascade) with `GET /{id}/rename-preview` dry-run + atomic cascade, dedicated Rename modal, name slug locked in Edit form · ✅ Sprint 10.12 Developer B **Feature A** AI-Powered Failure Root Cause Analysis COMPLETE (May 13, 2026) — `root_cause_analysis_service.py`, DOM snapshot capped at 16 000 chars, `execution_feedback.root_cause_analysis` TEXT column, amber collapsible panel in `ExecutionProgressPage`, 37 new tests, two production bugs fixed (Azure `max_completion_tokens`, `error_type` propagation) · ✅ Sprint 10.12 **Feature B** Re-Run from Failed Step COMPLETE (May 14, 2026) · ✅ Sprint 10.13 Developer B Local vLLM On-Premises Model Support COMPLETE (May 15, 2026) — `local_vllm` provider with GPT-OSS-20B, Qwen3.6-35B-A3B-NVFP4, DeepSeek-V4-Flash-4bit; per-model endpoint routing in `universal_llm.py` + Stagehand `initialize()` · ✅ Sprint 10.14 Developer B Ephemeral CRM Login Credentials COMPLETE (May 20, 2026) — JIT credential prompt at Run-time; `requires_runtime_credentials` flag on TestCase; `CredentialPromptModal` in `RunTestButton`; backend `LoginCredentials` schema (never persisted); password masked in logs and step text; `{{CRM_PASSWORD}}` placeholder in stored step records; session-level in-memory cache; `_build_crm_login_steps()` prepends 3 steps to execution pipeline; 30 backend + 11 frontend tests pass · 📋 Sprint 10.15 Developer B vLLM Thinking Mode Toggle — `local_vllm_enable_thinking` user setting; `thinking_capable` model metadata; `chat_template_kwargs` injection in `universal_llm.py` + `local_vllm_client.py`; conditional toggle in Settings UI — PLANNED
+**Last Updated:** May 20, 2026 (Sprint 10.14 COMPLETE — Ephemeral CRM Login Credentials; Sprint 10.15 PLANNED — vLLM Thinking Mode Toggle)  
 **Version:** 3.8
 
 > **📖 When to Use This Document:**
@@ -3045,7 +3045,8 @@ Feature A tells the user *why* step 24 failed (e.g. *"The 'Pay Now' button was p
 
 **Focus:** Allow testers to run tests against internal CRM systems (e.g. `crm-frontend-ogp-crm.apps.ocpppd.three.com.hk`) that require an application-level username/password login without ever persisting the password to the database, logs, or stored test steps.
 
-**Status:** 🔄 IN PROGRESS (May 20, 2026)
+**Status:** ✅ **COMPLETE** (May 20, 2026)  
+**Story Points:** 14 points / ~3 days (COMPLETE)
 
 #### Background & Problem Statement
 
@@ -3093,23 +3094,47 @@ Password NEVER written to: execution table, execution_feedback, payload, logs
 
 **Session-level cache (optional UX improvement):** credentials survive multiple "Run" clicks within the same browser session (React Context, TTL = tab lifetime); cleared on tab close or manual sign-out. Never written to persistent storage.
 
-#### Implementation Tasks
+#### Implementation Tasks (Actual)
 
 | Task | File(s) | Points | Status |
 |------|---------|--------|--------|
-| **10.14-1** Add `requires_runtime_credentials: bool = False` field to `TestCase` model + Alembic migration | `backend/app/models/test_case.py`, `backend/alembic/versions/` | 1 | ☐ |
-| **10.14-2** Add `LoginCredentials` Pydantic schema + extend `RunExecutionRequest` | `backend/app/schemas/execution.py` | 1 | ☐ |
-| **10.14-3** Strip `login_credentials` from payload before any DB write in `ExecutionService.run_execution()` | `backend/app/services/execution_service.py` | 1 | ☐ |
-| **10.14-4** Prepend login steps from `login_credentials` before test steps in execution step loop; mask password in log lines | `backend/app/services/execution_service.py`, `backend/app/services/stagehand_service.py` | 2 | ☐ |
-| **10.14-5** Store `{{CRM_PASSWORD}}` placeholder (not plaintext) in generated test step text when `login_credentials` used | `backend/app/services/execution_service.py` | 1 | ☐ |
-| **10.14-6** Frontend: add `requires_runtime_credentials` toggle to Test edit form | `frontend/src/components/TestCaseEditor.tsx` (or equivalent) | 1 | ☐ |
-| **10.14-7** Frontend: `<CredentialPromptModal>` component — username + password fields, type="password", clears state on dispatch | `frontend/src/components/CredentialPromptModal.tsx` | 2 | ☐ |
-| **10.14-8** Frontend: update `RunTestButton` to show modal gate when `requires_runtime_credentials = true`; show `🔐 Login required` badge | `frontend/src/components/RunTestButton.tsx` | 1 | ☐ |
-| **10.14-9** Frontend: optional session-level credential cache via React Context (TTL = tab lifetime) | `frontend/src/context/EphemeralCredentialContext.tsx` | 1 | ☐ |
-| **10.14-10** Backend tests: assert `login_credentials` absent from DB payload after run; assert password masked in captured logs | `backend/tests/test_crm_ephemeral_credentials.py` | 2 | ☐ |
-| **10.14-11** Frontend tests: assert modal clears state after dispatch; assert password not in LocalStorage | `frontend/src/components/__tests__/CredentialPromptModal.test.tsx` | 1 | ☐ |
+| **10.14-1** Add `requires_runtime_credentials: bool = False` to `TestCase` model + migration | `backend/app/models/test_case.py`, `backend/migrations/add_requires_runtime_credentials.py` | 1 | ✅ |
+| **10.14-2** Add `LoginCredentials` Pydantic schema + extend `ExecutionStartRequest` with `login_credentials` field; add `requires_runtime_credentials` to `TestCaseBase`, `TestCaseUpdate`, `TestCaseInDB` schemas | `backend/app/schemas/test_execution.py`, `backend/app/schemas/test_case.py` | 1 | ✅ |
+| **10.14-3** Strip `login_credentials` from `trigger_details` JSON before DB write in `run_test_with_playwright`; pass only via in-memory `QueuedExecution.login_credentials` field | `backend/app/api/v1/endpoints/executions.py`, `backend/app/services/execution_queue.py` | 1 | ✅ |
+| **10.14-4** Prepend 3 auto-generated login steps (`_build_crm_login_steps`) before test steps; mask password in log (`password=***`); guard OTP step check to skip dict steps with `isinstance(step_desc, str)` | `backend/app/services/execution_service.py` | 2 | ✅ |
+| **10.14-5** Store `{{CRM_PASSWORD}}` placeholder via `_step_description_override` in CRM step dicts; `execution_instruction` variable carries live value to 3-tier engine only | `backend/app/services/execution_service.py` | 1 | ✅ |
+| **10.14-6** Frontend: `requires_runtime_credentials` toggle in test edit form (checkbox) + inline toggle switch on `TestDetailPage` (saves immediately via `updateTest` API) | `frontend/src/pages/TestsPage.tsx`, `frontend/src/pages/TestDetailPage.tsx` | 1 | ✅ |
+| **10.14-7** Frontend: `<CredentialPromptModal>` — username + `type="password"` fields, validation errors, pre-fill username from cache, password always blank, `data-testid` attributes | `frontend/src/components/CredentialPromptModal.tsx` | 2 | ✅ |
+| **10.14-8** Frontend: `RunTestButton` updated — modal gate when `requiresRuntimeCredentials=true`, `🔐 Login required` badge, `data-testid="run-test-button"` | `frontend/src/components/RunTestButton.tsx` | 1 | ✅ |
+| **10.14-9** Frontend: `EphemeralCredentialProvider` + `useEphemeralCredentials` hook — React `useState` only, TTL = tab lifetime, never written to `localStorage`/`sessionStorage` | `frontend/src/context/EphemeralCredentialContext.tsx`, `frontend/src/App.tsx` | 1 | ✅ |
+| **10.14-10** Backend tests: model column, schema validation, queue field, `_build_crm_login_steps` invariants, password masking, no-DB-persistence assertions, OTP guard, execute_test signature, step prepending | `backend/tests/unit/test_crm_ephemeral_credentials.py` | 2 | ✅ |
+| **10.14-11** Frontend tests: password `type="password"`, Cancel without onConfirm, empty-field validation, valid submit, pre-fill, password never pre-filled | `frontend/src/components/__tests__/CredentialPromptModal.test.tsx` | 1 | ✅ |
 
-**Sprint 10.14 total: 14 points / ~3 days**
+**Sprint 10.14 total: 14 points / ~3 days (COMPLETE ✅)**
+
+#### Files Changed (Actual)
+
+| File | Change |
+|------|--------|
+| `backend/app/models/test_case.py` | Added `requires_runtime_credentials = Column(Boolean, nullable=False, default=False)` |
+| `backend/migrations/add_requires_runtime_credentials.py` | New migration: `ALTER TABLE test_cases ADD COLUMN requires_runtime_credentials BOOLEAN NOT NULL DEFAULT 0` — run ✅ |
+| `backend/app/schemas/test_case.py` | Added `requires_runtime_credentials: bool` to `TestCaseBase` + `Optional[bool]` to `TestCaseUpdate` |
+| `backend/app/schemas/test_execution.py` | New `LoginCredentials` schema; added `login_credentials: Optional[LoginCredentials]` to `ExecutionStartRequest` |
+| `backend/app/services/execution_queue.py` | Added `login_credentials: Optional[Dict]` field to `QueuedExecution` dataclass; `add_to_queue()` accepts `login_credentials` param |
+| `backend/app/api/v1/endpoints/executions.py` | Extracts `login_credentials` from request body; passes to queue in-memory; **never** written to `trigger_details` JSON |
+| `backend/app/services/queue_manager.py` | Reads `login_credentials` from `QueuedExecution`; passes to `execute_test()` |
+| `backend/app/services/execution_service.py` | `execute_test()` accepts `login_credentials`; calls `_build_crm_login_steps()` to prepend 3 steps; OTP guard updated for dict steps; password masked in logger call; `execution_instruction` vs `step_desc_substituted` separation ensures plaintext never reaches DB |
+| `frontend/src/types/execution.ts` | Added `login_credentials?: { username: string; password: string }` to `ExecutionStartRequest` |
+| `frontend/src/types/api.ts` | Added `requires_runtime_credentials?: boolean` to `Test` and `UpdateTestRequest` |
+| `frontend/src/context/EphemeralCredentialContext.tsx` | New: `EphemeralCredentialProvider`, `useEphemeralCredentials` hook |
+| `frontend/src/components/CredentialPromptModal.tsx` | New: credential prompt modal with security invariants |
+| `frontend/src/components/RunTestButton.tsx` | Updated: modal gate, session cache integration, `🔐 Login required` badge |
+| `frontend/src/App.tsx` | Wrapped root with `<EphemeralCredentialProvider>` |
+| `frontend/src/pages/TestDetailPage.tsx` | Added inline toggle switch (saves immediately); `requires_runtime_credentials` passed to `RunTestButton` |
+| `frontend/src/pages/TestsPage.tsx` | Added checkbox toggle to edit form; `requires_runtime_credentials` included in `updateTest` call |
+| `backend/tests/unit/test_crm_ephemeral_credentials.py` | New: 30 unit tests |
+| `frontend/src/components/__tests__/CredentialPromptModal.test.tsx` | New: 11 frontend tests |
+| `frontend/src/components/__tests__/RunTestButton.test.tsx` | Updated: wrapped renders in `<EphemeralCredentialProvider>` |
 
 #### Key Design Decisions
 
@@ -3124,20 +3149,27 @@ The `embed_auth_in_url()` helper is designed for HTTP Basic Auth (network-level,
 
 #### ADR Reference
 
-- **ADR-CRM-01**: Ephemeral CRM login credentials — `requires_runtime_credentials` flag, `LoginCredentials` in-memory schema, `{{CRM_PASSWORD}}` placeholder policy, session-level React Context cache — 🔄 **Pending** recording in `documentation/ADR-crm-credentials.md`
+- **ADR-CRM-01**: Ephemeral CRM login credentials — `requires_runtime_credentials` flag, `LoginCredentials` in-memory schema, `{{CRM_PASSWORD}}` placeholder policy, session-level React Context cache — ✅ **Recorded** in `documentation/ADR-crm-credentials.md`
 
 #### Sprint 10.14 Success Criteria
 
-- [ ] Test cases with `requires_runtime_credentials = true` show a credential prompt before Run
-- [ ] Password field is type="password" — never rendered in plaintext in the UI
-- [ ] `POST /v1/executions/{id}/run` accepts `login_credentials` in request body
-- [ ] `login_credentials` is **absent** from `execution.payload` column after run completes
-- [ ] Password is **masked** (`***`) in all backend log output
-- [ ] Stored test steps use `{{CRM_PASSWORD}}` placeholder, not the actual password value
-- [ ] Frontend component state is cleared immediately after `POST` is dispatched
-- [ ] Session-level credential cache works within a browser tab; does not survive tab close
-- [ ] All new backend + frontend tests pass
-- [ ] CRM test can execute end-to-end: login steps auto-prepended, CRM dashboard reached
+- [x] Test cases with `requires_runtime_credentials = true` show a credential prompt before Run
+- [x] Password field is type="password" — never rendered in plaintext in the UI
+- [x] `POST /v1/executions/{id}/run` accepts `login_credentials` in request body
+- [x] `login_credentials` is **absent** from `execution.payload` / `trigger_details` column after run completes
+- [x] Password is **masked** (`***`) in all backend log output
+- [x] Stored test steps use `{{CRM_PASSWORD}}` placeholder, not the actual password value
+- [x] Frontend component state is cleared immediately after `POST` is dispatched
+- [x] Session-level credential cache works within a browser tab; does not survive tab close
+- [x] 30 backend unit tests pass; 11 frontend tests pass; 256 total frontend tests — no regression
+- [x] Toggle switch visible directly on `TestDetailPage` Test Information card (inline save)
+- [x] Toggle checkbox visible in test edit form on `TestsPage`
+- [ ] CRM test can execute end-to-end: login steps auto-prepended, CRM dashboard reached *(pending live CRM access)*
+
+#### Test Results
+
+- **Backend:** 30 new unit tests — all pass ✅ (488 total unit tests pass; 4 pre-existing failures in unrelated agent wiring tests)
+- **Frontend:** 11 new `CredentialPromptModal` tests — all pass ✅; 256 total frontend tests — no regression
 
 ---
 
@@ -4037,14 +4069,15 @@ Blockers Requiring CTO Decision:
 
 ## 📚 Document Control
 
-**Document Version:** 3.7  
+**Document Version:** 3.8  
 **Last Updated:** May 20, 2026  
-**Next Review:** Sprint 10.14 completion  
+**Next Review:** Sprint 10.15 completion  
 **Document Owner:** Developer A (Project Manager)  
 **Approval:** CTO (Sponsor)
 
 **Change Log:**
-- v3.7 (May 20, 2026): Added Sprint 10.14 — Ephemeral CRM Login Credentials. Addresses application-level form login for internal CRM system (`crm-frontend-ogp-crm.apps.ocpppd.three.com.hk`). Design decisions: `requires_runtime_credentials` flag on `TestCase`; `LoginCredentials` Pydantic schema in `RunExecutionRequest` (never persisted to DB); `CredentialPromptModal` frontend component (type="password", state cleared on dispatch); password masked in all log lines; `{{CRM_PASSWORD}}` placeholder in stored step text; optional session-level React Context cache (TTL = tab lifetime, never written to LocalStorage). 14 points / ~3 days. Security policy: no DB persistence, no log exposure, no URL embedding, HTTPS transport only.
+- v3.8 (May 20, 2026): Sprint 10.14 COMPLETE — Ephemeral CRM Login Credentials fully implemented and tested. 30 backend + 11 frontend tests pass. Key implementation notes: `_build_crm_login_steps()` helper prepends 3 structured step dicts (fill username, fill password, click submit); `QueuedExecution.login_credentials` carries creds in-memory through queue pipeline — never serialised to `trigger_details`; `_step_description_override` key ensures `{{CRM_PASSWORD}}` placeholder is written to `ExecutionStep` records while live password is passed only to the 3-tier engine via `execution_instruction`; `EphemeralCredentialProvider` wraps entire React app — credentials survive tab session (multiple runs) but never reach `localStorage`/`sessionStorage`; toggle switch added directly to `TestDetailPage` Test Information card (inline save, no navigation required). ADR-CRM-01 recorded.
+- v3.7 (May 20, 2026): Added Sprint 10.14 plan — Ephemeral CRM Login Credentials. Design decisions: `requires_runtime_credentials` flag on `TestCase`; `LoginCredentials` Pydantic schema in `RunExecutionRequest` (never persisted to DB); `CredentialPromptModal` frontend component (type="password", state cleared on dispatch); password masked in all log lines; `{{CRM_PASSWORD}}` placeholder in stored step text; optional session-level React Context cache (TTL = tab lifetime, never written to LocalStorage). 14 points / ~3 days. Security policy: no DB persistence, no log exposure, no URL embedding, HTTPS transport only.
 - v3.2 (Mar 16, 2026): Expanded Sprint 10.7 scope from 4 → 10 points to close all four HTTP credentials gaps end-to-end: (G1) auto-generate `CREDENTIAL_ENCRYPTION_KEY` at startup if absent/placeholder — no Python command needed; (G2) fix `GET /session` 404 for credential-only profiles so 4-agent workflow can load them; (G3) relax `has_session_data`-only guard in `executions.py` for saved-test runs; (G4) `AgentWorkflowTrigger` collapses manual HTTP fields and shows badge when profile covers auth, `RunTestButton` gets three-way `✓`/`🔐`/`⚠️` icon and corrected info message. Branch: `feature/sprint10-7-profile-http-creds-everywhere`.
 - v3.1 (Mar 9, 2026): Added Sprint 10.5 Developer B plan — OpenRouter Free Models (19 verified $0/$0 models from openrouter.ai/models, grouped dropdown UI, `qwen/qwen3-coder-480b-a35b:free` recommended) + Batch Delete Saved Tests (checkbox multi-select, batch endpoint, confirmation modal). 13 points / 6 days. Updated v3.1 (Mar 9, 2026 revision 2): Replaced stale model list with user-confirmed list from OpenRouter pricing page.
 - v2.6 (Feb 9, 2026): Sprint 9 completion - Feedback loop tested and verified, 4-agent E2E test passed, all 17 test cases generated successfully, feedback loop generating insights (70% pass rate, 2 insights). Updated test results and Sprint 9 status.
