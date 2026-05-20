@@ -740,21 +740,31 @@ export const KnowledgeBasePage: React.FC = () => {
     if (!projectId) return;
     setSuggestingFor(req.id);
     try {
-      const result = await requirementsService.suggestTests(projectId, req.id, 3);
+      // Pass customerOutcome as hints so the LLM uses the real test intent, not the template body
+      const hints = req.customerOutcome
+        ? `Test objective: ${req.customerOutcome}`
+        : '';
+      const result = await requirementsService.suggestTests(projectId, req.id, 3, hints);
       const first: SuggestedTest | undefined = result.created[0];
       if (!first) {
         alert('No tests were suggested for this requirement.');
         return;
       }
+      const preconditions: string[] = first.payload?.preconditions ?? [];
       const steps = first.payload?.steps ?? [];
       const oracle = first.payload?.oracle ?? '';
+      // Build instruction: navigation preconditions first, then test steps, then stop condition
       const instruction = [
+        ...(preconditions.length ? ['Preconditions / navigation:', ...preconditions.map(p => `- ${p}`)] : []),
+        ...(preconditions.length && steps.length ? ['Steps:'] : []),
         ...steps.map(s => s.action),
         oracle ? `STOP when: ${oracle}` : '',
       ].filter(Boolean).join('\n');
       const params = new URLSearchParams({
         test_title: first.title,
-        test_description: `Generated from ReqIQ requirement: ${req.title}`,
+        test_description: req.customerOutcome
+          ? `${req.customerOutcome}`
+          : `Generated from ReqIQ requirement: ${req.title}`,
         user_instruction: instruction,
       });
       navigate(`/crawl-and-save?${params.toString()}`);
