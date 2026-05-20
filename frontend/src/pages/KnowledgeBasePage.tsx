@@ -166,6 +166,17 @@ export const KnowledgeBasePage: React.FC = () => {
   const [wikiDraftBatchId, setWikiDraftBatchId] = useState<string | null>(null);
   const [givingFeedbackFor, setGivingFeedbackFor] = useState<string | null>(null);
 
+  // generate form inputs
+  const [draftHints, setDraftHints] = useState('');
+  const [draftCapabilityKeys, setDraftCapabilityKeys] = useState('');
+  const [draftMaxScenarios, setDraftMaxScenarios] = useState(8);
+
+  // wiki-suggest-profile (learning stats)
+  const [wikiSuggestProfile, setWikiSuggestProfile] = useState<{
+    totalAccepts: number; totalRejects: number;
+    topReasonTags: { tag: string; count: number }[];
+  } | null>(null);
+
   // reject-with-reasons dialog
   const [rejectDialogReq, setRejectDialogReq] = useState<ReqIQRequirement | null>(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -242,6 +253,10 @@ export const KnowledgeBasePage: React.FC = () => {
     requirementsService.listCapabilities(projectId)
       .then(setCapabilities)
       .catch(() => setCapabilities([]));
+
+    requirementsService.getWikiSuggestProfile(projectId)
+      .then(p => setWikiSuggestProfile(p as typeof wikiSuggestProfile))
+      .catch(() => setWikiSuggestProfile(null));
   }, [projectId]);
 
   // -- workspace actions ----------------------------------------------------
@@ -456,10 +471,21 @@ export const KnowledgeBasePage: React.FC = () => {
     if (!projectId) return;
     setGeneratingWikiDrafts(true);
     try {
-      const result = await requirementsService.suggestFromWiki(projectId);
+      const capKeys = draftCapabilityKeys
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+      const result = await requirementsService.suggestFromWiki(projectId, {
+        hints: draftHints.trim() || undefined,
+        capabilityKeys: capKeys.length > 0 ? capKeys : undefined,
+        maxScenarios: draftMaxScenarios,
+      });
       setWikiDraftBatchId(result.batchId);
-      // prepend newly created requirements
       setRequirements(prev => [...result.created, ...prev]);
+      // refresh profile stats
+      requirementsService.getWikiSuggestProfile(projectId)
+        .then(p => setWikiSuggestProfile(p as typeof wikiSuggestProfile))
+        .catch(() => {});
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       alert(`Generate drafts failed: ${msg ?? String(err)}`);
@@ -1018,64 +1044,54 @@ export const KnowledgeBasePage: React.FC = () => {
               )}
             </SectionCard>
 
-            {/* Requirements */}
-            <SectionCard
-              title="Requirements"
-              actions={
-                <div className="flex items-center gap-2 flex-wrap justify-end">
-                  <button
-                    onClick={handleGenerateWikiDrafts}
-                    disabled={generatingWikiDrafts}
-                    className="flex items-center gap-1 text-xs text-purple-600 hover:text-purple-800 disabled:opacity-50"
-                  >
-                    {generatingWikiDrafts ? '...' : '✦ Generate drafts'}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowReviewHistory(v => !v);
-                      if (!showReviewHistory) handleLoadFeedbackHistory();
-                    }}
-                    className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700"
-                  >
-                    Review history {feedbackTotal > 0 ? `(${feedbackTotal})` : ''}
-                  </button>
-                  <button
-                    onClick={handleDeleteAllDrafts}
-                    disabled={deletingAllDrafts}
-                    className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
-                  >
-                    {deletingAllDrafts ? '...' : 'Delete all DRAFTs'}
-                  </button>
-                  <button
-                    onClick={() => setShowNewReq(v => !v)}
-                    className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
-                  >
-                    <Plus className="w-3 h-3" /> New
-                  </button>
-                </div>
-              }
-            >
+            {/* Draft scenarios from wiki */}
+            <SectionCard title="Draft scenarios from wiki">
+              <p className="text-xs text-gray-500">
+                Uses the compiled project wiki (not live RAG). Upload sources, reindex, and recompile wiki first. Keep / Reject in review saves feedback for the next run.
+              </p>
+
+              {/* Learning stats from wiki-suggest-profile */}
+              {wikiSuggestProfile && (wikiSuggestProfile.totalAccepts > 0 || wikiSuggestProfile.totalRejects > 0) && (
+                <p className="text-xs text-orange-600">
+                  Review history: {wikiSuggestProfile.totalAccepts} kept, {wikiSuggestProfile.totalRejects} rejected
+                  {wikiSuggestProfile.topReasonTags.length > 0 && (
+                    <> · top tags: {wikiSuggestProfile.topReasonTags.slice(0, 3).map(t => t.tag).join(', ')}</>
+                  )}
+                </p>
+              )}
+
+              {/* Review history + clear buttons */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setShowReviewHistory(v => !v);
+                    if (!showReviewHistory) handleLoadFeedbackHistory();
+                  }}
+                  className="text-xs border border-gray-300 rounded-md px-3 py-1.5 hover:bg-gray-50 text-gray-700"
+                >
+                  Review history {feedbackTotal > 0 ? `(${feedbackTotal})` : ''}
+                </button>
+                <button
+                  onClick={handleClearAllFeedback}
+                  disabled={clearingFeedback}
+                  className="text-xs border border-gray-300 rounded-md px-3 py-1.5 hover:bg-gray-50 text-gray-700 disabled:opacity-50"
+                >
+                  {clearingFeedback ? '...' : 'Clear all feedback'}
+                </button>
+              </div>
+
               {/* Review history panel */}
               {showReviewHistory && (
                 <div className="rounded-md border border-gray-200 bg-gray-50 p-3 space-y-2">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold text-gray-600">Wiki-suggest feedback history ({feedbackTotal})</p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleLoadFeedbackHistory}
-                        disabled={loadingFeedback}
-                        className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
-                      >
-                        {loadingFeedback ? '...' : 'Refresh'}
-                      </button>
-                      <button
-                        onClick={handleClearAllFeedback}
-                        disabled={clearingFeedback}
-                        className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
-                      >
-                        {clearingFeedback ? '...' : 'Clear all'}
-                      </button>
-                    </div>
+                    <p className="text-xs font-semibold text-gray-600">Feedback history ({feedbackTotal})</p>
+                    <button
+                      onClick={handleLoadFeedbackHistory}
+                      disabled={loadingFeedback}
+                      className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                    >
+                      {loadingFeedback ? '...' : 'Refresh'}
+                    </button>
                   </div>
                   {feedbackHistory.length === 0 ? (
                     <p className="text-xs text-gray-400">{loadingFeedback ? 'Loading…' : 'No feedback history yet.'}</p>
@@ -1083,10 +1099,10 @@ export const KnowledgeBasePage: React.FC = () => {
                     <ul className="divide-y divide-gray-100 max-h-48 overflow-y-auto">
                       {feedbackHistory.map(fb => (
                         <li key={fb.id} className="py-1.5 flex items-start gap-2">
-                          <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${fb.decision === 'accept' || fb.decision === 'accept_edited' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                          <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 ${fb.decision === 'accept' || fb.decision === 'accept_edited' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
                             {fb.decision === 'accept_edited' ? 'edited' : fb.decision}
                           </span>
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             {fb.requirementTitle && <p className="text-xs text-gray-700 truncate">{fb.requirementTitle}</p>}
                             {fb.reason && <p className="text-xs text-gray-500 italic">{fb.reason}</p>}
                             {fb.reasonTags && fb.reasonTags.length > 0 && (
@@ -1095,13 +1111,99 @@ export const KnowledgeBasePage: React.FC = () => {
                               </div>
                             )}
                           </div>
-                          <span className="text-xs text-gray-400 ml-auto shrink-0">{new Date(fb.createdAt).toLocaleDateString()}</span>
+                          <span className="text-xs text-gray-400 shrink-0">{new Date(fb.createdAt).toLocaleDateString()}</span>
                         </li>
                       ))}
                     </ul>
                   )}
                 </div>
               )}
+
+              {/* Generate form */}
+              <div className="space-y-3 pt-1">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-600">Author hints (optional)</label>
+                  <input
+                    type="text"
+                    value={draftHints}
+                    onChange={e => setDraftHints(e.target.value)}
+                    placeholder="e.g. 5G Voucher plan 01→08 flow; include navigation to reach each screen"
+                    className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-600">Capability keys filter (optional, comma-separated)</label>
+                  <input
+                    type="text"
+                    value={draftCapabilityKeys}
+                    onChange={e => setDraftCapabilityKeys(e.target.value)}
+                    placeholder={capabilities.length > 0 ? capabilities.slice(0, 2).map(c => c.key).join(', ') : 'purchase_journey, terms_content'}
+                    className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  {capabilities.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-0.5">
+                      {capabilities.map(cap => (
+                        <button
+                          key={cap.key}
+                          type="button"
+                          onClick={() => {
+                            const keys = draftCapabilityKeys.split(',').map(s => s.trim()).filter(Boolean);
+                            if (keys.includes(cap.key)) {
+                              setDraftCapabilityKeys(keys.filter(k => k !== cap.key).join(', '));
+                            } else {
+                              setDraftCapabilityKeys([...keys, cap.key].join(', '));
+                            }
+                          }}
+                          className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${draftCapabilityKeys.includes(cap.key) ? 'bg-blue-100 text-blue-700 border-blue-300' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-gray-400'}`}
+                        >
+                          {cap.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-600">Max scenarios</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={30}
+                    value={draftMaxScenarios}
+                    onChange={e => setDraftMaxScenarios(Number(e.target.value))}
+                    className="w-24 border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleGenerateWikiDrafts}
+                    disabled={generatingWikiDrafts}
+                    className="px-4 py-2 border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                  >
+                    {generatingWikiDrafts ? 'Generating…' : 'Generate drafts from wiki'}
+                  </button>
+                  <button
+                    onClick={handleDeleteAllDrafts}
+                    disabled={deletingAllDrafts}
+                    className="px-4 py-2 border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                  >
+                    {deletingAllDrafts ? 'Deleting…' : 'Delete all DRAFT scenarios'}
+                  </button>
+                </div>
+              </div>
+            </SectionCard>
+
+            {/* Requirements */}
+            <SectionCard
+              title="Requirements"
+              actions={
+                <button
+                  onClick={() => setShowNewReq(v => !v)}
+                  className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+                >
+                  <Plus className="w-3 h-3" /> New
+                </button>
+              }
+            >
               {/* New requirement form */}
               {showNewReq && (
                 <form onSubmit={handleCreateRequirement} className="space-y-2 rounded-md border border-blue-200 bg-blue-50 p-3">
