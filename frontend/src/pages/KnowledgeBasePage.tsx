@@ -165,6 +165,9 @@ export const KnowledgeBasePage: React.FC = () => {
   const [generatingWikiDrafts, setGeneratingWikiDrafts] = useState(false);
   const [wikiDraftBatchId, setWikiDraftBatchId] = useState<string | null>(null);
   const [givingFeedbackFor, setGivingFeedbackFor] = useState<string | null>(null);
+  const [lastBatchResult, setLastBatchResult] = useState<{
+    created: number; dedupeDropped: number; feedbackApplied: number; batchId: string;
+  } | null>(null);
 
   // generate form inputs
   const [draftHints, setDraftHints] = useState('');
@@ -233,22 +236,25 @@ export const KnowledgeBasePage: React.FC = () => {
       .catch(() => setSources([]))
       .finally(() => setSourcesLoading(false));
 
-    requirementsService.listRequirements(projectId)
-      .then(async reqs => {
-        setRequirements(reqs);
-        const scores: Record<string, LatestIqResult> = {};
-        await Promise.allSettled(
-          reqs.map(async r => {
-            try {
-              const iq = await requirementsService.getLatestIq(projectId, r.id);
-              scores[r.id] = iq;
-            } catch { /* ignore */ }
-          })
-        );
-        setIqData(scores);
-      })
-      .catch(() => setRequirements([]))
-      .finally(() => setReqLoading(false));
+    const loadReqs = (pid: string) =>
+      requirementsService.listRequirements(pid)
+        .then(async reqs => {
+          setRequirements(reqs);
+          const scores: Record<string, LatestIqResult> = {};
+          await Promise.allSettled(
+            reqs.map(async r => {
+              try {
+                const iq = await requirementsService.getLatestIq(pid, r.id);
+                scores[r.id] = iq;
+              } catch { /* ignore */ }
+            })
+          );
+          setIqData(scores);
+        })
+        .catch(() => setRequirements([]))
+        .finally(() => setReqLoading(false));
+
+    loadReqs(projectId);
 
     requirementsService.listCapabilities(projectId)
       .then(setCapabilities)
@@ -470,25 +476,53 @@ export const KnowledgeBasePage: React.FC = () => {
   async function handleGenerateWikiDrafts() {
     if (!projectId) return;
     setGeneratingWikiDrafts(true);
+    setLastBatchResult(null);
+    const pid = projectId;
     try {
       const capKeys = draftCapabilityKeys
         .split(',')
         .map(s => s.trim())
         .filter(Boolean);
-      const result = await requirementsService.suggestFromWiki(projectId, {
+      const result = await requirementsService.suggestFromWiki(pid, {
         hints: draftHints.trim() || undefined,
         capabilityKeys: capKeys.length > 0 ? capKeys : undefined,
         maxScenarios: draftMaxScenarios,
       });
       setWikiDraftBatchId(result.batchId);
-      setRequirements(prev => [...result.created, ...prev]);
+      setLastBatchResult({
+        created: result.created.length,
+        dedupeDropped: result.dedupeDropped,
+        feedbackApplied: result.feedbackApplied,
+        batchId: result.batchId,
+      });
+      // Reload full list so all computed fields (latestCompositeScore, etc.) are present
+      setReqLoading(true);
+      requirementsService.listRequirements(pid)
+        .then(async reqs => {
+          setRequirements(reqs);
+          const scores: Record<string, LatestIqResult> = {};
+          await Promise.allSettled(
+            reqs.map(async r => {
+              try {
+                const iq = await requirementsService.getLatestIq(pid, r.id);
+                scores[r.id] = iq;
+              } catch { /* ignore */ }
+            })
+          );
+          setIqData(scores);
+        })
+        .catch(() => {})
+        .finally(() => setReqLoading(false));
       // refresh profile stats
-      requirementsService.getWikiSuggestProfile(projectId)
+      requirementsService.getWikiSuggestProfile(pid)
         .then(p => setWikiSuggestProfile(p as typeof wikiSuggestProfile))
         .catch(() => {});
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      alert(`Generate drafts failed: ${msg ?? String(err)}`);
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      const msg = detail
+        ? (typeof detail === 'string' ? detail : JSON.stringify(detail))
+        : String(err);
+      alert(`Generate drafts failed: ${msg}`);
     } finally {
       setGeneratingWikiDrafts(false);
     }
@@ -1193,6 +1227,18 @@ export const KnowledgeBasePage: React.FC = () => {
                     {deletingAllDrafts ? 'Deleting…' : 'Delete all DRAFT scenarios'}
                   </button>
                 </div>
+                {/* Success banner after generation */}
+                {lastBatchResult && !generatingWikiDrafts && (
+                  <div className="flex items-start justify-between gap-2 rounded-md bg-violet-50 border border-violet-200 px-3 py-2">
+                    <div className="text-xs text-violet-800">
+                      <span className="font-semibold">✦ {lastBatchResult.created} draft{lastBatchResult.created !== 1 ? 's' : ''} created</span>
+                      {lastBatchResult.dedupeDropped > 0 && <span className="text-violet-600"> · {lastBatchResult.dedupeDropped} deduped</span>}
+                      {lastBatchResult.feedbackApplied > 0 && <span className="text-violet-600"> · {lastBatchResult.feedbackApplied} feedback applied</span>}
+                      <span className="text-violet-500 ml-2">— scroll down to review in Requirements</span>
+                    </div>
+                    <button onClick={() => setLastBatchResult(null)} className="text-violet-400 hover:text-violet-700 text-xs shrink-0">✕</button>
+                  </div>
+                )}
               </div>
             </SectionCard>
 
@@ -1307,9 +1353,10 @@ export const KnowledgeBasePage: React.FC = () => {
                       edge: 'bg-orange-50 text-orange-700 border-orange-200',
                       smoke: 'bg-gray-50 text-gray-600 border-gray-200',
                     };
+                    const isLatestBatch = !!wikiDraftBatchId && req.wikiSuggestBatchId === wikiDraftBatchId;
 
                     return (
-                      <li key={req.id} className="py-4 space-y-2">
+                      <li key={req.id} className={`py-4 space-y-2${isLatestBatch ? ' pl-2 border-l-2 border-violet-400' : ''}`}>
                         {isEditing ? (
                           <div className="space-y-2">
                             <input
@@ -1334,12 +1381,12 @@ export const KnowledgeBasePage: React.FC = () => {
                         ) : (
                           <>
                             <div className="flex items-start justify-between gap-4">
-                              <div className="min-w-0">
+                              <div className="min-w-0 flex-1">
                                 <p className="text-sm font-medium text-gray-900">{req.title}</p>
                                 {req.customerOutcome && (
-                                  <p className="text-xs text-blue-600 mt-0.5 italic">{req.customerOutcome}</p>
+                                  <p className="text-xs text-blue-600 mt-0.5 italic leading-relaxed">{req.customerOutcome}</p>
                                 )}
-                                {req.body && (
+                                {req.body && !req.customerOutcome && (
                                   <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{req.body}</p>
                                 )}
                                 <div className="flex items-center gap-2 mt-1 flex-wrap">
