@@ -757,11 +757,23 @@ export const KnowledgeBasePage: React.FC = () => {
     if (!projectId) return;
     setSuggestingFor(req.id);
     try {
-      // Pass customerOutcome as hints so the LLM uses the real test intent, not the template body
-      const hints = req.customerOutcome
-        ? `Test objective: ${req.customerOutcome}`
-        : '';
-      const result = await requirementsService.suggestTests(projectId, req.id, 3, hints);
+      // Extract structured fields from the requirement body markdown if present
+      const offerPath = req.body?.match(/(?:Offer path|Navigation path)[:\s]+([^\n]+)/i)?.[1]?.trim() ?? '';
+      const screenUnderTest = req.body?.match(/Screen under test[:\s]+([^\n]+)/i)?.[1]?.trim() ?? '';
+
+      // Build hints that steer ReqIQ's LLM toward browser-automation-ready output format
+      const hints = [
+        req.customerOutcome ? `Test objective: ${req.customerOutcome}` : '',
+        'STYLE: Write all step.action values as imperative browser-automation commands — NOT BDD/Gherkin. Do NOT use "Given/When/Then/And" prefixes.',
+        'STYLE: Use direct commands — "Login with the provided credentials.", "Click [element].", "Select [option].", "Navigate to [path]."',
+        'oracle field: write ONLY the short name of the final page or element to stop at (e.g. "Plan Configuration Step", "SIM Card Setting") — NOT a full assertion sentence.',
+        'preconditions: only the starting state — login status and which screen the user is already on.',
+        offerPath ? `Navigation path from requirement: ${offerPath}` : '',
+        screenUnderTest ? `Screen under test: ${screenUnderTest}` : '',
+      ].filter(Boolean).join('\n');
+
+      // Request 1 test — we navigate to Crawl-and-Save immediately with the first result
+      const result = await requirementsService.suggestTests(projectId, req.id, 1, hints);
       const first: SuggestedTest | undefined = result.created[0];
       if (!first) {
         alert('No tests were suggested for this requirement.');
@@ -770,20 +782,36 @@ export const KnowledgeBasePage: React.FC = () => {
       const preconditions: string[] = first.payload?.preconditions ?? [];
       const steps = first.payload?.steps ?? [];
       const oracle = first.payload?.oracle ?? '';
-      // Build instruction: navigation preconditions first, then test steps, then stop condition
-      const instruction = [
-        ...(preconditions.length ? ['Preconditions / navigation:', ...preconditions.map(p => `- ${p}`)] : []),
-        ...(preconditions.length && steps.length ? ['Steps:'] : []),
-        ...steps.map(s => s.action),
+
+      // Strip any residual BDD prefixes from action text
+      const cleanLine = (s: string) => s.replace(/^(Given |When |Then |And )\s*/i, '').trim();
+
+      // Build user_instruction: preconditions/navigation first, then actions, then STOP
+      const instructionParts = [
+        ...preconditions.map(cleanLine),
+        ...steps.map(s => cleanLine(s.action)),
         oracle ? `STOP when: ${oracle}` : '',
-      ].filter(Boolean).join('\n');
+      ].filter(Boolean);
+      const instruction = instructionParts.join('\n');
+
+      // stop_at_page_hint: use oracle directly if short; otherwise take text before first punctuation
+      const stopHint = oracle.length <= 60
+        ? oracle
+        : (oracle.match(/^([^,;.!?]+)/)?.[1]?.trim() ?? '');
+
+      // Tags from scenarioKind + capabilityKey
+      const tagSet = new Set<string>();
+      if (req.scenarioKind) tagSet.add(req.scenarioKind);
+      if (req.capabilityKey) tagSet.add(req.capabilityKey.toLowerCase().replace(/[^a-z0-9]+/g, '-'));
+
       const params = new URLSearchParams({
         test_title: first.title,
-        test_description: req.customerOutcome
-          ? `${req.customerOutcome}`
-          : `Generated from ReqIQ requirement: ${req.title}`,
+        test_description: req.customerOutcome ?? `Generated from ReqIQ: ${req.title}`,
         user_instruction: instruction,
       });
+      if (stopHint) params.set('stop_at_page_hint', stopHint);
+      if (tagSet.size) params.set('tags', [...tagSet].join(','));
+
       navigate(`/crawl-and-save?${params.toString()}`);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
