@@ -91,6 +91,13 @@ class Settings(BaseSettings):
     REQIQ_TENANT_ID: str | None = None
     REQIQ_PROJECT_ID_VOUCHER_PLAN: str | None = None
 
+    # MCP Server (Hermes Agent integration — never exposed to browser)
+    AWT_MCP_SECRET: str | None = None          # shared secret Hermes sends in Authorization header
+    AWT_MCP_PORT: int = 8001                   # port the MCP server listens on
+    AWT_BASE_URL: str = "http://localhost:8000/api/v1"  # internal REST API base
+    AWT_SERVICE_EMAIL: str | None = None       # service account for internal REST calls
+    AWT_SERVICE_PASSWORD: str | None = None    # service account password
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,
