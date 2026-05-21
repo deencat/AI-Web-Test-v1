@@ -194,6 +194,13 @@ export const KnowledgeBasePage: React.FC = () => {
   // delete all DRAFT
   const [deletingAllDrafts, setDeletingAllDrafts] = useState(false);
 
+  // auto-dismiss success toast
+  const [successToast, setSuccessToast] = useState<string | null>(null);
+  function showToast(msg: string) {
+    setSuccessToast(msg);
+    setTimeout(() => setSuccessToast(null), 5000);
+  }
+
   // review history panel
   const [showReviewHistory, setShowReviewHistory] = useState(false);
   const [feedbackHistory, setFeedbackHistory] = useState<WikiSuggestFeedbackItem[]>([]);
@@ -502,11 +509,15 @@ export const KnowledgeBasePage: React.FC = () => {
         batchId: result.batchId,
       });
       if (result.created.length === 0) {
-        // Surface this clearly — don't leave the user wondering why nothing appeared
         const why = (result.dedupeDropped ?? 0) > 0
-          ? `All ${result.dedupeDropped} generated scenario(s) were removed by deduplication (identical journey steps already exist).`
-          : 'No scenarios were created. The wiki may not be compiled yet, or the LLM returned no usable output — try again or adjust hints.';
-        alert(`No drafts created. ${why}`);
+          ? `All ${result.dedupeDropped} generated scenario(s) were removed by deduplication.`
+          : 'No scenarios created — wiki may not be compiled yet or LLM returned no usable output.';
+        showToast(`No drafts created. ${why}`);
+      } else {
+        const parts = [`✦ ${result.created.length} draft${result.created.length !== 1 ? 's' : ''} created`];
+        if ((result.dedupeDropped ?? 0) > 0) parts.push(`${result.dedupeDropped} deduped`);
+        if ((result.feedbackApplied ?? 0) > 0) parts.push(`${result.feedbackApplied} feedback applied`);
+        showToast(parts.join(' · '));
       }
       // Reload full list so all computed fields (latestCompositeScore, etc.) are present
       setReqLoading(true);
@@ -588,17 +599,23 @@ export const KnowledgeBasePage: React.FC = () => {
     if (!projectId) return;
     if (!confirm('Delete all DRAFT scenarios? This cannot be undone.')) return;
     setDeletingAllDrafts(true);
+    const pid = projectId;
     try {
-      const result = await requirementsService.deleteDraftRequirements(projectId);
-      setRequirements(prev => prev.filter(r => r.state !== 'DRAFT'));
+      const result = await requirementsService.deleteDraftRequirements(pid);
       const n = typeof result?.deleted === 'number' ? result.deleted : '?';
-      alert(`Deleted ${n} DRAFT scenario(s).`);
+      // Re-fetch from server to get ground-truth state after bulk delete
+      setReqLoading(true);
+      requirementsService.listRequirements(pid)
+        .then(reqs => setRequirements(reqs))
+        .catch(() => {})
+        .finally(() => setReqLoading(false));
+      showToast(`Deleted ${n} DRAFT scenario(s).`);
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
       const msg = detail
         ? (typeof detail === 'string' ? detail : JSON.stringify(detail))
         : String(err);
-      alert(`Delete all failed: ${msg}`);
+      showToast(`Delete all failed: ${msg}`);
     } finally {
       setDeletingAllDrafts(false);
     }
@@ -779,6 +796,13 @@ export const KnowledgeBasePage: React.FC = () => {
   // -- render ---------------------------------------------------------------
   return (
     <Layout>
+      {/* Auto-dismiss success toast */}
+      {successToast && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-lg bg-gray-900 text-white text-sm px-4 py-3 shadow-lg max-w-sm">
+          <span className="flex-1">{successToast}</span>
+          <button onClick={() => setSuccessToast(null)} className="text-gray-400 hover:text-white shrink-0">✕</button>
+        </div>
+      )}
       <div className="p-6 max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-start justify-between">
@@ -1287,18 +1311,7 @@ export const KnowledgeBasePage: React.FC = () => {
                     {deletingAllDrafts ? 'Deleting…' : 'Delete all DRAFT scenarios'}
                   </button>
                 </div>
-                {/* Success banner after generation */}
-                {lastBatchResult && !generatingWikiDrafts && (
-                  <div className="flex items-start justify-between gap-2 rounded-md bg-violet-50 border border-violet-200 px-3 py-2">
-                    <div className="text-xs text-violet-800">
-                      <span className="font-semibold">✦ {lastBatchResult.created} draft{lastBatchResult.created !== 1 ? 's' : ''} created</span>
-                      {lastBatchResult.dedupeDropped > 0 && <span className="text-violet-600"> · {lastBatchResult.dedupeDropped} deduped</span>}
-                      {lastBatchResult.feedbackApplied > 0 && <span className="text-violet-600"> · {lastBatchResult.feedbackApplied} feedback applied</span>}
-                      <span className="text-violet-500 ml-2">— review below</span>
-                    </div>
-                    <button onClick={() => setLastBatchResult(null)} className="text-violet-400 hover:text-violet-700 text-xs shrink-0">✕</button>
-                  </div>
-                )}
+                {/* (batch result kept in state for batchId tracking; toast used for UX notification) */}
               </div>
             </SectionCard>
 
