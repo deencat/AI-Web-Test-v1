@@ -76,7 +76,7 @@ logger = logging.getLogger("awt_mcp")
 MCP_SECRET: str = settings.AWT_MCP_SECRET or os.getenv("AWT_MCP_SECRET", "")
 MCP_PORT: int = settings.AWT_MCP_PORT
 AWT_BASE: str = settings.AWT_BASE_URL.rstrip("/")
-AWT_SERVICE_EMAIL: str = settings.AWT_SERVICE_EMAIL or ""
+AWT_SERVICE_USERNAME: str = settings.AWT_SERVICE_USERNAME or ""
 AWT_SERVICE_PASSWORD: str = settings.AWT_SERVICE_PASSWORD or ""
 AWT_V2_BASE: str = AWT_BASE.replace("/api/v1", "/api/v2")
 
@@ -98,14 +98,14 @@ async def _get_jwt() -> str:
     global _cached_jwt
     if _cached_jwt:
         return _cached_jwt
-    if not AWT_SERVICE_EMAIL or not AWT_SERVICE_PASSWORD:
+    if not AWT_SERVICE_USERNAME or not AWT_SERVICE_PASSWORD:
         raise RuntimeError(
-            "AWT_SERVICE_EMAIL and AWT_SERVICE_PASSWORD must be set in .env for the MCP server."
+            "AWT_SERVICE_USERNAME and AWT_SERVICE_PASSWORD must be set in .env for the MCP server."
         )
     async with httpx.AsyncClient() as c:
         r = await c.post(
             f"{AWT_BASE}/auth/login",
-            data={"username": AWT_SERVICE_EMAIL, "password": AWT_SERVICE_PASSWORD},
+            data={"username": AWT_SERVICE_USERNAME, "password": AWT_SERVICE_PASSWORD},
         )
         r.raise_for_status()
         _cached_jwt = r.json()["access_token"]

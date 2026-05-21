@@ -95,7 +95,7 @@ class Settings(BaseSettings):
     AWT_MCP_SECRET: str | None = None          # shared secret Hermes sends in Authorization header
     AWT_MCP_PORT: int = 8001                   # port the MCP server listens on
     AWT_BASE_URL: str = "http://localhost:8000/api/v1"  # internal REST API base
-    AWT_SERVICE_EMAIL: str | None = None       # service account for internal REST calls
+    AWT_SERVICE_USERNAME: str | None = None     # service account username for internal REST calls
     AWT_SERVICE_PASSWORD: str | None = None    # service account password
 
     model_config = SettingsConfigDict(
