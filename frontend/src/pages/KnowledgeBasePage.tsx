@@ -760,17 +760,34 @@ export const KnowledgeBasePage: React.FC = () => {
       // Extract structured fields from the requirement body markdown if present
       const offerPath = req.body?.match(/(?:Offer path|Navigation path)[:\s]+([^\n]+)/i)?.[1]?.trim() ?? '';
       const screenUnderTest = req.body?.match(/Screen under test[:\s]+([^\n]+)/i)?.[1]?.trim() ?? '';
+      const flowVariant = req.body?.match(/Flow variant[:\s]+([^\n]+)/i)?.[1]?.trim() ?? '';
 
-      // Build hints that steer ReqIQ's LLM toward browser-automation-ready output format
-      const hints = [
+      // Detect purchase_journey capability — needs E2E full-flow instruction
+      const isPurchaseJourney = req.capabilityKey === 'purchase_journey';
+
+      const baseHints = [
         req.customerOutcome ? `Test objective: ${req.customerOutcome}` : '',
         'STYLE: Write all step.action values as imperative browser-automation commands — NOT BDD/Gherkin. Do NOT use "Given/When/Then/And" prefixes.',
         'STYLE: Use direct commands — "Login with the provided credentials.", "Click [element].", "Select [option].", "Navigate to [path]."',
-        'oracle field: write ONLY the short name of the final page or element to stop at (e.g. "Plan Configuration Step", "SIM Card Setting") — NOT a full assertion sentence.',
-        'preconditions: only the starting state — login status and which screen the user is already on.',
-        offerPath ? `Navigation path from requirement: ${offerPath}` : '',
+        'oracle field: write ONLY the short name of the final page or element to stop at (e.g. "SIM Card Setting") — NOT a full assertion sentence.',
+        offerPath ? `Navigation path: ${offerPath}` : '',
         screenUnderTest ? `Screen under test: ${screenUnderTest}` : '',
-      ].filter(Boolean).join('\n');
+        flowVariant ? `Flow variant: ${flowVariant}` : '',
+      ];
+
+      const e2eHints = isPurchaseJourney ? [
+        'SCOPE: This is a purchase_journey requirement. Generate a FULL END-TO-END instruction — do NOT limit to the screen under test only.',
+        'START the steps with: "Login with the provided credentials. After login: do NOT click Settings."',
+        'INCLUDE all navigation steps from the homepage to the final stop page, using the offer path above.',
+        'INCLUDE all configuration choices on intermediate screens (subscription options, SIM type, add-ons, checkboxes, Next buttons).',
+        'END the steps with a STOP instruction naming the exact final page (e.g. "STOP as soon as the SIM Card Setting page appears. Do NOT fill any fields. Stop immediately.").',
+        'preconditions array: set to ["Logged in as registered subscriber."] only.',
+        'Do NOT generate a smoke-only or single-screen instruction for purchase_journey.',
+      ] : [
+        'preconditions: only the starting state — login status and which screen the user is already on.',
+      ];
+
+      const hints = [...baseHints, ...e2eHints].filter(Boolean).join('\n');
 
       // Request 1 test — we navigate to Crawl-and-Save immediately with the first result
       const result = await requirementsService.suggestTests(projectId, req.id, 1, hints);
@@ -786,13 +803,25 @@ export const KnowledgeBasePage: React.FC = () => {
       // Strip any residual BDD prefixes from action text
       const cleanLine = (s: string) => s.replace(/^(Given |When |Then |And )\s*/i, '').trim();
 
-      // Build user_instruction: preconditions/navigation first, then actions, then STOP
-      const instructionParts = [
-        ...preconditions.map(cleanLine),
-        ...steps.map(s => cleanLine(s.action)),
-        oracle ? `STOP when: ${oracle}` : '',
-      ].filter(Boolean);
-      const instruction = instructionParts.join('\n');
+      // For purchase_journey: ensure instruction always starts with login sentinel
+      // so the crawl engine recognises the login_module trigger phrase.
+      const LOGIN_SENTINEL = 'Login with the provided credentials. After login: do NOT click Settings, do NOT click Download My3 App.';
+      const firstActionClean = steps[0] ? cleanLine(steps[0].action) : '';
+      const alreadyHasLogin = /login with/i.test(firstActionClean) || /login with/i.test(preconditions[0] ?? '');
+
+      const instructionParts: string[] = [];
+      if (isPurchaseJourney && !alreadyHasLogin) {
+        instructionParts.push(LOGIN_SENTINEL);
+      } else {
+        // Non-purchase_journey: include preconditions as context lines
+        instructionParts.push(...preconditions.map(cleanLine));
+      }
+      instructionParts.push(...steps.map(s => cleanLine(s.action)));
+      // Normalise the stop line to match the engine's expected phrasing
+      if (oracle) {
+        instructionParts.push(`STOP as soon as the ${oracle} appears. Do NOT fill any fields. Stop immediately.`);
+      }
+      const instruction = instructionParts.filter(Boolean).join('\n');
 
       // stop_at_page_hint: use oracle directly if short; otherwise take text before first punctuation
       const stopHint = oracle.length <= 60
