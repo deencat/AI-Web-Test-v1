@@ -6,6 +6,7 @@ When ENABLE_SERVER_FILE_LOGGING=true in .env, server logs are also written to ba
 """
 import asyncio
 import logging
+import subprocess
 import sys
 from pathlib import Path
 
@@ -63,13 +64,40 @@ import uvicorn  # noqa: E402
 # does not support subprocesses (browser-use and Playwright will raise NotImplementedError).
 USE_RELOAD = sys.platform != 'win32'
 
+_MCP_SECRET = os.getenv("AWT_MCP_SECRET", "")
+
 if __name__ == "__main__":
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=USE_RELOAD,
-        reload_dirs=["app"] if USE_RELOAD else None,  # Only watch app/ — prevents test-file saves from killing running executions
-        log_level="info",
-        loop="asyncio",
-    )
+    # ---------------------------------------------------------------------------
+    # Start MCP server (port 8001) as a background subprocess when AWT_MCP_SECRET
+    # is configured. Hermes Agent connects to this for crawl/execute/health tools.
+    # If AWT_MCP_SECRET is not set, the MCP server is skipped (no-op for teams that
+    # don't use Hermes yet).
+    # ---------------------------------------------------------------------------
+    _mcp_proc = None
+    if _MCP_SECRET:
+        _mcp_script = Path(__file__).resolve().parent / "mcp_server.py"
+        _mcp_proc = subprocess.Popen(
+            [sys.executable, str(_mcp_script)],
+            # Inherit stdout/stderr so MCP logs appear in the same terminal
+            stdout=None,
+            stderr=None,
+        )
+        print(f"[INFO] MCP server started (pid {_mcp_proc.pid}) on port 8001")
+    else:
+        print("[INFO] AWT_MCP_SECRET not set — MCP server skipped (Hermes integration disabled)")
+
+    try:
+        uvicorn.run(
+            "app.main:app",
+            host="0.0.0.0",
+            port=8000,
+            reload=USE_RELOAD,
+            reload_dirs=["app"] if USE_RELOAD else None,  # Only watch app/ — prevents test-file saves from killing running executions
+            log_level="info",
+            loop="asyncio",
+        )
+    finally:
+        # Clean up MCP server when main server exits (Ctrl+C / crash)
+        if _mcp_proc is not None and _mcp_proc.poll() is None:
+            _mcp_proc.terminate()
+            print("[INFO] MCP server stopped")
