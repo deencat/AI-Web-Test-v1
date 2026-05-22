@@ -98,6 +98,12 @@ class Settings(BaseSettings):
     AWT_SERVICE_USERNAME: str | None = None     # service account username for internal REST calls
     AWT_SERVICE_PASSWORD: str | None = None    # service account password
 
+    # Hermes Telegram trigger (H2 — "Generate via Hermes" button in UI)
+    # Bot token from BotFather; same token as TELEGRAM_BOT_TOKEN in ~/.hermes/.env on Node 1
+    TELEGRAM_BOT_TOKEN: str | None = None
+    # DM chat ID between your Telegram user account and the qa-manager bot
+    QA_MANAGER_TELEGRAM_CHAT_ID: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,

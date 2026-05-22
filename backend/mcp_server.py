@@ -17,13 +17,23 @@ Development (from backend/ folder):
 Production (add to process manager alongside run_server.py / uvicorn):
     python mcp_server.py
 
-Hermes profile config  (~/.hermes/profiles/qa-test-gen/mcp_servers.yaml):
-    servers:
-      - name: ai-web-test
-        transport: http
-        url: http://<NODE2_IP>:8001/mcp
+Hermes profile config  (~/.hermes/profiles/<profile>/config.yaml):
+    mcp_servers:
+      ai-web-test:
+        url: "http://<NODE2_IP>:8001/mcp"
         headers:
           Authorization: "Bearer ${AWT_MCP_SECRET}"
+        timeout: 180
+        connect_timeout: 30
+
+    Profiles that need this MCP server:
+      - qa-manager    (health_check, list_test_cases)
+      - qa-test-gen   (crawl_and_save_test, get_workflow_status, get_workflow_results, + all)
+      - qa-dispatcher (health_check, execute_test, get_execution_status, list_executions,
+                       get_execution_stats) — configure both node2 and node3 entries
+    Profiles that do NOT need it:
+      - qa-requirements  (calls ReqIQ directly via curl in terminal tool)
+      - qa-reporter      (downloads results via terminal/curl from Garage S3)
 
 Tools exposed
 -------------
