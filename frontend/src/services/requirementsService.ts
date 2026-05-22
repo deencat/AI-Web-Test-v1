@@ -153,12 +153,21 @@ export interface ReadinessResult {
 export interface WikiResult {
   projectId: string;
   markdown: string;
-  compileStatus: 'ok' | 'no_sources' | 'failed';
+  compileStatus: 'ok' | 'edited' | 'no_sources' | 'failed';
   wikiStale: boolean;
   compiledAt?: string;
   citationCount?: number;
   embeddingIndexVersion?: number;
   featureHint?: string | null;
+}
+
+export interface WikiUpdateResult extends WikiResult {
+  /** Present when indexInRag was true — summary of RAG upsert and reindex */
+  ragSync?: {
+    sourceId: string;
+    chunkCount: number;
+    reindex: Record<string, unknown>;
+  };
 }
 
 export interface SuggestTestsResult {
@@ -397,6 +406,18 @@ const requirementsService = {
 
   async getWiki(projectId: string): Promise<WikiResult> {
     const res = await api.get<WikiResult>(`${BASE}/projects/${projectId}/wiki`);
+    return res.data;
+  },
+
+  async patchWiki(
+    projectId: string,
+    markdown: string,
+    indexInRag = false,
+  ): Promise<WikiUpdateResult> {
+    const res = await api.patch<WikiUpdateResult>(
+      `${BASE}/projects/${projectId}/wiki`,
+      { markdown, indexInRag },
+    );
     return res.data;
   },
 

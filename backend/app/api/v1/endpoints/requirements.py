@@ -262,6 +262,60 @@ async def get_wiki(
     return await _proxy(reqiq.get_wiki(project_id))
 
 
+# Passthrough codes for PATCH wiki — forward ReqIQ's own error status rather
+# than masking everything as 502.
+_WIKI_PATCH_PASSTHROUGH = frozenset({400, 403, 404})
+
+
+class WikiUpdateRequest(BaseModel):
+    markdown: str
+    indexInRag: bool = False
+
+
+@router.patch("/projects/{project_id}/wiki", summary="Save analyst edits to compiled wiki (§5.6)")
+async def patch_wiki(
+    project_id: str,
+    body: WikiUpdateRequest,
+    _: User = Depends(get_current_user),
+) -> Any:
+    """
+    PATCH body: { "markdown": str (required), "indexInRag": bool (default false) }.
+
+    Passes through ReqIQ status codes:
+      200  — updated wiki (+ ragSync when indexInRag)
+      400  — invalid_body / no_sources
+      403  — forbidden (AUDITOR or read-only role)
+      404  — wiki_not_compiled (call GET /wiki/compile first)
+      502  — wiki_update_failed or unexpected ReqIQ error
+    """
+    _reqiq_unavailable()
+    try:
+        resp = await reqiq.patch_wiki(project_id, body.markdown, body.indexInRag)
+    except Exception as exc:
+        err_body: Any = None
+        if hasattr(exc, "response") and exc.response is not None:
+            try:
+                err_body = exc.response.json()
+            except Exception:
+                err_body = getattr(exc.response, "text", None)
+        detail = err_body if err_body else str(exc)
+        logger.error("ReqIQ patch_wiki error: %s | body: %s", exc, err_body)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
+
+    if resp.status_code == 200:
+        return resp.json()
+
+    try:
+        detail = resp.json()
+    except Exception:
+        detail = resp.text or f"ReqIQ returned {resp.status_code}"
+
+    if resp.status_code in _WIKI_PATCH_PASSTHROUGH:
+        raise HTTPException(status_code=resp.status_code, detail=detail)
+
+    raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
+
+
 @router.post("/projects/{project_id}/wiki/compile", summary="Recompile wiki (Test context)")
 async def compile_wiki(
     project_id: str,

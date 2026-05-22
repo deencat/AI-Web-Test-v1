@@ -29,6 +29,7 @@ import type {
   LatestIqResult,
   ReadinessResult,
   WikiResult,
+  WikiUpdateResult,
   RagQueryResult,
   SuggestedTest,
   CapabilityItem,
@@ -133,6 +134,10 @@ export const KnowledgeBasePage: React.FC = () => {
   const [wikiLoading, setWikiLoading] = useState(false);
   const [compilingWiki, setCompilingWiki] = useState(false);
   const [wikiError, setWikiError] = useState<string | null>(null);
+  const [wikiEditing, setWikiEditing] = useState(false);
+  const [wikiEditText, setWikiEditText] = useState('');
+  const [savingWiki, setSavingWiki] = useState(false);
+  const [wikiIndexInRag, setWikiIndexInRag] = useState(false);
 
   // -- rag ------------------------------------------------------------------
   const [ragQuery, setRagQuery] = useState('');
@@ -383,11 +388,17 @@ export const KnowledgeBasePage: React.FC = () => {
   // -- wiki (Test context) --------------------------------------------------
   async function handleCompileWiki() {
     if (!projectId) return;
+    if (wiki?.compileStatus === 'edited') {
+      if (!window.confirm(
+        'Refresh from ReqIQ will overwrite your manual edits with a freshly compiled version.\n\nContinue?',
+      )) return;
+    }
     setCompilingWiki(true);
     setWikiError(null);
     try {
       const result = await requirementsService.compileWiki(projectId);
       setWiki(result);
+      setWikiEditing(false);
     } catch (err: unknown) {
       const data = (err as { response?: { data?: unknown } })?.response?.data;
       const msg = typeof data === 'object' && data !== null && 'detail' in data
@@ -396,6 +407,32 @@ export const KnowledgeBasePage: React.FC = () => {
       setWikiError(`Compile failed: ${msg}`);
     } finally {
       setCompilingWiki(false);
+    }
+  }
+
+  async function handleSaveWiki() {
+    if (!projectId || !wikiEditText.trim()) return;
+    setSavingWiki(true);
+    setWikiError(null);
+    try {
+      const result: WikiUpdateResult = await requirementsService.patchWiki(
+        projectId,
+        wikiEditText,
+        wikiIndexInRag,
+      );
+      setWiki(result);
+      setWikiEditing(false);
+      setWikiIndexInRag(false);
+      showToast('Test context saved.' + (wikiIndexInRag ? ' RAG index updated.' : ''));
+    } catch (err: unknown) {
+      const data = (err as { response?: { data?: unknown } })?.response?.data;
+      const msg =
+        typeof data === 'object' && data !== null && 'detail' in data
+          ? JSON.stringify((data as { detail: unknown }).detail)
+          : String(err);
+      setWikiError(`Save failed: ${msg}`);
+    } finally {
+      setSavingWiki(false);
     }
   }
 
@@ -1007,13 +1044,41 @@ export const KnowledgeBasePage: React.FC = () => {
             <SectionCard
               title="Test context"
               actions={
-                <SmallBtn
-                  onClick={handleCompileWiki}
-                  disabled={compilingWiki || !projectId}
-                  variant="default"
-                >
-                  {compilingWiki ? 'Refreshing…' : 'Refresh'}
-                </SmallBtn>
+                <div className="flex items-center gap-2">
+                  {/* compileStatus chip */}
+                  {wiki && (
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${
+                      wiki.compileStatus === 'ok'
+                        ? 'bg-green-50 text-green-700 border-green-200'
+                        : wiki.compileStatus === 'edited'
+                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                        : wiki.compileStatus === 'no_sources'
+                        ? 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                        : 'bg-red-50 text-red-700 border-red-200'
+                    }`}>
+                      {wiki.compileStatus === 'ok' ? 'Ready'
+                        : wiki.compileStatus === 'edited' ? 'Edited'
+                        : wiki.compileStatus === 'no_sources' ? 'No sources'
+                        : 'Failed'}
+                    </span>
+                  )}
+                  {!wikiEditing && wiki && (
+                    <SmallBtn
+                      onClick={() => { setWikiEditText(wiki.markdown ?? ''); setWikiEditing(true); setWikiError(null); }}
+                      disabled={!projectId}
+                      variant="primary"
+                    >
+                      Edit
+                    </SmallBtn>
+                  )}
+                  <SmallBtn
+                    onClick={handleCompileWiki}
+                    disabled={compilingWiki || !projectId}
+                    variant="default"
+                  >
+                    {compilingWiki ? 'Refreshing…' : 'Refresh from ReqIQ'}
+                  </SmallBtn>
+                </div>
               }
             >
               {wikiError && <p className="text-sm text-red-600">{wikiError}</p>}
@@ -1021,23 +1086,67 @@ export const KnowledgeBasePage: React.FC = () => {
                 <p className="text-sm text-gray-400">Loading Test context…</p>
               ) : !wiki ? (
                 <p className="text-sm text-gray-400">No Test context yet — upload documents and wait for indexing.</p>
+              ) : wikiEditing ? (
+                <div className="space-y-3">
+                  <textarea
+                    value={wikiEditText}
+                    onChange={e => setWikiEditText(e.target.value)}
+                    rows={12}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+                    disabled={savingWiki}
+                    placeholder="Enter wiki markdown…"
+                  />
+                  <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={wikiIndexInRag}
+                      onChange={e => setWikiIndexInRag(e.target.checked)}
+                      disabled={savingWiki}
+                      className="rounded"
+                    />
+                    Also index in RAG
+                    <span className="text-gray-400">(updates search index; takes longer)</span>
+                  </label>
+                  {savingWiki && wikiIndexInRag && (
+                    <p className="text-xs text-blue-600">⏳ Indexing in RAG… this may take a moment.</p>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <SmallBtn
+                      onClick={handleSaveWiki}
+                      disabled={savingWiki || !wikiEditText.trim()}
+                      variant="primary"
+                    >
+                      {savingWiki ? 'Saving…' : 'Save'}
+                    </SmallBtn>
+                    <SmallBtn
+                      onClick={() => { setWikiEditing(false); setWikiIndexInRag(false); setWikiError(null); }}
+                      disabled={savingWiki}
+                      variant="default"
+                    >
+                      Cancel
+                    </SmallBtn>
+                  </div>
+                </div>
               ) : (
                 <div className="space-y-2">
-                  {/* wikiSource banner */}
+                  {/* wikiStale banner */}
                   {wiki.wikiStale && (
                     <div className="flex items-center gap-2 rounded-md bg-orange-50 border border-orange-200 px-3 py-2 text-xs text-orange-700">
-                      ⚠ Documents or index changed — Test context may be outdated. Click Refresh to recompile.
+                      ⚠ Documents or index changed — Test context may be outdated. Click “Refresh from ReqIQ” to recompile.
                     </div>
                   )}
-                  {/* compile status chip */}
-                  {wiki.compileStatus !== 'ok' && (
+                  {/* compile status messaging for non-ok states */}
+                  {wiki.compileStatus === 'no_sources' && (
+                    <div className="flex items-center gap-2 rounded-md bg-yellow-50 border border-yellow-200 px-3 py-2 text-xs text-yellow-700">
+                      No documents indexed yet. Upload a file and wait for reindex.
+                    </div>
+                  )}
+                  {wiki.compileStatus === 'failed' && (
                     <div className="flex items-center gap-2 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
-                      {wiki.compileStatus === 'no_sources'
-                        ? 'No documents indexed yet. Upload a file and wait for reindex.'
-                        : 'Test context failed to compile. Try refreshing.'}
+                      Test context failed to compile. Try “Refresh from ReqIQ”.
                     </div>
                   )}
-                  {wiki.compileStatus === 'ok' && wiki.markdown && (
+                  {(wiki.compileStatus === 'ok' || wiki.compileStatus === 'edited') && wiki.markdown && (
                     <div className="rounded-md bg-gray-50 border border-gray-200 p-3 text-xs text-gray-700 whitespace-pre-wrap max-h-64 overflow-y-auto font-mono leading-relaxed">
                       {wiki.markdown}
                     </div>

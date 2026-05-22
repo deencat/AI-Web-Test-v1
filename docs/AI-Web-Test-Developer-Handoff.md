@@ -1,7 +1,7 @@
 # AI Web Test — ReqIQ integration handoff
 
 **Audience:** AI Web Test backend/frontend developers  
-**Version:** 2.2 · **Date:** 2026-05-19  
+**Version:** 2.5 · **Date:** 2026-05-20  
 
 **This is the single handoff document.** It contains product split, proxy checklist, ReqIQ HTTP essentials (auth, uploads, limits), shipped ReqIQ APIs, and verification — you do **not** need a separate `openapi/README.md` to integrate.
 
@@ -16,7 +16,7 @@
 
 | Feature | ReqIQ API (all on `/api/v1`) | AI Web Test proxy |
 | --- | --- | --- |
-| **Compiled wiki (7.5)** | `GET/POST …/wiki`, readiness `wikiSource` / `wikiStale` | **Yes — §5.6** |
+| **Compiled wiki (7.5)** | `GET/PATCH/POST …/wiki`, readiness `wikiSource` / `wikiStale` | **Yes — §5.6** |
 | **Business UAT fields (8a)** | `capabilityKey`, `scenarioKind`, `verificationLevel`, `customerOutcome` | **Yes — §5.1** |
 | **Wiki → scenario drafts (8b)** | `POST …/requirements/suggest-from-wiki` | **Yes — §5.1a** (Inc 2+) |
 | **Wiki suggest feedback (8c)** | `POST …/wiki-feedback`, `GET/PATCH/DELETE …/wiki-suggest-feedback`, `GET …/wiki-suggest-profile` | **Yes — §5.1a** (Inc 2+); `PATCH …/requirements` records `accept_edited` |
@@ -33,6 +33,10 @@
 **Validated (2026-05-17):** AI Web Test → ReqIQ `POST …/rag/query` returns **200** when ReqIQ is up. **502** from your proxy usually means ReqIQ is down or wrong `REQIQ_URL` (§4, §9).
 
 **Wiki (PO locked):** [Wiki-Compile-Strategy.md](Wiki-Compile-Strategy.md). After upload + **reindex**, ReqIQ **auto-compiles** persisted wiki. **`GET …/readiness`** returns stable **`wikiContent`** when `wikiSource: "compiled"`.
+
+**Integration status (2026-05-20):** ReqIQ **Sprint 8/8c/9 APIs are shipped** and validated (`POST …/suggest-from-wiki` → **201** in Docker logs). **“ReqIQ complete” ≠ “AI Web Test complete.”** Proxies exist in AI Web Test (`AI-Web-Test-v1-2`), but **Inc 2 UX parity** is still open — see **§14** (reload list, success toast, batch review panel, `customerOutcome` display). Do not mark Inc 2 done until §14 is met.
+
+**Sources — standalone images:** ReqIQ accepts **PNG, JPEG, WebP, GIF** and shows **PARSED**, but **does not OCR/vision the pixels** yet (placeholder only → weak RAG/wiki). **Sprint 9b** enrich (ReqIQ sprint plan) will align with PPTX S3e. Until then: use **PPTX** with `REQIQ_PPTX_IMAGE_ENRICH=ocr|vision`, or TXT/MD companions.
 
 ---
 
@@ -145,7 +149,7 @@ Paths are at the **API root**, not under `/api/v1`:
 
 **Errors:** `400` `no_files`; `413` `file_too_large`.
 
-**Supported types:** DOCX, PDF, Markdown, TXT, PPTX, PNG (see YAML `SourceUploadBatchResponse`).
+**Supported types:** DOCX, PDF, Markdown, TXT, PPTX, **PNG, JPEG, WebP, GIF** (see YAML `SourceUploadBatchResponse`).
 
 Forward multipart **as-is** from AI Web Test — do not JSON-wrap files.
 
@@ -192,8 +196,9 @@ Implement **backend** routes (suggested prefix `/api/v1/requirements/…`, match
 | `GET …/requirements/{id}/latest-iq` | `GET …/latest-iq` | Latest IQ on requirement |
 | `GET …/requirements/{projectId}/readiness?query=…` | `GET …/readiness` | **Required** — gate + **`wikiContent`** + `wikiSource`, `wikiStale` (§5.6) |
 | **`GET …/requirements/{projectId}/wiki`** | **`GET …/wiki`** | **Recommended** — read compiled wiki without readiness query |
+| **`PATCH …/requirements/{projectId}/wiki`** | **`PATCH …/wiki`** | **Recommended** — save analyst edits; optional `indexInRag` for RAG (§5.6) |
 | **`POST …/requirements/{projectId}/wiki/compile?feature=…`** | **`POST …/wiki/compile`** | **Optional** — manual recompile (LIBRARIAN+); usually automatic after reindex |
-| `POST …/requirements/{projectId}/sources/upload` | `POST …/sources/upload` | Multipart upload (DOCX, PDF, MD, TXT, PPTX, PNG) |
+| `POST …/requirements/{projectId}/sources/upload` | `POST …/sources/upload` | Multipart upload (DOCX, PDF, MD, TXT, PPTX, PNG/JPEG/WebP/GIF) |
 | `POST …/requirements/{projectId}/sources/upload-zip` | `POST …/sources/upload-zip` | Single ZIP batch (optional) |
 | `GET …/requirements/{projectId}/sources` | `GET …/sources` | List documents (`status`, `_count.chunks`) |
 | **`DELETE …/requirements/{projectId}/sources/{sourceId}`** | **`DELETE …/sources/{sourceId}`** | **Remove document (§5.4)** |
@@ -353,10 +358,40 @@ Authorization: Bearer <token>
 | Field | Use in AI Web Test |
 | --- | --- |
 | `markdown` | Display as **Test context**; pass to test-gen / crawl `user_instruction` |
-| `compileStatus` | `ok` \| `no_sources` \| `failed` — show status chip |
+| `compileStatus` | `ok` \| `edited` \| `no_sources` \| `failed` — show status chip |
 | `wikiStale` | Show refresh banner when true |
 | `embeddingIndexVersion` | Debug only / optional “Index vN” label |
 | `citationCount` | Optional “Based on N source excerpts” |
+
+#### Proxy: `PATCH …/wiki` (save analyst edits)
+
+```http
+PATCH /api/v1/projects/{projectId}/wiki
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "markdown": "## Scope\n\n…full wiki text…",
+  "indexInRag": true
+}
+```
+
+**AI Web Test (proposed):** `PATCH /api/v1/requirements/projects/{projectId}/wiki`
+
+| Field | Meaning |
+| --- | --- |
+| `markdown` | **Required** — replaces stored compiled wiki (10–500000 chars) |
+| `indexInRag` | **Optional** (default `false`). When `true`: upserts source `ReqIQ-compiled-wiki.md`, chunks it, runs **`POST …/embedding/reindex`** so RAG/search includes the edited text |
+
+| Status | Meaning |
+| --- | --- |
+| **200** | Updated wiki; when `indexInRag`, includes `ragSync` (`sourceId`, `chunkCount`, `reindex` summary) |
+| **400** `invalid_body` | Bad markdown length or types |
+| **400** `no_sources` | `indexInRag` but no embedding index yet |
+| **404** `wiki_not_compiled` | Call compile or reindex first |
+| **403** `forbidden` | AUDITOR / read-only |
+
+**Behaviour:** `compileStatus` becomes **`edited`**. ReqIQ **does not** auto-overwrite edited wikis on later reindex (until user clicks **Recompile wiki**). Readiness and `GET …/wiki` return the saved markdown (`wikiSource: compiled`).
 
 #### Proxy: `POST …/wiki/compile` (optional)
 
@@ -728,6 +763,8 @@ ReqIQ **8a / 8b / 9 / Markdown export** are **shipped** on the ReqIQ API. Your w
 
 **Definition of done:** User never opens ReqIQ for the wiki draft loop (optional link to ReqIQ advanced remains).
 
+**UX parity (required — §14):** Proxies alone are insufficient. Match ReqIQ behaviour for generate + review or users will think wiki drafts “did not work.”
+
 ### Increment 3 — Sign-off pack (proxy §5.1a)
 
 | # | AI Web Test builds | Proxy ReqIQ endpoints |
@@ -740,4 +777,42 @@ ReqIQ **8a / 8b / 9 / Markdown export** are **shipped** on the ReqIQ API. Your w
 
 Chunk editor, RAG threads, IQ diff/multipass, full Collab editor — power-user tier (§1). Wiki review **can** be proxied (§5.1a); ReqIQ `/app` is the reference UI.
 
-**Progress tracking:** ReqIQ delivery — [ReqIQ_Project_Management_and_Sprint_Plan.md](ReqIQ_Project_Management_and_Sprint_Plan.md) (v2.32). **OpenAPI:** [`reqiq-api-v1.yaml`](openapi/reqiq-api-v1.yaml) — import for Postman/codegen.
+**Progress tracking:** ReqIQ delivery — [ReqIQ_Project_Management_and_Sprint_Plan.md](ReqIQ_Project_Management_and_Sprint_Plan.md) (v2.35). **OpenAPI:** [`reqiq-api-v1.yaml`](openapi/reqiq-api-v1.yaml) — import for Postman/codegen.
+
+---
+
+## 14. AI Web Test Inc 2 — UX parity fix (ReqIQ API OK; your UI is not)
+
+**Validated 2026-05-20** (workspace `cmp9en6hv000nte01qnbs8jic`, Docker `reqiqv1-api-1` logs):
+
+| Check | Result |
+| --- | --- |
+| `POST …/suggest-from-wiki` from AI Web Test proxy | **201** (~5–11 s) |
+| Rows in Postgres | `source: wiki_suggest` in CREATED audit |
+| ReqIQ `/app` same workspace | Yellow **Wiki draft review** + success message — works |
+
+**Root cause:** AI Web Test `KnowledgeBasePage.tsx` — `handleGenerateWikiDrafts` only prepends `result.created` to React state; it does **not** reload from the server. `wikiDraftBatchId` is set but **never used**. Primary line shows **`title`** (e.g. `[Step 01] …`) while ReqIQ shows **`customerOutcome`** — users believe they see “other” scenarios.
+
+### Required fixes (AI Web Test repo)
+
+| # | File / area | Change |
+| --- | --- | --- |
+| 1 | `handleGenerateWikiDrafts` | On **201**: `await listRequirements(projectId)` → `setRequirements(reqs)` (source of truth). Do not rely on prepend only. |
+| 2 | Same | Success toast: `Created ${result.created?.length ?? 0} draft scenario(s) from wiki` (+ `dedupeDropped`, `feedbackApplied` if present). Warn if `created.length === 0`. |
+| 3 | Requirements list | Primary text: **`customerOutcome?.trim() \|\| title`** (match ReqIQ AppShell). Keep **`wiki draft`** badge when `isWikiSuggest`. |
+| 4 | New UI section | **“Wiki draft review (this run)”** — filter `wikiSuggestBatchId === batchId` from generate response; Keep / Reject / Reject with reasons (APIs already proxied). |
+| 5 | `handleDeleteAllDrafts` | After **200** from `DELETE …/requirements/drafts?confirm=1`, reload `listRequirements` — do not only `filter` client state. ReqIQ host must run API image with bulk-delete route (`docker compose up --build -d api`). |
+| 6 | Verify proxy | Confirm `POST …/suggest-from-wiki` returns full body: `{ batchId, created[], errors[], wikiStale, feedbackApplied, dedupeDropped }`. |
+
+### Do not mark Inc 2 complete if
+
+- Only ReqIQ `/app` was tested.
+- Generate returns **201** but the Requirements list is not reloaded and no success message is shown.
+- User still sees a long list of old DRAFT rows while DB has fewer/new rows (stale React state after failed client-only delete).
+
+### Smoke test (AI Web Test)
+
+1. Same `projectId` as ReqIQ (copy from ReqIQ sidebar or `GET …/projects`).
+2. Upload → background reindex → `GET …/wiki` shows `compileStatus: ok`.
+3. **Generate drafts from wiki** → wait ~15 s → success toast + new rows with **wiki draft** badge.
+4. **Keep** one draft → **Reject** another → list matches `GET …/requirements` on ReqIQ.
