@@ -188,6 +188,22 @@ async def compile_wiki(project_id: str, feature: str = "") -> dict:
     return resp.json()
 
 
+async def patch_wiki(project_id: str, markdown: str, index_in_rag: bool = False) -> httpx.Response:
+    """PATCH /projects/{id}/wiki — save analyst edits to the compiled wiki.
+
+    Returns the raw httpx.Response so the caller can forward 400/403/404
+    status codes verbatim instead of wrapping everything in 502.
+    """
+    body: dict[str, Any] = {"markdown": markdown}
+    if index_in_rag:
+        body["indexInRag"] = True
+    return await _request(
+        "PATCH",
+        f"/api/v1/projects/{project_id}/wiki",
+        json=body,
+    )
+
+
 async def reindex_embeddings(project_id: str) -> dict:
     """
     Trigger ReqIQ to re-embed all sources for a project.
@@ -313,7 +329,7 @@ async def transition_requirement(project_id: str, requirement_id: str, state: st
     resp = await _request(
         "POST",
         f"/api/v1/projects/{project_id}/requirements/{requirement_id}/transition",
-        json={"state": state},
+        json={"to": state},
     )
     resp.raise_for_status()
     return resp.json()

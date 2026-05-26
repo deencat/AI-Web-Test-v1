@@ -80,6 +80,8 @@ export function CrawlAndSavePage() {
     test_title: searchParams.get('test_title') ?? '',
     test_description: searchParams.get('test_description') ?? '',
     user_instruction: searchParams.get('user_instruction') ?? '',
+    stop_at_page_hint: searchParams.get('stop_at_page_hint') ?? '',
+    tags: searchParams.get('tags') ?? '',
   }));
   const [modules, setModules] = useState<StepLibraryModule[]>([]);
   const [workflowStatus, setWorkflowStatus] = useState<WorkflowStatus>('idle');

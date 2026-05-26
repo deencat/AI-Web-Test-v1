@@ -320,13 +320,17 @@ tools:
       Authorization: "Bearer ${REQIQ_API_KEY}"
     description: "List requirements for a project — each has id, title, body, state (DRAFT/REVIEWED/BASELINE/SUPERSEDED)"
 
-  test_webapp_run:
-    type: http
-    method: POST
-    url: "http://{WINDOWS_RUNNER_IP}:8000/api/v1/executions/tests/{test_case_id}/execute"
-    headers:
-      Authorization: "Bearer ${TEST_WEBAPP_API_KEY}"
-    description: "Trigger test execution on a Windows test runner"
+  # AI Web Test tools are provided via the MCP server (see mcp_servers.yaml below).
+  # Use: crawl_and_save_test, get_workflow_status, get_workflow_results,
+  #      execute_test, get_execution_status, list_test_cases, health_check
+
+# ~/.hermes/profiles/qa-manager/mcp_servers.yaml
+# servers:
+#   - name: ai-web-test
+#     transport: http
+#     url: http://${NODE2_IP}:8001/mcp
+#     headers:
+#       Authorization: "Bearer ${AWT_MCP_SECRET}"
 ```
 
 ### Gateway Setup — Telegram + HTTP
@@ -692,35 +696,39 @@ IMPORTANT:
 
 ---
 
-### MCP Tools
+### MCP Server Configuration
+
+qa-test-gen connects to the AI Web Test MCP server instead of calling REST endpoints
+directly. The MCP server runs on Node 2/3 alongside the main AI Web Test API (port 8001).
 
 ```yaml
-tools:
-  test_webapp_crawl_and_save:
-    type: http
-    method: POST
-    url: "${TEST_WEBAPP_URL}/api/v2/crawl-and-save-test"
+# ~/.hermes/profiles/qa-test-gen/mcp_servers.yaml
+servers:
+  - name: ai-web-test
+    transport: http
+    url: http://${NODE2_IP}:8001/mcp
     headers:
-      Authorization: "Bearer ${TEST_WEBAPP_API_KEY}"
-      Content-Type: "application/json"
-    description: "Submit a crawl-and-save job. Browser crawls the feature URL following user_instruction. Returns workflow_id immediately — job runs in background."
-
-  test_webapp_workflow_status:
-    type: http
-    method: GET
-    url: "${TEST_WEBAPP_URL}/api/v2/workflows/{workflow_id}"
-    headers:
-      Authorization: "Bearer ${TEST_WEBAPP_API_KEY}"
-    description: "Poll workflow status. Returns status (pending/running/completed/failed) and progress. Poll every 15 seconds."
-
-  test_webapp_workflow_results:
-    type: http
-    method: GET
-    url: "${TEST_WEBAPP_URL}/api/v2/workflows/{workflow_id}/results"
-    headers:
-      Authorization: "Bearer ${TEST_WEBAPP_API_KEY}"
-    description: "Get final results once workflow is completed. Returns test_case_id, total_steps, subscriber_type_detected, and module names used."
+      Authorization: "Bearer ${AWT_MCP_SECRET}"
 ```
+
+Tools exposed by the MCP server (used by name in the system prompt above):
+
+| Tool name | Replaces | Purpose |
+|---|---|---|
+| `crawl_and_save_test` | `test_webapp_crawl_and_save` (old http tool) | Submit crawl-and-save job — returns `workflow_id` immediately |
+| `get_workflow_status` | `test_webapp_workflow_status` | Poll job status — call every 15 s until `completed` or `failed` |
+| `get_workflow_results` | `test_webapp_workflow_results` | Get `test_case_id` after job completes |
+| `list_test_cases` | — | List / search saved test cases |
+| `get_test_case` | — | Get a single test case with its steps |
+| `execute_test` | — | Trigger Playwright/Stagehand execution of an existing test |
+| `get_execution_status` | — | Poll execution result |
+| `health_check` | — | Verify AI Web Test API is reachable before starting pipeline |
+
+> **Start the MCP server** on Node 2/3 alongside the main server:
+> ```bash
+> cd backend
+> python mcp_server.py   # listens on port 8001
+> ```
 
 ---
 
@@ -728,8 +736,11 @@ tools:
 
 ```bash
 # ~/.hermes/profiles/qa-test-gen/.env
-TEST_WEBAPP_URL=http://192.168.1.101:8000
-TEST_WEBAPP_API_KEY=your-test-webapp-api-key
+
+# AI Web Test MCP server (port 8001 on the Windows runner node)
+AWT_MCP_SECRET=R7dYHnn1FuHb_vW4UDNj1gXiowDo2bsj7yBn8In6uFY   # must match backend/.env AWT_MCP_SECRET
+NODE2_IP=192.168.1.101   # Windows PC running AI Web Test + MCP server
+# MCP endpoint resolves to: http://${NODE2_IP}:8001/mcp
 
 # Login credentials used by the browser during crawl
 TEST_LOGIN_USERNAME=pmo.andrewchan+015@gmail.com
@@ -794,28 +805,32 @@ IMPORTANT:
 - Return the S3 path in your result so qa-reporter can find them
 ```
 
-### MCP Tools
+### MCP Server Configuration
 
 ```yaml
-tools:
-  runner_status:
-    type: http
-    method: GET
-    url: "{runner_url}/api/status"
-    description: "Check if a Windows test runner is idle and available"
-
-  runner_execute:
-    type: http
-    method: POST
-    url: "{runner_url}/api/execute"
-    description: "Start test execution on a Windows runner with test case IDs"
-
-  runner_execution_status:
-    type: http
-    method: GET
-    url: "{runner_url}/api/execution/{execution_id}/status"
-    description: "Poll execution status from a Windows runner"
+# ~/.hermes/profiles/qa-dispatcher/mcp_servers.yaml
+servers:
+  - name: ai-web-test-node2
+    transport: http
+    url: http://${NODE2_IP}:8001/mcp
+    headers:
+      Authorization: "Bearer ${AWT_MCP_SECRET}"
+  - name: ai-web-test-node3        # optional secondary runner
+    transport: http
+    url: http://${NODE3_IP}:8001/mcp
+    headers:
+      Authorization: "Bearer ${AWT_MCP_SECRET}"
 ```
+
+Tools used by qa-dispatcher from the MCP server:
+
+| Tool name | Purpose |
+|---|---|
+| `health_check` | Check if a runner node is reachable before dispatching |
+| `execute_test` | Trigger Playwright/Stagehand execution of a test case |
+| `get_execution_status` | Poll execution result (`passed`/`failed`/`error`) |
+| `list_executions` | Review recent runs for a test case |
+| `get_execution_stats` | Aggregated pass/fail counts for the reporter |
 
 ---
 
@@ -981,10 +996,16 @@ REQIQ_API_KEY=your-reqiq-jwt        # Bearer token — service account e.g. aiwe
 REQIQ_URL=http://localhost:3001     # API (Docker maps 3001). Web UI often :8080 behind nginx.
 REQIQ_PROJECT_ID=your-project-cuid  # id field from GET /api/v1/projects — NOT display name
 
-# Test Automation Webapp (AI Web Test — port 8000, NOT 3001)
-TEST_WEBAPP_URL=http://192.168.1.101:8000   # Node 2 primary runner
-TEST_WEBAPP_URL_NODE3=http://192.168.1.102:8000  # Node 3 secondary runner
-TEST_WEBAPP_API_KEY=your-test-webapp-key
+# AI Web Test MCP Server (port 8001 on each Windows node — NOT the REST API port 8000)
+# The MCP server wraps the REST API; Hermes profiles connect to this instead.
+NODE2_IP=192.168.1.101
+NODE3_IP=192.168.1.102
+AWT_MCP_SECRET=R7dYHnn1FuHb_vW4UDNj1gXiowDo2bsj7yBn8In6uFY   # same value as backend/.env AWT_MCP_SECRET
+# MCP URL pattern: http://${NODE2_IP}:8001/mcp
+
+# Direct REST API (only needed if bypassing MCP — not recommended)
+# TEST_WEBAPP_URL=http://192.168.1.101:8000
+# TEST_WEBAPP_API_KEY=your-test-webapp-jwt
 
 # Hermes HTTP Gateway (used by AI Web Test Webapp to trigger Hermes)
 HERMES_HTTP_API_KEY=your-hermes-http-gateway-key

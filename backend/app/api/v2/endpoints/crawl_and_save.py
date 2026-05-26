@@ -497,7 +497,10 @@ async def _review_and_clean_steps(
         ref_section = (
             "\n\nREFERENCE TEST CASE (model answer — the ideal clean version):\n"
             + "\n".join(reference_steps)
-            + "\nUse this only as a quality guide; do not copy it literally.\n"
+            + "\nUse this as the authoritative quality guide:\n"
+            "  - Steps present in the reference and missing from recorded steps MUST be added.\n"
+            "  - Steps in the recorded list that contradict the reference (wrong option selected,\n"
+            "    exploratory clicks on other items) MUST be removed or corrected.\n"
         )
 
     numbered = "\n".join(steps)
@@ -509,12 +512,20 @@ async def _review_and_clean_steps(
         "     - Price/amount display labels clicked as buttons (e.g. 'Click the Total Amount Due $X button')\n"
         "     - Repeated identical actions back-to-back (keep only the first occurrence)\n"
         "     - Actions on form fields or UI sections NOT mentioned in the user instruction\n"
+        "     - Exploratory clicks on items that are NOT the target (e.g. clicking multiple plan cards\n"
+        "       when the instruction says to select a specific plan by price or name — keep only the\n"
+        "       matching one)\n"
         "  2. KEEP all steps that are meaningful navigation or selection actions.\n"
-        "  3. If the instruction explicitly requires an action (e.g. 'Check the I confirm checkbox')\n"
-        "     and it is missing from the steps, ADD it in the correct position.\n"
-        "  4. Do NOT reorder steps — preserve the crawl sequence.\n"
-        "  5. Do NOT add commentary or explanations — only step strings.\n"
-        "  6. Return ONLY a JSON array of step strings.\n\n"
+        "  3. If the instruction explicitly requires an action (e.g. 'Check the I confirm checkbox',\n"
+        "     'Click new mobile number') and it is missing from the steps, ADD it in the correct\n"
+        "     position based on the instruction sequence.\n"
+        "  4. FIX wrong action types:\n"
+        "     - If a step uses 'Input [...]' on a checkbox field, replace with 'Check the [name] checkbox'.\n"
+        "     - If the instruction says to select a specific price/plan, ensure the step names that\n"
+        "       exact price/plan, not a different one.\n"
+        "  5. Do NOT reorder steps — preserve the crawl sequence.\n"
+        "  6. Do NOT add commentary or explanations — only step strings.\n"
+        "  7. Return ONLY a JSON array of step strings.\n\n"
         f"USER INSTRUCTION:\n{user_instruction}\n"
         f"{ref_section}\n"
         f"RECORDED STEPS (to clean):\n{numbered}\n\n"
@@ -844,7 +855,7 @@ async def _run_crawl_and_save(
         if reference_test_id:
             try:
                 from app.db.session import SessionLocal as _SL
-                from app.crud.test_cases import get_test_case as _get_tc
+                from app.crud.test_case import get_test_case as _get_tc
                 import json as _j
                 _db_ref = _SL()
                 try:

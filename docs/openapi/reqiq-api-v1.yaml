@@ -303,6 +303,22 @@ components:
         createdById: { type: string }
         title: { type: string }
         body: { type: string }
+        capabilityKey:
+          type: string
+          nullable: true
+          description: Project capability key (telecom template), e.g. purchase_journey
+        scenarioKind:
+          type: string
+          nullable: true
+          enum: [positive, negative, edge, smoke]
+        verificationLevel:
+          type: string
+          nullable: true
+          enum: [document_grounded, behaviour_only, smoke]
+        customerOutcome:
+          type: string
+          nullable: true
+          description: Business outcome in customer language
         state:
           $ref: "#/components/schemas/RequirementState"
         supersededById: { type: string, nullable: true }
@@ -318,6 +334,80 @@ components:
         iqAlgorithm:
           type: string
           nullable: true
+        isWikiSuggest:
+          type: boolean
+          description: True when CREATED audit meta has source wiki_suggest (Sprint 8c)
+        wikiSuggestBatchId:
+          type: string
+          nullable: true
+          description: Batch id from suggest-from-wiki run, if applicable
+        baselineSnapshot:
+          type: object
+          nullable: true
+          description: Captured when requirement transitions to BASELINE (embedding + wiki versions)
+          properties:
+            capturedAt: { type: string, format: date-time }
+            embeddingIndexVersion: { type: integer }
+            wikiCompiledAt: { type: string, format: date-time, nullable: true }
+            wikiEmbeddingIndexVersion: { type: integer, nullable: true }
+            wikiStale: { type: boolean }
+    ProjectCoverageMatrix:
+      type: object
+      properties:
+        projectId: { type: string }
+        capabilities:
+          type: array
+          items:
+            type: object
+            properties:
+              key: { type: string }
+              label: { type: string }
+              counts:
+                type: object
+                properties:
+                  DRAFT: { type: integer }
+                  REVIEWED: { type: integer }
+                  BASELINE: { type: integer }
+                  SUPERSEDED: { type: integer }
+              total: { type: integer }
+        uncategorized:
+          type: object
+          properties:
+            counts:
+              type: object
+              properties:
+                DRAFT: { type: integer }
+                REVIEWED: { type: integer }
+                BASELINE: { type: integer }
+                SUPERSEDED: { type: integer }
+            total: { type: integer }
+        totals:
+          type: object
+          properties:
+            DRAFT: { type: integer }
+            REVIEWED: { type: integer }
+            BASELINE: { type: integer }
+            SUPERSEDED: { type: integer }
+            all: { type: integer }
+    RequirementSourceRef:
+      type: object
+      properties:
+        id: { type: string }
+        requirementId: { type: string }
+        sourceId: { type: string }
+        sourceChunkId: { type: string }
+        sourceFilename: { type: string }
+        chunkIndex: { type: integer }
+        traceRef: { type: string, nullable: true }
+        citationNote: { type: string, nullable: true }
+        createdById: { type: string }
+        createdAt: { type: string, format: date-time }
+    RequirementSourceRefCreate:
+      type: object
+      required: [sourceChunkId]
+      properties:
+        sourceChunkId: { type: string }
+        citationNote: { type: string, nullable: true }
     ProjectReadinessResponse:
       type: object
       description: >
@@ -335,7 +425,19 @@ components:
           items: { type: string }
         wikiContent:
           type: string
-          description: Same as rag.content — use as wiki_content for qa-test-gen
+          description: Compiled project wiki when available; otherwise provisional RAG answer
+        wikiSource:
+          type: string
+          enum: [compiled, rag, none]
+        wikiCompiledAt:
+          type: string
+          format: date-time
+          nullable: true
+        wikiEmbeddingIndexVersion:
+          type: integer
+          nullable: true
+        wikiStale:
+          type: boolean
         rag:
           type: object
           nullable: true
@@ -356,17 +458,190 @@ components:
             latestCompositeScore: { type: number, nullable: true }
             hasLatestIqSnapshot: { type: boolean }
             iqAlgorithm: { type: string, nullable: true }
+    ProjectCapability:
+      type: object
+      properties:
+        key: { type: string }
+        label: { type: string }
+        description: { type: string }
+        sortOrder: { type: integer }
     RequirementCreateRequest:
       type: object
-      required: [title]
+      description: Provide title and/or customerOutcome (title built from outcome if omitted).
       properties:
         title: { type: string }
         body: { type: string }
+        capabilityKey: { type: string }
+        scenarioKind:
+          type: string
+          enum: [positive, negative, edge, smoke]
+        verificationLevel:
+          type: string
+          enum: [document_grounded, behaviour_only, smoke]
+        customerOutcome: { type: string }
+    SuggestFromWikiRequest:
+      type: object
+      properties:
+        capabilityKeys:
+          type: array
+          items: { type: string }
+          description: Subset of project capabilities; omit for all
+        maxScenarios:
+          type: integer
+          minimum: 1
+          maximum: 16
+        hints:
+          type: string
+          description: Author hints (offer, focus areas)
+    SuggestFromWikiResponse:
+      type: object
+      properties:
+        batchId: { type: string }
+        created:
+          type: array
+          items:
+            $ref: "#/components/schemas/Requirement"
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              index: { type: integer }
+              code: { type: string }
+        model: { type: string, nullable: true }
+        provider: { type: string }
+        wikiStale: { type: boolean }
+        feedbackApplied:
+          type: boolean
+          description: True when prior wiki-suggest reviewer feedback was injected into the LLM prompt (Sprint 8c)
+        dedupeDropped:
+          type: integer
+          description: Scenarios dropped by journeyStep dedupe before create (Sprint 8c S8c-07)
+    WikiSuggestFeedbackRequest:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [accept, reject]
+        reason:
+          type: string
+          nullable: true
+        reasonTags:
+          type: array
+          items:
+            type: string
+            enum: [duplicate, wrong_step, too_vague, not_in_urs, wrong_capability, smoke_only, other]
+    WikiSuggestFeedbackResponse:
+      type: object
+      properties:
+        feedbackId: { type: string }
+        deleted: { type: boolean }
+        decision: { type: string, enum: [accept, reject] }
+    WikiSuggestFeedbackItem:
+      type: object
+      properties:
+        id: { type: string }
+        decision: { type: string, enum: [accept, reject, accept_edited] }
+        reason: { type: string, nullable: true }
+        reasonTags:
+          type: array
+          items: { type: string }
+        title: { type: string }
+        customerOutcome: { type: string, nullable: true }
+        capabilityKey: { type: string, nullable: true }
+        journeyStep: { type: string, nullable: true }
+        batchId: { type: string, nullable: true }
+        requirementId: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    WikiSuggestFeedbackPatchRequest:
+      type: object
+      properties:
+        reason: { type: string, nullable: true }
+        reasonTags:
+          type: array
+          items: { type: string }
+    WikiSuggestProfile:
+      type: object
+      properties:
+        totalAccepts: { type: integer }
+        totalRejects: { type: integer }
+        feedbackCount: { type: integer }
+        byCapability:
+          type: array
+          items:
+            type: object
+            properties:
+              capabilityKey: { type: string }
+              accepts: { type: integer }
+              rejects: { type: integer }
+              acceptRate: { type: number, nullable: true }
+        topReasonTags:
+          type: array
+          items:
+            type: object
+            properties:
+              tag: { type: string }
+              count: { type: integer }
+        recentRejectionReasons:
+          type: array
+          items: { type: string }
+        recentRejectedOutcomes:
+          type: array
+          items: { type: string }
+        recentRejectedJourneySteps:
+          type: array
+          items: { type: string }
+        availableReasonTags:
+          type: array
+          items: { type: string }
+    ProjectExportManifest:
+      type: object
+      description: Export integrity manifest (format=manifest)
+      properties:
+        reqiq_export_manifest_version: { type: integer }
+        projectId: { type: string }
+        projectName: { type: string }
+        exportedAt: { type: string, format: date-time }
+        bundleFormat: { type: string, enum: [markdown, pdf] }
+        contentSha256: { type: string }
+        markdownSha256: { type: string }
+        requirementCount: { type: integer }
+        wikiIncluded: { type: boolean }
+        wikiSha256: { type: string, nullable: true }
+        wikiSuggestFeedbackSha256: { type: string, nullable: true }
+        wikiSuggestFeedbackCount: { type: integer }
+        requirements:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              title: { type: string }
+              state: { type: string }
+              capabilityKey: { type: string, nullable: true }
+              contentSha256: { type: string }
+        signature:
+          type: object
+          nullable: true
+          properties:
+            algorithm: { type: string, enum: [hmac-sha256] }
+            value: { type: string }
     RequirementPatchRequest:
       type: object
       properties:
         title: { type: string }
         body: { type: string }
+        capabilityKey: { type: string, nullable: true }
+        scenarioKind:
+          type: string
+          nullable: true
+          enum: [positive, negative, edge, smoke]
+        verificationLevel:
+          type: string
+          nullable: true
+          enum: [document_grounded, behaviour_only, smoke]
+        customerOutcome: { type: string, nullable: true }
     RequirementTransitionRequest:
       type: object
       required: [to]
@@ -428,6 +703,31 @@ components:
             computedAt: { type: string, format: date-time }
           additionalProperties: true
         actorUserId: { type: string }
+        createdAt: { type: string, format: date-time }
+    RequirementComment:
+      type: object
+      properties:
+        id: { type: string }
+        requirementId: { type: string }
+        body: { type: string }
+        mentionEmails:
+          type: array
+          items: { type: string, format: email }
+        authorUserId: { type: string }
+        authorEmail: { type: string, format: email }
+        createdAt: { type: string, format: date-time }
+    RequirementTraceLink:
+      type: object
+      properties:
+        id: { type: string }
+        requirementId: { type: string }
+        kind:
+          type: string
+          enum: [TEST, DEFECT, COMMIT, JIRA, OTHER]
+        externalId: { type: string }
+        label: { type: string, nullable: true }
+        url: { type: string, nullable: true }
+        createdById: { type: string }
         createdAt: { type: string, format: date-time }
     SourceUploadRejectedItem:
       type: object
@@ -682,6 +982,26 @@ paths:
                   type: string
                   nullable: true
                   description: Bearer token for Hermes HTTP gateway (stored; GET masks as [configured])
+                commentsEmailEnabled:
+                  type: boolean
+                  description: When true, comment @mentions may trigger email (stub until SMTP configured)
+                commentsWebhookUrl:
+                  type: string
+                  nullable: true
+                  description: Optional webhook POST on new comments (JSON payload)
+                commentsWebhookBearer:
+                  type: string
+                  nullable: true
+                  description: Bearer for comments webhook (GET masks as [configured])
+                iqMultiPassCritiqueEnabled:
+                  type: boolean
+                  description: Enable POST llm-iq-multipass (SRS FR-IQ-04)
+                iqMultiPassCritiqueSamples:
+                  type: integer
+                  minimum: 2
+                  maximum: 7
+                  nullable: true
+                  description: Number of LLM samples for consensus (default 3)
       responses:
         "200":
           description: updated
@@ -1118,13 +1438,58 @@ paths:
         "404":
           description: not_found
 
+  /api/v1/projects/{projectId}/wiki:
+    get:
+      tags: [RAG]
+      summary: Get latest compiled project wiki (Sprint 7.5)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Compiled wiki markdown + metadata
+        "404":
+          description: not_found | wiki_not_compiled
+
+  /api/v1/projects/{projectId}/wiki/compile:
+    post:
+      tags: [RAG]
+      summary: Compile project wiki from indexed sources (LIBRARIAN+)
+      description: Also runs automatically after successful embedding reindex when vectors were upserted.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: feature
+          in: query
+          schema: { type: string }
+          description: Optional feature hint for retrieval query
+      responses:
+        "200":
+          description: Compiled wiki record
+        "400":
+          description: no_sources
+        "403":
+          description: forbidden
+        "404":
+          description: not_found
+        "502":
+          description: wiki_compile_failed
+
   /api/v1/projects/{projectId}/readiness:
     get:
       tags: [Requirements]
-      summary: Assess feature readiness for Hermes (RAG + requirement + IQ)
+      summary: Assess feature readiness for Hermes (wiki + requirement + IQ)
       description: >
-        Runs POST …/rag/query internally and returns readinessScore (0–100), wikiContent, and matched requirement.
-        Default threshold 60 matches Hermes qa-requirements gate. Counts against RAG rate limits.
+        Returns readinessScore (0–100), wikiContent (compiled wiki when available, else RAG), and matched requirement.
+        Default threshold 60 matches Hermes qa-requirements gate. Counts against RAG rate limits when RAG fallback runs.
       security:
         - bearerAuth: []
       parameters:
@@ -1158,6 +1523,344 @@ paths:
           description: rate_limited
         "502":
           description: readiness_failed
+
+  /api/v1/projects/{projectId}/export:
+    get:
+      tags: [Requirements]
+      summary: Export project UAT bundle (Markdown, PDF, or manifest) — Sprint 8
+      description: |
+        Project handoff export (FR-EXP-01/02/03/04). **AUDITOR** receives 403.
+        - `format=markdown` — YAML frontmatter + wiki + requirements (+ optional feedback history)
+        - `format=pdf` — PDF rendered from markdown; optional `REQIQ_PDF_WATERMARK` on server
+        - `format=manifest` — JSON fingerprints; use `sign=true` when `REQIQ_EXPORT_SIGNING_KEY` is set
+        - `detachedSig=1` with manifest — returns `.sig` file only
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: format
+          in: query
+          required: true
+          schema: { type: string, enum: [markdown, pdf, manifest] }
+        - name: states
+          in: query
+          description: Comma-separated requirement states (e.g. REVIEWED,BASELINE)
+          schema: { type: string }
+        - name: capabilityKeys
+          in: query
+          description: Comma-separated capability keys filter
+          schema: { type: string }
+        - name: includeWiki
+          in: query
+          schema: { type: string, enum: ['true', 'false'], default: 'true' }
+        - name: includeWikiSuggestFeedback
+          in: query
+          schema: { type: string, enum: ['true', 'false'], default: 'false' }
+        - name: sign
+          in: query
+          description: When format=manifest, attach HMAC signature if signing key configured
+          schema: { type: string, enum: ['true', 'false'], default: 'false' }
+        - name: detachedSig
+          in: query
+          description: When format=manifest and sign=true, return signature text file only
+          schema: { type: string, enum: ['1'] }
+      responses:
+        "200":
+          description: Export attachment (content type depends on format)
+          headers:
+            X-ReqIQ-Content-SHA256:
+              schema: { type: string }
+          content:
+            text/markdown:
+              schema: { type: string }
+            application/pdf:
+              schema: { type: string, format: binary }
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectExportManifest"
+            text/plain:
+              schema: { type: string }
+        "403":
+          description: forbidden (e.g. AUDITOR)
+        "404":
+          description: not_found or no_matching_requirements
+        "502":
+          description: pdf_render_failed (format=pdf)
+        "501":
+          description: format_not_supported
+
+  /api/v1/projects/{projectId}/requirements/{requirementId}/export:
+    get:
+      tags: [Requirements]
+      summary: Export single requirement as Markdown bundle (Sprint 8)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: requirementId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: format
+          in: query
+          schema: { type: string, enum: [markdown, pdf], default: markdown }
+        - name: includeWiki
+          in: query
+          schema: { type: string, enum: ['true', 'false'], default: 'true' }
+        - name: includeWikiSuggestFeedback
+          in: query
+          schema: { type: string, enum: ['true', 'false'], default: 'false' }
+      responses:
+        "200":
+          description: Single-requirement export (markdown or pdf)
+          headers:
+            X-ReqIQ-Content-SHA256:
+              schema: { type: string }
+          content:
+            text/markdown:
+              schema: { type: string }
+            application/pdf:
+              schema: { type: string, format: binary }
+        "403":
+          description: forbidden
+        "404":
+          description: not_found or requirement_not_found
+        "502":
+          description: pdf_render_failed
+
+  /api/v1/projects/{projectId}/coverage-matrix:
+    get:
+      tags: [Requirements]
+      summary: Capability × requirement state coverage matrix (Sprint 9 / Scope D)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectCoverageMatrix"
+        "404":
+          description: not_found
+
+  /api/v1/projects/{projectId}/capabilities:
+    get:
+      tags: [Requirements]
+      summary: List project capabilities (telecom template seeded on project create)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectCapability"
+        "404":
+          description: not_found
+
+  /api/v1/projects/{projectId}/requirements/suggest-from-wiki:
+    post:
+      tags: [Requirements]
+      summary: LLM-draft UAT scenarios from compiled wiki (Sprint 8b)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SuggestFromWikiRequest"
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuggestFromWikiResponse"
+        "409":
+          description: wiki_not_compiled
+        "422":
+          description: invalid_llm_json
+        "503":
+          description: llm_not_configured
+
+  /api/v1/projects/{projectId}/requirements/drafts:
+    delete:
+      tags: [Requirements]
+      summary: Delete all DRAFT UAT scenarios in a project
+      description: Bulk cleanup (same as repeated DELETE on each DRAFT row). Requires `confirm=1`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: confirm
+          in: query
+          required: true
+          schema: { type: string, enum: ["1"] }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: { type: integer }
+        "400":
+          description: confirm_required
+        "403":
+          description: forbidden
+        "404":
+          description: not_found
+
+  /api/v1/projects/{projectId}/wiki-suggest-feedback:
+    get:
+      tags: [Requirements]
+      summary: List wiki-suggest reviewer feedback (Sprint 8c follow-up)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, maximum: 200 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WikiSuggestFeedbackItem"
+                  total: { type: integer }
+        "404":
+          description: not_found
+    delete:
+      tags: [Requirements]
+      summary: Clear all wiki-suggest feedback for project (LIBRARIAN+)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: confirm
+          in: query
+          required: true
+          schema: { type: string, enum: ["1"] }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: { type: integer }
+        "400":
+          description: confirm_required
+        "403":
+          description: forbidden
+
+  /api/v1/projects/{projectId}/wiki-suggest-feedback/{feedbackId}:
+    delete:
+      tags: [Requirements]
+      summary: Delete one wiki-suggest feedback row
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: feedbackId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: deleted
+        "404":
+          description: not_found
+    patch:
+      tags: [Requirements]
+      summary: Update reason/tags on a feedback row
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: feedbackId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WikiSuggestFeedbackPatchRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WikiSuggestFeedbackItem"
+        "404":
+          description: not_found
+
+  /api/v1/projects/{projectId}/wiki-suggest-profile:
+    get:
+      tags: [Requirements]
+      summary: Aggregated wiki-suggest reviewer feedback for prompt learning (Sprint 8c)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WikiSuggestProfile"
+        "404":
+          description: not_found
 
   /api/v1/projects/{projectId}/requirements:
     get:
@@ -1266,6 +1969,64 @@ paths:
           description: not_found
         "409":
           description: state_forbidden
+    delete:
+      tags: [Requirements]
+      summary: Delete a DRAFT requirement (reject wiki-suggested draft)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: requirementId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: deleted
+        "404":
+          description: not_found
+        "409":
+          description: state_forbidden
+
+  /api/v1/projects/{projectId}/requirements/{requirementId}/wiki-feedback:
+    post:
+      tags: [Requirements]
+      summary: Record Keep/Reject on a wiki-generated DRAFT scenario (Sprint 8c)
+      description: Reject deletes the DRAFT after saving a feedback snapshot. Accept keeps the row.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: requirementId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WikiSuggestFeedbackRequest"
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WikiSuggestFeedbackResponse"
+        "400":
+          description: invalid_body
+        "403":
+          description: forbidden
+        "404":
+          description: not_found
+        "409":
+          description: not_wiki_suggest | state_forbidden
 
   /api/v1/projects/{projectId}/requirements/{requirementId}/latest-iq:
     get:
@@ -1487,6 +2248,293 @@ paths:
         "404":
           description: not_found
 
+  /api/v1/projects/{projectId}/requirements/{requirementId}/revisions/{revisionIndex}/llm-iq-multipass:
+    post:
+      tags: [Requirements]
+      summary: Multi-pass LLM IQ with consensus composite (SRS FR-IQ-04)
+      description: |
+        Runs N independent LLM IQ samples (tenant `iqMultiPassCritiqueSamples`, default 3) when
+        `iqMultiPassCritiqueEnabled` is true. Persists median-consensus composite on the revision;
+        `iqSnapshot.multiPass` records per-sample scores.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: requirementId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: revisionIndex
+          in: path
+          required: true
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: revision with multiPass iqSnapshot
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/RequirementContentRevision"
+                  - type: object
+                    properties:
+                      model: { type: string, nullable: true }
+                      provider: { type: string }
+                      sampleCount: { type: integer }
+                      consensusCompositeScore: { type: number }
+                      samples:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            compositeScore: { type: number }
+        "400":
+          description: invalid_revision_index or invalid_llm_json
+        "403":
+          description: forbidden or multipass_disabled
+        "404":
+          description: not_found
+        "502":
+          description: llm_failed
+        "503":
+          description: llm_not_configured
+
+  /api/v1/projects/{projectId}/requirements/{requirementId}/comments:
+    get:
+      tags: [Requirements]
+      summary: List requirement comments (SRS S7-01)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: requirementId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RequirementComment"
+        "404":
+          description: not_found
+    post:
+      tags: [Requirements]
+      summary: Add comment with optional @email mentions (SRS S7-01)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: requirementId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string, maxLength: 8000 }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequirementComment"
+        "400":
+          description: invalid_body
+        "403":
+          description: forbidden
+        "404":
+          description: not_found
+
+  /api/v1/projects/{projectId}/requirements/{requirementId}/trace-links:
+    get:
+      tags: [Requirements]
+      summary: List requirement trace links (SRS S7-02)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: requirementId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RequirementTraceLink"
+        "404":
+          description: not_found
+    post:
+      tags: [Requirements]
+      summary: Add trace link to external artifact (SRS S7-02)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: requirementId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, externalId]
+              properties:
+                kind:
+                  type: string
+                  enum: [TEST, DEFECT, COMMIT, JIRA, OTHER]
+                externalId: { type: string, maxLength: 256 }
+                label: { type: string, nullable: true, maxLength: 500 }
+                url: { type: string, nullable: true, maxLength: 2048 }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequirementTraceLink"
+        "400":
+          description: invalid_body or invalid_trace_kind
+        "403":
+          description: forbidden
+        "404":
+          description: not_found
+
+  /api/v1/projects/{projectId}/requirements/{requirementId}/trace-links/{linkId}:
+    delete:
+      tags: [Requirements]
+      summary: Remove trace link
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: requirementId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: linkId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: deleted
+        "403":
+          description: forbidden
+        "404":
+          description: not_found
+
+  /api/v1/projects/{projectId}/requirements/{requirementId}/source-refs:
+    get:
+      tags: [Requirements]
+      summary: List document/chunk citations on a requirement
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: requirementId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RequirementSourceRef"
+        "404":
+          description: not_found
+    post:
+      tags: [Requirements]
+      summary: Link requirement to a source chunk
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: requirementId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequirementSourceRefCreate"
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequirementSourceRef"
+        "409":
+          description: duplicate_source_ref
+
+  /api/v1/projects/{projectId}/requirements/{requirementId}/source-refs/{refId}:
+    delete:
+      tags: [Requirements]
+      summary: Remove document citation
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: requirementId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: refId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: deleted
+        "404":
+          description: not_found
+
   /api/v1/projects/{projectId}/sources/upload:
     post:
       tags: [Sources]
@@ -1548,6 +2596,35 @@ paths:
       responses:
         "200":
           description: sources list
+
+  /api/v1/projects/{projectId}/sources/{sourceId}:
+    delete:
+      tags: [Sources]
+      summary: Delete uploaded source file, chunks, and Qdrant vectors for that source
+      description: |
+        Removes the stored file, all `SourceChunk` rows (cascade), and any Qdrant points whose payload
+        `sourceId` matches. Other sources in the project are unchanged. Re-run embedding/reindex only if
+        you need to refresh project-wide index metadata after bulk deletes.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: sourceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: deleted
+        "403":
+          description: forbidden
+        "404":
+          description: not_found
+        "500":
+          description: delete_source_failed
 
   /api/v1/projects/{projectId}/sources/upload-zip:
     post:

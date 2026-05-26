@@ -29,6 +29,7 @@ import type {
   LatestIqResult,
   ReadinessResult,
   WikiResult,
+  WikiUpdateResult,
   RagQueryResult,
   SuggestedTest,
   CapabilityItem,
@@ -133,6 +134,10 @@ export const KnowledgeBasePage: React.FC = () => {
   const [wikiLoading, setWikiLoading] = useState(false);
   const [compilingWiki, setCompilingWiki] = useState(false);
   const [wikiError, setWikiError] = useState<string | null>(null);
+  const [wikiEditing, setWikiEditing] = useState(false);
+  const [wikiEditText, setWikiEditText] = useState('');
+  const [savingWiki, setSavingWiki] = useState(false);
+  const [wikiIndexInRag, setWikiIndexInRag] = useState(false);
 
   // -- rag ------------------------------------------------------------------
   const [ragQuery, setRagQuery] = useState('');
@@ -165,6 +170,15 @@ export const KnowledgeBasePage: React.FC = () => {
   const [generatingWikiDrafts, setGeneratingWikiDrafts] = useState(false);
   const [wikiDraftBatchId, setWikiDraftBatchId] = useState<string | null>(null);
   const [givingFeedbackFor, setGivingFeedbackFor] = useState<string | null>(null);
+  const [lastBatchResult, setLastBatchResult] = useState<{
+    created: number; dedupeDropped: number; feedbackApplied: number; batchId: string;
+  } | null>(null);
+
+  // inline edit inside review panel
+  const [reviewEditId, setReviewEditId] = useState<string | null>(null);
+  const [reviewEditTitle, setReviewEditTitle] = useState('');
+  const [reviewEditOutcome, setReviewEditOutcome] = useState('');
+  const [savingReviewEdit, setSavingReviewEdit] = useState(false);
 
   // generate form inputs
   const [draftHints, setDraftHints] = useState('');
@@ -184,6 +198,13 @@ export const KnowledgeBasePage: React.FC = () => {
 
   // delete all DRAFT
   const [deletingAllDrafts, setDeletingAllDrafts] = useState(false);
+
+  // auto-dismiss success toast
+  const [successToast, setSuccessToast] = useState<string | null>(null);
+  function showToast(msg: string) {
+    setSuccessToast(msg);
+    setTimeout(() => setSuccessToast(null), 5000);
+  }
 
   // review history panel
   const [showReviewHistory, setShowReviewHistory] = useState(false);
@@ -233,22 +254,25 @@ export const KnowledgeBasePage: React.FC = () => {
       .catch(() => setSources([]))
       .finally(() => setSourcesLoading(false));
 
-    requirementsService.listRequirements(projectId)
-      .then(async reqs => {
-        setRequirements(reqs);
-        const scores: Record<string, LatestIqResult> = {};
-        await Promise.allSettled(
-          reqs.map(async r => {
-            try {
-              const iq = await requirementsService.getLatestIq(projectId, r.id);
-              scores[r.id] = iq;
-            } catch { /* ignore */ }
-          })
-        );
-        setIqData(scores);
-      })
-      .catch(() => setRequirements([]))
-      .finally(() => setReqLoading(false));
+    const loadReqs = (pid: string) =>
+      requirementsService.listRequirements(pid)
+        .then(async reqs => {
+          setRequirements(reqs);
+          const scores: Record<string, LatestIqResult> = {};
+          await Promise.allSettled(
+            reqs.map(async r => {
+              try {
+                const iq = await requirementsService.getLatestIq(pid, r.id);
+                scores[r.id] = iq;
+              } catch { /* ignore */ }
+            })
+          );
+          setIqData(scores);
+        })
+        .catch(() => setRequirements([]))
+        .finally(() => setReqLoading(false));
+
+    loadReqs(projectId);
 
     requirementsService.listCapabilities(projectId)
       .then(setCapabilities)
@@ -364,11 +388,17 @@ export const KnowledgeBasePage: React.FC = () => {
   // -- wiki (Test context) --------------------------------------------------
   async function handleCompileWiki() {
     if (!projectId) return;
+    if (wiki?.compileStatus === 'edited') {
+      if (!window.confirm(
+        'Refresh from ReqIQ will overwrite your manual edits with a freshly compiled version.\n\nContinue?',
+      )) return;
+    }
     setCompilingWiki(true);
     setWikiError(null);
     try {
       const result = await requirementsService.compileWiki(projectId);
       setWiki(result);
+      setWikiEditing(false);
     } catch (err: unknown) {
       const data = (err as { response?: { data?: unknown } })?.response?.data;
       const msg = typeof data === 'object' && data !== null && 'detail' in data
@@ -377,6 +407,32 @@ export const KnowledgeBasePage: React.FC = () => {
       setWikiError(`Compile failed: ${msg}`);
     } finally {
       setCompilingWiki(false);
+    }
+  }
+
+  async function handleSaveWiki() {
+    if (!projectId || !wikiEditText.trim()) return;
+    setSavingWiki(true);
+    setWikiError(null);
+    try {
+      const result: WikiUpdateResult = await requirementsService.patchWiki(
+        projectId,
+        wikiEditText,
+        wikiIndexInRag,
+      );
+      setWiki(result);
+      setWikiEditing(false);
+      setWikiIndexInRag(false);
+      showToast('Test context saved.' + (wikiIndexInRag ? ' RAG index updated.' : ''));
+    } catch (err: unknown) {
+      const data = (err as { response?: { data?: unknown } })?.response?.data;
+      const msg =
+        typeof data === 'object' && data !== null && 'detail' in data
+          ? JSON.stringify((data as { detail: unknown }).detail)
+          : String(err);
+      setWikiError(`Save failed: ${msg}`);
+    } finally {
+      setSavingWiki(false);
     }
   }
 
@@ -470,25 +526,64 @@ export const KnowledgeBasePage: React.FC = () => {
   async function handleGenerateWikiDrafts() {
     if (!projectId) return;
     setGeneratingWikiDrafts(true);
+    setLastBatchResult(null);
+    const pid = projectId;
     try {
       const capKeys = draftCapabilityKeys
         .split(',')
         .map(s => s.trim())
         .filter(Boolean);
-      const result = await requirementsService.suggestFromWiki(projectId, {
+      const result = await requirementsService.suggestFromWiki(pid, {
         hints: draftHints.trim() || undefined,
         capabilityKeys: capKeys.length > 0 ? capKeys : undefined,
         maxScenarios: draftMaxScenarios,
       });
       setWikiDraftBatchId(result.batchId);
-      setRequirements(prev => [...result.created, ...prev]);
+      setLastBatchResult({
+        created: result.created.length,
+        dedupeDropped: result.dedupeDropped,
+        feedbackApplied: result.feedbackApplied,
+        batchId: result.batchId,
+      });
+      if (result.created.length === 0) {
+        const why = (result.dedupeDropped ?? 0) > 0
+          ? `All ${result.dedupeDropped} generated scenario(s) were removed by deduplication.`
+          : 'No scenarios created — wiki may not be compiled yet or LLM returned no usable output.';
+        showToast(`No drafts created. ${why}`);
+      } else {
+        const parts = [`✦ ${result.created.length} draft${result.created.length !== 1 ? 's' : ''} created`];
+        if ((result.dedupeDropped ?? 0) > 0) parts.push(`${result.dedupeDropped} deduped`);
+        if ((result.feedbackApplied ?? 0) > 0) parts.push(`${result.feedbackApplied} feedback applied`);
+        showToast(parts.join(' · '));
+      }
+      // Reload full list so all computed fields (latestCompositeScore, etc.) are present
+      setReqLoading(true);
+      requirementsService.listRequirements(pid)
+        .then(async reqs => {
+          setRequirements(reqs);
+          const scores: Record<string, LatestIqResult> = {};
+          await Promise.allSettled(
+            reqs.map(async r => {
+              try {
+                const iq = await requirementsService.getLatestIq(pid, r.id);
+                scores[r.id] = iq;
+              } catch { /* ignore */ }
+            })
+          );
+          setIqData(scores);
+        })
+        .catch(() => {})
+        .finally(() => setReqLoading(false));
       // refresh profile stats
-      requirementsService.getWikiSuggestProfile(projectId)
+      requirementsService.getWikiSuggestProfile(pid)
         .then(p => setWikiSuggestProfile(p as typeof wikiSuggestProfile))
         .catch(() => {});
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      alert(`Generate drafts failed: ${msg ?? String(err)}`);
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      const msg = detail
+        ? (typeof detail === 'string' ? detail : JSON.stringify(detail))
+        : String(err);
+      alert(`Generate drafts failed: ${msg}`);
     } finally {
       setGeneratingWikiDrafts(false);
     }
@@ -500,15 +595,23 @@ export const KnowledgeBasePage: React.FC = () => {
     try {
       await requirementsService.wikiFeedback(projectId, req.id, decision, opts);
       if (decision === 'reject') {
+        // Reject deletes the requirement on ReqIQ — remove locally
         setRequirements(prev => prev.filter(r => r.id !== req.id));
       } else {
-        setRequirements(prev =>
-          prev.map(r => r.id === req.id ? { ...r, isWikiSuggest: false } : r),
-        );
+        // Accept records feedback but leaves state=DRAFT+isWikiSuggest=true on ReqIQ.
+        // Transition to REVIEWED so it survives a page reload outside the review panel.
+        try {
+          const transitioned = await requirementsService.transitionRequirement(projectId, req.id, 'REVIEWED');
+          setRequirements(prev => prev.map(r => r.id === req.id ? transitioned : r));
+        } catch {
+          // If transition fails (e.g. already transitioned), just update local flag
+          setRequirements(prev => prev.map(r => r.id === req.id ? { ...r, isWikiSuggest: false } : r));
+        }
       }
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      alert(`Feedback failed: ${msg ?? String(err)}`);
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      const msg = detail ? (typeof detail === 'string' ? detail : JSON.stringify(detail)) : String(err);
+      alert(`Feedback failed: ${msg}`);
     } finally {
       setGivingFeedbackFor(null);
     }
@@ -533,17 +636,23 @@ export const KnowledgeBasePage: React.FC = () => {
     if (!projectId) return;
     if (!confirm('Delete all DRAFT scenarios? This cannot be undone.')) return;
     setDeletingAllDrafts(true);
+    const pid = projectId;
     try {
-      const result = await requirementsService.deleteDraftRequirements(projectId);
-      setRequirements(prev => prev.filter(r => r.state !== 'DRAFT'));
+      const result = await requirementsService.deleteDraftRequirements(pid);
       const n = typeof result?.deleted === 'number' ? result.deleted : '?';
-      alert(`Deleted ${n} DRAFT scenario(s).`);
+      // Re-fetch from server to get ground-truth state after bulk delete
+      setReqLoading(true);
+      requirementsService.listRequirements(pid)
+        .then(reqs => setRequirements(reqs))
+        .catch(() => {})
+        .finally(() => setReqLoading(false));
+      showToast(`Deleted ${n} DRAFT scenario(s).`);
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
       const msg = detail
         ? (typeof detail === 'string' ? detail : JSON.stringify(detail))
         : String(err);
-      alert(`Delete all failed: ${msg}`);
+      showToast(`Delete all failed: ${msg}`);
     } finally {
       setDeletingAllDrafts(false);
     }
@@ -615,6 +724,35 @@ export const KnowledgeBasePage: React.FC = () => {
     }
   }
 
+  // Save edit from the review panel — patches title+customerOutcome, auto-records accept_edited feedback
+  async function handleReviewSaveEdit(req: ReqIQRequirement) {
+    if (!reviewEditTitle.trim() || !projectId) return;
+    setSavingReviewEdit(true);
+    try {
+      // PATCH records accept_edited feedback automatically on ReqIQ
+      await requirementsService.updateRequirement(projectId, req.id, {
+        title: reviewEditTitle.trim(),
+        customerOutcome: reviewEditOutcome.trim() || undefined,
+      });
+      // Transition to REVIEWED so it leaves the review panel on reload
+      let final: ReqIQRequirement;
+      try {
+        final = await requirementsService.transitionRequirement(projectId, req.id, 'REVIEWED');
+      } catch {
+        // If already transitioned, re-fetch the patched version
+        final = await requirementsService.getRequirement(projectId, req.id);
+      }
+      setRequirements(prev => prev.map(r => r.id === req.id ? final : r));
+      setReviewEditId(null);
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      const msg = detail ? (typeof detail === 'string' ? detail : JSON.stringify(detail)) : String(err);
+      alert(`Save failed: ${msg}`);
+    } finally {
+      setSavingReviewEdit(false);
+    }
+  }
+
   async function handleTransition(req: ReqIQRequirement, state: string) {
     if (!projectId) return;
     setTransitioningFor(req.id);
@@ -656,23 +794,90 @@ export const KnowledgeBasePage: React.FC = () => {
     if (!projectId) return;
     setSuggestingFor(req.id);
     try {
-      const result = await requirementsService.suggestTests(projectId, req.id, 3);
+      // Extract structured fields from the requirement body markdown if present
+      const offerPath = req.body?.match(/(?:Offer path|Navigation path)[:\s]+([^\n]+)/i)?.[1]?.trim() ?? '';
+      const screenUnderTest = req.body?.match(/Screen under test[:\s]+([^\n]+)/i)?.[1]?.trim() ?? '';
+      const flowVariant = req.body?.match(/Flow variant[:\s]+([^\n]+)/i)?.[1]?.trim() ?? '';
+
+      // Detect purchase_journey capability — needs E2E full-flow instruction
+      const isPurchaseJourney = req.capabilityKey === 'purchase_journey';
+
+      const baseHints = [
+        req.customerOutcome ? `Test objective: ${req.customerOutcome}` : '',
+        'STYLE: Write all step.action values as imperative browser-automation commands — NOT BDD/Gherkin. Do NOT use "Given/When/Then/And" prefixes.',
+        'STYLE: Use direct commands — "Login with the provided credentials.", "Click [element].", "Select [option].", "Navigate to [path]."',
+        'oracle field: write ONLY the short name of the final page or element to stop at (e.g. "SIM Card Setting") — NOT a full assertion sentence.',
+        offerPath ? `Navigation path: ${offerPath}` : '',
+        screenUnderTest ? `Screen under test: ${screenUnderTest}` : '',
+        flowVariant ? `Flow variant: ${flowVariant}` : '',
+      ];
+
+      const e2eHints = isPurchaseJourney ? [
+        'SCOPE: This is a purchase_journey requirement. Generate a FULL END-TO-END instruction — do NOT limit to the screen under test only.',
+        'START the steps with: "Login with the provided credentials. After login: do NOT click Settings."',
+        'INCLUDE all navigation steps from the homepage to the final stop page, using the offer path above.',
+        'INCLUDE all configuration choices on intermediate screens (subscription options, SIM type, add-ons, checkboxes, Next buttons).',
+        'END the steps with a STOP instruction naming the exact final page (e.g. "STOP as soon as the SIM Card Setting page appears. Do NOT fill any fields. Stop immediately.").',
+        'preconditions array: set to ["Logged in as registered subscriber."] only.',
+        'Do NOT generate a smoke-only or single-screen instruction for purchase_journey.',
+      ] : [
+        'preconditions: only the starting state — login status and which screen the user is already on.',
+      ];
+
+      const hints = [...baseHints, ...e2eHints].filter(Boolean).join('\n');
+
+      // Request 1 test — we navigate to Crawl-and-Save immediately with the first result
+      const result = await requirementsService.suggestTests(projectId, req.id, 1, hints);
       const first: SuggestedTest | undefined = result.created[0];
       if (!first) {
         alert('No tests were suggested for this requirement.');
         return;
       }
+      const preconditions: string[] = first.payload?.preconditions ?? [];
       const steps = first.payload?.steps ?? [];
       const oracle = first.payload?.oracle ?? '';
-      const instruction = [
-        ...steps.map(s => s.action),
-        oracle ? `STOP when: ${oracle}` : '',
-      ].filter(Boolean).join('\n');
+
+      // Strip any residual BDD prefixes from action text
+      const cleanLine = (s: string) => s.replace(/^(Given |When |Then |And )\s*/i, '').trim();
+
+      // For purchase_journey: ensure instruction always starts with login sentinel
+      // so the crawl engine recognises the login_module trigger phrase.
+      const LOGIN_SENTINEL = 'Login with the provided credentials. After login: do NOT click Settings, do NOT click Download My3 App.';
+      const firstActionClean = steps[0] ? cleanLine(steps[0].action) : '';
+      const alreadyHasLogin = /login with/i.test(firstActionClean) || /login with/i.test(preconditions[0] ?? '');
+
+      const instructionParts: string[] = [];
+      if (isPurchaseJourney && !alreadyHasLogin) {
+        instructionParts.push(LOGIN_SENTINEL);
+      } else {
+        // Non-purchase_journey: include preconditions as context lines
+        instructionParts.push(...preconditions.map(cleanLine));
+      }
+      instructionParts.push(...steps.map(s => cleanLine(s.action)));
+      // Normalise the stop line to match the engine's expected phrasing
+      if (oracle) {
+        instructionParts.push(`STOP as soon as the ${oracle} appears. Do NOT fill any fields. Stop immediately.`);
+      }
+      const instruction = instructionParts.filter(Boolean).join('\n');
+
+      // stop_at_page_hint: use oracle directly if short; otherwise take text before first punctuation
+      const stopHint = oracle.length <= 60
+        ? oracle
+        : (oracle.match(/^([^,;.!?]+)/)?.[1]?.trim() ?? '');
+
+      // Tags from scenarioKind + capabilityKey
+      const tagSet = new Set<string>();
+      if (req.scenarioKind) tagSet.add(req.scenarioKind);
+      if (req.capabilityKey) tagSet.add(req.capabilityKey.toLowerCase().replace(/[^a-z0-9]+/g, '-'));
+
       const params = new URLSearchParams({
         test_title: first.title,
-        test_description: `Generated from ReqIQ requirement: ${req.title}`,
+        test_description: req.customerOutcome ?? `Generated from ReqIQ: ${req.title}`,
         user_instruction: instruction,
       });
+      if (stopHint) params.set('stop_at_page_hint', stopHint);
+      if (tagSet.size) params.set('tags', [...tagSet].join(','));
+
       navigate(`/crawl-and-save?${params.toString()}`);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
@@ -685,6 +890,13 @@ export const KnowledgeBasePage: React.FC = () => {
   // -- render ---------------------------------------------------------------
   return (
     <Layout>
+      {/* Auto-dismiss success toast */}
+      {successToast && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-lg bg-gray-900 text-white text-sm px-4 py-3 shadow-lg max-w-sm">
+          <span className="flex-1">{successToast}</span>
+          <button onClick={() => setSuccessToast(null)} className="text-gray-400 hover:text-white shrink-0">✕</button>
+        </div>
+      )}
       <div className="p-6 max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-start justify-between">
@@ -832,13 +1044,41 @@ export const KnowledgeBasePage: React.FC = () => {
             <SectionCard
               title="Test context"
               actions={
-                <SmallBtn
-                  onClick={handleCompileWiki}
-                  disabled={compilingWiki || !projectId}
-                  variant="default"
-                >
-                  {compilingWiki ? 'Refreshing…' : 'Refresh'}
-                </SmallBtn>
+                <div className="flex items-center gap-2">
+                  {/* compileStatus chip */}
+                  {wiki && (
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${
+                      wiki.compileStatus === 'ok'
+                        ? 'bg-green-50 text-green-700 border-green-200'
+                        : wiki.compileStatus === 'edited'
+                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                        : wiki.compileStatus === 'no_sources'
+                        ? 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                        : 'bg-red-50 text-red-700 border-red-200'
+                    }`}>
+                      {wiki.compileStatus === 'ok' ? 'Ready'
+                        : wiki.compileStatus === 'edited' ? 'Edited'
+                        : wiki.compileStatus === 'no_sources' ? 'No sources'
+                        : 'Failed'}
+                    </span>
+                  )}
+                  {!wikiEditing && wiki && (
+                    <SmallBtn
+                      onClick={() => { setWikiEditText(wiki.markdown ?? ''); setWikiEditing(true); setWikiError(null); }}
+                      disabled={!projectId}
+                      variant="primary"
+                    >
+                      Edit
+                    </SmallBtn>
+                  )}
+                  <SmallBtn
+                    onClick={handleCompileWiki}
+                    disabled={compilingWiki || !projectId}
+                    variant="default"
+                  >
+                    {compilingWiki ? 'Refreshing…' : 'Refresh from ReqIQ'}
+                  </SmallBtn>
+                </div>
               }
             >
               {wikiError && <p className="text-sm text-red-600">{wikiError}</p>}
@@ -846,23 +1086,67 @@ export const KnowledgeBasePage: React.FC = () => {
                 <p className="text-sm text-gray-400">Loading Test context…</p>
               ) : !wiki ? (
                 <p className="text-sm text-gray-400">No Test context yet — upload documents and wait for indexing.</p>
+              ) : wikiEditing ? (
+                <div className="space-y-3">
+                  <textarea
+                    value={wikiEditText}
+                    onChange={e => setWikiEditText(e.target.value)}
+                    rows={12}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+                    disabled={savingWiki}
+                    placeholder="Enter wiki markdown…"
+                  />
+                  <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={wikiIndexInRag}
+                      onChange={e => setWikiIndexInRag(e.target.checked)}
+                      disabled={savingWiki}
+                      className="rounded"
+                    />
+                    Also index in RAG
+                    <span className="text-gray-400">(updates search index; takes longer)</span>
+                  </label>
+                  {savingWiki && wikiIndexInRag && (
+                    <p className="text-xs text-blue-600">⏳ Indexing in RAG… this may take a moment.</p>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <SmallBtn
+                      onClick={handleSaveWiki}
+                      disabled={savingWiki || !wikiEditText.trim()}
+                      variant="primary"
+                    >
+                      {savingWiki ? 'Saving…' : 'Save'}
+                    </SmallBtn>
+                    <SmallBtn
+                      onClick={() => { setWikiEditing(false); setWikiIndexInRag(false); setWikiError(null); }}
+                      disabled={savingWiki}
+                      variant="default"
+                    >
+                      Cancel
+                    </SmallBtn>
+                  </div>
+                </div>
               ) : (
                 <div className="space-y-2">
-                  {/* wikiSource banner */}
+                  {/* wikiStale banner */}
                   {wiki.wikiStale && (
                     <div className="flex items-center gap-2 rounded-md bg-orange-50 border border-orange-200 px-3 py-2 text-xs text-orange-700">
-                      ⚠ Documents or index changed — Test context may be outdated. Click Refresh to recompile.
+                      ⚠ Documents or index changed — Test context may be outdated. Click “Refresh from ReqIQ” to recompile.
                     </div>
                   )}
-                  {/* compile status chip */}
-                  {wiki.compileStatus !== 'ok' && (
+                  {/* compile status messaging for non-ok states */}
+                  {wiki.compileStatus === 'no_sources' && (
+                    <div className="flex items-center gap-2 rounded-md bg-yellow-50 border border-yellow-200 px-3 py-2 text-xs text-yellow-700">
+                      No documents indexed yet. Upload a file and wait for reindex.
+                    </div>
+                  )}
+                  {wiki.compileStatus === 'failed' && (
                     <div className="flex items-center gap-2 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
-                      {wiki.compileStatus === 'no_sources'
-                        ? 'No documents indexed yet. Upload a file and wait for reindex.'
-                        : 'Test context failed to compile. Try refreshing.'}
+                      Test context failed to compile. Try “Refresh from ReqIQ”.
                     </div>
                   )}
-                  {wiki.compileStatus === 'ok' && wiki.markdown && (
+                  {(wiki.compileStatus === 'ok' || wiki.compileStatus === 'edited') && wiki.markdown && (
                     <div className="rounded-md bg-gray-50 border border-gray-200 p-3 text-xs text-gray-700 whitespace-pre-wrap max-h-64 overflow-y-auto font-mono leading-relaxed">
                       {wiki.markdown}
                     </div>
@@ -1193,8 +1477,108 @@ export const KnowledgeBasePage: React.FC = () => {
                     {deletingAllDrafts ? 'Deleting…' : 'Delete all DRAFT scenarios'}
                   </button>
                 </div>
+                {/* (batch result kept in state for batchId tracking; toast used for UX notification) */}
               </div>
             </SectionCard>
+
+            {/* Wiki draft review panel — clean ReqIQ-style Keep/Edit/Reject list */}
+            {(() => {
+              const wikiDrafts = requirements.filter(r => r.isWikiSuggest && r.state === 'DRAFT');
+              if (wikiDrafts.length === 0) return null;
+              return (
+                <SectionCard title={`Wiki draft review (${wikiDrafts.length})`}>
+                  <ul className="space-y-4">
+                    {wikiDrafts.map(req => {
+                      const isEditingInReview = reviewEditId === req.id;
+                      const busy = givingFeedbackFor === req.id || savingReviewEdit;
+                      return (
+                        <li key={req.id} className="flex gap-2">
+                          <span className="text-gray-400 mt-0.5 shrink-0">•</span>
+                          <div className="flex-1 min-w-0 space-y-2">
+                            {isEditingInReview ? (
+                              <>
+                                <input
+                                  autoFocus
+                                  className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-violet-400"
+                                  value={reviewEditTitle}
+                                  onChange={e => setReviewEditTitle(e.target.value)}
+                                  placeholder="Title *"
+                                />
+                                <textarea
+                                  className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-400 text-gray-600 italic"
+                                  rows={3}
+                                  value={reviewEditOutcome}
+                                  onChange={e => setReviewEditOutcome(e.target.value)}
+                                  placeholder="Customer outcome (italic description)"
+                                />
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => handleReviewSaveEdit(req)}
+                                    disabled={savingReviewEdit || !reviewEditTitle.trim()}
+                                    className="text-xs px-3 py-1 rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                                  >
+                                    {savingReviewEdit ? 'Saving…' : 'Save'}
+                                  </button>
+                                  <button
+                                    onClick={() => setReviewEditId(null)}
+                                    className="text-xs px-3 py-1 rounded border border-gray-300 hover:bg-gray-50"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </>
+                            ) : (
+                              <p className="text-sm">
+                                <span className="font-semibold text-gray-900">{req.title}</span>
+                                {req.customerOutcome && (
+                                  <span className="text-gray-500 italic"> — {req.customerOutcome}</span>
+                                )}
+                              </p>
+                            )}
+                            {!isEditingInReview && (
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <button
+                                  onClick={() => handleWikiFeedback(req, 'accept')}
+                                  disabled={busy}
+                                  className="text-xs px-3 py-1 rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                                >
+                                  Keep
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setReviewEditId(req.id);
+                                    setReviewEditTitle(req.title);
+                                    setReviewEditOutcome(req.customerOutcome ?? '');
+                                  }}
+                                  disabled={busy}
+                                  className="text-xs px-3 py-1 rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => handleWikiFeedback(req, 'reject')}
+                                  disabled={busy}
+                                  className="text-xs px-3 py-1 rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                                >
+                                  Reject
+                                </button>
+                                <button
+                                  onClick={() => setRejectDialogReq(req)}
+                                  disabled={busy}
+                                  className="text-xs px-3 py-1 rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                                >
+                                  Reject with reasons…
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </SectionCard>
+              );
+            })()}
 
             {/* Requirements */}
             <SectionCard
@@ -1289,11 +1673,15 @@ export const KnowledgeBasePage: React.FC = () => {
 
               {reqLoading ? (
                 <p className="text-sm text-gray-400">Loading requirements...</p>
-              ) : requirements.length === 0 ? (
-                <p className="text-sm text-gray-400">No requirements found. Create one above.</p>
+              ) : requirements.filter(r => !(r.isWikiSuggest && r.state === 'DRAFT')).length === 0 ? (
+                <p className="text-sm text-gray-400">
+                  {requirements.some(r => r.isWikiSuggest && r.state === 'DRAFT')
+                    ? 'All current scenarios are pending wiki draft review above.'
+                    : 'No requirements found. Create one above.'}
+                </p>
               ) : (
                 <ul className="divide-y divide-gray-100">
-                  {requirements.map(req => {
+                  {requirements.filter(r => !(r.isWikiSuggest && r.state === 'DRAFT')).map(req => {
                     const iq = iqData[req.id];
                     const isEditing = editingReqId === req.id;
                     const isRunningIq = runningIqFor === req.id;
@@ -1307,9 +1695,10 @@ export const KnowledgeBasePage: React.FC = () => {
                       edge: 'bg-orange-50 text-orange-700 border-orange-200',
                       smoke: 'bg-gray-50 text-gray-600 border-gray-200',
                     };
+                    const isLatestBatch = !!wikiDraftBatchId && req.wikiSuggestBatchId === wikiDraftBatchId;
 
                     return (
-                      <li key={req.id} className="py-4 space-y-2">
+                      <li key={req.id} className={`py-4 space-y-2${isLatestBatch ? ' pl-2 border-l-2 border-violet-400' : ''}`}>
                         {isEditing ? (
                           <div className="space-y-2">
                             <input
@@ -1334,12 +1723,12 @@ export const KnowledgeBasePage: React.FC = () => {
                         ) : (
                           <>
                             <div className="flex items-start justify-between gap-4">
-                              <div className="min-w-0">
+                              <div className="min-w-0 flex-1">
                                 <p className="text-sm font-medium text-gray-900">{req.title}</p>
                                 {req.customerOutcome && (
-                                  <p className="text-xs text-blue-600 mt-0.5 italic">{req.customerOutcome}</p>
+                                  <p className="text-xs text-blue-600 mt-0.5 italic leading-relaxed">{req.customerOutcome}</p>
                                 )}
-                                {req.body && (
+                                {req.body && !req.customerOutcome && (
                                   <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{req.body}</p>
                                 )}
                                 <div className="flex items-center gap-2 mt-1 flex-wrap">

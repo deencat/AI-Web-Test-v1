@@ -91,6 +91,19 @@ class Settings(BaseSettings):
     REQIQ_TENANT_ID: str | None = None
     REQIQ_PROJECT_ID_VOUCHER_PLAN: str | None = None
 
+    # MCP Server (Hermes Agent integration — never exposed to browser)
+    AWT_MCP_SECRET: str | None = None          # shared secret Hermes sends in Authorization header
+    AWT_MCP_PORT: int = 8001                   # port the MCP server listens on
+    AWT_BASE_URL: str = "http://localhost:8000/api/v1"  # internal REST API base
+    AWT_SERVICE_USERNAME: str | None = None     # service account username for internal REST calls
+    AWT_SERVICE_PASSWORD: str | None = None    # service account password
+
+    # Hermes Telegram trigger (H2 — "Generate via Hermes" button in UI)
+    # Bot token from BotFather; same token as TELEGRAM_BOT_TOKEN in ~/.hermes/.env on Node 1
+    TELEGRAM_BOT_TOKEN: str | None = None
+    # DM chat ID between your Telegram user account and the qa-manager bot
+    QA_MANAGER_TELEGRAM_CHAT_ID: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,
