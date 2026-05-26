@@ -192,6 +192,7 @@ async def _call_v2(
 mcp = FastMCP(
     "ai-web-test",
     stateless_http=True,
+    host="0.0.0.0",
     instructions=(
         "Tools for driving the AI Web Test automation platform. "
         "Use crawl_and_save_test to generate a new test case via browser crawl, "
@@ -523,13 +524,6 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
 if __name__ == "__main__":
     app = mcp.streamable_http_app()
     app.add_middleware(BearerAuthMiddleware)
-
-    # Allow remote clients (e.g. Hermes Agent on another machine) that send
-    # the server's LAN IP as the Host header instead of "localhost".
-    # FastMCP's streamable_http_app uses Starlette which rejects non-localhost
-    # hosts with 421 by default — override that here so any host is accepted.
-    from starlette.middleware.trustedhost import TrustedHostMiddleware
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
 
     logger.info("Starting AI Web Test MCP server on port %d", MCP_PORT)
     logger.info("AWT base URL : %s", AWT_BASE)
