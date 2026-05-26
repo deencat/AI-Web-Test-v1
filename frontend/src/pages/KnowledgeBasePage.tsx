@@ -1401,7 +1401,7 @@ export const KnowledgeBasePage: React.FC = () => {
               {showReviewHistory && (
                 <div className="rounded-md border border-gray-200 bg-gray-50 p-3 space-y-2">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold text-gray-600">Feedback history ({feedbackTotal})</p>
+                    <p className="text-xs font-semibold text-gray-600">Rejected feedback ({feedbackHistory.filter(fb => fb.decision === 'reject').length} of {feedbackTotal} total)</p>
                     <button
                       onClick={handleLoadFeedbackHistory}
                       disabled={loadingFeedback}
@@ -1454,7 +1454,11 @@ export const KnowledgeBasePage: React.FC = () => {
                               </div>
                             ) : (
                               <>
-                                {fb.reason && <p className="text-xs text-gray-500 italic">{fb.reason}</p>}
+                                {fb.requirementTitle && <p className="text-xs text-gray-700 truncate font-medium">{fb.requirementTitle}</p>}
+                                {fb.reason
+                                  ? <p className="text-xs text-gray-500 italic">{fb.reason}</p>
+                                  : <p className="text-xs text-gray-400 italic">No reason provided</p>
+                                }
                                 {fb.reasonTags && fb.reasonTags.length > 0 && (
                                   <div className="flex gap-1 flex-wrap mt-0.5">
                                     {fb.reasonTags.map(t => <span key={t} className="text-xs bg-gray-100 text-gray-600 px-1 rounded">{t}</span>)}
