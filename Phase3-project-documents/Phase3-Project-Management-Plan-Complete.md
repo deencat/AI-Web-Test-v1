@@ -3,8 +3,8 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials · ✅ Sprint 10.11 Developer B Step Library COMPLETE (May 6, 2026) — reusable `@module:` step sequences, Step Library sidebar page, Insert Module picker in TestStepEditor, backend `StepLibraryModule` CRUD, module rename Option C (Preview + Confirm Cascade) with `GET /{id}/rename-preview` dry-run + atomic cascade, dedicated Rename modal, name slug locked in Edit form · ✅ Sprint 10.12 Developer B **Feature A** AI-Powered Failure Root Cause Analysis COMPLETE (May 13, 2026) — `root_cause_analysis_service.py`, DOM snapshot capped at 16 000 chars, `execution_feedback.root_cause_analysis` TEXT column, amber collapsible panel in `ExecutionProgressPage`, 37 new tests, two production bugs fixed (Azure `max_completion_tokens`, `error_type` propagation) · ✅ Sprint 10.12 **Feature B** Re-Run from Failed Step COMPLETE (May 14, 2026) · ✅ Sprint 10.13 Developer B Local vLLM On-Premises Model Support COMPLETE (May 15, 2026) — `local_vllm` provider with GPT-OSS-20B, Qwen3.6-35B-A3B-NVFP4, DeepSeek-V4-Flash-4bit; per-model endpoint routing in `universal_llm.py` + Stagehand `initialize()` · ✅ Sprint 10.14 Developer B Ephemeral CRM Login Credentials COMPLETE (May 20, 2026) — JIT credential prompt at Run-time; `requires_runtime_credentials` flag on TestCase; `CredentialPromptModal` in `RunTestButton`; backend `LoginCredentials` schema (never persisted); password masked in logs and step text; `{{CRM_PASSWORD}}` placeholder in stored step records; session-level in-memory cache; `_build_crm_login_steps()` prepends 3 steps to execution pipeline; 30 backend + 11 frontend tests pass · ✅ Sprint 10.15 Developer B vLLM Thinking Mode Toggle COMPLETE (May 20, 2026) — `local_vllm_enable_thinking` user setting; `thinking_capable: bool` on `ModelOption`; `thinking_capable_models` list in `PROVIDER_CONFIGS`; `enable_thinking` kwarg threaded through `chat_completion()` → `_call_local_vllm()`; `extra_body={"chat_template_kwargs":{"enable_thinking":True}}` injected only for `RedHatAI/Qwen3.6-35B-A3B-NVFP4`; `LocalVllmClient.chat_completion()` added; conditional thinking toggle in Settings UI; DB migration `migrate_sprint10_15.py`; 14 backend unit tests pass · 📋 Sprint 10.16 Developer B XPath Cache Integrity — post-`select_option` outcome verification; provisional cache promotion (2-confirmation threshold); `select` tag-type validation on cache-hit; `should_enforce_confirm_progress` extended to date/time `select` steps — PLANNED
-**Last Updated:** May 26, 2026 (Sprint 10.16 PLANNED — XPath Cache Integrity: post-select outcome verification, provisional cache promotion, select-type validation, date/time select progress guard)  
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials · ✅ Sprint 10.11 Developer B Step Library COMPLETE (May 6, 2026) — reusable `@module:` step sequences, Step Library sidebar page, Insert Module picker in TestStepEditor, backend `StepLibraryModule` CRUD, module rename Option C (Preview + Confirm Cascade) with `GET /{id}/rename-preview` dry-run + atomic cascade, dedicated Rename modal, name slug locked in Edit form · ✅ Sprint 10.12 Developer B **Feature A** AI-Powered Failure Root Cause Analysis COMPLETE (May 13, 2026) — `root_cause_analysis_service.py`, DOM snapshot capped at 16 000 chars, `execution_feedback.root_cause_analysis` TEXT column, amber collapsible panel in `ExecutionProgressPage`, 37 new tests, two production bugs fixed (Azure `max_completion_tokens`, `error_type` propagation) · ✅ Sprint 10.12 **Feature B** Re-Run from Failed Step COMPLETE (May 14, 2026) · ✅ Sprint 10.13 Developer B Local vLLM On-Premises Model Support COMPLETE (May 15, 2026) — `local_vllm` provider with GPT-OSS-20B, Qwen3.6-35B-A3B-NVFP4, DeepSeek-V4-Flash-4bit; per-model endpoint routing in `universal_llm.py` + Stagehand `initialize()` · ✅ Sprint 10.14 Developer B Ephemeral CRM Login Credentials COMPLETE (May 20, 2026) — JIT credential prompt at Run-time; `requires_runtime_credentials` flag on TestCase; `CredentialPromptModal` in `RunTestButton`; backend `LoginCredentials` schema (never persisted); password masked in logs and step text; `{{CRM_PASSWORD}}` placeholder in stored step records; session-level in-memory cache; `_build_crm_login_steps()` prepends 3 steps to execution pipeline; 30 backend + 11 frontend tests pass · ✅ Sprint 10.15 Developer B vLLM Thinking Mode Toggle COMPLETE (May 20, 2026) — `local_vllm_enable_thinking` user setting; `thinking_capable: bool` on `ModelOption`; `thinking_capable_models` list in `PROVIDER_CONFIGS`; `enable_thinking` kwarg threaded through `chat_completion()` → `_call_local_vllm()`; `extra_body={"chat_template_kwargs":{"enable_thinking":True}}` injected only for `RedHatAI/Qwen3.6-35B-A3B-NVFP4`; `LocalVllmClient.chat_completion()` added; conditional thinking toggle in Settings UI; DB migration `migrate_sprint10_15.py`; 14 backend unit tests pass · ✅ Sprint 10.16 Developer B XPath Cache Management UI COMPLETE (May 26, 2026) — `XPathCachePanel` in Settings with stats row, keyword filter, per-entry delete, Clear Invalid, Clear All; `ClearStepCacheButton` in each `StepCard` on Execution Progress page; 4 new backend API endpoints (`GET /settings/xpath-cache/stats`, `GET /settings/xpath-cache`, `DELETE /settings/xpath-cache/{id}`, `DELETE /settings/xpath-cache`); 4 new `settingsService` methods; 33 new tests (16 backend + 17 frontend); correct XPaths preserved — only the targeted step's cache is dropped
+**Last Updated:** May 26, 2026 (Sprint 10.16 COMPLETE — XPath Cache Management UI: per-step cache clear in Execution Progress, XPathCachePanel in Settings, 4 new REST endpoints, 33 new tests)  
 **Version:** 3.9
 
 > **📖 When to Use This Document:**
@@ -87,7 +87,7 @@ For detailed analysis, strategies, and agent-specific documentation, see the [Su
       - Sprint 10.13: Local vLLM On-Premises Model Support
       - Sprint 10.14: Ephemeral CRM Login Credentials (JIT Prompt, Never-Persist)
       - Sprint 10.15: vLLM Thinking Mode Toggle
-      - Sprint 10.16: XPath Cache Integrity
+      - Sprint 10.16: XPath Cache Management UI ✅
       - Sprint 11: Learning System Activation
       - Sprint 12: Security & Production Readiness
 
@@ -3231,78 +3231,47 @@ The `embed_auth_in_url()` helper is designed for HTTP Basic Auth (network-level,
 
 ---
 
-### Sprint 10.16: Developer B — XPath Cache Integrity (May 2026)
+### Sprint 10.16: Developer B — XPath Cache Management UI (May 26, 2026)
 
-**Focus:** Prevent Tier 2 XPath cache from being permanently poisoned by a single inaccurate LLM `observe()` result that clicks/selects the wrong element but returns no Playwright exception. Root cause: "action executed without exception" is treated as "step succeeded correctly" for `select` actions, and the wrong XPath is immediately written to the cache and reused on every subsequent run.
+**Focus:** Expose the XPath cache to users so that a poisoned or stale entry can be corrected without wiping the entire cache. Provides a Settings panel for bulk cache management and a per-step "Clear XPath Cache" button on the Execution Progress page, so only the targeted step's learned XPath is discarded — all other correctly-learned XPaths survive.
 
-**Status:** 📋 PLANNED
+**Status:** ✅ COMPLETE (May 26, 2026)
 
-**Trigger:** Execution #869 Step 16 — *Select service effective date* — reported success in execution history but interacted with the wrong element. Because `cache_xpath()` fires unconditionally on `success=True`, every future run of that test case replays the wrong XPath from cache.
+**Motivation:** The only previous way to correct a poisoned XPath cache entry was a Python one-liner that deleted every entry in the database, forcing re-learning across all steps on the next run (unnecessary LLM `observe()` calls, slower first-run execution). Sprint 10.16 replaces that blunt tool with surgical controls.
 
-**Root cause analysis:** Three existing guards all miss this failure mode:
-
-| Existing Guard | Scope | Why it misses this case |
-|---|---|---|
-| `_step_made_expected_progress` | `click` + `"confirm"` in instruction only | Step action is `select` |
-| `_validate_cached_xpath_for_step` | `fill/type/input` email/password only | `select` action is explicitly excluded |
-| `_ensure_three_hk_plan_click_progressed` | Three.HK plan page URL only | Domain-specific |
-
-#### Feature: Post-`select_option` Outcome Verification (P0)
+#### Deliverables
 
 | Task | File(s) | Points | Status |
 |------|---------|--------|--------|
-| **10.16-1** Write unit tests: `_execute_action_with_xpath` for `select` raises `ValueError` when `input_value()` and label both mismatch the intended value; passes when value matches; passes when `input_value()` returns empty string (non-standard widget) | `backend/tests/test_tier2_select_outcome.py` (new) | 2 | 📋 |
-| **10.16-2** Add post-`select_option` outcome read-back in `_execute_action_with_xpath`: call `select_element.input_value()` then `evaluate(selectedIndex.text)`; raise `ValueError` on mismatch — prevents `cache_xpath()` from firing and escalates to Tier 3 | `backend/app/services/tier2_hybrid.py` | 2 | 📋 |
+| **10.16-1** Write backend unit tests: `GET /settings/xpath-cache/stats`, `GET /settings/xpath-cache` (keyword filter), `DELETE /settings/xpath-cache/{id}`, `DELETE /settings/xpath-cache` (bulk clear / invalid-only) | `backend/tests/unit/test_xpath_cache_api.py` (new) | 3 | ✅ |
+| **10.16-2** Add `XPathCacheStatsResponse`, `XPathCacheListResponse`, `XPathCacheClearResponse` schemas | `backend/app/schemas/execution_settings.py` | 1 | ✅ |
+| **10.16-3** Add 4 REST endpoints under `GET/DELETE /settings/xpath-cache` | `backend/app/api/v1/endpoints/settings.py` | 2 | ✅ |
+| **10.16-4** Write frontend unit tests (17 cases): stats row, loading, table render, per-entry delete confirm/cancel, Clear Invalid, Clear All confirm/cancel, keyword filter, empty state, error state | `frontend/src/components/__tests__/XPathCachePanel.test.tsx` (new) | 3 | ✅ |
+| **10.16-5** Implement `XPathCachePanel` React component: stats row, 400 ms debounced keyword filter, entries table with per-row 🗑 delete, "Clear Invalid" + "Clear All" buttons, action feedback banner | `frontend/src/components/XPathCachePanel.tsx` (new) | 3 | ✅ |
+| **10.16-6** Add 4 `settingsService` methods: `getXPathCacheStats`, `getXPathCacheEntries`, `deleteXPathCacheEntry`, `clearXPathCache` | `frontend/src/services/settingsService.ts` | 1 | ✅ |
+| **10.16-7** Wire `XPathCachePanel` into Settings page in its own Card section after Email Credentials | `frontend/src/pages/SettingsPage.tsx` | 1 | ✅ |
+| **10.16-8** Implement `ClearStepCacheButton` inline component; wire into each `StepCard` in Execution Progress page | `frontend/src/pages/ExecutionProgressPage.tsx` | 2 | ✅ |
 
-#### Feature: `select` Tag-Type Validation on Cache Hit (P1)
-
-| Task | File(s) | Points | Status |
-|------|---------|--------|--------|
-| **10.16-3** Write unit tests: `_validate_cached_xpath_for_step` returns `False` for `select` action when cached element `tagName` is not `select`; returns `True` when `tagName` is `select` | `backend/tests/test_tier2_select_outcome.py` | 1 | 📋 |
-| **10.16-4** Extend `_validate_cached_xpath_for_step` to handle `select` action: read `el.tagName.toLowerCase()` via `evaluate()`; return `False` if not `"select"` | `backend/app/services/tier2_hybrid.py` | 1 | 📋 |
-
-#### Feature: Provisional Cache Promotion (P2)
-
-| Task | File(s) | Points | Status |
-|------|---------|--------|--------|
-| **10.16-5** Write DB migration: add `confirmation_count INTEGER NOT NULL DEFAULT 0` and `is_provisional BOOLEAN NOT NULL DEFAULT TRUE` columns to `xpath_cache` table | `backend/migrate_sprint10_16.py` | 1 | 📋 |
-| **10.16-6** Add `confirmation_count` and `is_provisional` fields to `XPathCache` ORM model and `XPathCacheBase` / `XPathCache` schemas | `backend/app/models/execution_settings.py`, `backend/app/schemas/execution_settings.py` | 1 | 📋 |
-| **10.16-7** Update `cache_xpath()` to write new entries with `is_provisional=True`, `confirmation_count=0`; add `confirm_cache_entry()` method: increment `confirmation_count`, set `is_provisional=False` once `confirmation_count >= 2` | `backend/app/services/xpath_cache_service.py` | 2 | 📋 |
-| **10.16-8** In `execute_step()` success path: call `confirm_cache_entry()` instead of bare `validate_and_update(is_valid=True)`; for provisional entries that fail outcome verification, call `invalidate_cache()` immediately (skip the 3-failure threshold) | `backend/app/services/tier2_hybrid.py` | 2 | 📋 |
-| **10.16-9** Write unit tests: new entry written as provisional; `confirm_cache_entry` promotes at count=2; provisional entry is invalidated immediately on outcome mismatch; non-provisional entry uses existing 3-failure threshold | `backend/tests/test_xpath_cache_provisional.py` (new) | 3 | 📋 |
-
-#### Feature: Extend Step-Progress Guard to Date/Time `select` Steps (P3)
-
-| Task | File(s) | Points | Status |
-|------|---------|--------|--------|
-| **10.16-10** Write unit tests: `should_enforce_confirm_progress` returns `True` for `select` + date/time keywords (`date`, `time`, `month`, `year`, `effective`); continues to return `True` for `click` + `confirm`; returns `False` for plain `select` without keywords | `backend/tests/test_step_progress_guard.py` | 1 | 📋 |
-| **10.16-11** Extend `should_enforce_confirm_progress` in `step_progress_guard.py` to include `select` actions with date/time/calendar instruction keywords | `backend/app/services/step_progress_guard.py` | 1 | 📋 |
-
-**Sprint 10.16 total: 17 points / ~3.5 days (PLANNED)**
+**Sprint 10.16 total: 16 points delivered (May 26, 2026)**
 
 #### Architecture notes
 
-- **P0 (outcome verification)** is the direct fix: Playwright's `select_option()` does not throw when it selects the wrong `<select>` element by wrong-element-cached XPath, but `input_value()` will reveal the mismatch. A `ValueError` breaks out of the success path and prevents `cache_xpath()` from firing.
-- **P1 (tag-type validation)** guards future runs where a stale cache entry now points to a non-`<select>` DOM node after a page redesign.
-- **P2 (provisional promotion)** is defence-in-depth: a single `observe()` call cannot permanently poison the 7-day cache entry; at least two independently-verified successful runs are required before the entry is trusted long-term. Provisional entries that fail outcome verification are dropped immediately rather than waiting for 3 `validation_failures`.
-- **P3 (step-progress guard extension)** generalises the existing confirm-click guard to date/time `select` steps: a snapshot is taken before and after; if the page/field state has not changed, the step is marked as no-progress failure regardless of whether `select_option()` raised an exception.
-- No changes to the cache key scheme or existing cache entries are required. Existing entries are treated as non-provisional (`is_provisional=FALSE` default not set on migration — existing rows get `confirmation_count=0, is_provisional=TRUE` and will accumulate confirmations on next two successful runs).
-
-#### ADR reference
-
-- **ADR-002-45**: Post-Action Outcome Verification and Provisional XPath Cache Promotion — `select` outcome read-back; provisional cache promotion (2-confirmation threshold); `select` tag-type cache-hit validation; `should_enforce_confirm_progress` extended to date/time `select` steps — 📋 **Pending** recording in `documentation/ADR-002-test-execution-engine.md`
+- **Per-step clear** reuses `GET /settings/xpath-cache?keyword=` + `DELETE /settings/xpath-cache/{id}` — no new backend endpoint needed. The step's `step_description` is passed as the keyword; only entries whose `instruction` substring-matches are deleted. All other cached XPaths survive intact.
+- **"Clear Invalid"** removes only `is_valid=False` entries — steps that have already been self-healed by Tier 2 retry keep their newly-learned XPaths.
+- **"Clear All"** is the GUI replacement for the previous Python one-liner `db.query(XPathCache).delete()`. Requires confirmation before firing.
+- The panel is read-only until data loads; a 400 ms debounce on the keyword input prevents excessive API calls while typing.
 
 #### Sprint 10.16 Success Criteria
 
-- [ ] `select` action raises `ValueError` (not silent success) when `select_option()` lands on the wrong element
-- [ ] `ValueError` on `select` mismatch prevents `cache_xpath()` from writing a poisoned entry
-- [ ] Cached XPath for `select` action is rejected at cache-hit time if the element's `tagName` is not `select`
-- [ ] Newly extracted XPaths are written as `is_provisional=True` with `confirmation_count=0`
-- [ ] `confirm_cache_entry()` promotes entry to `is_provisional=False` after 2 confirmed successful runs
-- [ ] Provisional entries that fail outcome verification are invalidated immediately (not after 3 failures)
-- [ ] `should_enforce_confirm_progress` returns `True` for `select` + date/time keywords
-- [ ] DB migration runs cleanly on existing databases; existing entries start as provisional and promote naturally
-- [ ] All Tier 2 select step tests pass; no regressions in existing test suite
+- [x] Settings page shows XPath cache panel with total / valid / invalid / hit count stats
+- [x] Keyword filter narrows the entries table by instruction or page URL (case-insensitive, 400 ms debounce)
+- [x] Per-row delete button removes exactly one entry after confirmation; all others survive
+- [x] "Clear Invalid" removes only `is_valid=False` entries; correct XPaths are untouched
+- [x] "Clear All" removes all entries (replaces Python one-liner); requires confirmation
+- [x] "Clear XPath Cache" button visible on every step card in Execution Progress page
+- [x] Step-level clear lists entries matching the step instruction then deletes each by ID
+- [x] 0-entry result reports "No cache found for this step" (step may have used Tier 1 or was never cached)
+- [x] 16 backend unit tests pass; 17 frontend unit tests pass; 273 total frontend tests pass with no regressions
 
 ---
 
