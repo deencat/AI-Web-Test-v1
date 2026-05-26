@@ -52,6 +52,13 @@
 - `frontend/src/components/__tests__/ExecutionProgressPage.rca.test.tsx`
 - `frontend/src/pages/ExecutionProgressPage.tsx`
 - `frontend/src/services/feedbackService.ts`
+- `backend/app/services/step_progress_guard.py` (extended)
+- `backend/app/services/xpath_cache_service.py` (extended)
+- `backend/app/models/execution_settings.py` (extended)
+- `backend/app/schemas/execution_settings.py` (extended)
+- `backend/migrate_sprint10_16.py`
+- `backend/tests/test_tier2_select_outcome.py`
+- `backend/tests/test_xpath_cache_provisional.py`
 
 ---
 
@@ -101,6 +108,7 @@
 42. [ADR-002-42: Step Library @module: Syntax and Resolver Architecture](#adr-002-42-step-library-module-syntax-and-resolver-architecture)
 43. [ADR-002-43: AI-Powered Failure Root Cause Analysis](#adr-002-43-ai-powered-failure-root-cause-analysis)
 44. [ADR-002-44: Re-Run from Failed Step — Session Snapshot Persistence and Resume Architecture](#adr-002-44-re-run-from-failed-step--session-snapshot-persistence-and-resume-architecture)
+45. [ADR-002-45: Post-Action Outcome Verification and Provisional XPath Cache Promotion](#adr-002-45-post-action-outcome-verification-and-provisional-xpath-cache-promotion)
 
 ---
 
@@ -3405,4 +3413,125 @@ skipped_steps = (start_from_step - 1) if is_resume else 0
 - `frontend/src/components/__tests__/ReRunFromStepButton.test.tsx` — 10 frontend tests: visibility (4), confirmation dialog (4), API integration (2)
 
 **Total: 33 backend + 10 frontend = 43 new tests. 245 total frontend tests pass. No regression.**
+
+---
+
+## ADR-002-45: Post-Action Outcome Verification and Provisional XPath Cache Promotion
+
+**Date:** May 26, 2026 (Sprint 10.16)
+
+### Context
+
+Tier 2 treats "action executed without Playwright exception" as "step succeeded correctly". For `select` actions, `select_option()` does not throw when the resolved XPath targets the wrong `<select>` element — the dropdown is changed, but the wrong field is changed. The execution history records `success: True`, `cache_hit: False`, and `cache_xpath()` is called immediately, writing the wrong XPath for the 7-day TTL. All subsequent runs of the test case replay this poisoned entry.
+
+**Reported failure:** Execution #869 Step 16 — *Select service effective date* — recorded as success but clicked the wrong element. The issue was silently propagated to the cache.
+
+The three existing guards all miss this failure mode:
+
+| Existing Guard | Scope | Why it misses this case |
+|---|---|---|
+| `_step_made_expected_progress` | `click` + `"confirm"` in instruction only | Step action is `select` |
+| `_validate_cached_xpath_for_step` | `fill/type/input` email/password only | `select` excluded at line-level guard |
+| `_ensure_three_hk_plan_click_progressed` | Three.HK plan page URL only | Domain-specific |
+
+### Decision
+
+Four coordinated changes close the gap.
+
+#### ADR-002-45-A: Post-`select_option` Outcome Verification
+
+After `select_option()` resolves in `_execute_action_with_xpath()`, read back the actual selected value and visible label:
+
+```python
+actual_value = await select_element.input_value()
+actual_label = await select_element.evaluate(
+    "el => el.options[el.selectedIndex]?.text?.trim() || ''"
+)
+if actual_value and value and actual_value.strip().lower() != value.strip().lower():
+    if actual_label.lower() != value.strip().lower():
+        raise ValueError(
+            f"select outcome mismatch: expected '{value}', "
+            f"got value='{actual_value}', label='{actual_label}'"
+        )
+```
+
+The `ValueError` breaks the success path: `cache_xpath()` is not called and the step escalates to Tier 3 or a clean failure. Empty `actual_value` (non-standard custom widget) is treated as unverifiable and passes through without raising.
+
+#### ADR-002-45-B: `select` Tag-Type Validation on Cache Hit
+
+Extend `_validate_cached_xpath_for_step()` to include `select` actions. When the cached XPath is loaded, verify that the DOM element's `tagName` is actually `select`:
+
+```python
+if action == "select":
+    tag = await locator.evaluate("el => el.tagName.toLowerCase()")
+    if tag != "select":
+        return False  # wrong element type — invalidate and re-extract
+```
+
+This catches stale entries where a formerly-correct `<select>` XPath now resolves to a different element type after a page redesign.
+
+#### ADR-002-45-C: Provisional Cache Promotion (2-Confirmation Threshold)
+
+New columns on `xpath_cache`:
+
+```sql
+ALTER TABLE xpath_cache ADD COLUMN confirmation_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE xpath_cache ADD COLUMN is_provisional BOOLEAN NOT NULL DEFAULT TRUE;
+```
+
+**Write path:** `cache_xpath()` always writes `is_provisional=TRUE`, `confirmation_count=0`.
+
+**Confirm path:** New `confirm_cache_entry()` method in `XPathCacheService`:
+- Increments `confirmation_count`.
+- Sets `is_provisional=FALSE` when `confirmation_count >= 2`.
+
+**Success path in `execute_step()`:** Replace `validate_and_update(is_valid=True)` with `confirm_cache_entry()`.
+
+**Provisional fast-invalidation:** When outcome verification fails on a provisional entry, call `invalidate_cache()` immediately (set `is_valid=FALSE`) rather than waiting for the 3-failure threshold. A single confirmed-wrong provisional entry should never be trusted again.
+
+This means a poisoned `observe()` result can survive at most one test run (the initial extraction run) before it is either confirmed as correct by a second independent run or dropped.
+
+**Migration note:** Existing entries (pre-Sprint 10.16) are assigned `confirmation_count=0, is_provisional=TRUE` by the migration DEFAULT. They accumulate confirmations over the next two successful runs and promote naturally.
+
+#### ADR-002-45-D: Extend `should_enforce_confirm_progress` to Date/Time `select` Steps
+
+```python
+def should_enforce_confirm_progress(step: dict) -> bool:
+    action = (step.get("action") or "").lower()
+    instruction = (step.get("instruction") or "").lower()
+    if action == "click" and "confirm" in instruction:
+        return True
+    if action == "select" and any(
+        k in instruction for k in ("date", "time", "month", "year", "effective")
+    ):
+        return True
+    return False
+```
+
+For `select` steps matching date/time keywords, a `StepProgressSnapshot` is taken before execution. After execution, `has_confirm_step_progress()` checks whether the page/field state actually changed. If nothing changed, the step is downgraded to `success=False` via `_mark_no_progress_failure()`, preventing cache promotion.
+
+### Consequences
+
+**Positive**
+- A single inaccurate `observe()` result can no longer permanently poison the 7-day cache.
+- `select` steps have an outcome check equivalent to the `check` action's post-check verification (ADR-002-33).
+- Provisional promotion means two independently-verified successful runs are required before a cache entry is fully trusted — consistent with the validation-failure self-healing already in place.
+- The step-progress guard extension is general-purpose and works across any SPA date picker that uses a `<select>` element.
+
+**Negative**
+- Post-`select_option` read-back adds one Playwright `input_value()` + one `evaluate()` call per `select` step. Overhead is under 50ms in practice.
+- `input_value()` returns the `value` attribute of the selected `<option>`, not the visible label. When test steps specify a human-readable label (e.g. `"May"`) and the underlying option value is a number (e.g. `"5"`), the label fallback via `evaluate(selectedIndex.text)` is required — already included in the implementation.
+- Empty `input_value()` (custom widget rendering a non-native select) bypasses the check. These cases should be handled by the `ValueError` path in `_execute_action_with_xpath()` if the widget raises on incorrect interaction, otherwise they remain undetected.
+- Adding `confirmation_count` and `is_provisional` requires a DB migration on existing deployments.
+
+**Alternatives Considered**
+- **Never cache `select` XPaths**: Eliminates the poisoning risk but removes all caching benefit for date picker steps, which are among the most expensive `observe()` targets.
+- **Higher confirmation threshold (e.g. 3)**: More conservative but delays normal cache promotion for correct entries. Two is the minimum required to rule out a single-run fluke.
+- **LLM-based outcome comparison**: Accurate but adds LLM cost to every `select` step success — disproportionate to the risk.
+
+### Tests
+
+- `backend/tests/test_tier2_select_outcome.py` (new) — post-`select_option` outcome verification: raises on value mismatch; raises on label mismatch when value is empty; passes when value matches; passes when `input_value()` returns empty string; `_validate_cached_xpath_for_step` returns `False` for `select` action with wrong `tagName`; returns `True` for `select` with correct `tagName`
+- `backend/tests/test_xpath_cache_provisional.py` (new) — provisional cache: new entries written as `is_provisional=True`; `confirm_cache_entry` increments count and promotes at `confirmation_count=2`; provisional entry invalidated immediately on outcome failure; non-provisional entry uses 3-failure threshold
+- `backend/tests/test_step_progress_guard.py` (extended) — `should_enforce_confirm_progress` returns `True` for `select` + date/time keywords; `False` for plain `select`; existing `click+confirm` behaviour unchanged
 
