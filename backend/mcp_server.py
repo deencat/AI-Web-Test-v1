@@ -193,6 +193,10 @@ async def _call_v2(
 mcp = FastMCP(
     "ai-web-test",
     stateless_http=True,
+    # Use plain JSON responses instead of SSE streams so clients only need
+    # Accept: application/json (not text/event-stream).  Hermes Agent sends
+    # application/json only, causing 406 with the default SSE mode.
+    json_response=True,
     # Disable DNS-rebinding protection so remote LAN clients (e.g. Hermes Agent
     # on a different machine) can connect using the server's IP as the Host header.
     # Bearer-token auth still protects the endpoint.
