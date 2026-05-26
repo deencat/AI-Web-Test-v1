@@ -524,6 +524,13 @@ if __name__ == "__main__":
     app = mcp.streamable_http_app()
     app.add_middleware(BearerAuthMiddleware)
 
+    # Allow remote clients (e.g. Hermes Agent on another machine) that send
+    # the server's LAN IP as the Host header instead of "localhost".
+    # FastMCP's streamable_http_app uses Starlette which rejects non-localhost
+    # hosts with 421 by default — override that here so any host is accepted.
+    from starlette.middleware.trustedhost import TrustedHostMiddleware
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
+
     logger.info("Starting AI Web Test MCP server on port %d", MCP_PORT)
     logger.info("AWT base URL : %s", AWT_BASE)
     logger.info("Auth         : %s", "ENABLED" if MCP_SECRET else "DISABLED (dev mode)")
