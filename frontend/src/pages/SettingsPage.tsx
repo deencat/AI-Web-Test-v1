@@ -8,6 +8,7 @@ import { ExecutionSettingsPanel } from '../components/ExecutionSettingsPanel';
 import { TierAnalyticsPanel } from '../components/TierAnalyticsPanel';
 import { AgentWorkflowSettings } from '../components/AgentWorkflowSettings';
 import { EmailCredentialsSection } from '../features/settings/EmailCredentialsSection';
+import { XPathCachePanel } from '../components/XPathCachePanel';
 import settingsService from '../services/settingsService';
 import type { AvailableProvider, ModelOption, ExecutionSettingsUpdate } from '../types/api';
 
@@ -1016,6 +1017,12 @@ export const SettingsPage: React.FC = () => {
 
         {/* Sprint 10.10: Email OTP Credentials */}
         <EmailCredentialsSection token={localStorage.getItem('token') ?? ''} />
+
+        {/* Sprint 10.16: XPath Cache Management */}
+        <Card>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">XPath Cache Management</h2>
+          <XPathCachePanel />
+        </Card>
 
         {/* Save Button for ALL Settings */}
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-lg p-6 shadow-lg">

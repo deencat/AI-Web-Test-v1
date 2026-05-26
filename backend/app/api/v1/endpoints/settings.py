@@ -1,10 +1,11 @@
 """API endpoints for user settings."""
-from typing import Dict, Any, List
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Dict, Any, List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_current_user
 from app.models.user import User
+from app.models.execution_settings import XPathCache as XPathCacheModel
 from app.schemas.user_settings import (
     UserSettingInDB, 
     UserSettingUpdate, 
@@ -18,9 +19,14 @@ from app.schemas.execution_settings import (
     ExecutionSettingsUpdate,
     ExecutionStrategyInfo,
     TierDistributionStats,
-    StrategyEffectivenessStats
+    StrategyEffectivenessStats,
+    XPathCache as XPathCacheSchema,
+    XPathCacheStatsResponse,
+    XPathCacheListResponse,
+    XPathCacheClearResponse,
 )
 from app.services.user_settings_service import user_settings_service
+from app.services.xpath_cache_service import XPathCacheService
 from app.crud import execution_settings as crud_execution_settings
 
 router = APIRouter()
@@ -489,5 +495,121 @@ async def get_strategy_effectiveness(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get strategy effectiveness: {str(e)}"
+        )
+
+
+# ============================================================================
+# Sprint 10.16: XPath Cache Management Endpoints
+# ============================================================================
+
+
+@router.get("/xpath-cache/stats", response_model=XPathCacheStatsResponse)
+async def get_xpath_cache_stats(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Return aggregate statistics for the XPath cache.
+
+    Includes total/valid/invalid entry counts, total hits, average extraction
+    time, and cache hit rate.  Useful for understanding cache health without
+    loading every row.
+    """
+    try:
+        svc = XPathCacheService(db)
+        stats = svc.get_cache_stats()
+        return XPathCacheStatsResponse(**stats)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get XPath cache stats: {str(e)}",
+        )
+
+
+@router.get("/xpath-cache", response_model=XPathCacheListResponse)
+async def list_xpath_cache_entries(
+    keyword: Optional[str] = Query(None, description="Filter by substring in instruction or page_url"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    List XPath cache entries, optionally filtered by a keyword.
+
+    The keyword is matched case-insensitively against both the *instruction*
+    and the *page_url* columns.  Returns all entries when no keyword is given.
+    Results are ordered by ``hit_count`` descending so the most-used entries
+    appear first.
+    """
+    try:
+        query = db.query(XPathCacheModel)
+        if keyword:
+            like = f"%{keyword}%"
+            query = query.filter(
+                XPathCacheModel.instruction.ilike(like)
+                | XPathCacheModel.page_url.ilike(like)
+            )
+        entries = query.order_by(XPathCacheModel.hit_count.desc()).all()
+        return XPathCacheListResponse(
+            entries=[XPathCacheSchema.model_validate(e) for e in entries],
+            total=len(entries),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list XPath cache entries: {str(e)}",
+        )
+
+
+@router.delete("/xpath-cache/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_xpath_cache_entry(
+    entry_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Delete a single XPath cache entry by its primary key.
+
+    Use this from the execution step result panel to force re-extraction of the
+    XPath for a specific step on its next run.  Other steps keep their cached
+    XPaths unchanged.
+    """
+    entry = db.query(XPathCacheModel).filter(XPathCacheModel.id == entry_id).first()
+    if not entry:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"XPath cache entry {entry_id} not found",
+        )
+    db.delete(entry)
+    db.commit()
+
+
+@router.delete("/xpath-cache", response_model=XPathCacheClearResponse)
+async def clear_xpath_cache(
+    invalid_only: bool = Query(False, description="When true, remove only invalid entries"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Clear XPath cache entries in bulk.
+
+    * ``invalid_only=false`` (default) — removes **all** entries; equivalent to
+      the previous Python one-liner ``db.query(XPathCache).delete()``.
+    * ``invalid_only=true`` — removes only entries marked ``is_valid=False``,
+      keeping all valid cached XPaths intact.
+    """
+    try:
+        svc = XPathCacheService(db)
+        if invalid_only:
+            deleted = svc.clear_invalid_entries()
+            message = f"Cleared {deleted} invalid XPath cache entries"
+        else:
+            deleted = db.query(XPathCacheModel).delete()
+            db.commit()
+            message = f"Cleared all {deleted} XPath cache entries"
+        return XPathCacheClearResponse(deleted=deleted, message=message)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to clear XPath cache: {str(e)}",
         )
 

@@ -347,6 +347,69 @@ class SettingsService {
       throw new Error(apiHelpers.getErrorMessage(error));
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // Sprint 10.16: XPath Cache Management
+  // ---------------------------------------------------------------------------
+
+  /** Return aggregate stats (totals, hit rate, avg extraction time). */
+  async getXPathCacheStats(): Promise<{
+    total_entries: number;
+    valid_entries: number;
+    invalid_entries: number;
+    total_hits: number;
+    avg_extraction_time_ms: number;
+    cache_hit_rate: number;
+  }> {
+    try {
+      const response = await api.get('/settings/xpath-cache/stats');
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  /**
+   * List cache entries, optionally filtered by a keyword (matches instruction
+   * or page_url using a case-insensitive substring search).
+   */
+  async getXPathCacheEntries(keyword?: string): Promise<{ entries: any[]; total: number }> {
+    try {
+      const params = keyword ? { keyword } : {};
+      const response = await api.get('/settings/xpath-cache', { params });
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  /**
+   * Delete a single XPath cache entry by its primary key.
+   * The step will re-learn its XPath on the next run; all other steps are unaffected.
+   */
+  async deleteXPathCacheEntry(entryId: number): Promise<void> {
+    try {
+      await api.delete(`/settings/xpath-cache/${entryId}`);
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  /**
+   * Bulk-clear XPath cache entries.
+   * @param invalidOnly When true only invalid (failed) entries are removed;
+   *                    when false every entry is deleted.
+   */
+  async clearXPathCache(invalidOnly: boolean): Promise<{ deleted: number; message: string }> {
+    try {
+      const response = await api.delete('/settings/xpath-cache', {
+        params: { invalid_only: invalidOnly },
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
 }
 
 export default new SettingsService();

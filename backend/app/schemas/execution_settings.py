@@ -1,9 +1,10 @@
 """
 Pydantic schemas for Execution Settings
 Sprint 5.5: 3-Tier Execution Engine configuration
+Sprint 10.16: XPath Cache management response schemas
 """
 from datetime import datetime
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 from pydantic import BaseModel, Field, validator
 
 
@@ -139,6 +140,33 @@ class XPathCache(XPathCacheBase):
     
     class Config:
         from_attributes = True
+
+
+# ---------------------------------------------------------------------------
+# Sprint 10.16: XPath Cache management response schemas
+# ---------------------------------------------------------------------------
+
+
+class XPathCacheStatsResponse(BaseModel):
+    """Aggregate statistics for the XPath cache table."""
+    total_entries: int
+    valid_entries: int
+    invalid_entries: int
+    total_hits: int
+    avg_extraction_time_ms: float
+    cache_hit_rate: float
+
+
+class XPathCacheListResponse(BaseModel):
+    """Paginated list of XPath cache entries with total count."""
+    entries: List[XPathCache]
+    total: int
+
+
+class XPathCacheClearResponse(BaseModel):
+    """Result of a cache-clear operation."""
+    deleted: int
+    message: str
 
 
 # Tier Execution Log Schemas
