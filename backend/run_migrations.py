@@ -87,13 +87,26 @@ def run_migration(migration_file, db):
         # Load migration module
         module = load_migration_module(migration_file)
         
-        # Check if module has main() or upgrade() function
+        # Support both current and legacy migration entrypoints.
+        # Older migrations in this repo expose migrate_up(), while newer ones
+        # use upgrade() or main().
         if hasattr(module, "main"):
-            module.main()
+            result = module.main()
         elif hasattr(module, "upgrade"):
-            module.upgrade()
+            result = module.upgrade()
+        elif hasattr(module, "migrate_up"):
+            result = module.migrate_up()
+        elif hasattr(module, "run_migration"):
+            result = module.run_migration()
         else:
-            print(f"  ⚠️  Migration {migration_name} has no main() or upgrade() function")
+            print(
+                f"  ⚠️  Migration {migration_name} has no main(), upgrade(), "
+                f"migrate_up(), or run_migration() function"
+            )
+            return False
+
+        if result is False:
+            print(f"  ❌ Migration {migration_name} reported failure")
             return False
         
         # Record successful migration

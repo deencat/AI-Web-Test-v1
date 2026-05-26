@@ -109,7 +109,7 @@ class XPathCacheBase(BaseModel):
     selector_type: str = "xpath"
     page_title: Optional[str] = None
     element_text: Optional[str] = None
-    metadata: Optional[str] = None
+    extra_data: Optional[str] = None  # maps to ORM extra_data column (avoid name clash with SQLAlchemy Base.metadata)
 
 
 class XPathCacheCreate(XPathCacheBase):

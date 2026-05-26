@@ -37,7 +37,7 @@ def _make_cache_entry(
     entry.extraction_time_ms = 250.0
     entry.page_title = "Checkout"
     entry.element_text = "Submit"
-    entry.metadata = None
+    entry.extra_data = None
     entry.last_validated = None
     entry.created_at = datetime(2026, 5, 1, tzinfo=timezone.utc)
     entry.updated_at = datetime(2026, 5, 20, tzinfo=timezone.utc)
