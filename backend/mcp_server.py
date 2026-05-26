@@ -59,6 +59,7 @@ from typing import Any, Optional
 import httpx
 import uvicorn
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.server import TransportSecuritySettings
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -192,7 +193,10 @@ async def _call_v2(
 mcp = FastMCP(
     "ai-web-test",
     stateless_http=True,
-    host="0.0.0.0",
+    # Disable DNS-rebinding protection so remote LAN clients (e.g. Hermes Agent
+    # on a different machine) can connect using the server's IP as the Host header.
+    # Bearer-token auth still protects the endpoint.
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     instructions=(
         "Tools for driving the AI Web Test automation platform. "
         "Use crawl_and_save_test to generate a new test case via browser crawl, "
