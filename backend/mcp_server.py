@@ -499,6 +499,44 @@ async def health_check() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Accept-header normaliser — FastMCP validates Accept strictly (no wildcard)
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Accept-header normaliser — FastMCP validates Accept strictly (no wildcard)
+# ---------------------------------------------------------------------------
+
+class AcceptNormalizerMiddleware:
+    """Ensure every MCP request carries Accept: application/json.
+
+    Hermes Agent (and other MCP clients) may send Accept: */* or omit it.
+    FastMCP's strict prefix check rejects those with 406.  This raw ASGI
+    middleware rewrites the Accept header in the ASGI scope before FastMCP
+    sees the request, so any MCP client works regardless of what it sends.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] == "http":
+            hdrs = {k: v for k, v in scope["headers"]}
+            accept = hdrs.get(b"accept", b"").decode()
+            if not any(
+                t.strip().startswith("application/json")
+                for t in accept.split(",")
+            ):
+                patched = (
+                    "application/json, text/event-stream"
+                    if not accept
+                    else f"application/json, text/event-stream, {accept}"
+                )
+                hdrs[b"accept"] = patched.encode()
+                scope = {**scope, "headers": list(hdrs.items())}
+        await self.app(scope, receive, send)
+
+
+# ---------------------------------------------------------------------------
 # Security middleware — validate Bearer token on every request
 # ---------------------------------------------------------------------------
 
@@ -532,6 +570,9 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
 if __name__ == "__main__":
     app = mcp.streamable_http_app()
     app.add_middleware(BearerAuthMiddleware)
+    # Wrap with raw ASGI normaliser so clients sending Accept: */* or no
+    # Accept header (e.g. Hermes Agent) are accepted instead of getting 406.
+    app = AcceptNormalizerMiddleware(app)
 
     logger.info("Starting AI Web Test MCP server on port %d", MCP_PORT)
     logger.info("AWT base URL : %s", AWT_BASE)
