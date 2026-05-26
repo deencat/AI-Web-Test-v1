@@ -212,6 +212,10 @@ export const KnowledgeBasePage: React.FC = () => {
   const [feedbackTotal, setFeedbackTotal] = useState(0);
   const [loadingFeedback, setLoadingFeedback] = useState(false);
   const [clearingFeedback, setClearingFeedback] = useState(false);
+  const [editingFeedbackId, setEditingFeedbackId] = useState<string | null>(null);
+  const [editingReason, setEditingReason] = useState('');
+  const [editingTags, setEditingTags] = useState('');
+  const [savingFeedback, setSavingFeedback] = useState(false);
 
   // -- coverage + export (Inc 3) --------------------------------------------
   const [coverageMatrix, setCoverageMatrix] = useState<CoverageMatrix | null>(null);
@@ -688,6 +692,31 @@ export const KnowledgeBasePage: React.FC = () => {
       alert(`Clear failed: ${msg ?? String(err)}`);
     } finally {
       setClearingFeedback(false);
+    }
+  }
+
+  function handleStartEditFeedback(fb: WikiSuggestFeedbackItem) {
+    setEditingFeedbackId(fb.id);
+    setEditingReason(fb.reason ?? '');
+    setEditingTags((fb.reasonTags ?? []).join(', '));
+  }
+
+  async function handleSaveFeedbackEdit(feedbackId: string) {
+    if (!projectId) return;
+    setSavingFeedback(true);
+    try {
+      const tags = editingTags.split(',').map(t => t.trim()).filter(Boolean);
+      const updated = await requirementsService.patchWikiSuggestFeedback(projectId, feedbackId, {
+        reason: editingReason || undefined,
+        reasonTags: tags.length > 0 ? tags : undefined,
+      });
+      setFeedbackHistory(prev => prev.map(fb => fb.id === feedbackId ? { ...fb, ...updated } : fb));
+      setEditingFeedbackId(null);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      alert(`Save failed: ${msg ?? String(err)}`);
+    } finally {
+      setSavingFeedback(false);
     }
   }
 
@@ -1385,23 +1414,67 @@ export const KnowledgeBasePage: React.FC = () => {
                     <p className="text-xs text-gray-400">{loadingFeedback ? 'Loading…' : 'No feedback history yet.'}</p>
                   ) : (
                     <ul className="divide-y divide-gray-100 max-h-48 overflow-y-auto">
-                      {feedbackHistory.map(fb => (
+                      {feedbackHistory.filter(fb => fb.decision === 'reject').map(fb => (
                         <li key={fb.id} className="py-1.5 flex items-start gap-2">
-                          <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 ${fb.decision === 'accept' || fb.decision === 'accept_edited' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                            {fb.decision === 'accept_edited' ? 'edited' : fb.decision}
+                          <span className="text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 bg-red-50 text-red-700">
+                            reject
                           </span>
                           <div className="min-w-0 flex-1">
                             {fb.requirementTitle && <p className="text-xs text-gray-700 truncate">{fb.requirementTitle}</p>}
-                            {fb.reason && <p className="text-xs text-gray-500 italic">{fb.reason}</p>}
-                            {fb.reasonTags && fb.reasonTags.length > 0 && (
-                              <div className="flex gap-1 flex-wrap mt-0.5">
-                                {fb.reasonTags.map(t => <span key={t} className="text-xs bg-gray-100 text-gray-600 px-1 rounded">{t}</span>)}
+                            {editingFeedbackId === fb.id ? (
+                              <div className="space-y-1 mt-1">
+                                <input
+                                  autoFocus
+                                  className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  placeholder="Reason…"
+                                  value={editingReason}
+                                  onChange={e => setEditingReason(e.target.value)}
+                                />
+                                <input
+                                  className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  placeholder="Tags (comma-separated)…"
+                                  value={editingTags}
+                                  onChange={e => setEditingTags(e.target.value)}
+                                />
+                                <div className="flex gap-1">
+                                  <button
+                                    onClick={() => handleSaveFeedbackEdit(fb.id)}
+                                    disabled={savingFeedback}
+                                    className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded hover:bg-blue-700 disabled:opacity-50"
+                                  >
+                                    {savingFeedback ? 'Saving…' : 'Save'}
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingFeedbackId(null)}
+                                    className="text-xs text-gray-500 hover:text-gray-700 px-2 py-0.5"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
                               </div>
+                            ) : (
+                              <>
+                                {fb.reason && <p className="text-xs text-gray-500 italic">{fb.reason}</p>}
+                                {fb.reasonTags && fb.reasonTags.length > 0 && (
+                                  <div className="flex gap-1 flex-wrap mt-0.5">
+                                    {fb.reasonTags.map(t => <span key={t} className="text-xs bg-gray-100 text-gray-600 px-1 rounded">{t}</span>)}
+                                  </div>
+                                )}
+                                <button
+                                  onClick={() => handleStartEditFeedback(fb)}
+                                  className="text-xs text-blue-500 hover:text-blue-700 mt-0.5"
+                                >
+                                  Edit reason
+                                </button>
+                              </>
                             )}
                           </div>
                           <span className="text-xs text-gray-400 shrink-0">{new Date(fb.createdAt).toLocaleDateString()}</span>
                         </li>
                       ))}
+                      {feedbackHistory.filter(fb => fb.decision === 'reject').length === 0 && (
+                        <p className="text-xs text-gray-400 py-1">No rejected entries.</p>
+                      )}
                     </ul>
                   )}
                 </div>

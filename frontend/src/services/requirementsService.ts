@@ -465,6 +465,11 @@ const requirementsService = {
     return res.data;
   },
 
+  async patchWikiSuggestFeedback(projectId: string, feedbackId: string, fields: { reason?: string; reasonTags?: string[] }): Promise<WikiSuggestFeedbackItem> {
+    const res = await api.patch<WikiSuggestFeedbackItem>(`${BASE}/${projectId}/wiki-suggest-feedback/${feedbackId}`, fields);
+    return res.data;
+  },
+
   async deleteAllWikiSuggestFeedback(projectId: string): Promise<void> {
     await api.delete(`${BASE}/${projectId}/wiki-suggest-feedback`, { params: { confirm: '1' } });
   },
