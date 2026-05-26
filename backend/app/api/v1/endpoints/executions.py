@@ -17,7 +17,8 @@ from app.schemas.test_execution import (
     TestExecutionDetailResponse,
     TestExecutionListItem,
     TestExecutionListResponse,
-    ExecutionStatistics
+    ExecutionStatistics,
+    LoginCredentials,
 )
 from app.crud import test_case as crud_tests
 from app.crud import test_execution as crud_executions
@@ -230,7 +231,14 @@ async def run_test_with_playwright(
             profile_id=request.browser_profile_id,
             user_id=current_user.id
         )
-    
+
+    # Sprint 10.14: extract ephemeral login_credentials — NEVER stored in DB/trigger_details
+    login_credentials = (
+        request.login_credentials.model_dump()
+        if request.login_credentials
+        else None
+    )
+
     # Set queued timestamp and priority
     execution.queued_at = datetime.utcnow()
     execution.priority = getattr(request, 'priority', 5)  # Default: medium priority
@@ -245,7 +253,8 @@ async def run_test_with_playwright(
         test_case_id=test_case_id,
         user_id=current_user.id,
         priority=execution.priority,
-        http_credentials=http_credentials
+        http_credentials=http_credentials,
+        login_credentials=login_credentials,
     )
     
     # Update queue position in database

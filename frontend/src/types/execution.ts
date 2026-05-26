@@ -158,6 +158,11 @@ export interface ExecutionStartRequest {
   resume_from_execution_id?: number;
   /** 1-based step index to resume from (minimum 2) */
   start_from_step?: number;
+  /** Sprint 10.14: Ephemeral CRM login credentials — never persisted */
+  login_credentials?: {
+    username: string;
+    password: string;
+  };
 }
 
 export interface ExecutionStartResponse {

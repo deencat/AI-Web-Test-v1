@@ -59,6 +59,9 @@ export const SettingsPage: React.FC = () => {
     typescript: { status: 'checking' }
   });
 
+  // Sprint 10.15: vLLM Thinking Mode Toggle
+  const [localVllmEnableThinking, setLocalVllmEnableThinking] = useState<boolean>(false);
+
   // Load settings on mount
   useEffect(() => {
     loadSettings();
@@ -157,6 +160,9 @@ export const SettingsPage: React.FC = () => {
       setAnalysisModel(settings.analysis_model ?? null);
       setEvolutionProvider(settings.evolution_provider ?? null);
       setEvolutionModel(settings.evolution_model ?? null);
+
+      // Sprint 10.15: thinking mode toggle (defaults to false when not in DB yet)
+      setLocalVllmEnableThinking(settings.local_vllm_enable_thinking ?? false);
     } catch (error: any) {
       console.error('Failed to load settings:', error);
       setSaveMessage({ type: 'error', text: 'Failed to load settings' });
@@ -189,6 +195,8 @@ export const SettingsPage: React.FC = () => {
         analysis_model: analysisModel,
         evolution_provider: evolutionProvider,
         evolution_model: evolutionModel,
+        // Sprint 10.15: vLLM thinking mode toggle
+        local_vllm_enable_thinking: localVllmEnableThinking,
       };
       
       await settingsService.updateUserProviderSettings(updateData);
@@ -292,6 +300,26 @@ export const SettingsPage: React.FC = () => {
 
   const isAvailableProvider = (providerName: string): boolean =>
     availableProviders.some((provider) => provider.name === providerName);
+
+  /**
+   * Sprint 10.15: Return true when the given provider+model combination supports
+   * chain-of-thought thinking mode (thinking_capable flag in the model metadata).
+   */
+  const isThinkingCapableModel = (providerName: string, modelId: string): boolean => {
+    if (providerName !== 'local_vllm') return false;
+    const provider = availableProviders.find(p => p.name === 'local_vllm');
+    if (!provider?.model_options) return false;
+    return provider.model_options.some(m => m.id === modelId && m.thinking_capable === true);
+  };
+
+  /** Show the card whenever local_vllm is active on any slot. */
+  const showThinkingToggle: boolean =
+    generationProvider === 'local_vllm' || executionProvider === 'local_vllm';
+
+  /** Whether the currently selected vLLM model actually supports thinking. */
+  const thinkingModelActive: boolean =
+    isThinkingCapableModel(generationProvider, generationModel) ||
+    isThinkingCapableModel(executionProvider, executionModel);
 
   if (isLoading) {
     return (
@@ -672,6 +700,58 @@ export const SettingsPage: React.FC = () => {
             onEvolutionChange={(p, m) => { setEvolutionProvider(p); setEvolutionModel(m); }}
           />
         </Card>
+
+        {/* Sprint 10.15: vLLM Thinking Mode Toggle — shown whenever local_vllm is active */}
+        {showThinkingToggle && (
+          <Card>
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">vLLM Thinking Mode</h2>
+                <p className="text-sm text-gray-600 mt-1">
+                  Chain-of-thought reasoning via{' '}
+                  <span className="font-mono text-xs bg-gray-100 px-1 rounded">chat_template_kwargs</span>
+                </p>
+              </div>
+              <div className="px-3 py-1 bg-indigo-100 text-indigo-700 text-xs font-medium rounded-full">
+                Sprint 10.15
+              </div>
+            </div>
+
+            <div className={`flex items-center justify-between py-3 border rounded-lg px-4 ${thinkingModelActive ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200 bg-gray-50 opacity-60'}`}>
+              <div>
+                <p className={`font-medium ${thinkingModelActive ? 'text-gray-900' : 'text-gray-500'}`}>
+                  Enable Thinking Mode
+                  {!thinkingModelActive && (
+                    <span className="ml-2 text-xs font-normal text-amber-600">— requires Qwen3.6-35B model</span>
+                  )}
+                </p>
+                <p className="text-sm text-gray-600 mt-0.5">
+                  {thinkingModelActive
+                    ? <>Injects <span className="font-mono text-xs bg-white px-1 rounded border border-indigo-200">chat_template_kwargs: &#123;enable_thinking: true&#125;</span> into every vLLM request.</>
+                    : <>Select <span className="font-mono text-xs bg-white px-1 rounded">RedHatAI/Qwen3.6-35B-A3B-NVFP4</span> as your generation or execution model to enable this.</>
+                  }
+                </p>
+              </div>
+              <label className={`relative inline-flex items-center ml-4 flex-shrink-0 ${thinkingModelActive ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={localVllmEnableThinking}
+                  disabled={!thinkingModelActive}
+                  onChange={(e) => setLocalVllmEnableThinking(e.target.checked)}
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+              </label>
+            </div>
+
+            {thinkingModelActive && (
+              <div className="mt-3 p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-sm text-indigo-800">
+                <strong>Active model supports thinking.</strong> Toggle on and click <strong>Save All Settings</strong> to enable chain-of-thought reasoning.
+                Non-capable models (<span className="font-mono text-xs">gpt-oss-20b</span>, <span className="font-mono text-xs">DeepSeek-V4-Flash-4bit</span>) always ignore this flag even if saved.
+              </div>
+            )}
+          </Card>
+        )}
 
         {/* Sprint 5: Stagehand Provider Selection */}
         <Card>

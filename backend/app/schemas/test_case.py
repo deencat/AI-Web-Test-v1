@@ -53,6 +53,12 @@ class TestCaseBase(BaseModel):
     tags: Optional[List[str]] = Field(None, description="Test tags for categorization")
     test_metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata (template_id, scenario_id, etc.)")
 
+    # Sprint 10.14: Ephemeral CRM login credentials flag
+    requires_runtime_credentials: bool = Field(
+        default=False,
+        description="When True, a credential prompt is shown before every run; credentials are never persisted",
+    )
+
 
 # Schema for creating a test case
 class TestCaseCreate(TestCaseBase):
@@ -86,6 +92,10 @@ class TestCaseUpdate(BaseModel):
     category_id: Optional[int] = None
     tags: Optional[List[str]] = None
     test_metadata: Optional[Dict[str, Any]] = None
+    requires_runtime_credentials: Optional[bool] = Field(
+        None,
+        description="Toggle ephemeral CRM credential prompt for this test case",
+    )
     
     @field_validator('test_data')
     @classmethod

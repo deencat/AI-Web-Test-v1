@@ -69,6 +69,8 @@ export interface Test {
   last_run?: string;
   execution_time?: number;
   steps?: TestStep[];
+  /** Sprint 10.14: CRM ephemeral credential prompt flag */
+  requires_runtime_credentials?: boolean;
   test_data?: {
     loop_blocks?: LoopBlock[];
     [key: string]: any;
@@ -113,6 +115,8 @@ export interface UpdateTestRequest {
   category_id?: number;
   tags?: string[];
   test_metadata?: Record<string, any>;
+  /** Sprint 10.14: toggle CRM ephemeral credential prompt */
+  requires_runtime_credentials?: boolean;
 }
 
 export interface RunTestRequest {
@@ -271,6 +275,8 @@ export interface ModelOption {
   id: string;
   display_name: string;
   is_free: boolean;
+  /** Sprint 10.15: True when the model supports chain-of-thought thinking mode. */
+  thinking_capable?: boolean;
 }
 
 export interface AvailableProvider {
@@ -311,6 +317,8 @@ export interface UserSettings {
   analysis_model?: string | null;
   evolution_provider?: string | null;
   evolution_model?: string | null;
+  // Sprint 10.15: vLLM thinking mode toggle
+  local_vllm_enable_thinking?: boolean;
   created_at: string;
   updated_at: string | null;
 }
@@ -333,6 +341,8 @@ export interface UpdateUserSettingsRequest {
   analysis_model?: string | null;
   evolution_provider?: string | null;
   evolution_model?: string | null;
+  // Sprint 10.15: vLLM thinking mode toggle
+  local_vllm_enable_thinking?: boolean;
 }
 
 // Agent Activity types

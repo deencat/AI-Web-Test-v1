@@ -210,6 +210,8 @@ class QueueManager:
                                 logger.warning(f"Failed to load profile session data: {e}")
 
                         http_credentials = queued_execution.http_credentials
+                        # Sprint 10.14: ephemeral CRM credentials — in-memory only
+                        login_credentials = queued_execution.login_credentials
                         
                         # Load user's execution provider settings (Sprint 3 - Settings Page Dynamic Configuration)
                         from app.services.user_settings_service import user_settings_service
@@ -255,6 +257,7 @@ class QueueManager:
                                     http_credentials=http_credentials,
                                     resume_from_execution_id=resume_from_execution_id,
                                     start_from_step=start_from_step,
+                                    login_credentials=login_credentials,
                                 )
                             )
 

@@ -29,6 +29,7 @@ export const TestsPage: React.FC = () => {
     steps: [] as string[],
     expected_result: '',
     priority: 'medium' as 'high' | 'medium' | 'low',
+    requires_runtime_credentials: false,
   });
   
   // KB Integration State (Sprint 2 Day 11)
@@ -91,6 +92,7 @@ export const TestsPage: React.FC = () => {
         steps: [...testCase.steps],
         expected_result: testCase.expected_result,
         priority: testCase.priority,
+        requires_runtime_credentials: (test as any).requires_runtime_credentials ?? false,
       });
     } catch (err) {
       console.error('Failed to load test:', err);
@@ -172,6 +174,7 @@ export const TestsPage: React.FC = () => {
           priority: editForm.priority,
           steps: editForm.steps,
           expected_result: editForm.expected_result,
+          requires_runtime_credentials: editForm.requires_runtime_credentials,
         });
         
         alert(`✅ Test "${editForm.title}" updated successfully!`);
@@ -554,6 +557,34 @@ export const TestsPage: React.FC = () => {
                       <option value="medium">Medium</option>
                       <option value="low">Low</option>
                     </select>
+                  </div>
+
+                  {/* CRM Login Required Toggle — Sprint 10.14 */}
+                  <div className="flex items-center justify-between p-3 border-2 border-amber-200 rounded-lg bg-amber-50">
+                    <div>
+                      <label
+                        htmlFor="edit-requires-creds"
+                        className="block text-sm font-semibold text-gray-900"
+                      >
+                        🔐 Requires CRM Login
+                      </label>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Show credential prompt before each run (never stored)
+                      </p>
+                    </div>
+                    <input
+                      id="edit-requires-creds"
+                      type="checkbox"
+                      checked={editForm.requires_runtime_credentials}
+                      onChange={(e) =>
+                        setEditForm({
+                          ...editForm,
+                          requires_runtime_credentials: e.target.checked,
+                        })
+                      }
+                      className="w-5 h-5 accent-amber-500 cursor-pointer"
+                      data-testid="requires-runtime-credentials-toggle"
+                    />
                   </div>
 
                   {/* Test Steps - Version Control Enabled */}

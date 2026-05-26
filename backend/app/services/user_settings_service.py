@@ -83,7 +83,11 @@ class UserSettingsService:
                 "DeepSeek-V4-Flash-4bit",
             ],
             "recommended": "DeepSeek-V4-Flash-4bit",
-            "api_key_env": "LOCAL_VLLM_API_KEY"  # placeholder; vLLM ignores auth by default
+            "api_key_env": "LOCAL_VLLM_API_KEY",  # placeholder; vLLM ignores auth by default
+            # Sprint 10.15: models that accept chat_template_kwargs: { enable_thinking }
+            "thinking_capable_models": [
+                "RedHatAI/Qwen3.6-35B-A3B-NVFP4",
+            ],
         }
     }
     
@@ -106,11 +110,14 @@ class UserSettingsService:
                 is_configured = bool(getattr(settings, api_key_env, None))
 
             # Build rich model_options list; free models detected by :free suffix
+            # Sprint 10.15: mark thinking-capable vLLM models
+            thinking_capable_models: list = config.get("thinking_capable_models", [])
             model_options = [
                 ModelOption(
                     id=model_id,
                     display_name=model_id,
                     is_free=model_id.endswith(":free"),
+                    thinking_capable=model_id in thinking_capable_models,
                 )
                 for model_id in config["models"]
             ]
@@ -425,7 +432,9 @@ class UserSettingsService:
                     "model": user_settings.generation_model,
                     "api_key": api_key,  # From environment variables
                     "temperature": user_settings.generation_temperature,
-                    "max_tokens": user_settings.generation_max_tokens
+                    "max_tokens": user_settings.generation_max_tokens,
+                    # Sprint 10.15: pass thinking flag so call sites can forward it
+                    "enable_thinking": bool(getattr(user_settings, "local_vllm_enable_thinking", False)),
                 }
             else:  # execution
                 provider = user_settings.execution_provider
@@ -435,7 +444,9 @@ class UserSettingsService:
                     "model": user_settings.execution_model,
                     "api_key": api_key,  # From environment variables
                     "temperature": user_settings.execution_temperature,
-                    "max_tokens": user_settings.execution_max_tokens
+                    "max_tokens": user_settings.execution_max_tokens,
+                    # Sprint 10.15: pass thinking flag so call sites can forward it
+                    "enable_thinking": bool(getattr(user_settings, "local_vllm_enable_thinking", False)),
                 }
         
         # Fallback to environment settings

@@ -1,5 +1,5 @@
 """Test case model for storing generated and manual test cases."""
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Enum as SQLEnum, JSON
+from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey, Enum as SQLEnum, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -58,6 +58,9 @@ class TestCase(Base):
     tags = Column(JSON, nullable=True)  # Array of strings
     test_metadata = Column(JSON, nullable=True)  # Additional metadata (renamed from 'metadata' to avoid SQLAlchemy conflict)
     
+    # Sprint 10.14: Ephemeral CRM credentials flag
+    requires_runtime_credentials = Column(Boolean, nullable=False, default=False)
+
     # Metadata
     created_at = Column(DateTime, nullable=False, default=utc_now)
     updated_at = Column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
