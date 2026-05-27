@@ -51,14 +51,17 @@
 - `frontend/src/components/execution/RootCauseAnalysisPanel.tsx`
 - `frontend/src/components/__tests__/ExecutionProgressPage.rca.test.tsx`
 - `frontend/src/pages/ExecutionProgressPage.tsx`
+- `frontend/src/pages/SettingsPage.tsx`
+- `frontend/src/components/XPathCachePanel.tsx`
+- `frontend/src/components/__tests__/XPathCachePanel.test.tsx`
+- `frontend/src/services/settingsService.ts`
+- `backend/app/api/v1/endpoints/settings.py`
+- `backend/tests/unit/test_xpath_cache_api.py`
 - `frontend/src/services/feedbackService.ts`
 - `backend/app/services/step_progress_guard.py` (extended)
 - `backend/app/services/xpath_cache_service.py` (extended)
 - `backend/app/models/execution_settings.py` (extended)
 - `backend/app/schemas/execution_settings.py` (extended)
-- `backend/migrate_sprint10_16.py`
-- `backend/tests/test_tier2_select_outcome.py`
-- `backend/tests/test_xpath_cache_provisional.py`
 
 ---
 
@@ -108,7 +111,7 @@
 42. [ADR-002-42: Step Library @module: Syntax and Resolver Architecture](#adr-002-42-step-library-module-syntax-and-resolver-architecture)
 43. [ADR-002-43: AI-Powered Failure Root Cause Analysis](#adr-002-43-ai-powered-failure-root-cause-analysis)
 44. [ADR-002-44: Re-Run from Failed Step — Session Snapshot Persistence and Resume Architecture](#adr-002-44-re-run-from-failed-step--session-snapshot-persistence-and-resume-architecture)
-45. [ADR-002-45: Post-Action Outcome Verification and Provisional XPath Cache Promotion](#adr-002-45-post-action-outcome-verification-and-provisional-xpath-cache-promotion)
+45. [ADR-002-45: XPath Cache Management UI and Step-Level Invalidation](#adr-002-45-xpath-cache-management-ui-and-step-level-invalidation)
 
 ---
 
@@ -3416,122 +3419,92 @@ skipped_steps = (start_from_step - 1) if is_resume else 0
 
 ---
 
-## ADR-002-45: Post-Action Outcome Verification and Provisional XPath Cache Promotion
+## ADR-002-45: XPath Cache Management UI and Step-Level Invalidation
 
 **Date:** May 26, 2026 (Sprint 10.16)
 
 ### Context
 
-Tier 2 treats "action executed without Playwright exception" as "step succeeded correctly". For `select` actions, `select_option()` does not throw when the resolved XPath targets the wrong `<select>` element — the dropdown is changed, but the wrong field is changed. The execution history records `success: True`, `cache_hit: False`, and `cache_xpath()` is called immediately, writing the wrong XPath for the 7-day TTL. All subsequent runs of the test case replay this poisoned entry.
+The XPath cache was already effective at reducing repeated `observe()` calls, but operational recovery was too blunt. When a cached XPath became stale or was learned against the wrong element, the only remediation path was a backend Python one-liner that deleted the entire `xpath_cache` table. That forced every cached step to re-learn on the next run, increased LLM cost, and penalized unrelated steps whose cache entries were still correct.
 
-**Reported failure:** Execution #869 Step 16 — *Select service effective date* — recorded as success but clicked the wrong element. The issue was silently propagated to the cache.
+Users needed two new capabilities:
 
-The three existing guards all miss this failure mode:
+1. **Targeted remediation** — delete a single cached XPath entry, or the entries associated with one execution step, without touching the rest of the cache.
+2. **Safe bulk cleanup** — remove only invalid (`is_valid=False`) entries when the self-healing path has already identified them as bad, instead of wiping all entries.
 
-| Existing Guard | Scope | Why it misses this case |
-|---|---|---|
-| `_step_made_expected_progress` | `click` + `"confirm"` in instruction only | Step action is `select` |
-| `_validate_cached_xpath_for_step` | `fill/type/input` email/password only | `select` excluded at line-level guard |
-| `_ensure_three_hk_plan_click_progressed` | Three.HK plan page URL only | Domain-specific |
+The requirement applied in two places: the Settings page for global cache management, and the Execution Progress page for step-level remediation immediately after a failed or suspicious step.
 
 ### Decision
 
-Four coordinated changes close the gap.
+Expose the XPath cache as an explicit management surface in the product UI, backed by narrow REST endpoints, while preserving the existing cache key, validation, and self-healing behaviour in `XPathCacheService`.
 
-#### ADR-002-45-A: Post-`select_option` Outcome Verification
+#### ADR-002-45-A: Settings API for XPath Cache Introspection and Deletion
 
-After `select_option()` resolves in `_execute_action_with_xpath()`, read back the actual selected value and visible label:
+Add four Settings endpoints dedicated to cache management:
 
-```python
-actual_value = await select_element.input_value()
-actual_label = await select_element.evaluate(
-    "el => el.options[el.selectedIndex]?.text?.trim() || ''"
-)
-if actual_value and value and actual_value.strip().lower() != value.strip().lower():
-    if actual_label.lower() != value.strip().lower():
-        raise ValueError(
-            f"select outcome mismatch: expected '{value}', "
-            f"got value='{actual_value}', label='{actual_label}'"
-        )
-```
+- `GET /settings/xpath-cache/stats` — aggregate counts and hit metrics
+- `GET /settings/xpath-cache?keyword=` — list entries, filtered by case-insensitive instruction or URL substring
+- `DELETE /settings/xpath-cache/{id}` — delete one concrete cache row by primary key
+- `DELETE /settings/xpath-cache?invalid_only=` — bulk delete either all rows or only invalid rows
 
-The `ValueError` breaks the success path: `cache_xpath()` is not called and the step escalates to Tier 3 or a clean failure. Empty `actual_value` (non-standard custom widget) is treated as unverifiable and passes through without raising.
+The response surface is intentionally read-oriented plus delete-only. It does not add update or manual edit endpoints; regeneration remains the responsibility of normal Tier 2 execution on the next run.
 
-#### ADR-002-45-B: `select` Tag-Type Validation on Cache Hit
+#### ADR-002-45-B: Settings Page Panel for Human-Operated Cache Management
 
-Extend `_validate_cached_xpath_for_step()` to include `select` actions. When the cached XPath is loaded, verify that the DOM element's `tagName` is actually `select`:
+Add `XPathCachePanel` to the Settings page. The panel provides:
 
-```python
-if action == "select":
-    tag = await locator.evaluate("el => el.tagName.toLowerCase()")
-    if tag != "select":
-        return False  # wrong element type — invalidate and re-extract
-```
+- Stats row: total, valid, invalid, total hits
+- 400 ms debounced keyword filter
+- Entries table with per-row delete button
+- `Clear Invalid` button for `is_valid=False` rows only
+- `Clear All` button as the GUI replacement for the old Python one-liner
 
-This catches stale entries where a formerly-correct `<select>` XPath now resolves to a different element type after a page redesign.
+The panel is read-only until both stats and list responses load successfully. Deletions always require explicit confirmation.
 
-#### ADR-002-45-C: Provisional Cache Promotion (2-Confirmation Threshold)
+#### ADR-002-45-C: Step-Level Clear Reuses List + Delete Rather Than New Semantics
 
-New columns on `xpath_cache`:
+Add `ClearStepCacheButton` to each `StepCard` on the Execution Progress page.
 
-```sql
-ALTER TABLE xpath_cache ADD COLUMN confirmation_count INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE xpath_cache ADD COLUMN is_provisional BOOLEAN NOT NULL DEFAULT TRUE;
-```
+The step-level action does not introduce a new backend contract such as `DELETE /xpath-cache/by-instruction`. Instead it reuses the existing list-plus-delete API:
 
-**Write path:** `cache_xpath()` always writes `is_provisional=TRUE`, `confirmation_count=0`.
+1. Query `GET /settings/xpath-cache?keyword=<step.step_description>`
+2. Delete each returned row by `id`
+3. Report how many rows were cleared, including `0` when no cache existed for that step
 
-**Confirm path:** New `confirm_cache_entry()` method in `XPathCacheService`:
-- Increments `confirmation_count`.
-- Sets `is_provisional=FALSE` when `confirmation_count >= 2`.
+This keeps the API surface small and preserves the invariant that deletes are always row-level, auditable DB operations.
 
-**Success path in `execute_step()`:** Replace `validate_and_update(is_valid=True)` with `confirm_cache_entry()`.
+#### ADR-002-45-D: Preserve Valid Cache Entries by Default
 
-**Provisional fast-invalidation:** When outcome verification fails on a provisional entry, call `invalidate_cache()` immediately (set `is_valid=FALSE`) rather than waiting for the 3-failure threshold. A single confirmed-wrong provisional entry should never be trusted again.
+The shipped UX deliberately prefers surgical deletion over global reset:
 
-This means a poisoned `observe()` result can survive at most one test run (the initial extraction run) before it is either confirmed as correct by a second independent run or dropped.
+- Per-row delete removes exactly one cache entry.
+- Step-level clear removes only rows whose instruction matches the current step text.
+- `Clear Invalid` preserves all valid rows.
+- `Clear All` remains available, but is explicit and confirm-gated.
 
-**Migration note:** Existing entries (pre-Sprint 10.16) are assigned `confirmation_count=0, is_provisional=TRUE` by the migration DEFAULT. They accumulate confirmations over the next two successful runs and promote naturally.
-
-#### ADR-002-45-D: Extend `should_enforce_confirm_progress` to Date/Time `select` Steps
-
-```python
-def should_enforce_confirm_progress(step: dict) -> bool:
-    action = (step.get("action") or "").lower()
-    instruction = (step.get("instruction") or "").lower()
-    if action == "click" and "confirm" in instruction:
-        return True
-    if action == "select" and any(
-        k in instruction for k in ("date", "time", "month", "year", "effective")
-    ):
-        return True
-    return False
-```
-
-For `select` steps matching date/time keywords, a `StepProgressSnapshot` is taken before execution. After execution, `has_confirm_step_progress()` checks whether the page/field state actually changed. If nothing changed, the step is downgraded to `success=False` via `_mark_no_progress_failure()`, preventing cache promotion.
+The design assumes that most cache entries are useful and should survive localized failures.
 
 ### Consequences
 
 **Positive**
-- A single inaccurate `observe()` result can no longer permanently poison the 7-day cache.
-- `select` steps have an outcome check equivalent to the `check` action's post-check verification (ADR-002-33).
-- Provisional promotion means two independently-verified successful runs are required before a cache entry is fully trusted — consistent with the validation-failure self-healing already in place.
-- The step-progress guard extension is general-purpose and works across any SPA date picker that uses a `<select>` element.
+- Users can clear one broken cache entry without destroying unrelated, still-correct entries.
+- Execution-page remediation is immediate; a user can clear the suspect step directly from the run history without switching to backend tooling.
+- `Clear Invalid` complements the existing self-healing path by exposing already-invalidated rows as a safe bulk cleanup target.
+- No new cache key strategy or write-path semantics were introduced; Tier 2 regeneration stays unchanged.
 
 **Negative**
-- Post-`select_option` read-back adds one Playwright `input_value()` + one `evaluate()` call per `select` step. Overhead is under 50ms in practice.
-- `input_value()` returns the `value` attribute of the selected `<option>`, not the visible label. When test steps specify a human-readable label (e.g. `"May"`) and the underlying option value is a number (e.g. `"5"`), the label fallback via `evaluate(selectedIndex.text)` is required — already included in the implementation.
-- Empty `input_value()` (custom widget rendering a non-native select) bypasses the check. These cases should be handled by the `ValueError` path in `_execute_action_with_xpath()` if the widget raises on incorrect interaction, otherwise they remain undetected.
-- Adding `confirmation_count` and `is_provisional` requires a DB migration on existing deployments.
+- Step-level clear relies on keyword substring matching against `step_description`. If multiple cache rows share near-identical instruction text, the action may clear more than one row for that step.
+- The new Settings surface increases operational power for end users, so destructive actions remain confirm-gated and intentionally delete-only.
+- The API exposes cache internals (instruction, page URL, hit count, validity) to the authenticated UI, which is acceptable for this internal test-management product but broadens the settings payload.
 
 **Alternatives Considered**
-- **Never cache `select` XPaths**: Eliminates the poisoning risk but removes all caching benefit for date picker steps, which are among the most expensive `observe()` targets.
-- **Higher confirmation threshold (e.g. 3)**: More conservative but delays normal cache promotion for correct entries. Two is the minimum required to rule out a single-run fluke.
-- **LLM-based outcome comparison**: Accurate but adds LLM cost to every `select` step success — disproportionate to the risk.
+- **Keep backend-only remediation**: Rejected. Requiring developers or operators to run ad hoc Python commands for routine cache cleanup is too slow and too error-prone.
+- **Add a dedicated delete-by-instruction endpoint**: Rejected. The existing list-plus-delete contract was sufficient and simpler to reason about than a second deletion semantic based on fuzzy instruction matching.
+- **Always clear the full cache after suspicious runs**: Rejected. It solves correctness by discarding too much good data and increases LLM cost on future runs.
 
 ### Tests
 
-- `backend/tests/test_tier2_select_outcome.py` (new) — post-`select_option` outcome verification: raises on value mismatch; raises on label mismatch when value is empty; passes when value matches; passes when `input_value()` returns empty string; `_validate_cached_xpath_for_step` returns `False` for `select` action with wrong `tagName`; returns `True` for `select` with correct `tagName`
-- `backend/tests/test_xpath_cache_provisional.py` (new) — provisional cache: new entries written as `is_provisional=True`; `confirm_cache_entry` increments count and promotes at `confirmation_count=2`; provisional entry invalidated immediately on outcome failure; non-provisional entry uses 3-failure threshold
-- `backend/tests/test_step_progress_guard.py` (extended) — `should_enforce_confirm_progress` returns `True` for `select` + date/time keywords; `False` for plain `select`; existing `click+confirm` behaviour unchanged
+- `backend/tests/unit/test_xpath_cache_api.py` (new) — 16 backend tests covering stats response, list response, keyword filter, single-row delete, bulk delete, invalid-only delete, and ORM schema compatibility
+- `frontend/src/components/__tests__/XPathCachePanel.test.tsx` (new) — 17 frontend tests covering loading, stats row, keyword filter, per-row delete, clear-invalid, clear-all, empty state, and error state
+- Manual verification via the Settings page and Execution Progress page confirmed that targeted cache deletion leaves unrelated valid rows intact and that zero-match step clears surface a non-error message instead of failing
 
