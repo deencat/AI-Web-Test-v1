@@ -1,12 +1,13 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
 
 // Configuration
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 const USE_MOCK_DATA = import.meta.env.VITE_USE_MOCK !== 'false'; // Default to true
 
-// Derive the server origin from VITE_API_URL (strips /api/v1 or any sub-path).
-// Used by the v2 client so requests go to /api/v2/... not /api/v1/api/v2/...
-const API_ORIGIN = new URL(API_BASE_URL).origin; // e.g. http://127.0.0.1:8000
+// Derive the server origin from VITE_API_URL.
+// For absolute URLs (e.g. http://host:8000/api/v1) extract the origin.
+// For relative URLs (e.g. /api/v1) use empty string so requests go to current host (Vite proxy).
+const API_ORIGIN = API_BASE_URL.startsWith('http') ? new URL(API_BASE_URL).origin : '';
 
 function addInterceptors(instance: AxiosInstance): void {
   instance.interceptors.request.use(
