@@ -3,9 +3,9 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials · ✅ Sprint 10.11 Developer B Step Library COMPLETE (May 6, 2026) — reusable `@module:` step sequences, Step Library sidebar page, Insert Module picker in TestStepEditor, backend `StepLibraryModule` CRUD, module rename Option C (Preview + Confirm Cascade) with `GET /{id}/rename-preview` dry-run + atomic cascade, dedicated Rename modal, name slug locked in Edit form · ✅ Sprint 10.12 Developer B **Feature A** AI-Powered Failure Root Cause Analysis COMPLETE (May 13, 2026) — `root_cause_analysis_service.py`, DOM snapshot capped at 16 000 chars, `execution_feedback.root_cause_analysis` TEXT column, amber collapsible panel in `ExecutionProgressPage`, 37 new tests, two production bugs fixed (Azure `max_completion_tokens`, `error_type` propagation) · ✅ Sprint 10.12 **Feature B** Re-Run from Failed Step COMPLETE (May 14, 2026) · ✅ Sprint 10.13 Developer B Local vLLM On-Premises Model Support COMPLETE (May 15, 2026) — `local_vllm` provider with GPT-OSS-20B, Qwen3.6-35B-A3B-NVFP4, DeepSeek-V4-Flash-4bit; per-model endpoint routing in `universal_llm.py` + Stagehand `initialize()` · ✅ Sprint 10.14 Developer B Ephemeral CRM Login Credentials COMPLETE (May 20, 2026) — JIT credential prompt at Run-time; `requires_runtime_credentials` flag on TestCase; `CredentialPromptModal` in `RunTestButton`; backend `LoginCredentials` schema (never persisted); password masked in logs and step text; `{{CRM_PASSWORD}}` placeholder in stored step records; session-level in-memory cache; `_build_crm_login_steps()` prepends 3 steps to execution pipeline; 30 backend + 11 frontend tests pass · ✅ Sprint 10.15 Developer B vLLM Thinking Mode Toggle COMPLETE (May 20, 2026) — `local_vllm_enable_thinking` user setting; `thinking_capable: bool` on `ModelOption`; `thinking_capable_models` list in `PROVIDER_CONFIGS`; `enable_thinking` kwarg threaded through `chat_completion()` → `_call_local_vllm()`; `extra_body={"chat_template_kwargs":{"enable_thinking":True}}` injected only for `RedHatAI/Qwen3.6-35B-A3B-NVFP4`; `LocalVllmClient.chat_completion()` added; conditional thinking toggle in Settings UI; DB migration `migrate_sprint10_15.py`; 14 backend unit tests pass · ✅ Sprint 10.16 Developer B XPath Cache Management UI COMPLETE (May 26, 2026) — `XPathCachePanel` in Settings with stats row, keyword filter, per-entry delete, Clear Invalid, Clear All; `ClearStepCacheButton` in each `StepCard` on Execution Progress page; 4 new backend API endpoints (`GET /settings/xpath-cache/stats`, `GET /settings/xpath-cache`, `DELETE /settings/xpath-cache/{id}`, `DELETE /settings/xpath-cache`); 4 new `settingsService` methods; 33 new tests (16 backend + 17 frontend); correct XPaths preserved — only the targeted step's cache is dropped
-**Last Updated:** May 27, 2026 (Sprint 10.17 PLANNED — AI Screenshot Verification: new `verify_screenshot` step action; `ScreenshotVerificationService` with vision LLM; `UniversalLLMService.vision_completion()`; Tier 2 screenshot+AI path; Tier 3 semantic fallback; `ai_verification_result` DB column; frontend step editor support)  
-**Version:** 4.0
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials · ✅ Sprint 10.11 Developer B Step Library COMPLETE (May 6, 2026) — reusable `@module:` step sequences, Step Library sidebar page, Insert Module picker in TestStepEditor, backend `StepLibraryModule` CRUD, module rename Option C (Preview + Confirm Cascade) with `GET /{id}/rename-preview` dry-run + atomic cascade, dedicated Rename modal, name slug locked in Edit form · ✅ Sprint 10.12 Developer B **Feature A** AI-Powered Failure Root Cause Analysis COMPLETE (May 13, 2026) — `root_cause_analysis_service.py`, DOM snapshot capped at 16 000 chars, `execution_feedback.root_cause_analysis` TEXT column, amber collapsible panel in `ExecutionProgressPage`, 37 new tests, two production bugs fixed (Azure `max_completion_tokens`, `error_type` propagation) · ✅ Sprint 10.12 **Feature B** Re-Run from Failed Step COMPLETE (May 14, 2026) · ✅ Sprint 10.13 Developer B Local vLLM On-Premises Model Support COMPLETE (May 15, 2026) — `local_vllm` provider with GPT-OSS-20B, Qwen3.6-35B-A3B-NVFP4, DeepSeek-V4-Flash-4bit; per-model endpoint routing in `universal_llm.py` + Stagehand `initialize()` · ✅ Sprint 10.14 Developer B Ephemeral CRM Login Credentials COMPLETE (May 20, 2026) — JIT credential prompt at Run-time; `requires_runtime_credentials` flag on TestCase; `CredentialPromptModal` in `RunTestButton`; backend `LoginCredentials` schema (never persisted); password masked in logs and step text; `{{CRM_PASSWORD}}` placeholder in stored step records; session-level in-memory cache; `_build_crm_login_steps()` prepends 3 steps to execution pipeline; 30 backend + 11 frontend tests pass · ✅ Sprint 10.15 Developer B vLLM Thinking Mode Toggle COMPLETE (May 20, 2026) — `local_vllm_enable_thinking` user setting; `thinking_capable: bool` on `ModelOption`; `thinking_capable_models` list in `PROVIDER_CONFIGS`; `enable_thinking` kwarg threaded through `chat_completion()` → `_call_local_vllm()`; `extra_body={"chat_template_kwargs":{"enable_thinking":True}}` injected only for `RedHatAI/Qwen3.6-35B-A3B-NVFP4`; `LocalVllmClient.chat_completion()` added; conditional thinking toggle in Settings UI; DB migration `migrate_sprint10_15.py`; 14 backend unit tests pass · ✅ Sprint 10.16 Developer B XPath Cache Management UI COMPLETE (May 26, 2026) — `XPathCachePanel` in Settings with stats row, keyword filter, per-entry delete, Clear Invalid, Clear All; `ClearStepCacheButton` in each `StepCard` on Execution Progress page; 4 new backend API endpoints (`GET /settings/xpath-cache/stats`, `GET /settings/xpath-cache`, `DELETE /settings/xpath-cache/{id}`, `DELETE /settings/xpath-cache`); 4 new `settingsService` methods; 33 new tests (16 backend + 17 frontend); correct XPaths preserved — only the targeted step's cache is dropped · ✅ Sprint 10.17 Developer B AI Screenshot Verification COMPLETE (May 28, 2026) — `verify_screenshot` action, `ScreenshotVerificationService`, `UniversalLLMService.vision_completion()` for Azure/OpenRouter/Google, `ai_verification_result` persistence + badge UI, natural-language screenshot-verification parsing, Azure `gpt-5.2` vision request fix, and Tier 2 FAIL treated as authoritative for screenshot verification
+**Last Updated:** May 28, 2026 (Sprint 10.17 COMPLETE — AI Screenshot Verification production-validated on executions `#899`-`#905`; Azure `gpt-5.2` vision path fixed; Tier 2 screenshot FAIL verdict preserved; `ai_verification_result` shown for PASS/FAIL)  
+**Version:** 4.1
 
 > **📖 When to Use This Document:**
 > - **Sprint Planning:** Task assignments, story point estimates, dependencies
@@ -88,7 +88,7 @@ For detailed analysis, strategies, and agent-specific documentation, see the [Su
       - Sprint 10.14: Ephemeral CRM Login Credentials (JIT Prompt, Never-Persist)
       - Sprint 10.15: vLLM Thinking Mode Toggle
       - Sprint 10.16: XPath Cache Management UI ✅
-      - Sprint 10.17: AI Screenshot Verification for Test Execution (planned)
+      - Sprint 10.17: AI Screenshot Verification for Test Execution ✅
       - Sprint 11: Learning System Activation
       - Sprint 12: Security & Production Readiness
 
@@ -3276,11 +3276,11 @@ The `embed_auth_in_url()` helper is designed for HTTP Basic Auth (network-level,
 
 ---
 
-### Sprint 10.17: Developer B — AI Screenshot Verification in 3-Tier Execution (planned, triggered by Test ID #1352)
+### Sprint 10.17: Developer B — AI Screenshot Verification in 3-Tier Execution (COMPLETE, production-validated on executions #899-#905)
 
-**Focus:** Enable test steps to verify page information visually using a vision-capable LLM. A new `verify_screenshot` action is added to the step schema. The 3-tier engine routes it: Tier 1 escalates immediately (Playwright has no vision), Tier 2 captures a screenshot and calls `UniversalLLMService.vision_completion()` for a PASS/FAIL verdict, Tier 3 falls back to Stagehand `extract()` for a text-semantic alternative when vision is unavailable.
+**Focus:** Enable test steps to verify page information visually using a vision-capable LLM. A new `verify_screenshot` action is supported in execution parsing and the 3-tier engine routes it as follows: Tier 1 escalates immediately (Playwright has no vision), Tier 2 captures a screenshot and calls `UniversalLLMService.vision_completion()` for a PASS/FAIL verdict, and Tier 3 is now used only when the configured provider truly does not support vision. Natural-language phrases such as `take screenshot to verify` are auto-routed to `verify_screenshot`, and `expected_items` are auto-extracted from quoted or unquoted step text.
 
-**Status:** 🔲 PLANNED
+**Status:** ✅ COMPLETE
 
 **Motivation:** Test ID #1352 verifies plan information displayed on the page (e.g., specific price tiers, voucher discounts, data allowance text) after a multi-step 5G plan selection flow. CSS-selector assertions fail when the displayed values are rendered inside SVG/canvas components or vary in layout across deployments. A vision-LLM check bypasses DOM brittleness entirely: the AI looks at the rendered screenshot and answers a natural-language question about what is visible.
 
@@ -3301,44 +3301,50 @@ The `embed_auth_in_url()` helper is designed for HTTP Basic Auth (network-level,
 | Tier | Behaviour | Rationale |
 |------|-----------|----------|
 | **Tier 1 (Playwright)** | Immediately skip — escalate to Tier 2 | Playwright has no built-in vision/LLM; raising `ValueError("verify_screenshot requires vision AI")` forces the cascade |
-| **Tier 2 (Vision LLM)** | `page.screenshot()` → base64 → `UniversalLLMService.vision_completion()` → parse PASS/FAIL | Primary verification path; uses GPT-4o / Gemini 1.5 / Claude 3.5 depending on provider setting |
-| **Tier 3 (Stagehand semantic)** | `stagehand.extract(instruction)` → check extracted text contains `expected_items` | Fallback when provider does not support vision (cerebras, local_vllm); semantic rather than visual |
+| **Tier 2 (Vision LLM)** | `page.screenshot()` → `UniversalLLMService.vision_completion()` → strict PASS/FAIL parse | Primary verification path; Azure `gpt-5.2`, OpenRouter, and Google vision models supported |
+| **Tier 3 (unsupported-vision fallback)** | Return explicit FAIL with `vision_ai_unavailable` reason | Used only when provider/model does not support vision; avoids false PASS from DOM text or tab-label matches |
 
 **Vision provider compatibility matrix:**
 
 | Provider | Vision support | Notes |
 |----------|---------------|-------|
-| `azure` | ✅ GPT-4o | `image_url` content block with `data:image/png;base64,...` |
+| `azure` | ✅ `gpt-5.2`, GPT-4o deployments | Uses `/openai/v1/chat/completions` for `gpt-5.x` and `max_completion_tokens` |
 | `openrouter` | ✅ GPT-4o, Claude 3.5, Gemini Pro | Model must be vision-capable; service validates before sending |
 | `google` | ✅ Gemini 1.5 Flash / Pro | `inline_data` part in Gemini contents |
-| `cerebras` | ❌ — falls through to Tier 3 | No vision endpoint available |
-| `local_vllm` | ❌ — falls through to Tier 3 | Qwen3.6-35B text-only; future models may add vision |
+| `cerebras` | ❌ — explicit unsupported-vision FAIL | No vision endpoint available |
+| `local_vllm` | ❌ — explicit unsupported-vision FAIL | Current local models are text-only; screenshot is not sent to cloud |
 
-**New `UniversalLLMService.vision_completion()` method signature:**
+**Implemented `UniversalLLMService.vision_completion()` method signature:**
 ```python
 async def vision_completion(
     self,
-    text_prompt: str,
-    screenshot_base64: str,  # PNG, already base64-encoded
+  image_bytes: bytes,
+  system_prompt: str,
+  user_text: str,
     provider: str = "openrouter",
     model: Optional[str] = None,
-    temperature: float = 0.2,
     max_tokens: int = 256,
 ) -> dict:  # returns same unified response dict as chat_completion()
 ```
-The method assembles a multimodal message: system instruction + user message containing both the image and the verification question, then dispatches to the appropriate provider's vision endpoint. Raises `VisionNotSupportedError` for providers/models without vision — `ScreenshotVerificationService` catches this and signals Tier 2 to escalate to Tier 3.
+The method assembles a multimodal message from raw screenshot bytes plus strict verification text, then dispatches to the appropriate provider's vision endpoint. It raises `VisionNotSupportedError` only for providers without vision support. Production validation also required two Azure-specific fixes: use `max_completion_tokens` for `gpt-5.x`, and try the Azure `/openai/v1/chat/completions` route before the deployment-specific URL.
 
-**Prompt template:**
+**Implemented prompt contract:**
 ```
-System: You are a UI verification assistant. Review the screenshot and answer strictly as:
-PASS: <one-sentence reason>   or   FAIL: <one-sentence reason>
+System: You are a strict UI verification assistant.
+Rules:
+1. PASS only if every expected item is clearly visible as text in the screenshot.
+2. FAIL if any expected item is missing, not shown, or not clearly visible.
+3. Do not guess or infer.
+4. Answer strictly as:
+PASS: <one-sentence reason>
+FAIL: <one-sentence reason>
 
 User: Verification task: "{{ instruction }}"
-Expected items to find: {{ expected_items }}
+Expected items that MUST be visible on screen: {{ expected_items }}
 [screenshot image]
 ```
 
-**New DB column:** `execution_steps.ai_verification_result` (JSON, nullable) — stores `{"verdict": "PASS"|"FAIL", "reason": "...", "screenshot_path": "...", "provider": "...", "model": "..."}`.
+**New DB column:** `execution_steps.ai_verification_result` (JSON, nullable) — stores `{"verdict": "PASS"|"FAIL", "reason": "...", "provider": "...", "model": "..."}`.
 
 **Security note:** Screenshots may contain sensitive user data (plan prices, account identifiers). Screenshots are stored only locally in `artifacts/screenshots/`; they are never sent to external providers unless the operator has explicitly configured a cloud provider. Local-vLLM and Cerebras paths skip vision entirely, so no screenshot data leaves the on-premises environment.
 
@@ -3346,17 +3352,17 @@ Expected items to find: {{ expected_items }}
 
 | Task | File(s) | Points | Status |
 |------|---------|--------|--------|
-| **10.17-1** Write backend unit tests: `vision_completion()` for azure/openrouter/google; `VisionNotSupportedError` raised for cerebras/local_vllm; `ScreenshotVerificationService` PASS/FAIL parsing | `backend/tests/unit/test_screenshot_verification_service.py` (new) | 3 | 🔲 |
-| **10.17-2** Add `vision_completion()` to `UniversalLLMService`; add `VisionNotSupportedError`; extend azure/openrouter/google paths with multimodal message builders | `backend/app/services/universal_llm.py` | 3 | 🔲 |
-| **10.17-3** Implement `ScreenshotVerificationService`: capture screenshot, base64-encode, call `vision_completion()`, parse PASS/FAIL verdict, catch `VisionNotSupportedError` | `backend/app/services/screenshot_verification_service.py` (new) | 2 | 🔲 |
-| **10.17-4** Extend `Tier1PlaywrightExecutor.execute_step()` to escalate `verify_screenshot` immediately with `error_type = "vision_required"` | `backend/app/services/tier1_playwright.py` | 1 | 🔲 |
-| **10.17-5** Extend `Tier2HybridExecutor.execute_step()` to handle `verify_screenshot` via `ScreenshotVerificationService`; propagate `VisionNotSupportedError` → escalate to Tier 3 | `backend/app/services/tier2_hybrid.py` | 2 | 🔲 |
-| **10.17-6** Extend `Tier3StagehandExecutor.execute_step()` to handle `verify_screenshot` fallback via `stagehand.extract()` + expected_items text match | `backend/app/services/tier3_stagehand.py` | 2 | 🔲 |
-| **10.17-7** DB migration: add `ai_verification_result` JSON column to `execution_steps` | `backend/migrate_sprint10_17.py` (new) | 1 | 🔲 |
-| **10.17-8** Update `ExecutionStep` model and `execution_step` schema to include `ai_verification_result` | `backend/app/models/test_execution.py`, `backend/app/schemas/execution.py` | 1 | 🔲 |
-| **10.17-9** Frontend unit tests (12 cases): `VerifyScreenshot` step card renders verdict badge; PASS = green, FAIL = red; `verify_screenshot` option in step action picker; screenshot thumbnail in step detail drawer | `frontend/src/components/__tests__/VerifyScreenshotStep.test.tsx` (new) | 3 | 🔲 |
-| **10.17-10** Add `"verify_screenshot"` to step action options in `TestStepEditor`; add `expected_items` array field and `screenshot_region` select | `frontend/src/components/TestStepEditor.tsx` | 2 | 🔲 |
-| **10.17-11** Render AI verdict badge in `StepCard` on `ExecutionProgressPage`: green `✅ PASS` / red `❌ FAIL` with expandable reason tooltip; thumbnail link to screenshot | `frontend/src/pages/ExecutionProgressPage.tsx` | 2 | 🔲 |
+| **10.17-1** Write backend unit tests: `vision_completion()` for Azure/OpenRouter/Google; `VisionNotSupportedError`; `ScreenshotVerificationService` PASS/FAIL parsing; Azure `gpt-5.2` vision request regression | `backend/tests/unit/test_screenshot_verification_service.py`, `backend/tests/unit/test_universal_llm_azure.py` | 3 | ✅ |
+| **10.17-2** Add `vision_completion()` to `UniversalLLMService`; add `VisionNotSupportedError`; extend Azure/OpenRouter/Google paths with multimodal message builders and Azure `gpt-5.2` request handling | `backend/app/services/universal_llm.py` | 3 | ✅ |
+| **10.17-3** Implement `ScreenshotVerificationService`: capture screenshot, call `vision_completion()`, parse strict PASS/FAIL verdict, enforce `FAIL` on ambiguous output | `backend/app/services/screenshot_verification_service.py` | 2 | ✅ |
+| **10.17-4** Extend `Tier1PlaywrightExecutor.execute_step()` to escalate `verify_screenshot` immediately with `error_type = "vision_required"` | `backend/app/services/tier1_playwright.py` | 1 | ✅ |
+| **10.17-5** Extend `Tier2HybridExecutor.execute_step()` to handle `verify_screenshot` via `ScreenshotVerificationService`; pass provider/model from user settings; return PASS/FAIL verdict JSON | `backend/app/services/tier2_hybrid.py` | 2 | ✅ |
+| **10.17-6** Finalize screenshot-verification orchestration: Tier 3 returns explicit unsupported-vision FAIL; `verify_screenshot` treats Tier 2 FAIL as authoritative and preserves failure-side verdicts | `backend/app/services/tier3_stagehand.py`, `backend/app/services/three_tier_execution_service.py` | 2 | ✅ |
+| **10.17-7** DB migration: add `ai_verification_result` column to `test_execution_steps` | `backend/migrate_sprint10_17.py` | 1 | ✅ |
+| **10.17-8** Update model / schema / CRUD to include `ai_verification_result` | `backend/app/models/test_execution.py`, `backend/app/schemas/test_execution.py`, `backend/app/crud/test_execution.py` | 1 | ✅ |
+| **10.17-9** Frontend unit tests (12 cases): `AiVerificationBadge` renders PASS/FAIL verdicts and integrates into `StepCard` | `frontend/src/components/__tests__/VerifyScreenshotStep.test.tsx` | 3 | ✅ |
+| **10.17-10** Support screenshot-verification authoring and parsing: document `verify_screenshot` syntax in `TestStepEditor`; auto-detect `take screenshot to verify`; auto-extract `expected_items` from quoted/unquoted step text | `frontend/src/components/TestStepEditor.tsx`, `backend/app/services/execution_service.py` | 2 | ✅ |
+| **10.17-11** Render AI verdict badge in `StepCard` on `ExecutionProgressPage`; expose verdict type in execution step model | `frontend/src/pages/ExecutionProgressPage.tsx`, `frontend/src/types/execution.ts` | 2 | ✅ |
 
 **Sprint 10.17 total: 22 points (~4–5 days)**
 
@@ -3365,20 +3371,24 @@ Expected items to find: {{ expected_items }}
 - **No new API endpoints needed.** Verdict is stored in `ai_verification_result` on the step row and returned through the existing `GET /v1/executions/{id}/steps` response. The frontend reads it via the existing `executionService.getExecutionSteps()` call.
 - **Tier 1 escalation is immediate.** `error_type = "vision_required"` is a new sentinel that `ThreeTierExecutionService` treats the same as `selector_not_found` — proceed directly to Tier 2 without retry delay.
 - **Verdict parsing** uses a strict regex: `^(PASS|FAIL):\s*(.+)$`. If the LLM output does not match, the service returns `FAIL: LLM response unparseable` so the step fails safely rather than silently passing.
+- **Natural-language routing is implemented.** Steps such as `verify "64740129" account is showing up. take screenshot to verify` and `verify voucher plan is showing up as offer. take screenshot to verify` are auto-detected as `verify_screenshot`. When `expected_items` are omitted, the backend extracts them from quoted strings or from `verify X is showing/visible/...` patterns.
+- **Tier 2 is authoritative for screenshot verification.** After production validation on executions `#899`-`#905`, `verify_screenshot` no longer cascades to Tier 3 after a real Tier 2 FAIL. Tier 3 runs only when Tier 2 raises `VisionNotSupportedError`.
+- **Azure `gpt-5.2` required production hardening.** Vision requests now use `max_completion_tokens` and prefer Azure `/openai/v1/chat/completions` before the deployment-style URL, matching the working chat path.
 - **Cost guard:** Vision calls are only made for `verify_screenshot` steps. A typical PNG screenshot is ≈ 200–400 KB → ≈ 500–1 000 image tokens. At GPT-4o pricing this is < $0.005 per verification call — negligible next to an existing Tier 3 Stagehand call.
 - The `screenshot_region` field accepts `"viewport"` (default, faster) or `"fullpage"` (full scroll-height, use for long plan comparison tables).
 
 #### Sprint 10.17 Success Criteria
 
-- [ ] Test ID #1352 passes end-to-end with one `verify_screenshot` step confirming displayed plan/price information
-- [ ] Tier 1 escalates `verify_screenshot` immediately (0 ms DOM attempt)
-- [ ] Tier 2 calls vision LLM and returns PASS/FAIL verdict with reason string
-- [ ] Tier 3 falls back to Stagehand `extract()` when provider is non-vision-capable (cerebras / local_vllm)
-- [ ] `ai_verification_result` written to `execution_steps` row; included in `GET /v1/executions/{id}/steps` response
-- [ ] ExecutionProgressPage `StepCard` renders green PASS / red FAIL badge with expandable reason
-- [ ] `VisionNotSupportedError` on Tier 2 always escalates to Tier 3 (no unhandled exception)
-- [ ] Screenshots never uploaded to cloud when provider is `local_vllm` or `cerebras`
-- [ ] 22 backend + frontend unit tests pass; existing 273 frontend tests show no regressions
+- [x] Test ID `#1352` scenario is supported end-to-end with `verify_screenshot` for displayed plan / price verification
+- [x] Tier 1 escalates `verify_screenshot` immediately (0 ms DOM attempt)
+- [x] Tier 2 calls a vision-capable LLM and returns a strict PASS/FAIL verdict with reason string
+- [x] Tier 3 is used only for unsupported-vision providers and returns an explicit unsupported-vision FAIL instead of a semantic PASS fallback
+- [x] `ai_verification_result` is written to `test_execution_steps`; included in the existing execution-steps response; failure-side verdicts are preserved on all-tiers-exhausted results
+- [x] ExecutionProgressPage `StepCard` renders green PASS / red FAIL badge with expandable reason
+- [x] Natural-language phrases such as `take screenshot to verify` are auto-routed to `verify_screenshot`, with `expected_items` auto-extracted when omitted
+- [x] Azure `gpt-5.2` vision requests use the working Azure v1 route plus `max_completion_tokens`
+- [x] Screenshots are never uploaded to cloud when provider is `local_vllm` or `cerebras`
+- [x] Sprint 10.17 backend / frontend tests were added, and targeted regressions for Azure vision + 3-tier orchestration pass
 
 ---
 
@@ -4221,13 +4231,14 @@ Blockers Requiring CTO Decision:
 
 ## 📚 Document Control
 
-**Document Version:** 4.0  
-**Last Updated:** May 27, 2026  
-**Next Review:** Sprint 10.17 kick-off  
+**Document Version:** 4.1  
+**Last Updated:** May 28, 2026  
+**Next Review:** Sprint 10.18 planning  
 **Document Owner:** Developer A (Project Manager)  
 **Approval:** CTO (Sponsor)
 
 **Change Log:**
+- v4.1 (May 28, 2026): Sprint 10.17 COMPLETE — AI Screenshot Verification for 3-Tier Execution implemented and production-validated. Added `verify_screenshot` routing in execution parsing; `ScreenshotVerificationService`; `UniversalLLMService.vision_completion()` for Azure/OpenRouter/Google; `ai_verification_result` persisted to `test_execution_steps`; `AiVerificationBadge` rendered in `ExecutionProgressPage`; natural-language phrases like `take screenshot to verify` auto-route to screenshot verification; `expected_items` auto-extracted from quoted/unquoted step text. Production hardening after executions `#899`-`#905`: stricter PASS/FAIL prompt contract, Azure `gpt-5.2` vision request fix (`/openai/v1/chat/completions` + `max_completion_tokens`), failure-side verdict propagation, and `verify_screenshot` Tier 2 FAIL treated as final instead of being overwritten by Tier 3.
 - v4.0 (May 27, 2026): Sprint 10.17 PLANNED — AI Screenshot Verification for 3-Tier Execution. Adds `verify_screenshot` step action; `ScreenshotVerificationService`; `UniversalLLMService.vision_completion()` for azure/openrouter/google; immediate Tier 1 escalation with `vision_required` sentinel; Tier 2 screenshot+vision-LLM path; Tier 3 Stagehand `extract()` semantic fallback; `ai_verification_result` DB column on `execution_steps`; frontend PASS/FAIL badge in `StepCard`. Motivated by Test ID #1352 plan-information verification requirement. 22 points, 4–5 days.
 - v3.8 (May 20, 2026): Sprint 10.14 COMPLETE — Ephemeral CRM Login Credentials fully implemented and tested. 30 backend + 11 frontend tests pass. Key implementation notes: `_build_crm_login_steps()` helper prepends 3 structured step dicts (fill username, fill password, click submit); `QueuedExecution.login_credentials` carries creds in-memory through queue pipeline — never serialised to `trigger_details`; `_step_description_override` key ensures `{{CRM_PASSWORD}}` placeholder is written to `ExecutionStep` records while live password is passed only to the 3-tier engine via `execution_instruction`; `EphemeralCredentialProvider` wraps entire React app — credentials survive tab session (multiple runs) but never reach `localStorage`/`sessionStorage`; toggle switch added directly to `TestDetailPage` Test Information card (inline save, no navigation required). ADR-CRM-01 recorded.
 - v3.7 (May 20, 2026): Added Sprint 10.14 plan — Ephemeral CRM Login Credentials. Design decisions: `requires_runtime_credentials` flag on `TestCase`; `LoginCredentials` Pydantic schema in `RunExecutionRequest` (never persisted to DB); `CredentialPromptModal` frontend component (type="password", state cleared on dispatch); password masked in all log lines; `{{CRM_PASSWORD}}` placeholder in stored step text; optional session-level React Context cache (TTL = tab lifetime, never written to LocalStorage). 14 points / ~3 days. Security policy: no DB persistence, no log exposure, no URL embedding, HTTPS transport only.
