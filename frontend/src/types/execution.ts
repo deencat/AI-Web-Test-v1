@@ -34,6 +34,13 @@ export interface TestExecutionStep {
   screenshot_before?: string;
   screenshot_after?: string;
   retry_count: number;
+  /** Sprint 10.17: AI vision verdict for verify_screenshot steps. */
+  ai_verification_result?: {
+    verdict: 'PASS' | 'FAIL';
+    reason: string;
+    provider: string;
+    model: string | null;
+  } | null;
   created_at: string;
 }
 

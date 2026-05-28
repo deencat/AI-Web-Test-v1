@@ -1070,7 +1070,8 @@ class ExecutionService:
                         actual_result=result.get("actual", ""),
                         error_message=result.get("error"),
                         screenshot_path=screenshot_path,
-                        duration_seconds=duration
+                        duration_seconds=duration,
+                        ai_verification_result=result.get("ai_verification_result"),
                     )
                     
                     if result["success"]:
@@ -1253,7 +1254,10 @@ class ExecutionService:
                     "selector": detailed_step.get('selector', '') if detailed_step else None,
                     "value": detailed_step.get('value', '') if detailed_step else None,
                     "file_path": detailed_step.get('file_path', '') if detailed_step else None,
-                    "instruction": step_description
+                    "instruction": step_description,
+                    # Sprint 10.17: forward verify_screenshot-specific fields
+                    "expected_items": detailed_step.get('expected_items') if detailed_step else None,
+                    "screenshot_region": detailed_step.get('screenshot_region', 'viewport') if detailed_step else 'viewport',
                 }
                 
                 print(f"[DEBUG] Initial step_data[value]: {step_data['value']}")
@@ -1283,6 +1287,9 @@ class ExecutionService:
                 if not step_data["action"]:
                     if "navigate" in desc_lower or "go to" in desc_lower or "open" in desc_lower:
                         step_data["action"] = "navigate"
+                    # Sprint 10.17: verify_screenshot action detection
+                    elif "verify_screenshot" in desc_lower or "verify screenshot" in desc_lower:
+                        step_data["action"] = "verify_screenshot"
                     # Check for signature/sign actions first
                     elif "sign" in desc_lower or "signature" in desc_lower or "draw" in desc_lower:
                         step_data["action"] = "draw_signature"
@@ -1447,7 +1454,9 @@ class ExecutionService:
                         "expected": step_description,
                         "tier": result["tier"],
                         "execution_time_ms": result.get("execution_time_ms", 0),
-                        "strategy_used": result.get("strategy_used")
+                        "strategy_used": result.get("strategy_used"),
+                        # Sprint 10.17: propagate vision verdict to step record
+                        "ai_verification_result": result.get("ai_verification_result"),
                     }
                 else:
                     return {
@@ -1460,6 +1469,8 @@ class ExecutionService:
                         # Preserve top-level failure classification so downstream
                         # feedback capture can trigger RCA for all_tiers_exhausted.
                         "error_type": result.get("error_type"),
+                        # Sprint 10.17: propagate failed vision verdict
+                        "ai_verification_result": result.get("ai_verification_result"),
                     }
             
             # Fallback: Use old direct Playwright execution if 3-tier not available

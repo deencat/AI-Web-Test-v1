@@ -296,7 +296,7 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
         value={steps}
         onChange={handleChange}
         className="w-full h-64 p-3 border border-gray-300 rounded-lg font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        placeholder="Enter test steps (one per line):&#10;&#10;1. Navigate to https://example.com&#10;2. Click on 'Login' button&#10;3. Enter username: admin&#10;4. Enter password: ****&#10;5. Click 'Submit'&#10;6. Verify dashboard loads&#10;&#10;Expected Result:&#10;- User successfully logged in&#10;- Dashboard displays with welcome message"
+        placeholder="Enter test steps (one per line):&#10;&#10;1. Navigate to https://example.com&#10;2. Click on 'Login' button&#10;3. Enter username: admin&#10;4. Enter password: ****&#10;5. Click 'Submit'&#10;6. Verify dashboard loads&#10;&#10;# Sprint 10.17 — AI Screenshot Verification:&#10;# verify_screenshot: Verify the 5G 100GB plan is shown at HK$188/month with voucher applied | expected_items: 5G 100GB, HK$188, voucher | region: viewport&#10;&#10;Expected Result:&#10;- User successfully logged in&#10;- Dashboard displays with welcome message"
       />
 
       {/* Status footer */}

@@ -242,7 +242,8 @@ def create_execution_step(
     screenshot_path: Optional[str] = None,
     duration_seconds: Optional[float] = None,
     selector_used: Optional[str] = None,
-    action_method: Optional[str] = None
+    action_method: Optional[str] = None,
+    ai_verification_result: Optional[str] = None,
 ) -> TestExecutionStep:
     """Create an execution step."""
     db_step = TestExecutionStep(
@@ -258,7 +259,8 @@ def create_execution_step(
         completed_at=datetime.utcnow(),
         duration_seconds=duration_seconds,
         selector_used=selector_used,
-        action_method=action_method
+        action_method=action_method,
+        ai_verification_result=ai_verification_result,
     )
     db.add(db_step)
     db.commit()

@@ -124,7 +124,11 @@ class TestExecutionStep(Base):
     # Metadata
     retry_count = Column(Integer, default=0)  # Number of retries
     is_critical = Column(Boolean, default=False)  # If this step fails, stop execution
-    
+
+    # Sprint 10.17: AI Screenshot Verification verdict (JSON stored as Text)
+    # Schema: {"verdict": "PASS"|"FAIL", "reason": "...", "provider": "...", "model": "..."}
+    ai_verification_result = Column(Text, nullable=True)
+
     created_at = Column(DateTime, nullable=False, default=utc_now)
     
     def __repr__(self):

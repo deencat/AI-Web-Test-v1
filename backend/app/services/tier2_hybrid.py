@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tier 2: Hybrid Mode Execution
 Stagehand observe() + Playwright execution for self-healing tests
 Sprint 5.5: 3-Tier Execution Engine
@@ -17,6 +17,9 @@ from app.services.post_click_readiness import auto_dismiss_blocking_modals, wait
 from app.services.xpath_cache_service import XPathCacheService
 from app.services.xpath_extractor import XPathExtractor
 from app.utils.three_uat_test_credentials import is_three_hk_uat_url
+# Sprint 10.17: vision screenshot verification
+from app.services.screenshot_verification_service import ScreenshotVerificationService
+from app.services.universal_llm import VisionNotSupportedError
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +102,8 @@ class Tier2HybridExecutor:
         self,
         db: Session,
         xpath_extractor: XPathExtractor,
-        timeout_ms: int = 30000
+        timeout_ms: int = 30000,
+        user_ai_config: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize Tier 2 executor.
@@ -108,10 +112,13 @@ class Tier2HybridExecutor:
             db: Database session for cache access
             xpath_extractor: XPath extractor service
             timeout_ms: Timeout in milliseconds for each action
+            user_ai_config: Optional user AI provider config (provider, model, ...).
+                            Used by Sprint 10.17 verify_screenshot vision calls.
         """
         self.db = db
         self.xpath_extractor = xpath_extractor
         self.timeout_ms = timeout_ms
+        self.user_ai_config: Dict[str, Any] = user_ai_config or {}
         self.cache_service = XPathCacheService(db)
         self.payment_direct_enabled = os.getenv("ENABLE_PAYMENT_DIRECT_HANDLING", "true").lower() != "false"
         self.payment_gateway_ready = False
@@ -180,7 +187,7 @@ class Tier2HybridExecutor:
                 await page.goto(value or instruction, timeout=self.timeout_ms, wait_until="domcontentloaded")
                 execution_time_ms = (time.time() - start_time) * 1000
                 
-                logger.info(f"[Tier 2] ✅ Navigate succeeded in {execution_time_ms:.2f}ms")
+                logger.info(f"[Tier 2] âœ… Navigate succeeded in {execution_time_ms:.2f}ms")
                 
                 return {
                     "success": True,
@@ -191,7 +198,11 @@ class Tier2HybridExecutor:
                     "xpath": None,
                     "error": None
                 }
-            
+
+            # Sprint 10.17: vision-based screenshot verification
+            if action == "verify_screenshot":
+                return await self._execute_verify_screenshot(page, step, start_time)
+
             # For upload_file actions, use file_path instead of value
             if action == "upload_file":
                 value = file_path or value
@@ -212,7 +223,7 @@ class Tier2HybridExecutor:
             if cached_xpath:
                 xpath = cached_xpath["xpath"]
                 cache_hit = True
-                logger.info(f"[Tier 2] 🎯 Cache hit! Validating cached XPath: {xpath}")
+                logger.info(f"[Tier 2] ðŸŽ¯ Cache hit! Validating cached XPath: {xpath}")
                 
                 # Validate cached xpath - ensure element exists and matches step intent
                 try:
@@ -226,11 +237,11 @@ class Tier2HybridExecutor:
                     if not is_valid_cache:
                         raise ValueError("Cached XPath does not match current step intent")
 
-                    logger.info(f"[Tier 2] ✅ Cached XPath validated successfully")
+                    logger.info(f"[Tier 2] âœ… Cached XPath validated successfully")
                 except Exception as e:
                     # Element doesn't exist - cache is stale, invalidate and re-extract
-                    logger.warning(f"[Tier 2] ⚠️ Cached XPath validation failed: {str(e)}")
-                    logger.info(f"[Tier 2] 🔄 Invalidating stale cache and re-extracting...")
+                    logger.warning(f"[Tier 2] âš ï¸ Cached XPath validation failed: {str(e)}")
+                    logger.info(f"[Tier 2] ðŸ”„ Invalidating stale cache and re-extracting...")
                     self.cache_service.invalidate_cache(page_url, instruction, "Element not found on page")
                     cache_hit = False
                     cached_xpath = None
@@ -261,7 +272,7 @@ class Tier2HybridExecutor:
             
             if not cached_xpath:
                 # Step 2: Extract XPath using Stagehand observe()
-                logger.info(f"[Tier 2] 📡 Cache miss, extracting XPath via observe()...")
+                logger.info(f"[Tier 2] ðŸ“¡ Cache miss, extracting XPath via observe()...")
                 extraction_start = time.time()
                 
                 extraction_result = await self.xpath_extractor.extract_xpath_with_page(
@@ -275,7 +286,7 @@ class Tier2HybridExecutor:
                     selector=selector,
                     instruction=instruction,
                 ):
-                    logger.info("[Tier 2] 🔄 observe() returned no results. Waiting for page to become interactable, then retrying once...")
+                    logger.info("[Tier 2] ðŸ”„ observe() returned no results. Waiting for page to become interactable, then retrying once...")
                     await self._wait_for_page_interactable_for_observe(page)
                     extraction_result = await self.xpath_extractor.extract_xpath_with_page(
                         page=page,
@@ -290,7 +301,7 @@ class Tier2HybridExecutor:
                 xpath = extraction_result["xpath"]
 
                 if action == "click" and self._xpath_targets_iframe(xpath):
-                    logger.info("[Tier 2] 🧭 XPath points to iframe container. Trying in-frame click fallback...")
+                    logger.info("[Tier 2] ðŸ§­ XPath points to iframe container. Trying in-frame click fallback...")
                     clicked_inside_iframe = await self._try_click_inside_iframe(page, instruction, xpath)
                     if clicked_inside_iframe:
                         playwright_time_ms = 0
@@ -308,7 +319,7 @@ class Tier2HybridExecutor:
 
                     raise ValueError(f"Could not verify iframe click fallback for step: {instruction}")
 
-                logger.info(f"[Tier 2] ✅ Extracted XPath in {extraction_time_ms:.2f}ms: {xpath}")
+                logger.info(f"[Tier 2] âœ… Extracted XPath in {extraction_time_ms:.2f}ms: {xpath}")
                 
                 # Step 4: Cache the XPath for future use
                 self.cache_service.cache_xpath(
@@ -333,7 +344,7 @@ class Tier2HybridExecutor:
                 self.cache_service.validate_and_update(page_url, instruction, is_valid=True)
             
             logger.info(
-                f"[Tier 2] ✅ Step succeeded in {total_time_ms:.2f}ms "
+                f"[Tier 2] âœ… Step succeeded in {total_time_ms:.2f}ms "
                 f"(extraction: {extraction_time_ms:.2f}ms, execution: {playwright_time_ms:.2f}ms, "
                 f"cache_hit: {cache_hit})"
             )
@@ -357,7 +368,7 @@ class Tier2HybridExecutor:
             if cache_hit and xpath:
                 self.cache_service.invalidate_cache(page.url, instruction, error_msg)
             
-            logger.warning(f"[Tier 2] ⏰ Timeout: {error_msg}")
+            logger.warning(f"[Tier 2] â° Timeout: {error_msg}")
             
             return {
                 "success": False,
@@ -374,11 +385,16 @@ class Tier2HybridExecutor:
             total_time_ms = (time.time() - start_time) * 1000
             error_msg = f"{type(e).__name__}: {str(e)}"
             
+            # Sprint 10.17: let VisionNotSupportedError propagate so that
+            # ThreeTierExecutionService can escalate verify_screenshot to Tier 3.
+            if isinstance(e, VisionNotSupportedError):
+                raise
+
             # Invalidate cache if it was a cache hit that failed
             if cache_hit and xpath:
                 self.cache_service.invalidate_cache(page.url, instruction, error_msg)
             
-            logger.warning(f"[Tier 2] ❌ Failed: {error_msg}")
+            logger.warning(f"[Tier 2] âŒ Failed: {error_msg}")
             
             return {
                 "success": False,
@@ -530,17 +546,17 @@ class Tier2HybridExecutor:
             iframe_locator = page.locator(f"xpath={iframe_xpath}").first
             iframe_handle = await iframe_locator.element_handle()
             if not iframe_handle:
-                logger.warning("[Tier 2] ⚠️ Could not resolve iframe element handle for XPath: %s", iframe_xpath)
+                logger.warning("[Tier 2] âš ï¸ Could not resolve iframe element handle for XPath: %s", iframe_xpath)
                 return None
 
             target_frame = await iframe_handle.content_frame()
             if not target_frame:
-                logger.warning("[Tier 2] ⚠️ Could not resolve content frame for XPath: %s", iframe_xpath)
+                logger.warning("[Tier 2] âš ï¸ Could not resolve content frame for XPath: %s", iframe_xpath)
                 return None
 
             return target_frame
         except Exception as exc:
-            logger.warning("[Tier 2] ⚠️ Failed to resolve iframe frame for XPath %s: %s", iframe_xpath, exc)
+            logger.warning("[Tier 2] âš ï¸ Failed to resolve iframe frame for XPath %s: %s", iframe_xpath, exc)
             return None
 
     async def _click_iframe_locator_and_verify(
@@ -579,21 +595,21 @@ class Tier2HybridExecutor:
                 try:
                     if await locator.is_visible():
                         logger.warning(
-                            "[Tier 2] ⚠️ In-frame click left navigation control visible with no URL change: %s",
+                            "[Tier 2] âš ï¸ In-frame click left navigation control visible with no URL change: %s",
                             instruction,
                         )
                         return False
                 except Exception:
                     logger.warning(
-                        "[Tier 2] ⚠️ In-frame click produced no URL change for navigation instruction: %s",
+                        "[Tier 2] âš ï¸ In-frame click produced no URL change for navigation instruction: %s",
                         instruction,
                     )
                     return False
 
-            logger.info("[Tier 2] ✅ Clicked iframe element using %s", log_label)
+            logger.info("[Tier 2] âœ… Clicked iframe element using %s", log_label)
             return True
         except Exception as exc:
-            logger.warning("[Tier 2] ⚠️ In-frame click attempt failed via %s: %s", log_label, exc)
+            logger.warning("[Tier 2] âš ï¸ In-frame click attempt failed via %s: %s", log_label, exc)
             return False
 
     async def _wait_for_page_interactable_for_observe(self, page: Page) -> None:
@@ -629,7 +645,7 @@ class Tier2HybridExecutor:
             try:
                 loading_element = page.locator(loading_selector).first
                 if await loading_element.count() > 0:
-                    logger.info(f"[Tier 2] ⏳ Waiting for loading blocker to hide: {loading_selector}")
+                    logger.info(f"[Tier 2] â³ Waiting for loading blocker to hide: {loading_selector}")
                     await loading_element.wait_for(state="hidden", timeout=5000)
             except Exception:
                 continue
@@ -650,13 +666,13 @@ class Tier2HybridExecutor:
             frames_to_try = [frame for frame in page.frames if frame != page.main_frame]
             if len(frames_to_try) > 1:
                 logger.warning(
-                    "[Tier 2] ⚠️ Refusing generic iframe fallback across %s frames without a resolved target iframe",
+                    "[Tier 2] âš ï¸ Refusing generic iframe fallback across %s frames without a resolved target iframe",
                     len(frames_to_try),
                 )
                 return False
 
         if not frames_to_try:
-            logger.warning("[Tier 2] ⚠️ Could not find any candidate iframe to inspect for step: %s", instruction)
+            logger.warning("[Tier 2] âš ï¸ Could not find any candidate iframe to inspect for step: %s", instruction)
             return False
 
         selector_candidates = self._iframe_click_selector_candidates(instruction)
@@ -689,7 +705,7 @@ class Tier2HybridExecutor:
                 if click_result is False:
                     return False
 
-        logger.warning("[Tier 2] ⚠️ Could not find a verified clickable control inside iframe for step: %s", instruction)
+        logger.warning("[Tier 2] âš ï¸ Could not find a verified clickable control inside iframe for step: %s", instruction)
         return False
 
     def _extract_three_hk_plan_tab_key(self, instruction: str) -> Optional[str]:
@@ -748,7 +764,7 @@ class Tier2HybridExecutor:
             except Exception:
                 continue
 
-        # Second pass: tab row not yet rendered — wait for the first candidate to appear
+        # Second pass: tab row not yet rendered â€” wait for the first candidate to appear
         if first_candidate_locator is not None:
             _TAB_ROW_APPEAR_TIMEOUT_MS = min(self.timeout_ms, 5000)
             try:
@@ -756,7 +772,7 @@ class Tier2HybridExecutor:
                     state="visible", timeout=_TAB_ROW_APPEAR_TIMEOUT_MS
                 )
                 logger.info(
-                    "[Tier 2] ⌛ Tab row appeared after bounded wait (%dms) for '%s'",
+                    "[Tier 2] âŒ› Tab row appeared after bounded wait (%dms) for '%s'",
                     _TAB_ROW_APPEAR_TIMEOUT_MS, label,
                 )
                 return first_candidate_locator, label, "role 'tab' (waited)"
@@ -876,7 +892,7 @@ class Tier2HybridExecutor:
         try:
             await locator.wait_for(state="visible", timeout=2000)
             await locator.click(timeout=self.timeout_ms)
-            logger.info("[Tier 2] 🎯 Clicked Three HK tab using %s '%s'", strategy, label)
+            logger.info("[Tier 2] ðŸŽ¯ Clicked Three HK tab using %s '%s'", strategy, label)
             return True
         except Exception:
             return False
@@ -896,7 +912,7 @@ class Tier2HybridExecutor:
             return
 
         logger.warning(
-            "[Tier 2] ⚠️ Three HK plan tab click was not verified. Dismissing modal and retrying once..."
+            "[Tier 2] âš ï¸ Three HK plan tab click was not verified. Dismissing modal and retrying once..."
         )
 
         await auto_dismiss_blocking_modals(page, logger)
@@ -932,14 +948,14 @@ class Tier2HybridExecutor:
             try:
                 await spinner.first.wait_for(state="visible", timeout=_APPEAR_TIMEOUT_MS)
             except Exception:
-                # Spinner never mounted — tab click had no fetch cycle; nothing to wait for
+                # Spinner never mounted â€” tab click had no fetch cycle; nothing to wait for
                 return
 
-            # Spinner is visible — wait for it to clear before checking tab state
+            # Spinner is visible â€” wait for it to clear before checking tab state
             count = await spinner.count()
             if count > 0:
                 await spinner.wait_for(state="hidden", timeout=_SETTLE_TIMEOUT_MS)
-                logger.info("[Tier 2] ⌛ Three HK SPA spinner cleared after tab click")
+                logger.info("[Tier 2] âŒ› Three HK SPA spinner cleared after tab click")
         except Exception as exc:
             logger.debug("[Tier 2] _wait_for_spa_spinner_settle: %s", exc)
 
@@ -954,21 +970,21 @@ class Tier2HybridExecutor:
         locator, label, strategy = await self._find_three_hk_plan_tab_locator(page, recovery_instruction)
         if locator is None:
             logger.warning(
-                "[Tier 2] ❌ Recovery re-click: locator not found for tab key '%s'", tab_key
+                "[Tier 2] âŒ Recovery re-click: locator not found for tab key '%s'", tab_key
             )
             return False
         try:
             await locator.click(timeout=min(self.timeout_ms, 5000))
-            logger.info("[Tier 2] 🔄 Recovery re-click: clicked '%s' tab via %s", tab_key, strategy)
+            logger.info("[Tier 2] ðŸ”„ Recovery re-click: clicked '%s' tab via %s", tab_key, strategy)
             await self._wait_for_spa_spinner_settle(page)
             recovered = await self._is_three_hk_plan_tab_selected(page, tab_key)
             if recovered:
-                logger.info("[Tier 2] ✅ Recovery re-click: '%s' tab is now selected", tab_key)
+                logger.info("[Tier 2] âœ… Recovery re-click: '%s' tab is now selected", tab_key)
             else:
-                logger.warning("[Tier 2] ❌ Recovery re-click: '%s' tab still not selected", tab_key)
+                logger.warning("[Tier 2] âŒ Recovery re-click: '%s' tab still not selected", tab_key)
             return recovered
         except Exception as exc:
-            logger.warning("[Tier 2] ❌ Recovery re-click raised: %s", exc)
+            logger.warning("[Tier 2] âŒ Recovery re-click raised: %s", exc)
             return False
 
     async def _verify_and_clear_pending_tab_check(self, page: Page) -> None:
@@ -1023,14 +1039,14 @@ class Tier2HybridExecutor:
         before_snapshot = await self._capture_three_hk_plan_tab_snapshot(page, instruction)
         locator, label, strategy = await self._find_three_hk_plan_tab_locator(page, instruction)
         if locator is None:
-            logger.warning("[Tier 2] ⚠️ Could not find a direct Three HK tab locator for step: %s", instruction)
+            logger.warning("[Tier 2] âš ï¸ Could not find a direct Three HK tab locator for step: %s", instruction)
             return None
 
         current_url = page.url
 
         await locator.wait_for(state="visible", timeout=self.timeout_ms)
         await locator.click(timeout=self.timeout_ms)
-        logger.info("[Tier 2] 🎯 Clicked Three HK tab using %s '%s'", strategy, label)
+        logger.info("[Tier 2] ðŸŽ¯ Clicked Three HK tab using %s '%s'", strategy, label)
 
         await wait_for_post_click_readiness(
             page=page,
@@ -1060,7 +1076,7 @@ class Tier2HybridExecutor:
         tab_key = self._extract_three_hk_plan_tab_key(instruction)
         if tab_key:
             self._pending_three_hk_tab_key = tab_key
-            logger.info("[Tier 2] 📌 Registered pending tab re-check for key: %s", tab_key)
+            logger.info("[Tier 2] ðŸ“Œ Registered pending tab re-check for key: %s", tab_key)
 
         execution_time_ms = (time.time() - direct_click_start) * 1000
         return {
@@ -1134,7 +1150,7 @@ class Tier2HybridExecutor:
                 button = page.locator(f"xpath={xpath_candidate}").first
                 await button.wait_for(state="visible", timeout=2000)
                 await button.click(timeout=self.timeout_ms)
-                logger.info("[Tier 2] 🔁 Retried Three HK plan click using XPath: %s", xpath_candidate)
+                logger.info("[Tier 2] ðŸ” Retried Three HK plan click using XPath: %s", xpath_candidate)
                 return True
             except Exception:
                 continue
@@ -1155,7 +1171,7 @@ class Tier2HybridExecutor:
             return
 
         logger.warning(
-            "[Tier 2] ⚠️ Three HK plan click stayed on the selection page. Dismissing modal and retrying once..."
+            "[Tier 2] âš ï¸ Three HK plan click stayed on the selection page. Dismissing modal and retrying once..."
         )
 
         await auto_dismiss_blocking_modals(page, logger)
@@ -1186,8 +1202,8 @@ class Tier2HybridExecutor:
             xpath: XPath selector (may or may not have xpath= prefix)
             value: Value for fill/select actions
         """
-        print(f"\n🔥🔥🔥 [TIER2 DEBUG] _execute_action_with_xpath called with action='{action}', xpath='{xpath[:100] if len(xpath) > 100 else xpath}', value='{value}' 🔥🔥🔥\n", flush=True)
-        logger.info(f"[Tier 2] 🎬 _execute_action_with_xpath called with action='{action}', xpath='{xpath[:100]}', value='{value}'")
+        print(f"\nðŸ”¥ðŸ”¥ðŸ”¥ [TIER2 DEBUG] _execute_action_with_xpath called with action='{action}', xpath='{xpath[:100] if len(xpath) > 100 else xpath}', value='{value}' ðŸ”¥ðŸ”¥ðŸ”¥\n", flush=True)
+        logger.info(f"[Tier 2] ðŸŽ¬ _execute_action_with_xpath called with action='{action}', xpath='{xpath[:100]}', value='{value}'")
         
         # Ensure xpath doesn't have double prefix
         # XPath should be just the path, e.g., "/html/body/..."
@@ -1220,7 +1236,7 @@ class Tier2HybridExecutor:
             )
             
             if click_state["is_payment_click"]:
-                logger.info(f"[Tier 2] 💳 Checkout/payment button detected - waiting for payment gateway input fields...")
+                logger.info(f"[Tier 2] ðŸ’³ Checkout/payment button detected - waiting for payment gateway input fields...")
                 input_found = False
                 gateway_timeout = 12000 if self._is_external_payment_gateway_url(page.url) else 2500
                 try:
@@ -1229,16 +1245,16 @@ class Tier2HybridExecutor:
                         state="visible",
                         timeout=gateway_timeout,
                     )
-                    logger.info("[Tier 2] ✅ Payment input field detected")
+                    logger.info("[Tier 2] âœ… Payment input field detected")
                     input_found = True
                 except Exception:
                     input_found = False
                 
                 if input_found:
                     await asyncio.sleep(0.3)
-                    logger.info(f"[Tier 2] ✅ Payment gateway ready")
+                    logger.info(f"[Tier 2] âœ… Payment gateway ready")
                 else:
-                    logger.warning(f"[Tier 2] ⚠️ No payment input fields detected (may be non-standard gateway)")
+                    logger.warning(f"[Tier 2] âš ï¸ No payment input fields detected (may be non-standard gateway)")
 
             await self._ensure_three_hk_plan_click_progressed(page, instruction, current_url)
                     
@@ -1269,7 +1285,7 @@ class Tier2HybridExecutor:
                 await asyncio.sleep(0.3)
                 if not await element.is_checked():
                     raise ValueError(
-                        "Checkbox is still unchecked after check() — "
+                        "Checkbox is still unchecked after check() â€” "
                         "element may not be a native checkbox or the click did not register"
                     )
                 
@@ -1311,22 +1327,22 @@ class Tier2HybridExecutor:
             
             if tag_name.lower() != "input" or input_type.lower() != "file":
                 logger.warning(
-                    f"[Tier 2] ⚠️ Element is not a file input "
+                    f"[Tier 2] âš ï¸ Element is not a file input "
                     f"(tag={tag_name}, type={input_type}). Attempting upload anyway..."
                 )
             
             # Upload file using Playwright's set_input_files method
-            logger.info(f"[Tier 2] 📤 Uploading file via XPath: {file_path}")
+            logger.info(f"[Tier 2] ðŸ“¤ Uploading file via XPath: {file_path}")
             await element.set_input_files(file_path, timeout=self.timeout_ms)
 
             # Small delay to allow file upload event handlers to complete
             await asyncio.sleep(0.5)
-            logger.info(f"[Tier 2] ✅ File uploaded successfully")
+            logger.info(f"[Tier 2] âœ… File uploaded successfully")
         elif action == "draw_signature" or action == "sign":
             # Draw signature on canvas element
-            logger.info(f"[Tier 2] 🖊️ Starting signature drawing process for XPath: {xpath}")
+            logger.info(f"[Tier 2] ðŸ–Šï¸ Starting signature drawing process for XPath: {xpath}")
             await self._execute_draw_signature(page, xpath, value)
-            logger.info(f"[Tier 2] ✅ Signature drawing completed")
+            logger.info(f"[Tier 2] âœ… Signature drawing completed")
         else:
             raise ValueError(f"Unsupported action type: {action}")
 
@@ -1343,13 +1359,13 @@ class Tier2HybridExecutor:
                     return
 
             logger.warning(
-                "[Tier 2] ⚠️ Click target still disabled after wait (instruction=%s)",
+                "[Tier 2] âš ï¸ Click target still disabled after wait (instruction=%s)",
                 instruction,
             )
             instruction_lower = (instruction or "").lower()
             if "subscribe now" in instruction_lower:
                 raise ValueError(
-                    "Subscribe Now button is still disabled after wait — "
+                    "Subscribe Now button is still disabled after wait â€” "
                     "prerequisite (e.g., T&C checkbox) may not have been completed"
                 )
         except ValueError:
@@ -1410,11 +1426,11 @@ class Tier2HybridExecutor:
         )
 
         if expected_password and not looks_like_password:
-            logger.info("[Tier 2] 🔍 Cached field semantic mismatch: expected password field")
+            logger.info("[Tier 2] ðŸ” Cached field semantic mismatch: expected password field")
             return False
 
         if expected_email and looks_like_password:
-            logger.info("[Tier 2] 🔍 Cached field semantic mismatch: expected email/non-password field")
+            logger.info("[Tier 2] ðŸ” Cached field semantic mismatch: expected email/non-password field")
             return False
 
         return True
@@ -1517,12 +1533,12 @@ class Tier2HybridExecutor:
                 state="visible",
                 timeout=timeout_ms,
             )
-            logger.info(f"[Tier 2] ✅ Payment gateway ready (timeout={timeout_ms}ms)")
+            logger.info(f"[Tier 2] âœ… Payment gateway ready (timeout={timeout_ms}ms)")
             self.payment_gateway_ready = True
             self.payment_gateway_url = page.url
             return
         except Exception:
-            logger.warning("[Tier 2] ⚠️ Payment gateway readiness not confirmed")
+            logger.warning("[Tier 2] âš ï¸ Payment gateway readiness not confirmed")
 
     async def _try_payment_field_action(
         self,
@@ -1677,7 +1693,7 @@ class Tier2HybridExecutor:
                     try:
                         await _try_fill(locator)
                         execution_time_ms = (time.time() - start_time) * 1000
-                        logger.info(f"[Tier 2] ✅ Payment input filled using selector: {selector}")
+                        logger.info(f"[Tier 2] âœ… Payment input filled using selector: {selector}")
                         self.payment_gateway_ready = True
                         self.payment_gateway_url = page.url
                         return {
@@ -1698,7 +1714,7 @@ class Tier2HybridExecutor:
                     try:
                         await _try_select(locator)
                         execution_time_ms = (time.time() - start_time) * 1000
-                        logger.info(f"[Tier 2] ✅ Payment select set using selector: {selector}")
+                        logger.info(f"[Tier 2] âœ… Payment select set using selector: {selector}")
                         self.payment_gateway_ready = True
                         self.payment_gateway_url = page.url
                         return {
@@ -1718,7 +1734,7 @@ class Tier2HybridExecutor:
                     locator = page.get_by_label(label, exact=False)
                     await _try_label(locator)
                     execution_time_ms = (time.time() - start_time) * 1000
-                    logger.info(f"[Tier 2] ✅ Payment field set using label: {label}")
+                    logger.info(f"[Tier 2] âœ… Payment field set using label: {label}")
                     self.payment_gateway_ready = True
                     self.payment_gateway_url = page.url
                     return {
@@ -1742,7 +1758,7 @@ class Tier2HybridExecutor:
                         try:
                             await _try_fill(locator)
                             execution_time_ms = (time.time() - start_time) * 1000
-                            logger.info(f"[Tier 2] ✅ Payment input filled in iframe: {iframe_selector} -> {selector}")
+                            logger.info(f"[Tier 2] âœ… Payment input filled in iframe: {iframe_selector} -> {selector}")
                             self.payment_gateway_ready = True
                             self.payment_gateway_url = page.url
                             return {
@@ -1763,7 +1779,7 @@ class Tier2HybridExecutor:
                         try:
                             await _try_select(locator)
                             execution_time_ms = (time.time() - start_time) * 1000
-                            logger.info(f"[Tier 2] ✅ Payment select set in iframe: {iframe_selector} -> {selector}")
+                            logger.info(f"[Tier 2] âœ… Payment select set in iframe: {iframe_selector} -> {selector}")
                             self.payment_gateway_ready = True
                             self.payment_gateway_url = page.url
                             return {
@@ -1784,7 +1800,7 @@ class Tier2HybridExecutor:
                         locator = frame_locator.get_by_label(label, exact=False)
                         await _try_label(locator)
                         execution_time_ms = (time.time() - start_time) * 1000
-                        logger.info(f"[Tier 2] ✅ Payment field set in iframe using label: {label}")
+                        logger.info(f"[Tier 2] âœ… Payment field set in iframe using label: {label}")
                         self.payment_gateway_ready = True
                         self.payment_gateway_url = page.url
                         return {
@@ -1821,7 +1837,7 @@ class Tier2HybridExecutor:
         tag_name = await element.evaluate("el => el.tagName")
         if tag_name.lower() != "canvas":
             logger.warning(
-                f"[Tier 2] ⚠️ Element is not a canvas (tag={tag_name}). "
+                f"[Tier 2] âš ï¸ Element is not a canvas (tag={tag_name}). "
                 f"Attempting signature drawing anyway..."
             )
         
@@ -1835,7 +1851,7 @@ class Tier2HybridExecutor:
         await element.focus()
         await asyncio.sleep(0.2)  # Allow focus to settle
         
-        logger.info(f"[Tier 2] ✍️ Drawing signature on canvas via XPath (bbox: {bbox})")
+        logger.info(f"[Tier 2] âœï¸ Drawing signature on canvas via XPath (bbox: {bbox})")
         
         # Calculate signature path within canvas
         canvas_x = bbox['x']
@@ -1975,5 +1991,71 @@ class Tier2HybridExecutor:
         await element.dispatch_event("input", {"bubbles": True})
         await element.dispatch_event("change", {"bubbles": True})
         
-        logger.info(f"[Tier 2] ✅ Signature drawn successfully via XPath")
+        logger.info(f"[Tier 2] âœ… Signature drawn successfully via XPath")
 
+
+
+    # ------------------------------------------------------------------
+    # Sprint 10.17: AI Screenshot Verification
+    # ------------------------------------------------------------------
+
+    async def _execute_verify_screenshot(
+        self,
+        page: Page,
+        step: Dict[str, Any],
+        start_time: float,
+    ) -> Dict[str, Any]:
+        """Handle a verify_screenshot step using vision AI.
+
+        Calls ScreenshotVerificationService.  When VisionNotSupportedError is
+        raised (provider is cerebras / local_vllm) the exception is propagated
+        so ThreeTierExecutionService can escalate to Tier 3.
+        """
+        import json as _json
+
+        instruction = step.get("instruction", "")
+        expected_items = step.get("expected_items") or []
+        screenshot_region = step.get("screenshot_region", "viewport")
+        provider = self.user_ai_config.get("execution_provider") or self.user_ai_config.get("provider", "openrouter")
+        model = self.user_ai_config.get("execution_model") or self.user_ai_config.get("model")
+
+        logger.info(
+            "[Tier 2] 📸 verify_screenshot — provider=%s model=%s instruction=%s",
+            provider,
+            model,
+            instruction,
+        )
+
+        # VisionNotSupportedError is intentionally NOT caught here.
+        # ThreeTierExecutionService catches it and escalates to Tier 3.
+        svc = ScreenshotVerificationService()
+        verdict = await svc.verify(
+            page=page,
+            instruction=instruction,
+            expected_items=expected_items,
+            screenshot_region=screenshot_region,
+            provider=provider,
+            model=model,
+        )
+
+        execution_time_ms = (time.time() - start_time) * 1000
+        passed = verdict.get("verdict", "FAIL").upper() == "PASS"
+        verdict_json = _json.dumps(verdict)
+
+        if passed:
+            logger.info("[Tier 2] ✅ verify_screenshot PASS in %.0fms", execution_time_ms)
+        else:
+            logger.warning("[Tier 2] ❌ verify_screenshot FAIL: %s", verdict.get("reason"))
+
+        return {
+            "success": passed,
+            "tier": 2,
+            "execution_time_ms": execution_time_ms,
+            "extraction_time_ms": 0,
+            "playwright_time_ms": 0,
+            "cache_hit": False,
+            "xpath": None,
+            "error": None if passed else verdict.get("reason"),
+            "error_type": None if passed else "verification_failed",
+            "ai_verification_result": verdict_json,
+        }

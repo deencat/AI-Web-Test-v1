@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/common/Card';
@@ -391,6 +391,60 @@ function ExecutionStatusBadge({ status, result }: ExecutionStatusBadgeProps) {
 }
 
 // ---------------------------------------------------------------------------
+// Sprint 10.17: AI Screenshot Verification verdict badge
+// ---------------------------------------------------------------------------
+
+interface AiVerificationBadgeProps {
+  verdict: {
+    verdict: 'PASS' | 'FAIL';
+    reason: string;
+    provider: string;
+    model: string | null;
+  } | null | undefined;
+}
+
+function AiVerificationBadge({ verdict }: AiVerificationBadgeProps) {
+  const [expanded, setExpanded] = React.useState(false);
+
+  if (!verdict) return null;
+
+  const isPassed = verdict.verdict === 'PASS';
+  const badgeColor = isPassed
+    ? 'bg-green-100 border-green-300 text-green-800'
+    : 'bg-red-100 border-red-300 text-red-800';
+  const icon = isPassed ? '✅' : '❌';
+  const label = isPassed ? 'AI PASS' : 'AI FAIL';
+
+  return (
+    <div className="mt-2">
+      <button
+        onClick={() => setExpanded(e => !e)}
+        data-testid="ai-verification-badge"
+        className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded border ${badgeColor} cursor-pointer`}
+        title="Click to expand AI verification details"
+      >
+        {icon} {label}
+        <span className="ml-1 text-xs opacity-70">{expanded ? '▲' : '▼'}</span>
+      </button>
+      {expanded && (
+        <div
+          data-testid="ai-verification-reason"
+          className={`mt-1 p-2 text-xs rounded border ${badgeColor}`}
+        >
+          <div className="font-medium mb-1">AI Vision Verdict</div>
+          <div>{verdict.reason}</div>
+          {verdict.provider && (
+            <div className="mt-1 opacity-70">
+              Provider: {verdict.provider}{verdict.model ? ` · ${verdict.model}` : ''}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Sprint 10.16: Per-step XPath cache clear button
 // ---------------------------------------------------------------------------
 
@@ -496,6 +550,9 @@ function StepCard({ step, executionId, testCaseId, baseUrl, browser, environment
               <span className="font-medium">Error:</span> {step.error_message}
             </div>
           )}
+
+          {/* Sprint 10.17: AI Screenshot Verification verdict badge */}
+          <AiVerificationBadge verdict={step.ai_verification_result} />
 
           {/* Sprint 10.12: AI Root Cause Analysis panel for all_tiers_exhausted failures */}
           <RootCauseAnalysisPanel rootCauseAnalysis={rootCauseAnalysis} />

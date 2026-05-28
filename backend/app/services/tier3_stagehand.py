@@ -88,7 +88,11 @@ class Tier3StagehandExecutor:
                 # Use goto instead of act for navigation
                 url = value or instruction
                 await self.stagehand.page.goto(url, timeout=self.timeout_ms, wait_until="networkidle")
-                
+
+            elif action == "verify_screenshot":
+                # Sprint 10.17: vision not available → semantic text fallback via extract()
+                return await self._execute_verify_screenshot_fallback(step, start_time)
+
             elif action in ["fill", "type"] and value:
                 # Combine action with value for better instruction
                 full_instruction = f"{instruction} with value '{value}'"
@@ -370,6 +374,62 @@ class Tier3StagehandExecutor:
         await self.stagehand.page.mouse.up()
         
         logger.info(f"[Tier 3] ✅ Signature drawn successfully via fallback")
+
+    # ------------------------------------------------------------------
+    # Sprint 10.17: verify_screenshot semantic fallback
+    # ------------------------------------------------------------------
+
+    async def _execute_verify_screenshot_fallback(
+        self,
+        step: Dict[str, Any],
+        start_time: float,
+    ) -> Dict[str, Any]:
+        """Text-semantic fallback for verify_screenshot when vision AI is unavailable.
+
+        Uses Stagehand extract() to pull page text and checks that all
+        expected_items are present within the extracted content.
+        """
+        import json as _json
+
+        instruction = step.get("instruction", "")
+        expected_items: list = step.get("expected_items") or []
+
+        logger.info(
+            "[Tier 3] 🔍 verify_screenshot fallback — extract() text check for: %s",
+            instruction,
+        )
+
+        extract_instruction = (
+            f"Extract all visible text on the page that is relevant to: {instruction}"
+        )
+        extracted = await self.stagehand.page.extract(extract_instruction)
+        extracted_text = str(extracted).lower()
+
+        missing = [item for item in expected_items if item.lower() not in extracted_text]
+        passed = len(missing) == 0
+
+        verdict = "PASS" if passed else "FAIL"
+        if passed:
+            reason = "All expected items found in page text (semantic fallback)"
+        else:
+            reason = f"Missing items in extracted text: {', '.join(missing)}"
+
+        verdict_dict = {"verdict": verdict, "reason": reason, "provider": "tier3_semantic", "model": None}
+        execution_time_ms = (time.time() - start_time) * 1000
+
+        if passed:
+            logger.info("[Tier 3] ✅ verify_screenshot fallback PASS in %.0fms", execution_time_ms)
+        else:
+            logger.warning("[Tier 3] ❌ verify_screenshot fallback FAIL: %s", reason)
+
+        return {
+            "success": passed,
+            "tier": 3,
+            "execution_time_ms": execution_time_ms,
+            "error": None if passed else reason,
+            "error_type": None if passed else "verification_failed",
+            "ai_verification_result": _json.dumps(verdict_dict),
+        }
 
 
 # Import asyncio for timeout handling

@@ -66,6 +66,10 @@ class Tier1PlaywrightExecutor:
             
             logger.info(f"[Tier 1] Executing step: {action} - {instruction}")
             
+            # Sprint 10.17: verify_screenshot requires vision AI — escalate immediately
+            if action == "verify_screenshot":
+                raise ValueError("verify_screenshot requires vision AI")
+
             # Execute action based on type
             if action == "navigate":
                 url = value or selector or instruction
@@ -142,6 +146,14 @@ class Tier1PlaywrightExecutor:
         except Exception as e:
             execution_time_ms = (time.time() - start_time) * 1000
             error_msg = f"{type(e).__name__}: {str(e)}"
+
+            # Sprint 10.17: signal that vision is required so the three-tier
+            # service escalates directly to Tier 2 without extra delay.
+            error_type = (
+                "vision_required"
+                if "verify_screenshot requires vision AI" in str(e)
+                else type(e).__name__
+            )
             logger.warning(f"[Tier 1] ❌ Failed: {error_msg}")
             
             return {
@@ -149,7 +161,7 @@ class Tier1PlaywrightExecutor:
                 "tier": 1,
                 "execution_time_ms": execution_time_ms,
                 "error": error_msg,
-                "error_type": type(e).__name__
+                "error_type": error_type,
             }
     
     async def _execute_navigate(self, page: Page, url: str):
