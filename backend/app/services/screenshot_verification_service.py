@@ -22,20 +22,33 @@ logger = logging.getLogger(__name__)
 _VERDICT_RE = re.compile(r"^(PASS|FAIL):\s*(.+)$", re.IGNORECASE | re.DOTALL)
 
 _SYSTEM_PROMPT = (
-    "You are a UI verification assistant. "
-    "Review the screenshot and answer strictly using one of the two formats:\n"
+    "You are a strict UI verification assistant. "
+    "Your ONLY job is to check whether ALL expected items are LITERALLY VISIBLE as text in the screenshot.\n"
+    "Rules:\n"
+    "1. Respond PASS ONLY if every single expected item is clearly visible as text in the screenshot.\n"
+    "2. Respond FAIL if ANY expected item is missing, not shown, or not clearly visible.\n"
+    "3. Do NOT assume, guess, or infer — only report what you can directly read in the screenshot.\n"
+    "4. Use EXACTLY one of these two formats (no other text):\n"
     "PASS: <one-sentence reason>\n"
-    "FAIL: <one-sentence reason>\n"
-    "Do not add any other text."
+    "FAIL: <one-sentence reason stating which item is missing>"
 )
 
 
 def _build_user_text(instruction: str, expected_items: List[str]) -> str:
     """Build the user message for the vision LLM."""
-    items_str = ", ".join(f'"{item}"' for item in expected_items) if expected_items else "(none specified)"
+    if expected_items:
+        items_str = ", ".join(f'"{item}"' for item in expected_items)
+        enforcement = (
+            "\nIMPORTANT: Each item listed above MUST be literally visible as text in the screenshot. "
+            "If ANY item is absent or not clearly shown, you MUST respond FAIL."
+        )
+    else:
+        items_str = "(none specified — check that the instruction is satisfied)"
+        enforcement = ""
     return (
         f'Verification task: "{instruction}"\n'
-        f"Expected items to find on screen: {items_str}"
+        f"Expected items that MUST be visible on screen: {items_str}"
+        f"{enforcement}"
     )
 
 

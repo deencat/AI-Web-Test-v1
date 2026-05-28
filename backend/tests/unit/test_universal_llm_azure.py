@@ -258,3 +258,56 @@ def test_build_azure_request_candidates_uses_max_completion_tokens_for_gpt52():
     assert "max_tokens" not in candidates[0]["payload"]
     assert candidates[1]["payload"]["max_completion_tokens"] == 256
     assert "max_tokens" not in candidates[1]["payload"]
+
+
+@pytest.mark.asyncio
+async def test_call_azure_vision_gpt52_uses_v1_endpoint_and_max_completion_tokens(monkeypatch):
+    """Vision requests for gpt-5.2 must use the v1 URL format and max_completion_tokens."""
+    service = UniversalLLMService()
+    monkeypatch.setattr(service, "azure_api_key", "test-key", raising=False)
+    monkeypatch.setattr(
+        service,
+        "_azure_model_endpoints",
+        {
+            "gpt-5.2": {
+                "endpoint": "https://hutch-mkklgrll-eastus2.cognitiveservices.azure.com",
+                "api_version": "2024-12-01-preview",
+                "api_key": "test-key",
+            }
+        },
+        raising=False,
+    )
+
+    mock_response = Mock()
+    mock_response.raise_for_status = Mock()
+    mock_response.json = Mock(
+        return_value={
+            "choices": [{"message": {"role": "assistant", "content": "PASS: item visible"}}]
+        }
+    )
+
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=mock_response)
+
+    async def mock_get_http_client():
+        return mock_client
+
+    monkeypatch.setattr(service, "_get_http_client", mock_get_http_client)
+
+    result = await service._call_azure_vision(
+        image_b64="ZmFrZQ==",
+        system_prompt="system",
+        user_text="user",
+        model="gpt-5.2",
+        max_tokens=256,
+    )
+
+    assert result["choices"][0]["message"]["content"] == "PASS: item visible"
+
+    called_url = mock_client.post.await_args.args[0]
+    payload = mock_client.post.await_args.kwargs["json"]
+
+    assert called_url == "https://hutch-mkklgrll-eastus2.cognitiveservices.azure.com/openai/v1/chat/completions"
+    assert payload["model"] == "gpt-5.2"
+    assert payload["max_completion_tokens"] == 256
+    assert "max_tokens" not in payload

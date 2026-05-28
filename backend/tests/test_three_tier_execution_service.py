@@ -171,3 +171,64 @@ async def test_execute_step_escalates_when_confirm_click_makes_no_progress():
     assert result["success"] is False
     assert service.tier3_executor.execute_step.await_count == 1
     assert result["execution_history"][1]["error_type"] == "no_progress"
+
+
+@pytest.mark.asyncio
+async def test_execute_step_returns_tier2_verify_screenshot_fail_without_tier3_fallback():
+    service = ThreeTierExecutionService(
+        db=MagicMock(),
+        page=MagicMock(),
+        user_settings=_make_settings(strategy="option_c"),
+    )
+
+    service.tier1_executor.execute_step = AsyncMock(
+        return_value={
+            "success": False,
+            "tier": 1,
+            "execution_time_ms": 5,
+            "error": "verify_screenshot requires vision AI",
+            "error_type": "ValueError",
+        }
+    )
+    service.tier2_executor = MagicMock()
+    service.tier2_executor.execute_step = AsyncMock(
+        return_value={
+            "success": False,
+            "tier": 2,
+            "execution_time_ms": 25,
+            "error": 'The text "voucher plan" is not visible in the screenshot.',
+            "error_type": "verification_failed",
+            "ai_verification_result": '{"verdict":"FAIL","reason":"The text \\"voucher plan\\" is not visible in the screenshot."}',
+        }
+    )
+    service.tier3_executor = MagicMock()
+    service.tier3_executor.execute_step = AsyncMock(
+        return_value={
+            "success": False,
+            "tier": 3,
+            "execution_time_ms": 12,
+            "error": "Vision AI unavailable",
+            "error_type": "vision_ai_unavailable",
+            "ai_verification_result": '{"verdict":"FAIL","reason":"Vision AI unavailable"}',
+        }
+    )
+    service._ensure_tier2_initialized = AsyncMock(return_value=None)
+    service._ensure_tier3_initialized = AsyncMock(return_value=None)
+
+    with patch(
+        "app.services.three_tier_execution_service.wait_for_step_boundary_readiness",
+        AsyncMock(return_value=None),
+    ):
+        result = await service.execute_step(
+            {
+                "action": "verify_screenshot",
+                "instruction": "verify voucher plan is showing up as offer. take screenshot to verify",
+                "expected_items": ["voucher plan"],
+            }
+        )
+
+    assert result["success"] is False
+    assert result["tier"] == 2
+    assert result["error_type"] == "verification_failed"
+    assert result["ai_verification_result"] == '{"verdict":"FAIL","reason":"The text \\"voucher plan\\" is not visible in the screenshot."}'
+    service.tier3_executor.execute_step.assert_not_awaited()

@@ -384,50 +384,48 @@ class Tier3StagehandExecutor:
         step: Dict[str, Any],
         start_time: float,
     ) -> Dict[str, Any]:
-        """Text-semantic fallback for verify_screenshot when vision AI is unavailable.
+        """Fallback for verify_screenshot when vision AI is unavailable.
 
-        Uses Stagehand extract() to pull page text and checks that all
-        expected_items are present within the extracted content.
+        DOM text search CANNOT reliably verify that content is visually shown
+        on screen — navigation tabs, hidden sections, or off-screen elements
+        all contain text that would produce false PASSes.
+
+        Therefore this fallback always returns FAIL with an explicit message
+        telling the user they need a vision-capable provider (OpenRouter with
+        a vision model, Azure OpenAI, or Google Gemini).
         """
         import json as _json
 
         instruction = step.get("instruction", "")
         expected_items: list = step.get("expected_items") or []
 
-        logger.info(
-            "[Tier 3] 🔍 verify_screenshot fallback — extract() text check for: %s",
+        logger.warning(
+            "[Tier 3] ⚠️  verify_screenshot requires vision AI — "
+            "current provider does not support vision.  Returning FAIL.  "
+            "Configure a vision-capable provider (OpenRouter/Azure/Google). "
+            "Instruction: %s",
             instruction,
         )
 
-        extract_instruction = (
-            f"Extract all visible text on the page that is relevant to: {instruction}"
+        reason = (
+            "Vision AI unavailable: verify_screenshot requires a vision-capable provider "
+            "(OpenRouter with a vision model, Azure OpenAI, or Google Gemini). "
+            "DOM text search cannot distinguish whether content is actually visible on screen."
         )
-        extracted = await self.stagehand.page.extract(extract_instruction)
-        extracted_text = str(extracted).lower()
-
-        missing = [item for item in expected_items if item.lower() not in extracted_text]
-        passed = len(missing) == 0
-
-        verdict = "PASS" if passed else "FAIL"
-        if passed:
-            reason = "All expected items found in page text (semantic fallback)"
-        else:
-            reason = f"Missing items in extracted text: {', '.join(missing)}"
-
-        verdict_dict = {"verdict": verdict, "reason": reason, "provider": "tier3_semantic", "model": None}
+        verdict_dict = {
+            "verdict": "FAIL",
+            "reason": reason,
+            "provider": "none (vision_required)",
+            "model": None,
+        }
         execution_time_ms = (time.time() - start_time) * 1000
 
-        if passed:
-            logger.info("[Tier 3] ✅ verify_screenshot fallback PASS in %.0fms", execution_time_ms)
-        else:
-            logger.warning("[Tier 3] ❌ verify_screenshot fallback FAIL: %s", reason)
-
         return {
-            "success": passed,
+            "success": False,
             "tier": 3,
             "execution_time_ms": execution_time_ms,
-            "error": None if passed else reason,
-            "error_type": None if passed else "verification_failed",
+            "error": reason,
+            "error_type": "vision_ai_unavailable",
             "ai_verification_result": _json.dumps(verdict_dict),
         }
 

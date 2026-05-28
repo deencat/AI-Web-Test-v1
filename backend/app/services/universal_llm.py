@@ -234,7 +234,10 @@ class UniversalLLMService:
     ) -> dict:
         """Call Azure OpenAI with a multimodal (vision) message.
 
-        Falls back to the same endpoint resolution logic as chat_completion.
+        Uses the same endpoint/URL resolution as _call_azure:
+        - Tries v1/chat/completions first (works for gpt-5.x)
+        - Falls back to deployments/<model>/chat/completions
+        - Uses max_completion_tokens for gpt-5.x models (not max_tokens)
         """
         resolved_model = model or "ChatGPT-UAT"
         model_override = self._azure_model_endpoints.get(resolved_model, {})
@@ -252,10 +255,9 @@ class UniversalLLMService:
             if "/openai" in effective_endpoint
             else effective_endpoint
         )
-        url = (
-            f"{resource_base}/openai/deployments/{resolved_model}/chat/completions"
-            f"?api-version={effective_api_version}"
-        )
+
+        # gpt-5.x requires max_completion_tokens, older models use max_tokens
+        token_limit_field = "max_completion_tokens" if resolved_model.startswith("gpt-5") else "max_tokens"
 
         messages: List[Dict] = [
             {"role": "system", "content": system_prompt},
@@ -271,28 +273,61 @@ class UniversalLLMService:
             },
         ]
 
-        payload: Dict = {
+        # Candidate 1: v1 endpoint (preferred for gpt-5.x)
+        v1_base = effective_endpoint if "/openai/v1" in effective_endpoint else f"{resource_base}/openai/v1"
+        v1_url = f"{v1_base.rstrip('/')}/chat/completions"
+        v1_payload: Dict = {
+            "model": resolved_model,
             "messages": messages,
-            "max_tokens": max_tokens,
+            token_limit_field: max_tokens,
             "temperature": 0.1,
         }
 
+        # Candidate 2: deployments endpoint (classic Azure format)
+        deployment_url = (
+            f"{resource_base}/openai/deployments/{resolved_model}/chat/completions"
+            f"?api-version={effective_api_version}"
+        )
+        deployment_payload: Dict = {
+            "messages": messages,
+            token_limit_field: max_tokens,
+            "temperature": 0.1,
+        }
+
+        candidates = [
+            {"url": v1_url, "payload": v1_payload},
+            {"url": deployment_url, "payload": deployment_payload},
+        ]
+
         client = await self._get_http_client()
-        try:
-            response = await client.post(
-                url,
-                headers={"api-key": effective_api_key, "Content-Type": "application/json"},
-                json=payload,
-            )
-            response.raise_for_status()
-            return response.json()
-        except httpx.TimeoutException:
-            raise Exception("Azure vision API request timed out (90s)")
-        except httpx.HTTPStatusError as e:
-            error_detail = e.response.text if e.response else "Unknown error"
-            raise Exception(f"Azure vision API error ({e.response.status_code}): {error_detail}")
-        except httpx.HTTPError as e:
-            raise Exception(f"Azure vision API connection error: {str(e)}")
+        for index, candidate in enumerate(candidates):
+            try:
+                response = await client.post(
+                    candidate["url"],
+                    headers={"api-key": effective_api_key, "Content-Type": "application/json"},
+                    json=candidate["payload"],
+                )
+                response.raise_for_status()
+                return response.json()
+            except httpx.TimeoutException:
+                raise Exception("Azure vision API request timed out (90s)")
+            except httpx.HTTPStatusError as e:
+                can_retry = (
+                    index < len(candidates) - 1
+                    and e.response is not None
+                    and e.response.status_code == 404
+                )
+                if can_retry:
+                    logger.info(
+                        "[Azure Vision] v1 URL returned 404, retrying with deployment URL"
+                    )
+                    continue
+                error_detail = e.response.text if e.response else "Unknown error"
+                raise Exception(f"Azure vision API error ({e.response.status_code}): {error_detail}")
+            except httpx.HTTPError as e:
+                raise Exception(f"Azure vision API connection error: {str(e)}")
+
+        raise Exception("Azure vision API error: all endpoint strategies failed")
 
     async def _call_google_vision(
         self,

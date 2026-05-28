@@ -1288,7 +1288,16 @@ class ExecutionService:
                     if "navigate" in desc_lower or "go to" in desc_lower or "open" in desc_lower:
                         step_data["action"] = "navigate"
                     # Sprint 10.17: verify_screenshot action detection
-                    elif "verify_screenshot" in desc_lower or "verify screenshot" in desc_lower:
+                    # Matches: "verify_screenshot", "verify screenshot",
+                    #          "take screenshot to verify", "screenshot to verify",
+                    #          "screenshot verify", "verify … screenshot"
+                    elif (
+                        "verify_screenshot" in desc_lower
+                        or "verify screenshot" in desc_lower
+                        or "screenshot to verify" in desc_lower
+                        or "take screenshot" in desc_lower
+                        or "screenshot verify" in desc_lower
+                    ):
                         step_data["action"] = "verify_screenshot"
                     # Check for signature/sign actions first
                     elif "sign" in desc_lower or "signature" in desc_lower or "draw" in desc_lower:
@@ -1435,6 +1444,27 @@ class ExecutionService:
                         step_data["value"] = "test input"
                         print(f"[DEBUG] Using default value: test input")
                 
+                # Sprint 10.17: auto-extract expected_items for verify_screenshot
+                if step_data["action"] == "verify_screenshot" and not step_data.get("expected_items"):
+                    # First try quoted strings e.g. verify '64740129' account is showing up
+                    quoted = re.findall(r"['\"]([^'\"]+)['\"]", step_description)
+                    if quoted:
+                        step_data["expected_items"] = quoted
+                        print(f"[DEBUG] Auto-extracted expected_items (quoted) for verify_screenshot: {quoted}")
+                    else:
+                        # Fallback: extract unquoted subject from "verify X is showing/visible" patterns
+                        # e.g. "verify world plan is showing up as offer"
+                        subject_match = re.search(
+                            r"verify\s+(.+?)\s+is\s+(?:showing|visible|present|displayed|appearing)",
+                            step_description,
+                            re.IGNORECASE,
+                        )
+                        if subject_match:
+                            subject = subject_match.group(1).strip()
+                            if subject and len(subject) < 80:
+                                step_data["expected_items"] = [subject]
+                                print(f"[DEBUG] Auto-extracted expected_items (subject) for verify_screenshot: {[subject]}")
+
                 print(f"[DEBUG] Calling 3-Tier with: {step_data}")
                 
                 # Execute with 3-tier service

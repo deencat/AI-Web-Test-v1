@@ -37,6 +37,15 @@ class ExecutionFailedError(Exception):
         super().__init__(self.message)
 
 
+def _latest_ai_verification_result(execution_history: List[Dict[str, Any]]) -> Optional[str]:
+    """Return the latest non-empty ai_verification_result from execution history."""
+    for entry in reversed(execution_history):
+        ai_result = entry.get("ai_verification_result")
+        if ai_result:
+            return ai_result
+    return None
+
+
 class ThreeTierExecutionService:
     """
     3-Tier Execution Service with configurable fallback strategies.
@@ -211,7 +220,13 @@ class ThreeTierExecutionService:
         logger.info(f"[3-Tier] Tier 1 failed, falling back to strategy {strategy}")
         
         try:
-            if strategy == "option_a":
+            if action == "verify_screenshot":
+                result = await self._execute_verify_screenshot(
+                    step,
+                    execution_history,
+                    confirm_progress_snapshot,
+                )
+            elif strategy == "option_a":
                 result = await self._execute_option_a(step, execution_history, confirm_progress_snapshot)
             elif strategy == "option_b":
                 result = await self._execute_option_b(step, execution_history, confirm_progress_snapshot)
@@ -240,6 +255,7 @@ class ThreeTierExecutionService:
             
         except ExecutionFailedError as e:
             total_time_ms = (time.time() - overall_start_time) * 1000
+            ai_verification_result = _latest_ai_verification_result(e.execution_history)
             
             logger.error(f"[3-Tier] ❌ All tiers exhausted: {e.message}")
             
@@ -250,7 +266,8 @@ class ThreeTierExecutionService:
                 "execution_history": e.execution_history,
                 "strategy_used": strategy,
                 "error": e.message,
-                "error_type": "all_tiers_exhausted"
+                "error_type": "all_tiers_exhausted",
+                "ai_verification_result": ai_verification_result,
             }
             
             # Log tier execution
@@ -400,6 +417,46 @@ class ThreeTierExecutionService:
             message="Option C failed: All tiers exhausted (Tier 1, 2, 3)",
             execution_history=execution_history
         )
+
+    async def _execute_verify_screenshot(
+        self,
+        step: Dict[str, Any],
+        execution_history: List[Dict[str, Any]],
+        confirm_progress_snapshot=None,
+    ) -> Dict[str, Any]:
+        """Execute verify_screenshot with Tier 2 vision as the final verdict.
+
+        Tier 3 is only used when Tier 2 raises VisionNotSupportedError.
+        A PASS or FAIL returned by Tier 2 is already the authoritative result
+        of the screenshot verification and should not be overwritten by a
+        fallback tier.
+        """
+        await self._ensure_tier2_initialized()
+
+        try:
+            tier2_result = await self.tier2_executor.execute_step(self.page, step)
+        except VisionNotSupportedError:
+            logger.info(
+                "[3-Tier] verify_screenshot: VisionNotSupported from Tier 2 → escalating to Tier 3"
+            )
+            return await self._execute_verify_screenshot_tier3_fallback(
+                step,
+                execution_history,
+                confirm_progress_snapshot,
+            )
+
+        execution_history.append(tier2_result)
+
+        if tier2_result["success"] and not await self._step_made_expected_progress(step, confirm_progress_snapshot):
+            tier2_result = self._mark_no_progress_failure(tier2_result, step)
+            execution_history[-1] = tier2_result
+
+        if tier2_result["success"]:
+            logger.info("[3-Tier] ✅ verify_screenshot succeeded at Tier 2")
+        else:
+            logger.info("[3-Tier] ✅ verify_screenshot completed at Tier 2 with FAIL verdict")
+
+        return tier2_result
 
     # ------------------------------------------------------------------
     # Sprint 10.17: vision fallback helper
