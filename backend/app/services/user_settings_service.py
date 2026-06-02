@@ -377,9 +377,14 @@ class UserSettingsService:
             "model": resolved_model,
             # Phase 2: carry custom endpoint so agents can route unknown models
             "local_vllm_custom_endpoint": getattr(user_settings, "local_vllm_custom_endpoint", None),
+            "api_key": self._get_api_key_for_provider(provider_val, user_settings),
         }
 
-    def _get_api_key_for_provider(self, provider: str) -> Optional[str]:
+    def _get_api_key_for_provider(
+        self,
+        provider: str,
+        user_settings: Optional[UserSetting] = None,
+    ) -> Optional[str]:
         """
         Get the appropriate API key from environment variables based on provider.
         
@@ -400,7 +405,8 @@ class UserSettingsService:
         elif provider == "openrouter":
             return os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
         elif provider == "local_vllm":
-            return os.getenv("LOCAL_VLLM_API_KEY", "local")  # vLLM ignores auth by default
+            stored_key = getattr(user_settings, "local_vllm_api_key", None) if user_settings else None
+            return stored_key or os.getenv("LOCAL_VLLM_API_KEY", "local")
         else:
             # Default fallback
             return os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
@@ -429,12 +435,19 @@ class UserSettingsService:
             # Get API key from environment based on provider (not stored in database for security)
             import os
             
+            _CUSTOM_SENTINEL = "__custom__"
+            _custom_model_name = getattr(user_settings, "local_vllm_custom_model", None)
+
             if config_type == "generation":
                 provider = user_settings.generation_provider
-                api_key = self._get_api_key_for_provider(provider)
+                api_key = self._get_api_key_for_provider(provider, user_settings)
+                gen_model = user_settings.generation_model
+                # Phase 2: replace sentinel with the stored custom model name
+                if gen_model == _CUSTOM_SENTINEL and _custom_model_name:
+                    gen_model = _custom_model_name
                 return {
                     "provider": provider,
-                    "model": user_settings.generation_model,
+                    "model": gen_model,
                     "api_key": api_key,  # From environment variables
                     "temperature": user_settings.generation_temperature,
                     "max_tokens": user_settings.generation_max_tokens,
@@ -442,13 +455,18 @@ class UserSettingsService:
                     "enable_thinking": bool(getattr(user_settings, "local_vllm_enable_thinking", False)),
                     # Phase 2: custom vLLM endpoint (None when not configured)
                     "local_vllm_custom_endpoint": getattr(user_settings, "local_vllm_custom_endpoint", None),
+                    "local_vllm_api_key": getattr(user_settings, "local_vllm_api_key", None),
                 }
             else:  # execution
                 provider = user_settings.execution_provider
-                api_key = self._get_api_key_for_provider(provider)
+                api_key = self._get_api_key_for_provider(provider, user_settings)
+                exec_model = user_settings.execution_model
+                # Phase 2: replace sentinel with the stored custom model name
+                if exec_model == _CUSTOM_SENTINEL and _custom_model_name:
+                    exec_model = _custom_model_name
                 return {
                     "provider": provider,
-                    "model": user_settings.execution_model,
+                    "model": exec_model,
                     "api_key": api_key,  # From environment variables
                     "temperature": user_settings.execution_temperature,
                     "max_tokens": user_settings.execution_max_tokens,
@@ -456,6 +474,7 @@ class UserSettingsService:
                     "enable_thinking": bool(getattr(user_settings, "local_vllm_enable_thinking", False)),
                     # Phase 2: custom vLLM endpoint (None when not configured)
                     "local_vllm_custom_endpoint": getattr(user_settings, "local_vllm_custom_endpoint", None),
+                    "local_vllm_api_key": getattr(user_settings, "local_vllm_api_key", None),
                 }
         
         # Fallback to environment settings

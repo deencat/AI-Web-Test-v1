@@ -83,6 +83,7 @@ class UniversalLLMService:
         max_tokens: Optional[int] = None,
         enable_thinking: bool = False,
         custom_endpoint: Optional[str] = None,
+        api_key: Optional[str] = None,
     ) -> dict:
         """
         Call LLM API for chat completion with provider selection.
@@ -116,7 +117,15 @@ class UniversalLLMService:
         elif provider == "azure":
             return await self._call_azure(messages, model, temperature, max_tokens)
         elif provider == "local_vllm":
-            return await self._call_local_vllm(messages, model, temperature, max_tokens, enable_thinking=enable_thinking, custom_endpoint=custom_endpoint)
+            return await self._call_local_vllm(
+                messages,
+                model,
+                temperature,
+                max_tokens,
+                enable_thinking=enable_thinking,
+                custom_endpoint=custom_endpoint,
+                api_key=api_key,
+            )
         else:  # default to openrouter
             return await self._call_openrouter(messages, model, temperature, max_tokens)
 
@@ -653,6 +662,7 @@ class UniversalLLMService:
         max_tokens: Optional[int] = None,
         enable_thinking: bool = False,
         custom_endpoint: Optional[str] = None,
+        api_key: Optional[str] = None,
     ) -> dict:
         """Call an on-premises vLLM server (OpenAI-compatible /v1/chat/completions).
 
@@ -673,7 +683,7 @@ class UniversalLLMService:
         if not model_cfg:
             # Phase 2: fall back to custom endpoint for user-defined models
             if custom_endpoint:
-                model_cfg = {"endpoint": custom_endpoint, "api_key": "local"}
+                model_cfg = {"endpoint": custom_endpoint, "api_key": api_key or "local"}
             else:
                 raise ValueError(
                     f"Unknown local_vllm model '{model}'. "
@@ -682,7 +692,7 @@ class UniversalLLMService:
                 )
 
         endpoint = model_cfg["endpoint"].rstrip("/")
-        api_key = model_cfg.get("api_key", "local")
+        api_key = api_key or model_cfg.get("api_key", "local")
 
         payload: Dict[str, object] = {
             "model": model,

@@ -318,7 +318,7 @@ class StagehandExecutionService:
                 # Sprint 10.13: On-premises vLLM servers — OpenAI-compatible endpoints.
                 # Each model has its own base URL; LiteLLM routes via openai/ prefix.
                 local_model = (user_config.get("model") if user_config else None) or "DeepSeek-V4-Flash-4bit"
-                local_api_key = os.getenv("LOCAL_VLLM_API_KEY", "local")
+                local_api_key = (user_config or {}).get("api_key") or os.getenv("LOCAL_VLLM_API_KEY", "local")
 
                 # Resolve per-model endpoint from env (can be overridden in .env)
                 _endpoint_map = {
@@ -336,6 +336,10 @@ class StagehandExecutionService:
                     ),
                 }
                 local_endpoint = _endpoint_map.get(local_model, os.getenv("LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164:1235/v1"))
+                # Phase 2: custom endpoint from user config overrides hardcoded map
+                _custom_ep = (user_config or {}).get("local_vllm_custom_endpoint")
+                if _custom_ep:
+                    local_endpoint = _custom_ep
 
                 # LiteLLM requires OPENAI_API_BASE + openai/<model> for custom endpoints.
                 # Clear Azure env vars so LiteLLM does not mis-route.
@@ -351,6 +355,7 @@ class StagehandExecutionService:
                     verbose=1,
                     model_name=f"openai/{local_model}",
                     model_api_key=local_api_key,
+                    model_client_options={"api_base": local_endpoint},
                     local_browser_launch_options=launch_options,
                 )
                 logger.info(
@@ -500,7 +505,7 @@ class StagehandExecutionService:
             elif model_provider == "local_vllm":
                 # Sprint 10.13: On-premises vLLM — OpenAI-compatible endpoints via CDP
                 local_model = (user_config.get("model") if user_config else None) or "DeepSeek-V4-Flash-4bit"
-                local_api_key = os.getenv("LOCAL_VLLM_API_KEY", "local")
+                local_api_key = (user_config or {}).get("api_key") or os.getenv("LOCAL_VLLM_API_KEY", "local")
 
                 _endpoint_map = {
                     "openai/gpt-oss-20b": os.getenv(
@@ -520,6 +525,9 @@ class StagehandExecutionService:
                     local_model,
                     os.getenv("LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164:1235/v1"),
                 )
+                _custom_ep = (user_config or {}).get("local_vllm_custom_endpoint")
+                if _custom_ep:
+                    local_endpoint = _custom_ep
 
                 os.environ["OPENAI_API_BASE"] = local_endpoint.rstrip("/")
                 os.environ["OPENAI_API_KEY"] = local_api_key
@@ -533,6 +541,7 @@ class StagehandExecutionService:
                     verbose=1,
                     model_name=f"openai/{local_model}",
                     model_api_key=local_api_key,
+                    model_client_options={"api_base": local_endpoint},
                     local_browser_launch_options=launch_options,
                 )
                 print(f"[DEBUG] ✅ CDP connection with local vLLM model={local_model} endpoint={local_endpoint}")
@@ -733,7 +742,7 @@ class StagehandExecutionService:
             elif model_provider == "local_vllm":
                 # Sprint 10.13: On-premises vLLM — debug persistent session
                 local_model = (user_config.get("model") if user_config else None) or "DeepSeek-V4-Flash-4bit"
-                local_api_key = os.getenv("LOCAL_VLLM_API_KEY", "local")
+                local_api_key = (user_config or {}).get("api_key") or os.getenv("LOCAL_VLLM_API_KEY", "local")
 
                 _endpoint_map = {
                     "openai/gpt-oss-20b": os.getenv(
@@ -753,6 +762,9 @@ class StagehandExecutionService:
                     local_model,
                     os.getenv("LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164:1235/v1"),
                 )
+                _custom_ep = (user_config or {}).get("local_vllm_custom_endpoint")
+                if _custom_ep:
+                    local_endpoint = _custom_ep
 
                 os.environ["OPENAI_API_BASE"] = local_endpoint.rstrip("/")
                 os.environ["OPENAI_API_KEY"] = local_api_key
@@ -766,6 +778,7 @@ class StagehandExecutionService:
                     verbose=1,
                     model_name=f"openai/{local_model}",
                     model_api_key=local_api_key,
+                    model_client_options={"api_base": local_endpoint},
                     local_browser_launch_options=launch_options,
                 )
                 print(f"[DEBUG] ✅ Using local vLLM model={local_model} endpoint={local_endpoint} (Debug Mode)")

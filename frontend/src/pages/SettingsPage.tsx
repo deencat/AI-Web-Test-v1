@@ -66,6 +66,7 @@ export const SettingsPage: React.FC = () => {
   // Phase 2: Custom vLLM model (shared across all local_vllm slots)
   const [localVllmCustomModel, setLocalVllmCustomModel] = useState<string>('');
   const [localVllmCustomEndpoint, setLocalVllmCustomEndpoint] = useState<string>('http://192.168.206.164:1235/v1');
+  const [localVllmApiKey, setLocalVllmApiKey] = useState<string>('');
 
   // Sentinel value used in the model <select> to indicate "custom model"
   const CUSTOM_MODEL_SENTINEL = '__custom__';
@@ -175,6 +176,7 @@ export const SettingsPage: React.FC = () => {
       // Phase 2: custom vLLM model — load stored values
       setLocalVllmCustomModel(settings.local_vllm_custom_model ?? '');
       setLocalVllmCustomEndpoint(settings.local_vllm_custom_endpoint ?? 'http://192.168.206.164:1235/v1');
+      setLocalVllmApiKey(settings.local_vllm_api_key ?? '');
 
       // If saved generation/execution model isn't in the known list for local_vllm,
       // keep the actual model name but ensure the custom fields are visible by leaving
@@ -216,6 +218,7 @@ export const SettingsPage: React.FC = () => {
         // Phase 2: custom vLLM model
         local_vllm_custom_model: localVllmCustomModel || null,
         local_vllm_custom_endpoint: localVllmCustomEndpoint || null,
+        local_vllm_api_key: localVllmApiKey || null,
       };
       
       await settingsService.updateUserProviderSettings(updateData);
@@ -606,6 +609,16 @@ export const SettingsPage: React.FC = () => {
                       className="w-full px-3 py-1.5 text-sm border border-orange-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-400"
                     />
                   </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">API Token</label>
+                    <input
+                      type="password"
+                      value={localVllmApiKey}
+                      onChange={(e) => setLocalVllmApiKey(e.target.value)}
+                      placeholder="e.g. 1235"
+                      className="w-full px-3 py-1.5 text-sm border border-orange-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-400"
+                    />
+                  </div>
                 </div>
               )}
             </div>
@@ -763,6 +776,16 @@ export const SettingsPage: React.FC = () => {
                       value={localVllmCustomEndpoint}
                       onChange={(e) => setLocalVllmCustomEndpoint(e.target.value)}
                       placeholder="e.g. http://192.168.206.164:1235/v1"
+                      className="w-full px-3 py-1.5 text-sm border border-orange-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">API Token</label>
+                    <input
+                      type="password"
+                      value={localVllmApiKey}
+                      onChange={(e) => setLocalVllmApiKey(e.target.value)}
+                      placeholder="e.g. 1235"
                       className="w-full px-3 py-1.5 text-sm border border-orange-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-400"
                     />
                   </div>

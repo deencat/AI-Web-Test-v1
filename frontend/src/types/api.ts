@@ -322,6 +322,7 @@ export interface UserSettings {
   // Phase 2: Custom vLLM model support
   local_vllm_custom_model?: string | null;
   local_vllm_custom_endpoint?: string | null;
+  local_vllm_api_key?: string | null;
   created_at: string;
   updated_at: string | null;
 }
@@ -349,6 +350,7 @@ export interface UpdateUserSettingsRequest {
   // Phase 2: Custom vLLM model support
   local_vllm_custom_model?: string | null;
   local_vllm_custom_endpoint?: string | null;
+  local_vllm_api_key?: string | null;
 }
 
 // Agent Activity types

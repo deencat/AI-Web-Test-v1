@@ -81,7 +81,12 @@ async def update_user_provider_settings(
                 execution_provider=update_dict.get("execution_provider", default_exec["provider"]),
                 execution_model=update_dict.get("execution_model", default_exec["model"]),
                 execution_temperature=update_dict.get("execution_temperature", 0.7),
-                execution_max_tokens=update_dict.get("execution_max_tokens", 4096)
+                execution_max_tokens=update_dict.get("execution_max_tokens", 4096),
+                stagehand_provider=update_dict.get("stagehand_provider", "python"),
+                local_vllm_enable_thinking=update_dict.get("local_vllm_enable_thinking", False),
+                local_vllm_custom_model=update_dict.get("local_vllm_custom_model"),
+                local_vllm_custom_endpoint=update_dict.get("local_vllm_custom_endpoint"),
+                local_vllm_api_key=update_dict.get("local_vllm_api_key"),
             )
             
             settings = user_settings_service.create_user_settings(db, current_user.id, create_data)

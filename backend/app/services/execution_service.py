@@ -23,7 +23,6 @@ from app.models.test_execution import (
     ExecutionResult
 )
 from app.models.execution_settings import ExecutionSettings
-from app.models.user_settings import UserSetting
 from app.crud import test_execution as crud_execution
 from app.crud import execution_feedback as crud_feedback
 from app.schemas.execution_feedback import ExecutionFeedbackCreate
@@ -40,6 +39,7 @@ from app.services.email_otp_service import (
 from app.services.encryption_service import EncryptionService as _EncryptionService
 from app.services.step_module_resolver import resolve_steps
 from app.services.root_cause_analysis_service import generate_root_cause_analysis
+from app.services.user_settings_service import user_settings_service
 from app.crud.step_session_snapshot import save_step_session_snapshot, get_step_session_snapshot
 
 logger = logging.getLogger(__name__)
@@ -718,19 +718,8 @@ class ExecutionService:
             # Get user's execution settings and initialize 3-Tier service
             user_settings = self._get_user_execution_settings(db, user_id)
             
-            # Get user's AI provider config from UserSetting table
-            user_ai_config = None
-            user_setting = db.query(UserSetting).filter(UserSetting.user_id == user_id).first()
-            if user_setting:
-                user_ai_config = {
-                    "provider": user_setting.execution_provider,
-                    "model": user_setting.execution_model,
-                    "temperature": user_setting.execution_temperature,
-                    "max_tokens": user_setting.execution_max_tokens
-                }
-                logger.info(f"[DEBUG] 🎯 User AI config from DB: {user_ai_config}")
-            else:
-                logger.info("[DEBUG] ⚠️ No user settings found, will use .env defaults")
+            user_ai_config = user_settings_service.get_provider_config(db, user_id, "execution")
+            logger.info(f"[DEBUG] 🎯 User AI config from resolver: {user_ai_config}")
             
             self.three_tier_service = ThreeTierExecutionService(
                 db=db,
@@ -2176,6 +2165,7 @@ class ExecutionService:
                     model=rca_model,
                     # Phase 2: forward custom vLLM endpoint
                     custom_endpoint=self.three_tier_service.user_ai_config.get("local_vllm_custom_endpoint") if self.three_tier_service and self.three_tier_service.user_ai_config else None,
+                    api_key=self.three_tier_service.user_ai_config.get("api_key") if self.three_tier_service and self.three_tier_service.user_ai_config else None,
                 )
             
             # Create feedback entry

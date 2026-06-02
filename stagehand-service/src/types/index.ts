@@ -29,6 +29,7 @@ export interface SessionConfig {
     temperature?: number;
     max_tokens?: number;
     api_key?: string;
+    local_vllm_custom_endpoint?: string;
   };
 }
 

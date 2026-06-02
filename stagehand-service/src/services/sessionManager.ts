@@ -61,6 +61,8 @@ export class StagehandSessionManager {
           apiKey = process.env.GOOGLE_API_KEY;
         } else if (provider === 'azure') {
           apiKey = process.env.AZURE_OPENAI_API_KEY;
+        } else if (provider === 'local_vllm') {
+          apiKey = process.env.LOCAL_VLLM_API_KEY || 'local';
         } else {
           apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
         }
@@ -76,6 +78,13 @@ export class StagehandSessionManager {
         baseURL = 'https://api.cerebras.ai/v1';
       } else if (provider === 'azure') {
         baseURL = 'https://chatgpt-uat.openai.azure.com/openai/v1';
+      } else if (provider === 'local_vllm') {
+        const endpointMap: Record<string, string> = {
+          'openai/gpt-oss-20b': process.env.LOCAL_VLLM_GPT_OSS_20B_ENDPOINT || 'http://192.168.206.190:8000/openai--gpt-oss-20b/v1',
+          'RedHatAI/Qwen3.6-35B-A3B-NVFP4': process.env.LOCAL_VLLM_QWEN3_35B_ENDPOINT || 'http://192.168.206.190:8000/redhatai--qwen3.6-35b-a3b-nvfp4/v1',
+          'DeepSeek-V4-Flash-4bit': process.env.LOCAL_VLLM_DEEPSEEK_ENDPOINT || 'http://192.168.206.164:1235/v1',
+        };
+        baseURL = config.user_config?.local_vllm_custom_endpoint || endpointMap[modelName] || process.env.LOCAL_VLLM_DEEPSEEK_ENDPOINT || 'http://192.168.206.164:1235/v1';
       } else if (provider === 'google' || provider === 'gemini') {
         // Google Gemini uses SDK, not baseURL
         baseURL = undefined;
@@ -108,7 +117,7 @@ export class StagehandSessionManager {
         debugDom: true,
         enableCaching: false,
         // User AI configuration with fallbacks
-        modelName: modelName,
+        modelName: provider === 'local_vllm' ? `openai/${modelName}` : modelName,
         apiKey: apiKey,
       };
       
