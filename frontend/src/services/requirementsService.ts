@@ -67,6 +67,13 @@ export interface ReqIQRequirement {
   updatedAt: string;
 }
 
+export interface ReqIQIqSnapshot {
+  compositeScore?: number;
+  scores?: Record<string, number>;
+  rationale?: string;
+  algorithm?: string;
+}
+
 export interface ReqIQRevision {
   id: string;
   requirementId: string;
@@ -74,6 +81,7 @@ export interface ReqIQRevision {
   title: string;
   body: string;
   compositeScore?: number;
+  iqSnapshot?: ReqIQIqSnapshot;
   createdAt: string;
 }
 
@@ -271,15 +279,15 @@ const requirementsService = {
     return res.data;
   },
 
-  async runStubIq(projectId: string, requirementId: string, revisionIndex: number): Promise<unknown> {
-    const res = await api.post(
+  async runStubIq(projectId: string, requirementId: string, revisionIndex: number): Promise<ReqIQRevision> {
+    const res = await api.post<ReqIQRevision>(
       `${BASE}/${projectId}/requirements/${requirementId}/revisions/${revisionIndex}/stub-iq`,
     );
     return res.data;
   },
 
-  async runLlmIq(projectId: string, requirementId: string, revisionIndex: number): Promise<unknown> {
-    const res = await api.post(
+  async runLlmIq(projectId: string, requirementId: string, revisionIndex: number): Promise<ReqIQRevision> {
+    const res = await api.post<ReqIQRevision>(
       `${BASE}/${projectId}/requirements/${requirementId}/revisions/${revisionIndex}/llm-iq`,
     );
     return res.data;

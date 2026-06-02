@@ -25,6 +25,7 @@ import requirementsService from '../services/requirementsService';
 import type {
   ReqIQProject,
   ReqIQRequirement,
+  ReqIQRevision,
   ReqIQSource,
   LatestIqResult,
   ReadinessResult,
@@ -149,6 +150,7 @@ export const KnowledgeBasePage: React.FC = () => {
   const [requirements, setRequirements] = useState<ReqIQRequirement[]>([]);
   const [reqLoading, setReqLoading] = useState(false);
   const [iqData, setIqData] = useState<Record<string, LatestIqResult>>({});
+  const [iqBreakdown, setIqBreakdown] = useState<Record<string, ReqIQRevision['iqSnapshot']>>({});
   const [showNewReq, setShowNewReq] = useState(false);
   const [newReqTitle, setNewReqTitle] = useState('');
   const [newReqBody, setNewReqBody] = useState('');
@@ -802,10 +804,15 @@ export const KnowledgeBasePage: React.FC = () => {
     setRunningIqFor(req.id);
     try {
       const revIdx = iqData[req.id]?.latestRevisionIndex ?? 0;
+      let revision: ReqIQRevision;
       if (type === 'stub') {
-        await requirementsService.runStubIq(projectId, req.id, revIdx);
+        revision = await requirementsService.runStubIq(projectId, req.id, revIdx);
       } else {
-        await requirementsService.runLlmIq(projectId, req.id, revIdx);
+        revision = await requirementsService.runLlmIq(projectId, req.id, revIdx);
+      }
+      // store breakdown (scores + rationale) from the revision response
+      if (revision.iqSnapshot) {
+        setIqBreakdown(prev => ({ ...prev, [req.id]: revision.iqSnapshot }));
       }
       // refresh IQ score
       const updated = await requirementsService.getLatestIq(projectId, req.id);
@@ -1843,6 +1850,38 @@ export const KnowledgeBasePage: React.FC = () => {
                                 )}
                               </div>
                             </div>
+
+                            {/* IQ breakdown panel — shown after running Stub IQ / LLM IQ */}
+                            {iqBreakdown[req.id] && (() => {
+                              const snap = iqBreakdown[req.id]!;
+                              const scoreEntries = snap.scores ? Object.entries(snap.scores) : [];
+                              return (
+                                <div className="rounded-md bg-gray-50 border border-gray-200 px-3 py-2 space-y-1.5">
+                                  {scoreEntries.length > 0 && (
+                                    <div className="flex flex-wrap gap-x-4 gap-y-1">
+                                      {scoreEntries.map(([dim, val]) => {
+                                        const colour = val >= 80 ? 'text-green-700' : val >= 60 ? 'text-yellow-600' : 'text-red-600';
+                                        return (
+                                          <span key={dim} className="text-xs">
+                                            <span className="text-gray-500 capitalize">{dim.replace(/_/g, ' ')}: </span>
+                                            <span className={`font-semibold ${colour}`}>{Math.round(val)}</span>
+                                          </span>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                  {snap.rationale && (
+                                    <p className="text-xs text-gray-600 leading-relaxed">{snap.rationale}</p>
+                                  )}
+                                  {!snap.rationale && scoreEntries.length === 0 && (
+                                    <p className="text-xs text-gray-400 italic">No breakdown available (Stub IQ — rule-based, no rationale)</p>
+                                  )}
+                                  {!snap.rationale && scoreEntries.length > 0 && (
+                                    <p className="text-xs text-gray-400 italic">Stub IQ — deterministic scores, no LLM rationale</p>
+                                  )}
+                                </div>
+                              );
+                            })()}
 
                             {/* Wiki-suggest review actions */}
                             {req.isWikiSuggest && req.state === 'DRAFT' && (

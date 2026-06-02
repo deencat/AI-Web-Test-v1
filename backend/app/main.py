@@ -18,6 +18,7 @@ from app.db.base import Base
 from app.db.session import engine, SessionLocal
 from app.db.init_db import init_db
 from app.services.queue_manager import start_queue_manager
+from app.services.scheduler_service import scheduler_service
 from app.db.init_templates import seed_system_templates
 
 # Ensure backend root is on sys.path so run_migrations.py is importable
@@ -54,6 +55,9 @@ start_queue_manager(
     max_concurrent=settings.MAX_CONCURRENT_EXECUTIONS,
     check_interval=settings.QUEUE_CHECK_INTERVAL
 )
+
+# Start in-process scheduler (cross-platform, no OS cron dependency)
+scheduler_service.start()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

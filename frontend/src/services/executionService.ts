@@ -122,6 +122,7 @@ class ExecutionService {
     status?: string;
     result?: string;
     test_case_id?: number;
+    triggered_by?: string;
   }): Promise<TestExecutionListResponse> {
     if (apiHelpers.useMockData()) {
       // Mock implementation - Generate diverse test data
@@ -173,7 +174,7 @@ class ExecutionService {
 
     // Real API call
     try {
-      const response = await api.get<TestExecutionListResponse>('/executions', { params });
+      const response = await api.get<TestExecutionListResponse>('/executions/', { params });
       return response.data;
     } catch (error) {
       throw new Error(apiHelpers.getErrorMessage(error));

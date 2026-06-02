@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bug } from 'lucide-react';
+import { Bug, Clock } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
@@ -19,6 +19,7 @@ export function ExecutionHistoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<string>('');
   const [selectedResult, setSelectedResult] = useState<string>('');
+  const [selectedTriggeredBy, setSelectedTriggeredBy] = useState<string>('');
   const [debugDialogOpen, setDebugDialogOpen] = useState(false);
   const [selectedExecution, setSelectedExecution] = useState<TestExecutionListItem | null>(null);
 
@@ -31,6 +32,7 @@ export function ExecutionHistoryPage() {
       };
       if (selectedStatus) params.status = selectedStatus;
       if (selectedResult) params.result = selectedResult;
+      if (selectedTriggeredBy) params.triggered_by = selectedTriggeredBy;
 
       const response = await executionService.getExecutions(params);
       setExecutions(response.items);
@@ -44,7 +46,7 @@ export function ExecutionHistoryPage() {
 
   useEffect(() => {
     fetchExecutions();
-  }, [selectedStatus, selectedResult]);
+  }, [selectedStatus, selectedResult, selectedTriggeredBy]);
 
   const handleViewExecution = (executionId: number) => {
     navigate(`/executions/${executionId}`);
@@ -130,6 +132,22 @@ export function ExecutionHistoryPage() {
                 <option value="skip">Skip</option>
               </select>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Triggered By
+              </label>
+              <select
+                value={selectedTriggeredBy}
+                onChange={(e) => setSelectedTriggeredBy(e.target.value)}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">All Triggers</option>
+                <option value="manual">Manual</option>
+                <option value="scheduled">Scheduled</option>
+                <option value="ci_cd">CI/CD</option>
+                <option value="webhook">Webhook</option>
+              </select>
+            </div>
           </div>
         </Card>
 
@@ -177,6 +195,9 @@ export function ExecutionHistoryPage() {
                       Browser
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
+                      Triggered By
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
                       Date
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
@@ -215,6 +236,9 @@ export function ExecutionHistoryPage() {
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900 capitalize">
                         {execution.browser || 'N/A'}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <TriggerBadge triggeredBy={execution.triggered_by} />
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                         {new Date(execution.created_at).toLocaleString()}
@@ -301,6 +325,23 @@ function ResultBadge({ result }: { result?: ExecutionResult }) {
   return (
     <span className={`px-2 py-1 rounded-full text-xs font-medium ${colors[result]}`}>
       {result.toUpperCase()}
+    </span>
+  );
+}
+
+function TriggerBadge({ triggeredBy }: { triggeredBy?: string }) {
+  if (!triggeredBy) return <span className="text-gray-400 text-xs">—</span>;
+  const styles: Record<string, string> = {
+    scheduled: 'bg-indigo-100 text-indigo-700',
+    manual: 'bg-gray-100 text-gray-600',
+    ci_cd: 'bg-purple-100 text-purple-700',
+    webhook: 'bg-blue-100 text-blue-700',
+  };
+  const colour = styles[triggeredBy] ?? 'bg-gray-100 text-gray-600';
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${colour}`}>
+      {triggeredBy === 'scheduled' && <Clock className="w-3 h-3" />}
+      {triggeredBy}
     </span>
   );
 }

@@ -5,7 +5,8 @@ import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import testsService from '../services/testsService';
 import executionService from '../services/executionService';
-import { Loader2, Plus, Search, Trash2, Play, Eye, Edit } from 'lucide-react';
+import schedulesService, { type TestSchedule, type CreateSchedulePayload } from '../services/schedulesService';
+import { Loader2, Plus, Search, Trash2, Play, Eye, Edit, Clock } from 'lucide-react';
 
 interface SavedTest {
   id: number;
@@ -26,13 +27,42 @@ export const SavedTestsPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [filterPriority, setFilterPriority] = useState('all');
+  const [filterScheduled, setFilterScheduled] = useState('all');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [batchDeleting, setBatchDeleting] = useState(false);
 
+  // -- Scheduling state ---------------------------------------------------
+  const [scheduleTarget, setScheduleTarget] = useState<{ id: number; title: string } | null>(null);
+  const [existingSchedules, setExistingSchedules] = useState<TestSchedule[]>([]);
+  const [loadingSchedules, setLoadingSchedules] = useState(false);
+  const [scheduleType, setScheduleType] = useState<'interval' | 'cron'>('interval');
+  const [intervalMinutes, setIntervalMinutes] = useState('60');
+  const [cronExpression, setCronExpression] = useState('0 9 * * *');
+  const [scheduleBrowser, setScheduleBrowser] = useState('chromium');
+  const [scheduleEnvironment, setScheduleEnvironment] = useState('dev');
+  const [savingSchedule, setSavingSchedule] = useState(false);
+  const [togglingScheduleId, setTogglingScheduleId] = useState<number | null>(null);
+  // Map of testCaseId → count of enabled schedules (for badge display)
+  const [scheduledTestIds, setScheduledTestIds] = useState<Record<number, number>>({});
+
   useEffect(() => {
     loadTests();
+    loadAllScheduleBadges();
   }, []);
+
+  const loadAllScheduleBadges = async () => {
+    try {
+      const all = await schedulesService.listAll();
+      const counts: Record<number, number> = {};
+      all.forEach(s => {
+        if (s.enabled) counts[s.test_case_id] = (counts[s.test_case_id] ?? 0) + 1;
+      });
+      setScheduledTestIds(counts);
+    } catch {
+      // non-fatal
+    }
+  };
 
   const loadTests = async () => {
     setLoading(true);
@@ -116,6 +146,87 @@ export const SavedTestsPage: React.FC = () => {
     }
   };
 
+  // -- Schedule handlers --------------------------------------------------
+  const openScheduleModal = async (test: SavedTest) => {
+    setScheduleTarget({ id: test.id, title: test.title });
+    setLoadingSchedules(true);
+    setExistingSchedules([]);
+    try {
+      const list = await schedulesService.listForTest(test.id);
+      setExistingSchedules(list);
+    } catch {
+      // non-fatal
+    } finally {
+      setLoadingSchedules(false);
+    }
+  };
+
+  const closeScheduleModal = () => {
+    setScheduleTarget(null);
+    setExistingSchedules([]);
+  };
+
+  const handleSaveSchedule = async () => {
+    if (!scheduleTarget) return;
+    setSavingSchedule(true);
+    try {
+      const payload: CreateSchedulePayload = {
+        test_case_id: scheduleTarget.id,
+        schedule_type: scheduleType,
+        interval_minutes: scheduleType === 'interval' ? parseInt(intervalMinutes, 10) : undefined,
+        cron_expression: scheduleType === 'cron' ? cronExpression : undefined,
+        browser: scheduleBrowser,
+        environment: scheduleEnvironment,
+      };
+      const created = await schedulesService.create(payload);
+      setExistingSchedules(prev => [...prev, created]);
+      // update badge counts
+      if (created.enabled) {
+        setScheduledTestIds(prev => ({ ...prev, [created.test_case_id]: (prev[created.test_case_id] ?? 0) + 1 }));
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to create schedule');
+    } finally {
+      setSavingSchedule(false);
+    }
+  };
+
+  const handleToggleSchedule = async (scheduleId: number) => {
+    setTogglingScheduleId(scheduleId);
+    try {
+      const updated = await schedulesService.toggle(scheduleId);
+      setExistingSchedules(prev => prev.map(s => s.id === scheduleId ? updated : s));
+      // rebuild badge counts from current existingSchedules after toggle
+      setScheduledTestIds(prev => {
+        const newCounts = { ...prev };
+        const delta = updated.enabled ? 1 : -1;
+        newCounts[updated.test_case_id] = Math.max(0, (newCounts[updated.test_case_id] ?? 0) + delta);
+        return newCounts;
+      });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to toggle schedule');
+    } finally {
+      setTogglingScheduleId(null);
+    }
+  };
+
+  const handleDeleteSchedule = async (scheduleId: number) => {
+    if (!confirm('Delete this schedule?')) return;
+    try {
+      const target = existingSchedules.find(s => s.id === scheduleId);
+      await schedulesService.remove(scheduleId);
+      setExistingSchedules(prev => prev.filter(s => s.id !== scheduleId));
+      if (target?.enabled && target.test_case_id) {
+        setScheduledTestIds(prev => ({
+          ...prev,
+          [target.test_case_id]: Math.max(0, (prev[target.test_case_id] ?? 1) - 1),
+        }));
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete schedule');
+    }
+  };
+
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case 'high':
@@ -149,7 +260,12 @@ export const SavedTestsPage: React.FC = () => {
       test.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesType = filterType === 'all' || test.test_type === filterType;
     const matchesPriority = filterPriority === 'all' || test.priority === filterPriority;
-    return matchesSearch && matchesType && matchesPriority;
+    const hasSchedule = (scheduledTestIds[test.id] ?? 0) > 0;
+    const matchesScheduled =
+      filterScheduled === 'all' ||
+      (filterScheduled === 'scheduled' && hasSchedule) ||
+      (filterScheduled === 'unscheduled' && !hasSchedule);
+    return matchesSearch && matchesType && matchesPriority && matchesScheduled;
   });
 
   if (loading) {
@@ -179,7 +295,7 @@ export const SavedTestsPage: React.FC = () => {
 
         {/* Filters */}
         <Card>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {/* Search */}
             <div className="md:col-span-1">
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -228,6 +344,22 @@ export const SavedTestsPage: React.FC = () => {
                 <option value="high">High</option>
                 <option value="medium">Medium</option>
                 <option value="low">Low</option>
+              </select>
+            </div>
+
+            {/* Scheduled Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Schedule
+              </label>
+              <select
+                value={filterScheduled}
+                onChange={(e) => setFilterScheduled(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="all">All Tests</option>
+                <option value="scheduled">Scheduled only</option>
+                <option value="unscheduled">Not scheduled</option>
               </select>
             </div>
           </div>
@@ -308,6 +440,15 @@ export const SavedTestsPage: React.FC = () => {
                   <div className="flex-1">
                     <div className="flex items-start gap-3 mb-2">
                       <h3 className="text-lg font-semibold text-gray-900">{test.title}</h3>
+                      {scheduledTestIds[test.id] > 0 && (
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700 cursor-pointer hover:bg-indigo-200"
+                          title={`${scheduledTestIds[test.id]} active schedule${scheduledTestIds[test.id] !== 1 ? 's' : ''} — click clock icon to manage`}
+                        >
+                          <Clock className="w-3 h-3" />
+                          {scheduledTestIds[test.id]}
+                        </span>
+                      )}
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-medium ${getPriorityColor(
                           test.priority
@@ -354,6 +495,13 @@ export const SavedTestsPage: React.FC = () => {
                       <Play className="w-5 h-5" />
                     </button>
                     <button
+                      onClick={() => openScheduleModal(test)}
+                      className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                      title="Schedule Test"
+                    >
+                      <Clock className="w-5 h-5" />
+                    </button>
+                    <button
                       onClick={() => handleDeleteTest(test.id)}
                       className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                       title="Delete Test"
@@ -374,6 +522,146 @@ export const SavedTestsPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Schedule Modal */}
+      {scheduleTarget && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-lg w-full mx-4 space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-indigo-600" />
+                Schedule Test
+              </h2>
+              <button onClick={closeScheduleModal} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+            </div>
+            <p className="text-sm text-gray-500 truncate">{scheduleTarget.title}</p>
+
+            {/* Existing schedules */}
+            {loadingSchedules ? (
+              <div className="flex items-center gap-2 text-sm text-gray-500">
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading schedules…
+              </div>
+            ) : existingSchedules.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Active Schedules</p>
+                {existingSchedules.map(s => (
+                  <div key={s.id} className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-gray-800 truncate">{s.schedule_description}</p>
+                      <p className="text-xs text-gray-400">{s.browser} · {s.environment}{s.last_triggered_at ? ` · last run ${new Date(s.last_triggered_at).toLocaleString()}` : ''}</p>
+                    </div>
+                    <div className="flex items-center gap-2 ml-3">
+                      <button
+                        onClick={() => handleToggleSchedule(s.id)}
+                        disabled={togglingScheduleId === s.id}
+                        className={`text-xs px-2 py-1 rounded border transition-colors ${s.enabled ? 'border-green-300 text-green-700 hover:bg-green-50' : 'border-gray-300 text-gray-500 hover:bg-gray-50'}`}
+                      >
+                        {togglingScheduleId === s.id ? '…' : s.enabled ? 'On' : 'Off'}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteSchedule(s.id)}
+                        className="text-xs px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 transition-colors"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* New schedule form */}
+            <div className="border-t pt-4 space-y-4">
+              <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Add New Schedule</p>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Schedule Type</label>
+                <select
+                  value={scheduleType}
+                  onChange={e => setScheduleType(e.target.value as 'interval' | 'cron')}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="interval">Interval (every N minutes)</option>
+                  <option value="cron">Cron expression</option>
+                </select>
+              </div>
+
+              {scheduleType === 'interval' ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Every (minutes)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={intervalMinutes}
+                    onChange={e => setIntervalMinutes(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="60"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">e.g. 30 = every 30 minutes · 1440 = daily</p>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cron Expression</label>
+                  <input
+                    type="text"
+                    value={cronExpression}
+                    onChange={e => setCronExpression(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="0 9 * * *"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Standard 5-field cron: min hour dom mon dow · e.g. <code>0 9 * * 1-5</code> = weekdays 9am
+                  </p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Browser</label>
+                  <select
+                    value={scheduleBrowser}
+                    onChange={e => setScheduleBrowser(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="chromium">Chromium</option>
+                    <option value="firefox">Firefox</option>
+                    <option value="webkit">WebKit</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Environment</label>
+                  <select
+                    value={scheduleEnvironment}
+                    onChange={e => setScheduleEnvironment(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="dev">Dev</option>
+                    <option value="staging">Staging</option>
+                    <option value="production">Production</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-1">
+                <button
+                  onClick={closeScheduleModal}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={handleSaveSchedule}
+                  disabled={savingSchedule}
+                  className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {savingSchedule && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Add Schedule
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Batch Delete Confirmation Modal */}
       {showConfirmModal && (

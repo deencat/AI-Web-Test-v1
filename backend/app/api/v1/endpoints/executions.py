@@ -352,6 +352,7 @@ def list_all_executions(
     result_filter: Optional[ExecutionResult] = Query(None, alias="result", description="Filter by result"),
     browser: Optional[str] = Query(None, description="Filter by browser"),
     environment: Optional[str] = Query(None, description="Filter by environment"),
+    triggered_by: Optional[str] = Query(None, description="Filter by trigger source (manual, scheduled, ci_cd, webhook)"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum records to return"),
     current_user: User = Depends(deps.get_current_user),
@@ -386,6 +387,7 @@ def list_all_executions(
         result=result_filter,
         browser=browser,
         environment=environment,
+        triggered_by=triggered_by,
         skip=skip,
         limit=limit
     )
@@ -397,7 +399,8 @@ def list_all_executions(
         status=status_filter,
         result=result_filter,
         browser=browser,
-        environment=environment
+        environment=environment,
+        triggered_by=triggered_by,
     )
     
     items = [TestExecutionListItem.model_validate(exec) for exec in executions]

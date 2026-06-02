@@ -53,7 +53,7 @@ const testSuitesService = {
   // Get all test suites
   getAllSuites: async (tags?: string[]): Promise<TestSuite[]> => {
     const params = tags && tags.length > 0 ? { tags: tags.join(',') } : {};
-    const response = await api.get('/suites', { params });
+    const response = await api.get('/suites/', { params });
     return response.data;
   },
 
