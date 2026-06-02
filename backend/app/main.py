@@ -22,10 +22,17 @@ from app.db.init_templates import seed_system_templates
 
 # Ensure backend root is on sys.path so run_migrations.py is importable
 import sys as _sys
+import os as _os
 from pathlib import Path as _Path
 _backend_root = str(_Path(__file__).parent.parent)
 if _backend_root not in _sys.path:
     _sys.path.insert(0, _backend_root)
+# Propagate the resolved DATABASE_URL into os.environ so that run_migrations.py
+# (which reads it via os.getenv at module-import time) uses the same database as
+# the rest of the app.  This matters when the server is started without
+# start_server.py (e.g. `uvicorn app.main:app` directly), where the .env is only
+# read by pydantic-settings and never written to os.environ.
+_os.environ.setdefault("DATABASE_URL", settings.DATABASE_URL)
 from run_migrations import run_all_migrations_auto
 
 # Fix for Windows: Set event loop policy to support subprocess
@@ -39,7 +46,15 @@ Base.metadata.create_all(bind=engine)
 # Apply any pending migrations (column additions, new tables not in models).
 # This runs automatically so every developer/desktop stays in sync without
 # manually running run_migrations.py after a git pull.
-run_all_migrations_auto()
+try:
+    run_all_migrations_auto()
+except Exception as _migration_exc:
+    print(
+        f"[migrations] CRITICAL: migration runner raised an unexpected exception: "
+        f"{_migration_exc}. Server will continue but some features may be unavailable."
+    )
+    import traceback as _tb
+    _tb.print_exc()
 
 # Initialize database with test data
 db = SessionLocal()
