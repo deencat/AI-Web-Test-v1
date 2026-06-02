@@ -52,13 +52,26 @@ except ImportError:
     logger.warning("openai SDK not installed — LocalVllmClient unavailable. Install with: pip install openai")
 
 
-def _resolve_endpoint(model: str) -> str:
-    """Return the HTTP endpoint for the given model, respecting env overrides."""
+def _resolve_endpoint(model: str, override: Optional[str] = None) -> str:
+    """Return the HTTP endpoint for the given model, respecting env overrides.
+
+    Resolution order:
+    1. ``override`` argument (Phase 2 custom endpoint passed by caller).
+    2. Per-model env var (e.g. LOCAL_VLLM_QWEN3_35B_ENDPOINT).
+    3. Hardcoded default for the model.
+    4. LOCAL_VLLM_CUSTOM_ENDPOINT env var (global fallback for unlisted models).
+    5. Default DeepSeek endpoint.
+    """
+    if override:
+        return override
     env_key = _ENV_ENDPOINT_KEYS.get(model)
-    default = _DEFAULT_ENDPOINTS.get(model, _DEFAULT_ENDPOINTS[_DEFAULT_MODEL])
+    default = _DEFAULT_ENDPOINTS.get(model)
+    if default is None:
+        # Unknown model — use global custom endpoint env var, then DeepSeek as last resort
+        default = os.getenv("LOCAL_VLLM_CUSTOM_ENDPOINT", _DEFAULT_ENDPOINTS[_DEFAULT_MODEL])
     if env_key:
         return os.getenv(env_key, default)
-    return os.getenv("LOCAL_VLLM_DEEPSEEK_ENDPOINT", default)
+    return default
 
 
 class LocalVllmClient:
@@ -80,6 +93,7 @@ class LocalVllmClient:
         temperature: float = 0.3,
         max_tokens: int = 2000,
         enable_thinking: bool = False,
+        endpoint: Optional[str] = None,
     ):
         """
         Args:
@@ -90,12 +104,14 @@ class LocalVllmClient:
             enable_thinking: Sprint 10.15 — when True and the model is thinking-capable,
                 chat_completion() will inject extra_body={"chat_template_kwargs":{"enable_thinking":True}}
                 into every SDK .create() call.  Silently ignored for non-capable models.
+            endpoint: Phase 2 — optional override endpoint URL.  When provided, replaces the
+                hardcoded endpoint table lookup (useful for custom/unlisted models).
         """
         self.model = model
         self.deployment = model  # AzureClient / OpenRouterClient compatibility alias
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.endpoint = _resolve_endpoint(model)
+        self.endpoint = _resolve_endpoint(model, override=endpoint)
         self.api_key = api_key or os.getenv("LOCAL_VLLM_API_KEY", "local")
         # Sprint 10.15: gated by both this flag AND model capability
         self.enable_thinking = enable_thinking and model in _THINKING_CAPABLE_MODELS

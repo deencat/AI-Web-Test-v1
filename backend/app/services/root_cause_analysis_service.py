@@ -102,6 +102,7 @@ async def generate_root_cause_analysis(
     provider: str = "openrouter",
     model: Optional[str] = None,
     enable_thinking: bool = False,
+    custom_endpoint: Optional[str] = None,
 ) -> Optional[str]:
     """
     Generate an AI root cause analysis string for a failed test step.
@@ -151,6 +152,7 @@ async def generate_root_cause_analysis(
             temperature=0.2,
             max_tokens=256,
             enable_thinking=enable_thinking,
+            custom_endpoint=custom_endpoint,
         )
         content = response["choices"][0]["message"]["content"]
         logger.info("[RCA] Root cause analysis generated (%d chars)", len(content))

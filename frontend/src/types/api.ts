@@ -319,6 +319,9 @@ export interface UserSettings {
   evolution_model?: string | null;
   // Sprint 10.15: vLLM thinking mode toggle
   local_vllm_enable_thinking?: boolean;
+  // Phase 2: Custom vLLM model support
+  local_vllm_custom_model?: string | null;
+  local_vllm_custom_endpoint?: string | null;
   created_at: string;
   updated_at: string | null;
 }
@@ -343,6 +346,9 @@ export interface UpdateUserSettingsRequest {
   evolution_model?: string | null;
   // Sprint 10.15: vLLM thinking mode toggle
   local_vllm_enable_thinking?: boolean;
+  // Phase 2: Custom vLLM model support
+  local_vllm_custom_model?: string | null;
+  local_vllm_custom_endpoint?: string | null;
 }
 
 // Agent Activity types

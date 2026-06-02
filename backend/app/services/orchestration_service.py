@@ -114,6 +114,8 @@ class OrchestrationService:
             result[agent_name] = {
                 "llm_provider": cfg["provider"],
                 "llm_model": cfg["model"],
+                # Phase 2: carry custom endpoint so agents can route unlisted models
+                "llm_custom_endpoint": cfg.get("local_vllm_custom_endpoint"),
             }
             logger.info(
                 f"[orchestration] {agent_name} LLM: "

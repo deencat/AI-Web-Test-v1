@@ -28,17 +28,19 @@ logger = logging.getLogger(__name__)
 _AZURE_DEFAULT_MODEL: str = "ChatGPT-UAT"
 
 
-def get_llm_client(provider: Optional[str], model: str):
+def get_llm_client(provider: Optional[str], model: str, custom_endpoint: Optional[str] = None):
     """
     Return an LLM client for the given provider and model.
 
     Args:
-        provider: One of "azure", "cerebras", "google", "openrouter".
+        provider: One of "azure", "cerebras", "google", "openrouter", "local_vllm".
                   Case-insensitive; leading/trailing whitespace is stripped.
                   None or "" are treated as "azure".
         model: Model / deployment name to use, e.g. "ChatGPT-UAT",
                "llama3.1-8b", "gemini-2.0-flash-exp",
                "qwen/qwen3-coder-480b-a35b:free".
+        custom_endpoint: Phase 2 — optional endpoint override for local_vllm
+               models not in the hardcoded table.  Ignored for other providers.
 
     Returns:
         A client instance with:
@@ -75,7 +77,7 @@ def get_llm_client(provider: Optional[str], model: str):
             return _get_azure_client(_AZURE_DEFAULT_MODEL)
 
         if provider_key == "local_vllm":
-            return _get_local_vllm_client(model)
+            return _get_local_vllm_client(model, custom_endpoint=custom_endpoint)
 
         logger.warning(
             f"Unknown LLM provider '{provider}' — falling back to Azure/{_AZURE_DEFAULT_MODEL}"
@@ -113,6 +115,6 @@ def _get_openrouter_client(model: str):
     return OpenRouterClient(model=model)
 
 
-def _get_local_vllm_client(model: str):
+def _get_local_vllm_client(model: str, custom_endpoint: Optional[str] = None):
     from llm.local_vllm_client import LocalVllmClient
-    return LocalVllmClient(model=model)
+    return LocalVllmClient(model=model, endpoint=custom_endpoint)

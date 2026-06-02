@@ -63,6 +63,13 @@ export const SettingsPage: React.FC = () => {
   // Sprint 10.15: vLLM Thinking Mode Toggle
   const [localVllmEnableThinking, setLocalVllmEnableThinking] = useState<boolean>(false);
 
+  // Phase 2: Custom vLLM model (shared across all local_vllm slots)
+  const [localVllmCustomModel, setLocalVllmCustomModel] = useState<string>('');
+  const [localVllmCustomEndpoint, setLocalVllmCustomEndpoint] = useState<string>('http://192.168.206.164:1235/v1');
+
+  // Sentinel value used in the model <select> to indicate "custom model"
+  const CUSTOM_MODEL_SENTINEL = '__custom__';
+
   // Load settings on mount
   useEffect(() => {
     loadSettings();
@@ -164,6 +171,14 @@ export const SettingsPage: React.FC = () => {
 
       // Sprint 10.15: thinking mode toggle (defaults to false when not in DB yet)
       setLocalVllmEnableThinking(settings.local_vllm_enable_thinking ?? false);
+
+      // Phase 2: custom vLLM model — load stored values
+      setLocalVllmCustomModel(settings.local_vllm_custom_model ?? '');
+      setLocalVllmCustomEndpoint(settings.local_vllm_custom_endpoint ?? 'http://192.168.206.164:1235/v1');
+
+      // If saved generation/execution model isn't in the known list for local_vllm,
+      // keep the actual model name but ensure the custom fields are visible by leaving
+      // the select value as CUSTOM_MODEL_SENTINEL (handled in getSafeModelOptionsForProvider).
     } catch (error: any) {
       console.error('Failed to load settings:', error);
       setSaveMessage({ type: 'error', text: 'Failed to load settings' });
@@ -198,6 +213,9 @@ export const SettingsPage: React.FC = () => {
         evolution_model: evolutionModel,
         // Sprint 10.15: vLLM thinking mode toggle
         local_vllm_enable_thinking: localVllmEnableThinking,
+        // Phase 2: custom vLLM model
+        local_vllm_custom_model: localVllmCustomModel || null,
+        local_vllm_custom_endpoint: localVllmCustomEndpoint || null,
       };
       
       await settingsService.updateUserProviderSettings(updateData);
@@ -284,8 +302,14 @@ export const SettingsPage: React.FC = () => {
     currentModel: string | null,
   ): ModelOption[] => {
     const options = getModelOptionsForProvider(providerName);
-    if (options.length > 0) {
-      return options;
+
+    // Phase 2: for local_vllm, append a sentinel "Custom model..." entry
+    const withCustom: ModelOption[] = providerName === 'local_vllm'
+      ? [...options, { id: CUSTOM_MODEL_SENTINEL, display_name: '⚙ Custom model...', is_free: false }]
+      : options;
+
+    if (withCustom.length > 0) {
+      return withCustom;
     }
 
     if (!currentModel) {
@@ -297,6 +321,32 @@ export const SettingsPage: React.FC = () => {
       display_name: currentModel,
       is_free: currentModel.endsWith(':free'),
     }];
+  };
+
+  /**
+   * Phase 2: Return the <select> display value for a model.
+   * If the model is not in the known list for local_vllm, map to the sentinel.
+   */
+  const getSelectValue = (providerName: string, modelId: string): string => {
+    if (providerName !== 'local_vllm') return modelId;
+    const knownIds = getModelOptionsForProvider('local_vllm').map(m => m.id);
+    return knownIds.includes(modelId) ? modelId : CUSTOM_MODEL_SENTINEL;
+  };
+
+  /**
+   * Phase 2: Handle model <select> change for local_vllm.
+   * When user picks __custom__, switch to custom model fields.
+   */
+  const handleLocalVllmModelChange = (
+    value: string,
+    setModel: (m: string) => void,
+  ) => {
+    if (value === CUSTOM_MODEL_SENTINEL) {
+      // Switch to showing the custom fields; keep whatever name the user last typed
+      setModel(localVllmCustomModel || '');
+    } else {
+      setModel(value);
+    }
   };
 
   const isAvailableProvider = (providerName: string): boolean =>
@@ -489,20 +539,21 @@ export const SettingsPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Model Selection */}
+            {/* Model Selection - Generation */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Model
               </label>
               <select
-                value={generationModel}
-                onChange={(e) => setGenerationModel(e.target.value)}
+                value={getSelectValue(generationProvider, generationModel)}
+                onChange={(e) => handleLocalVllmModelChange(e.target.value, setGenerationModel)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
               >
                 {(() => {
                   const opts = getSafeModelOptionsForProvider(generationProvider, generationModel);
-                  const free = opts.filter(m => m.is_free);
-                  const paid = opts.filter(m => !m.is_free);
+                  const free = opts.filter(m => m.is_free && m.id !== CUSTOM_MODEL_SENTINEL);
+                  const paid = opts.filter(m => !m.is_free && m.id !== CUSTOM_MODEL_SENTINEL);
+                  const custom = opts.filter(m => m.id === CUSTOM_MODEL_SENTINEL);
                   return (
                     <>
                       {free.length > 0 && (
@@ -519,10 +570,44 @@ export const SettingsPage: React.FC = () => {
                           ))}
                         </optgroup>
                       )}
+                      {custom.length > 0 && (
+                        <optgroup label="⚙️ Custom">
+                          {custom.map(m => (
+                            <option key={m.id} value={m.id}>{m.display_name}</option>
+                          ))}
+                        </optgroup>
+                      )}
                     </>
                   );
                 })()}
               </select>
+
+              {/* Phase 2: custom model fields — shown when __custom__ is selected */}
+              {generationProvider === 'local_vllm' && getSelectValue('local_vllm', generationModel) === CUSTOM_MODEL_SENTINEL && (
+                <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg space-y-3">
+                  <p className="text-xs font-medium text-orange-800">Custom vLLM model — enter a model name served by your endpoint</p>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Model Name</label>
+                    <input
+                      type="text"
+                      value={localVllmCustomModel}
+                      onChange={(e) => { setLocalVllmCustomModel(e.target.value); setGenerationModel(e.target.value); }}
+                      placeholder="e.g. Qwen3.6-35B-A3B-MLX-8bit"
+                      className="w-full px-3 py-1.5 text-sm border border-orange-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Endpoint URL</label>
+                    <input
+                      type="text"
+                      value={localVllmCustomEndpoint}
+                      onChange={(e) => setLocalVllmCustomEndpoint(e.target.value)}
+                      placeholder="e.g. http://192.168.206.164:1235/v1"
+                      className="w-full px-3 py-1.5 text-sm border border-orange-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-400"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Temperature */}
@@ -614,20 +699,21 @@ export const SettingsPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Model Selection */}
+            {/* Model Selection - Execution */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Model
               </label>
               <select
-                value={executionModel}
-                onChange={(e) => setExecutionModel(e.target.value)}
+                value={getSelectValue(executionProvider, executionModel)}
+                onChange={(e) => handleLocalVllmModelChange(e.target.value, setExecutionModel)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
               >
                 {(() => {
                   const opts = getSafeModelOptionsForProvider(executionProvider, executionModel);
-                  const free = opts.filter(m => m.is_free);
-                  const paid = opts.filter(m => !m.is_free);
+                  const free = opts.filter(m => m.is_free && m.id !== CUSTOM_MODEL_SENTINEL);
+                  const paid = opts.filter(m => !m.is_free && m.id !== CUSTOM_MODEL_SENTINEL);
+                  const custom = opts.filter(m => m.id === CUSTOM_MODEL_SENTINEL);
                   return (
                     <>
                       {free.length > 0 && (
@@ -644,10 +730,44 @@ export const SettingsPage: React.FC = () => {
                           ))}
                         </optgroup>
                       )}
+                      {custom.length > 0 && (
+                        <optgroup label="⚙ Custom">
+                          {custom.map(m => (
+                            <option key={m.id} value={m.id}>{m.display_name}</option>
+                          ))}
+                        </optgroup>
+                      )}
                     </>
                   );
                 })()}
               </select>
+
+              {/* Phase 2: custom model fields for execution */}
+              {executionProvider === 'local_vllm' && getSelectValue('local_vllm', executionModel) === CUSTOM_MODEL_SENTINEL && (
+                <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg space-y-3">
+                  <p className="text-xs font-medium text-orange-800">Custom vLLM model — enter a model name served by your endpoint</p>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Model Name</label>
+                    <input
+                      type="text"
+                      value={localVllmCustomModel}
+                      onChange={(e) => { setLocalVllmCustomModel(e.target.value); setExecutionModel(e.target.value); }}
+                      placeholder="e.g. Qwen3.6-35B-A3B-MLX-8bit"
+                      className="w-full px-3 py-1.5 text-sm border border-orange-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Endpoint URL</label>
+                    <input
+                      type="text"
+                      value={localVllmCustomEndpoint}
+                      onChange={(e) => setLocalVllmCustomEndpoint(e.target.value)}
+                      placeholder="e.g. http://192.168.206.164:1235/v1"
+                      className="w-full px-3 py-1.5 text-sm border border-orange-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-400"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Temperature */}

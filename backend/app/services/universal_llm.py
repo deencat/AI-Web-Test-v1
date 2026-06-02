@@ -82,6 +82,7 @@ class UniversalLLMService:
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         enable_thinking: bool = False,
+        custom_endpoint: Optional[str] = None,
     ) -> dict:
         """
         Call LLM API for chat completion with provider selection.
@@ -95,6 +96,9 @@ class UniversalLLMService:
             enable_thinking: Sprint 10.15 — when True and provider is local_vllm
                 and the model supports it, injects chat_template_kwargs into the
                 request payload.  Ignored for all other providers.
+            custom_endpoint: Phase 2 — optional override endpoint for local_vllm
+                models not in the hardcoded routing table.  Ignored for other
+                providers.
             
         Returns:
             Unified API response dict with choices, usage, etc.
@@ -112,7 +116,7 @@ class UniversalLLMService:
         elif provider == "azure":
             return await self._call_azure(messages, model, temperature, max_tokens)
         elif provider == "local_vllm":
-            return await self._call_local_vllm(messages, model, temperature, max_tokens, enable_thinking=enable_thinking)
+            return await self._call_local_vllm(messages, model, temperature, max_tokens, enable_thinking=enable_thinking, custom_endpoint=custom_endpoint)
         else:  # default to openrouter
             return await self._call_openrouter(messages, model, temperature, max_tokens)
 
@@ -648,6 +652,7 @@ class UniversalLLMService:
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         enable_thinking: bool = False,
+        custom_endpoint: Optional[str] = None,
     ) -> dict:
         """Call an on-premises vLLM server (OpenAI-compatible /v1/chat/completions).
 
@@ -657,16 +662,24 @@ class UniversalLLMService:
         Sprint 10.15: when enable_thinking=True AND the model is thinking-capable,
         injects chat_template_kwargs: { enable_thinking: true } into the request body.
         For non-capable models this flag is silently ignored regardless of the setting.
+
+        Phase 2: when model is not in the hardcoded endpoint table and custom_endpoint
+        is provided, uses that endpoint with api_key="local".
         """
         if not model:
             model = "DeepSeek-V4-Flash-4bit"
 
         model_cfg = self._local_vllm_model_endpoints.get(model)
         if not model_cfg:
-            raise ValueError(
-                f"Unknown local_vllm model '{model}'. "
-                f"Supported models: {list(self._local_vllm_model_endpoints.keys())}"
-            )
+            # Phase 2: fall back to custom endpoint for user-defined models
+            if custom_endpoint:
+                model_cfg = {"endpoint": custom_endpoint, "api_key": "local"}
+            else:
+                raise ValueError(
+                    f"Unknown local_vllm model '{model}'. "
+                    f"Supported models: {list(self._local_vllm_model_endpoints.keys())}. "
+                    "Set a custom endpoint in Settings to use unlisted models."
+                )
 
         endpoint = model_cfg["endpoint"].rstrip("/")
         api_key = model_cfg.get("api_key", "local")

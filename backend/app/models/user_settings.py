@@ -32,6 +32,11 @@ class UserSetting(Base):
     # DEFAULT FALSE — safe for existing rows; no data loss on migration.
     local_vllm_enable_thinking = Column(Boolean, nullable=False, default=False)
 
+    # Phase 2: Custom vLLM model — allows user to specify any model+endpoint not in the
+    # hardcoded list.  NULL = no custom model configured.
+    local_vllm_custom_model = Column(String(200), nullable=True)
+    local_vllm_custom_endpoint = Column(String(500), nullable=True)
+
     # Per-Agent Model Overrides (Sprint 10.6: Per-Agent Model Provider & Model Selection)
     # NULL = use Azure default (ChatGPT-UAT) — no data migration required.
     observation_provider = Column(String(100), nullable=True)

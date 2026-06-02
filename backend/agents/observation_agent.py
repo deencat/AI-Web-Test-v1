@@ -187,6 +187,7 @@ class ObservationAgent(BaseAgent):
             self.llm_client = get_llm_client(
                 llm_provider,
                 llm_model,
+                custom_endpoint=self.config.get("llm_custom_endpoint"),
             )
             if self.llm_client.enabled:
                 logger.info(

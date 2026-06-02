@@ -35,6 +35,11 @@ class UserSettingBase(BaseModel):
     # Global flag — only used when local_vllm provider is selected and the model supports thinking
     local_vllm_enable_thinking: bool = Field(default=False, description="Enable chain-of-thought thinking mode for capable vLLM models")
 
+    # Phase 2: Custom vLLM model — user-defined model name and endpoint URL
+    # NULL = no custom model configured; only active when a slot's model is not in the hardcoded list.
+    local_vllm_custom_model: Optional[str] = Field(default=None, description="Custom vLLM model name not in the hardcoded list")
+    local_vllm_custom_endpoint: Optional[str] = Field(default=None, description="HTTP endpoint for the custom vLLM model (e.g. http://192.168.206.164:1235/v1)")
+
     # Per-Agent Model Overrides (Sprint 10.6: Per-Agent Model Provider & Model Selection)
     # Optional — None means "use Azure default (ChatGPT-UAT)"
     observation_provider: Optional[str] = Field(default=None, description="LLM provider for ObservationAgent (overrides Azure default)")
@@ -95,6 +100,10 @@ class UserSettingUpdate(BaseModel):
 
     # Sprint 10.15: vLLM Thinking Mode Toggle
     local_vllm_enable_thinking: Optional[bool] = None
+
+    # Phase 2: Custom vLLM model
+    local_vllm_custom_model: Optional[str] = None
+    local_vllm_custom_endpoint: Optional[str] = None
 
     # Per-Agent Model Overrides (Sprint 10.6)
     observation_provider: Optional[str] = None

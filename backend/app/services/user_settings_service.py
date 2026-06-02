@@ -372,7 +372,12 @@ class UserSettingsService:
 
         # Provider is set to a non-default value (user explicitly chose it); use it.
         resolved_model = model_val if model_val else _default_model_for_provider(provider_val)
-        return {"provider": provider_val, "model": resolved_model}
+        return {
+            "provider": provider_val,
+            "model": resolved_model,
+            # Phase 2: carry custom endpoint so agents can route unknown models
+            "local_vllm_custom_endpoint": getattr(user_settings, "local_vllm_custom_endpoint", None),
+        }
 
     def _get_api_key_for_provider(self, provider: str) -> Optional[str]:
         """
@@ -435,6 +440,8 @@ class UserSettingsService:
                     "max_tokens": user_settings.generation_max_tokens,
                     # Sprint 10.15: pass thinking flag so call sites can forward it
                     "enable_thinking": bool(getattr(user_settings, "local_vllm_enable_thinking", False)),
+                    # Phase 2: custom vLLM endpoint (None when not configured)
+                    "local_vllm_custom_endpoint": getattr(user_settings, "local_vllm_custom_endpoint", None),
                 }
             else:  # execution
                 provider = user_settings.execution_provider
@@ -447,6 +454,8 @@ class UserSettingsService:
                     "max_tokens": user_settings.execution_max_tokens,
                     # Sprint 10.15: pass thinking flag so call sites can forward it
                     "enable_thinking": bool(getattr(user_settings, "local_vllm_enable_thinking", False)),
+                    # Phase 2: custom vLLM endpoint (None when not configured)
+                    "local_vllm_custom_endpoint": getattr(user_settings, "local_vllm_custom_endpoint", None),
                 }
         
         # Fallback to environment settings

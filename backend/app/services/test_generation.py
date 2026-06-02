@@ -550,6 +550,8 @@ IMPORTANT: Return ONLY valid JSON, no additional text or explanation. Do NOT abb
                 max_tokens=max_tokens_val,
                 # Sprint 10.15: forward thinking flag from user settings (default False)
                 enable_thinking=user_config.get("enable_thinking", False) if user_config else False,
+                # Phase 2: forward custom vLLM endpoint for unlisted models
+                custom_endpoint=user_config.get("local_vllm_custom_endpoint") if user_config else None,
             )
             
             # Extract content

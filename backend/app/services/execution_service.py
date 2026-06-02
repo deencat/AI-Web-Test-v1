@@ -2174,6 +2174,8 @@ class ExecutionService:
                     error_type=error_type,
                     provider=rca_provider,
                     model=rca_model,
+                    # Phase 2: forward custom vLLM endpoint
+                    custom_endpoint=self.three_tier_service.user_ai_config.get("local_vllm_custom_endpoint") if self.three_tier_service and self.three_tier_service.user_ai_config else None,
                 )
             
             # Create feedback entry
