@@ -1,22 +1,31 @@
 """
-Unit tests — ExecutionService passes 127.0.0.1 (not localhost) as CDP endpoint.
+Unit tests — ExecutionService uses a dynamic CDP port, not the hardcoded 9222.
 
 Background
 ----------
-On Windows, `localhost` can resolve to IPv6 [::1] while Playwright's Chromium
-only binds its remote-debugging port on IPv4 127.0.0.1. This causes a
-"unexpected status 400" when Stagehand tries to connect via CDP, followed by
-Stagehand launching a second browser (two browsers visible, execution fails).
+The original implementation launched Chromium with --remote-debugging-port=9222
+and hardcoded "http://127.0.0.1:9222" as the CDP endpoint passed to Stagehand.
+Two failure modes were observed:
 
-Copying an existing DB from Linux appeared to "fix" the issue only because
-those test cases happened to succeed at Tier 1 (no CDP connection needed).
-A fresh DB is more likely to invoke Tier 2/3, triggering the CDP failure.
+1. (Windows — localhost → IPv6): "localhost" can resolve to [::1] on Windows
+   while Chromium only binds the debugging port on IPv4 127.0.0.1. Fix: always
+   use the explicit IPv4 literal "127.0.0.1" (still applies).
 
-Fix: always use "http://127.0.0.1:9222" as the CDP endpoint (IPv4 explicit).
+2. (Windows — port 9222 already in use): VS Code's JavaScript debug adapter,
+   Microsoft Edge background process, or a prior test run that did not clean up
+   can hold port 9222. When Chromium cannot bind to the port it silently starts
+   without a DevTools server; the hardcoded endpoint then hits the unrelated
+   process which returns HTTP 400. Playwright 1.56 + Chromium 136 raises:
+     "Unexpected status 400 ... try connecting via ws://"
+   This does NOT happen on devices without a conflicting process on port 9222.
+
+Fix: allocate a free port at browser-launch time via _find_free_port() so each
+execution gets its own dedicated debugging port, eliminating port conflicts.
 """
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+import re
 
 from app.services.execution_service import ExecutionService, ExecutionConfig
 
@@ -81,16 +90,19 @@ def _configure_3tier(mock_3tier_cls):
 
 
 # ---------------------------------------------------------------------------
-# Test — CDP endpoint must use 127.0.0.1, not localhost
+# Test — CDP endpoint must use a dynamic port on 127.0.0.1
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_execute_test_cdp_endpoint_uses_ipv4_not_localhost():
-    """ThreeTierExecutionService must receive cdp_endpoint='http://127.0.0.1:9222'.
+    """ThreeTierExecutionService must receive a cdp_endpoint on 127.0.0.1.
 
-    Using 'http://localhost:9222' breaks on Windows because localhost can
-    resolve to the IPv6 address [::1], which Playwright's Chromium does not
-    bind, returning HTTP 400 and causing Stagehand to spawn a second browser.
+    The endpoint must:
+    - use the explicit IPv4 literal 127.0.0.1 (never 'localhost', which can
+      resolve to IPv6 [::1] on Windows where Chromium only binds IPv4).
+    - use the dynamically allocated port stored in self._cdp_port, NOT the
+      hardcoded 9222, so port conflicts with VS Code / Edge / prior runs on
+      this machine do not cause HTTP 400 from Playwright 1.56+ Chromium 136.
     """
     test_case = _make_test_case()
     db = MagicMock()
@@ -122,8 +134,68 @@ async def test_execute_test_cdp_endpoint_uses_ipv4_not_localhost():
     _, kwargs = mock_3tier.call_args
     cdp_endpoint = kwargs.get("cdp_endpoint")
 
-    assert cdp_endpoint == "http://127.0.0.1:9222", (
-        f"CDP endpoint must be 'http://127.0.0.1:9222' (explicit IPv4) to work "
-        f"on Windows — got {cdp_endpoint!r}. "
-        f"Using 'localhost' can resolve to IPv6 [::1] and returns HTTP 400."
+    # Must use explicit IPv4, not 'localhost'
+    assert "localhost" not in (cdp_endpoint or ""), (
+        f"CDP endpoint must not contain 'localhost' — got {cdp_endpoint!r}. "
+        f"On Windows, localhost can resolve to IPv6 [::1] and returns HTTP 400."
+    )
+
+    # Must match http://127.0.0.1:<port> with any port number
+    assert re.match(r"^http://127\.0\.0\.1:\d+$", cdp_endpoint or ""), (
+        f"CDP endpoint must be 'http://127.0.0.1:<port>' — got {cdp_endpoint!r}. "
+        f"A dynamic port prevents HTTP 400 when port 9222 is already in use."
+    )
+
+
+@pytest.mark.asyncio
+async def test_execute_test_cdp_port_matches_launch_arg():
+    """The port in the CDP endpoint must match the --remote-debugging-port arg.
+
+    Verifies that _cdp_port is used consistently in both the Chromium launch
+    args and the cdp_endpoint passed to ThreeTierExecutionService.
+    """
+    test_case = _make_test_case()
+    db = MagicMock()
+
+    mock_browser, _ctx, _page = _make_browser_page_context()
+    mock_pw = _make_playwright_instance(mock_browser)
+
+    captured_launch_args = []
+
+    async def capture_launch(**kwargs):
+        captured_launch_args.extend(kwargs.get("args", []))
+        return mock_browser
+
+    mock_pw.chromium.launch = AsyncMock(side_effect=capture_launch)
+
+    with (
+        patch("app.services.execution_service.crud_execution") as mock_crud,
+        patch("app.services.execution_service.ThreeTierExecutionService") as mock_3tier,
+        patch("app.services.execution_service._find_free_port", return_value=54321),
+    ):
+        _configure_crud(mock_crud, execution_id=1)
+        _configure_3tier(mock_3tier)
+
+        service = ExecutionService(ExecutionConfig(headless=True))
+        service.playwright = mock_pw
+        # Don't pre-set service.browser — let initialize() run via the mock
+
+        await service.execute_test(
+            db=db,
+            test_case=test_case,
+            user_id=1,
+            base_url="https://example.com",
+            environment="dev",
+            execution_id=1,
+        )
+
+    _, kwargs = mock_3tier.call_args
+    cdp_endpoint = kwargs.get("cdp_endpoint")
+
+    assert cdp_endpoint == "http://127.0.0.1:54321", (
+        f"cdp_endpoint should use the port from _find_free_port() — got {cdp_endpoint!r}"
+    )
+    assert "--remote-debugging-port=54321" in captured_launch_args, (
+        f"Chromium launch args should contain --remote-debugging-port=54321, "
+        f"got: {captured_launch_args}"
     )

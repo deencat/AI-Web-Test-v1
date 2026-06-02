@@ -8,6 +8,7 @@ import json
 import os
 import re
 import logging
+import socket
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Callable
@@ -50,6 +51,20 @@ STEALTH_USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
 )
+
+
+def _find_free_port() -> int:
+    """Return an available TCP port on 127.0.0.1.
+
+    Binding with port 0 lets the OS assign an ephemeral port, then we
+    immediately release it so Chromium can bind to the same address.  The
+    window between release and Chromium binding is negligibly small in
+    practice — far better than a fixed, well-known port (9222) that other
+    processes (VS Code debugger, Edge, a prior test run) may already hold.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
 
 class ExecutionConfig:
@@ -95,6 +110,7 @@ class ExecutionService:
         self.three_tier_service: Optional[ThreeTierExecutionService] = None
         self.test_data_generator = TestDataGenerator()
         self._generated_data_cache: Dict[str, Dict[str, str]] = {}  # Cache per test_id
+        self._cdp_port: int = 9222  # Default; overwritten with a free port in initialize()
     
     def _get_user_execution_settings(self, db: Session, user_id: int) -> ExecutionSettings:
         """
@@ -198,12 +214,27 @@ class ExecutionService:
                     slow_mo=self.config.slow_mo
                 )
             else:  # chromium (default)
-                # Launch with remote debugging port for CDP access
+                # Allocate a free port for CDP to avoid conflicts with other
+                # processes (Edge, VS Code debugger, prior test runs) that may
+                # already hold port 9222.  If the port is pre-empted after
+                # allocation but before Chrome binds it, Chrome silently
+                # discards --remote-debugging-port and Stagehand would connect
+                # to the wrong endpoint.  Using a dynamic port makes the race
+                # window negligibly small compared to a fixed, well-known port.
+                self._cdp_port = _find_free_port()
+                logger.info("[CDP] Allocated debugging port %d", self._cdp_port)
                 self.browser = await self.playwright.chromium.launch(
                     headless=self.config.headless,
                     slow_mo=self.config.slow_mo,
                     args=[
-                        '--remote-debugging-port=9222',  # Fixed port for CDP
+                        f'--remote-debugging-port={self._cdp_port}',
+                        # Chrome 128+ validates the Origin header on the DevTools
+                        # HTTP endpoint (/json/version/).  Playwright's internal
+                        # driver does not send a trusted Origin, so Chrome returns
+                        # 400 on newer Chromium builds (Playwright ≥1.49 / Chrome
+                        # ≥128).  This flag disables that check so that
+                        # connect_over_cdp() can retrieve the WebSocket URL.
+                        '--remote-allow-origins=*',
                         '--disable-blink-features=AutomationControlled',
                         '--disable-dev-shm-usage',
                         '--no-first-run',
@@ -674,12 +705,13 @@ class ExecutionService:
             if browser_profile_data:
                 await self._apply_profile_cookies(page, browser_profile_data)
             
-            # Get CDP endpoint for shared browser context.
-            # Use explicit IPv4 address (127.0.0.1) instead of "localhost".
-            # On Windows, "localhost" can resolve to IPv6 [::1] while Playwright's
-            # Chromium only binds --remote-debugging-port on IPv4 127.0.0.1,
-            # causing HTTP 400 and Stagehand falling back to launching a second browser.
-            cdp_endpoint = "http://127.0.0.1:9222"
+            # Build the CDP endpoint from the port that was dynamically allocated
+            # in initialize().  Using a free port prevents HTTP 400 errors that
+            # occur when port 9222 is already held by another process (Edge,
+            # VS Code debug adapter, a previous test run that did not clean up).
+            # Always use 127.0.0.1 (not localhost) so the address resolves to
+            # IPv4 on Windows regardless of the system's DNS/hosts configuration.
+            cdp_endpoint = f"http://127.0.0.1:{self._cdp_port}"
             
             logger.info(f"[DEBUG] CDP endpoint: {cdp_endpoint}")
             
