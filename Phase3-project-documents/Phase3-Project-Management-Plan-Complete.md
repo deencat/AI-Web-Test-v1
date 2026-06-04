@@ -4,8 +4,8 @@
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
 **Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials · ✅ Sprint 10.11 Developer B Step Library COMPLETE (May 6, 2026) — reusable `@module:` step sequences, Step Library sidebar page, Insert Module picker in TestStepEditor, backend `StepLibraryModule` CRUD, module rename Option C (Preview + Confirm Cascade) with `GET /{id}/rename-preview` dry-run + atomic cascade, dedicated Rename modal, name slug locked in Edit form · ✅ Sprint 10.12 Developer B **Feature A** AI-Powered Failure Root Cause Analysis COMPLETE (May 13, 2026) — `root_cause_analysis_service.py`, DOM snapshot capped at 16 000 chars, `execution_feedback.root_cause_analysis` TEXT column, amber collapsible panel in `ExecutionProgressPage`, 37 new tests, two production bugs fixed (Azure `max_completion_tokens`, `error_type` propagation) · ✅ Sprint 10.12 **Feature B** Re-Run from Failed Step COMPLETE (May 14, 2026) · ✅ Sprint 10.13 Developer B Local vLLM On-Premises Model Support COMPLETE (May 15, 2026) — `local_vllm` provider with GPT-OSS-20B, Qwen3.6-35B-A3B-NVFP4, DeepSeek-V4-Flash-4bit; per-model endpoint routing in `universal_llm.py` + Stagehand `initialize()` · ✅ Sprint 10.14 Developer B Ephemeral CRM Login Credentials COMPLETE (May 20, 2026) — JIT credential prompt at Run-time; `requires_runtime_credentials` flag on TestCase; `CredentialPromptModal` in `RunTestButton`; backend `LoginCredentials` schema (never persisted); password masked in logs and step text; `{{CRM_PASSWORD}}` placeholder in stored step records; session-level in-memory cache; `_build_crm_login_steps()` prepends 3 steps to execution pipeline; 30 backend + 11 frontend tests pass · ✅ Sprint 10.15 Developer B vLLM Thinking Mode Toggle COMPLETE (May 20, 2026) — `local_vllm_enable_thinking` user setting; `thinking_capable: bool` on `ModelOption`; `thinking_capable_models` list in `PROVIDER_CONFIGS`; `enable_thinking` kwarg threaded through `chat_completion()` → `_call_local_vllm()`; `extra_body={"chat_template_kwargs":{"enable_thinking":True}}` injected only for `RedHatAI/Qwen3.6-35B-A3B-NVFP4`; `LocalVllmClient.chat_completion()` added; conditional thinking toggle in Settings UI; DB migration `migrate_sprint10_15.py`; 14 backend unit tests pass · ✅ Sprint 10.16 Developer B XPath Cache Management UI COMPLETE (May 26, 2026) — `XPathCachePanel` in Settings with stats row, keyword filter, per-entry delete, Clear Invalid, Clear All; `ClearStepCacheButton` in each `StepCard` on Execution Progress page; 4 new backend API endpoints (`GET /settings/xpath-cache/stats`, `GET /settings/xpath-cache`, `DELETE /settings/xpath-cache/{id}`, `DELETE /settings/xpath-cache`); 4 new `settingsService` methods; 33 new tests (16 backend + 17 frontend); correct XPaths preserved — only the targeted step's cache is dropped · ✅ Sprint 10.17 Developer B AI Screenshot Verification COMPLETE (May 28, 2026) — `verify_screenshot` action, `ScreenshotVerificationService`, `UniversalLLMService.vision_completion()` for Azure/OpenRouter/Google, `ai_verification_result` persistence + badge UI, natural-language screenshot-verification parsing, Azure `gpt-5.2` vision request fix, and Tier 2 FAIL treated as authoritative for screenshot verification
-**Last Updated:** June 2, 2026 (Sprint 10.13 hardening — 3 commits: custom model/endpoint UI fields, `add_local_vllm_custom_model` migration, per-user `local_vllm_api_key` with full propagation through execution resolver, RCA, agent factory, all 3 Stagehand Python init paths, and TypeScript `sessionManager.ts`)  
-**Version:** 4.2
+**Last Updated:** June 4, 2026 (Sprint 10.18 PLANNED — Qwen3.6-35B-A3B-MLX-8bit: thinking-capable model registered with always-off thinking override via explicit `chat_template_kwargs: {enable_thinking: false}`)  
+**Version:** 4.3
 
 > **📖 When to Use This Document:**
 > - **Sprint Planning:** Task assignments, story point estimates, dependencies
@@ -89,6 +89,7 @@ For detailed analysis, strategies, and agent-specific documentation, see the [Su
       - Sprint 10.15: vLLM Thinking Mode Toggle
       - Sprint 10.16: XPath Cache Management UI ✅
       - Sprint 10.17: AI Screenshot Verification for Test Execution ✅
+      - Sprint 10.18: Qwen3.6-35B-A3B-MLX-8bit — Always-Off Thinking Override
       - Sprint 11: Learning System Activation
       - Sprint 12: Security & Production Readiness
 
@@ -3413,6 +3414,64 @@ Expected items that MUST be visible on screen: {{ expected_items }}
 
 ---
 
+### Sprint 10.18: Developer B — Qwen3.6-35B-A3B-MLX-8bit: Always-Off Thinking Override (June 2026)
+
+**Focus:** Register the new on-premises `Qwen3.6-35B-A3B-MLX-8bit` model as a first-class local vLLM option. The model's **built-in default is thinking=on**; the Settings page must call it with thinking explicitly disabled by always injecting `chat_template_kwargs: {"enable_thinking": false}` unless the user deliberately turns the toggle on.
+
+**Background:** A new local vLLM server was deployed at `http://192.168.206.164:1235/v1` serving `Qwen3.6-35B-A3B-MLX-8bit` (8-bit MLX quantisation) with API token `1235`. This is a Qwen3 thinking model — when called without `chat_template_kwargs` it runs chain-of-thought by default, producing verbose `<think>…</think>` output and higher latency. The desired UX is: thinking is **off** unless the user explicitly enables it via the Settings toggle.
+
+#### Problem with the existing Sprint 10.15 logic
+
+The current code only injects `chat_template_kwargs` when `enable_thinking=True`:
+```python
+# Sprint 10.15 (existing — only injects when ON)
+if enable_thinking and model in _THINKING_CAPABLE_VLLM_MODELS:
+    payload["chat_template_kwargs"] = {"enable_thinking": True}
+```
+For `Qwen3.6-35B-A3B-MLX-8bit`, omitting the flag lets the model default to thinking=on. We need to **always** send the flag for thinking-capable models, setting it to `false` when the toggle is off:
+```python
+# Sprint 10.18 (new — always explicit for capable models)
+if model in _THINKING_CAPABLE_VLLM_MODELS:
+    payload["chat_template_kwargs"] = {"enable_thinking": enable_thinking}
+```
+
+#### Tasks
+
+| # | Task | File | Points |
+|---|------|------|--------|
+| 1 | Add `Qwen3.6-35B-A3B-MLX-8bit` to `_DEFAULT_ENDPOINTS`, `_ENV_ENDPOINT_KEYS` (`LOCAL_VLLM_MLX_ENDPOINT`), and **`_THINKING_CAPABLE_MODELS`** | `backend/llm/local_vllm_client.py` | 1 |
+| 2 | Change `chat_completion()` thinking injection: for capable models always send `chat_template_kwargs: {"enable_thinking": self.enable_thinking}` (was: only inject when True) | `backend/llm/local_vllm_client.py` | 1 |
+| 3 | Add `Qwen3.6-35B-A3B-MLX-8bit` to `_local_vllm_model_endpoints` (endpoint `http://192.168.206.164:1235/v1`, api_key from `LOCAL_VLLM_MLX_API_KEY` default `"1235"`) and to **`_THINKING_CAPABLE_VLLM_MODELS`** | `backend/app/services/universal_llm.py` | 1 |
+| 4 | Change `_call_local_vllm()` thinking injection: `if model in _THINKING_CAPABLE_VLLM_MODELS: payload["chat_template_kwargs"] = {"enable_thinking": enable_thinking}` (was: only inject when `enable_thinking=True`) | `backend/app/services/universal_llm.py` | 1 |
+| 5 | Add `Qwen3.6-35B-A3B-MLX-8bit` to `PROVIDER_CONFIGS["local_vllm"]["models"]` and to **`thinking_capable_models`** | `backend/app/services/user_settings_service.py` | 0.5 |
+| 6 | Add `LOCAL_VLLM_MLX_ENDPOINT` and `LOCAL_VLLM_MLX_API_KEY` env-var documentation to `backend/env.example` | `backend/env.example` | 0.5 |
+| 7 | Update `TestLocalVllmClientThinking` and `TestUserSettingsServiceThinkingCapable`: assert `Qwen3.6-35B-A3B-MLX-8bit` IS thinking-capable; add cases verifying `chat_template_kwargs: {"enable_thinking": false}` is sent when toggle is off for a capable model | `backend/tests/unit/test_universal_llm_thinking.py` | 2 |
+
+**Sprint 10.18 total: 7 points / ~1.5 days**
+
+#### Architecture notes
+
+- **Endpoint collision is intentional.** `Qwen3.6-35B-A3B-MLX-8bit` and (previously) `DeepSeek-V4-Flash-4bit` both default to `http://192.168.206.164:1235/v1`. The vLLM server dispatches via the `model` field in the request payload; the shared address is not a conflict.
+- **Always-explicit `chat_template_kwargs` for thinking-capable models.** The corrected logic sends `{"enable_thinking": false}` when the toggle is off, overriding the model's built-in default. Non-thinking-capable models (DeepSeek, gpt-oss-20b) are never sent this field.
+- **Settings page toggle becomes active.** Because `Qwen3.6-35B-A3B-MLX-8bit` is now in `thinking_capable_models`, `thinkingModelActive` will be `true` when it is selected and the "Enable Thinking Mode" toggle is available — but `local_vllm_enable_thinking` defaults to `false`, so calls go out with thinking off unless the user flips it on.
+- **Existing `RedHatAI/Qwen3.6-35B-A3B-NVFP4` behaviour preserved.** The logic change is backward-compatible: that model previously only injected `{"enable_thinking": true}` when on. After the change it will also inject `{"enable_thinking": false}` when off. This is safe — the server accepts and honours the explicit false.
+- **Per-model API key.** `LOCAL_VLLM_MLX_API_KEY` (default `"1235"`) prevents token leakage to other vLLM deployments.
+- **No DB migration needed.** `local_vllm_enable_thinking` already exists with `default=False`.
+- **Stagehand service unaffected.** Not an execution-agent model.
+
+#### Sprint 10.18 Success Criteria
+
+- [ ] `Qwen3.6-35B-A3B-MLX-8bit` appears in the Settings page Local vLLM model dropdown
+- [ ] Selecting `Qwen3.6-35B-A3B-MLX-8bit` makes the "Enable Thinking Mode" toggle **available** (not greyed-out)
+- [ ] With toggle **off** (default): request payload contains `chat_template_kwargs: {"enable_thinking": false}` — thinking is explicitly suppressed
+- [ ] With toggle **on**: request payload contains `chat_template_kwargs: {"enable_thinking": true}` — thinking is enabled
+- [ ] `DeepSeek-V4-Flash-4bit` and `openai/gpt-oss-20b` are never sent `chat_template_kwargs` (non-capable, behaviour unchanged)
+- [ ] Existing `RedHatAI/Qwen3.6-35B-A3B-NVFP4` toggle-on path still injects `{"enable_thinking": true}` (no regression)
+- [ ] Unit tests cover the new `enable_thinking=False + capable model → explicit false injected` scenario
+- [ ] `backend/env.example` documents `LOCAL_VLLM_MLX_ENDPOINT` and `LOCAL_VLLM_MLX_API_KEY`
+
+---
+
 ### Sprint 11: Autonomous Learning System Activation (Mar 26 - Apr 2, 2026)
 
 **Focus:** Achieve true autonomous self-improvement through automated learning mechanisms  
@@ -4259,6 +4318,8 @@ Blockers Requiring CTO Decision:
 **Approval:** CTO (Sponsor)
 
 **Change Log:**
+- v4.3 (June 4, 2026): Sprint 10.18 PLANNED — Register `Qwen3.6-35B-A3B-MLX-8bit` at `http://192.168.206.164:1235/v1` (API key `1235`). Model IS thinking-capable (added to all three capable-model sets). Existing Sprint 10.15 thinking-injection logic extended: for thinking-capable models always send explicit `chat_template_kwargs: {"enable_thinking": <bool>}` regardless of toggle state, so the model's default-on behaviour is overridden when toggle is off. Settings toggle is available (not greyed-out) but defaults to off. 7 points / ~1.5 days.
+- v4.2 (June 2, 2026): Sprint 10.13 hardening — 3 commits: custom model/endpoint UI fields, `add_local_vllm_custom_model` migration, per-user `local_vllm_api_key` with full propagation through execution resolver, RCA, agent factory, all 3 Stagehand Python init paths, and TypeScript `sessionManager.ts`
 - v4.1 (May 28, 2026): Sprint 10.17 COMPLETE — AI Screenshot Verification for 3-Tier Execution implemented and production-validated. Added `verify_screenshot` routing in execution parsing; `ScreenshotVerificationService`; `UniversalLLMService.vision_completion()` for Azure/OpenRouter/Google; `ai_verification_result` persisted to `test_execution_steps`; `AiVerificationBadge` rendered in `ExecutionProgressPage`; natural-language phrases like `take screenshot to verify` auto-route to screenshot verification; `expected_items` auto-extracted from quoted/unquoted step text. Production hardening after executions `#899`-`#905`: stricter PASS/FAIL prompt contract, Azure `gpt-5.2` vision request fix (`/openai/v1/chat/completions` + `max_completion_tokens`), failure-side verdict propagation, and `verify_screenshot` Tier 2 FAIL treated as final instead of being overwritten by Tier 3.
 - v4.0 (May 27, 2026): Sprint 10.17 PLANNED — AI Screenshot Verification for 3-Tier Execution. Adds `verify_screenshot` step action; `ScreenshotVerificationService`; `UniversalLLMService.vision_completion()` for azure/openrouter/google; immediate Tier 1 escalation with `vision_required` sentinel; Tier 2 screenshot+vision-LLM path; Tier 3 Stagehand `extract()` semantic fallback; `ai_verification_result` DB column on `execution_steps`; frontend PASS/FAIL badge in `StepCard`. Motivated by Test ID #1352 plan-information verification requirement. 22 points, 4–5 days.
 - v3.8 (May 20, 2026): Sprint 10.14 COMPLETE — Ephemeral CRM Login Credentials fully implemented and tested. 30 backend + 11 frontend tests pass. Key implementation notes: `_build_crm_login_steps()` helper prepends 3 structured step dicts (fill username, fill password, click submit); `QueuedExecution.login_credentials` carries creds in-memory through queue pipeline — never serialised to `trigger_details`; `_step_description_override` key ensures `{{CRM_PASSWORD}}` placeholder is written to `ExecutionStep` records while live password is passed only to the 3-tier engine via `execution_instruction`; `EphemeralCredentialProvider` wraps entire React app — credentials survive tab session (multiple runs) but never reach `localStorage`/`sessionStorage`; toggle switch added directly to `TestDetailPage` Test Information card (inline save, no navigation required). ADR-CRM-01 recorded.
