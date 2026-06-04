@@ -3,10 +3,15 @@ Universal LLM service that supports multiple providers.
 Handles Google Gemini, Cerebras, and OpenRouter.
 """
 import base64
+import datetime
 import httpx
+import logging
 import os
+import time
 from typing import List, Dict, Optional, Union
 from app.core.config import settings
+
+_svc_logger = logging.getLogger(__name__)
 
 # Sprint 10.15 / 10.18: vLLM models that accept chat_template_kwargs: { enable_thinking }.
 # Sprint 10.18: chat_template_kwargs is ALWAYS sent for these models — even when
@@ -121,25 +126,119 @@ class UniversalLLMService:
             Exception: If API call fails
         """
         provider = provider.lower()
-        
-        if provider == "google":
-            return await self._call_google(messages, model, temperature, max_tokens)
-        elif provider == "cerebras":
-            return await self._call_cerebras(messages, model, temperature, max_tokens)
-        elif provider == "azure":
-            return await self._call_azure(messages, model, temperature, max_tokens)
-        elif provider == "local_vllm":
-            return await self._call_local_vllm(
-                messages,
-                model,
-                temperature,
-                max_tokens,
-                enable_thinking=enable_thinking,
-                custom_endpoint=custom_endpoint,
-                api_key=api_key,
+        _t0 = time.monotonic()
+        _error: Optional[str] = None
+        _response: Optional[dict] = None
+        try:
+            if provider == "google":
+                _response = await self._call_google(messages, model, temperature, max_tokens)
+            elif provider == "cerebras":
+                _response = await self._call_cerebras(messages, model, temperature, max_tokens)
+            elif provider == "azure":
+                _response = await self._call_azure(messages, model, temperature, max_tokens)
+            elif provider == "local_vllm":
+                _response = await self._call_local_vllm(
+                    messages,
+                    model,
+                    temperature,
+                    max_tokens,
+                    enable_thinking=enable_thinking,
+                    custom_endpoint=custom_endpoint,
+                    api_key=api_key,
+                )
+            else:  # default to openrouter
+                _response = await self._call_openrouter(messages, model, temperature, max_tokens)
+        except Exception as exc:
+            _error = str(exc)
+            raise
+        finally:
+            await self._write_llm_log(
+                messages=messages,
+                provider=provider,
+                model=model or "",
+                response=_response,
+                error=_error,
+                elapsed_ms=(time.monotonic() - _t0) * 1000,
+                caller="chat_completion",
             )
-        else:  # default to openrouter
-            return await self._call_openrouter(messages, model, temperature, max_tokens)
+        return _response  # type: ignore[return-value]
+
+    async def _write_llm_log(
+        self,
+        *,
+        messages: list,
+        provider: str,
+        model: str,
+        response: Optional[dict],
+        error: Optional[str],
+        elapsed_ms: float,
+        caller: str,
+    ) -> None:
+        """Build and write one JSONL log entry for this LLM call (swallows errors)."""
+        try:
+            from app.utils.llm_execution_context import llm_exec_ctx
+            from app.utils.llm_response_logger import (
+                llm_logger,
+                build_prompt_preview,
+                extract_thinking_from_response,
+            )
+
+            ctx = llm_exec_ctx.get()
+            full_prompt = bool(getattr(settings, "LLM_LOG_FULL_PROMPT", False))
+
+            # Extract thinking / tokens from response (if any)
+            thinking_content = None
+            response_content = None
+            thinking_tokens = None
+            prompt_tokens = None
+            completion_tokens = None
+            total_tokens = None
+
+            if response:
+                thinking_content, response_content, thinking_tokens = (
+                    extract_thinking_from_response(response)
+                )
+                usage = response.get("usage") or {}
+                prompt_tokens = usage.get("prompt_tokens")
+                completion_tokens = usage.get("completion_tokens")
+                total_tokens = usage.get("total_tokens")
+
+            # Brief console summary (existing logger, no change to format)
+            thinking_info = f" (thinking: {thinking_tokens}tok)" if thinking_tokens else ""
+            _svc_logger.info(
+                "[LLM] provider=%s model=%s tier=%s step=%s → %.0fms %stok%s",
+                provider,
+                model,
+                ctx.get("tier"),
+                ctx.get("step_number"),
+                elapsed_ms,
+                total_tokens or "?",
+                thinking_info,
+            )
+
+            entry = {
+                "ts": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.") + f"{int(datetime.datetime.utcnow().microsecond / 1000):03d}Z",
+                "execution_id": ctx.get("execution_id"),
+                "step_number": ctx.get("step_number"),
+                "tier": ctx.get("tier"),
+                "caller": ctx.get("caller") or caller,
+                "provider": provider,
+                "model": model,
+                "prompt_chars": sum(len(str(m.get("content", ""))) for m in messages),
+                "prompt_preview": build_prompt_preview(messages, full_prompt=full_prompt),
+                "response_time_ms": round(elapsed_ms, 1),
+                "thinking_content": thinking_content,
+                "response_content": response_content,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "thinking_tokens": thinking_tokens,
+                "total_tokens": total_tokens,
+                "success": error is None,
+                "error": error,
+            }
+            await llm_logger.write(entry)
+        except Exception as log_exc:  # noqa: BLE001
+            _svc_logger.debug("LLM logging failed (non-fatal): %s", log_exc)
 
     # ------------------------------------------------------------------
     # Sprint 10.17: Multimodal vision completion
@@ -182,13 +281,35 @@ class UniversalLLMService:
             )
 
         image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-
-        if provider == "google":
-            return await self._call_google_vision(image_b64, system_prompt, user_text, model, max_tokens)
-        elif provider == "azure":
-            return await self._call_azure_vision(image_b64, system_prompt, user_text, model, max_tokens)
-        else:  # openrouter
-            return await self._call_openrouter_vision(image_b64, system_prompt, user_text, model, max_tokens)
+        _t0 = time.monotonic()
+        _error: Optional[str] = None
+        _response: Optional[dict] = None
+        try:
+            if provider == "google":
+                _response = await self._call_google_vision(image_b64, system_prompt, user_text, model, max_tokens)
+            elif provider == "azure":
+                _response = await self._call_azure_vision(image_b64, system_prompt, user_text, model, max_tokens)
+            else:  # openrouter
+                _response = await self._call_openrouter_vision(image_b64, system_prompt, user_text, model, max_tokens)
+        except Exception as exc:
+            _error = str(exc)
+            raise
+        finally:
+            # Log vision call using a synthetic text messages list for prompt_preview
+            _vision_messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_text},
+            ]
+            await self._write_llm_log(
+                messages=_vision_messages,
+                provider=provider,
+                model=model or "",
+                response=_response,
+                error=_error,
+                elapsed_ms=(time.monotonic() - _t0) * 1000,
+                caller="vision_verification",
+            )
+        return _response  # type: ignore[return-value]
 
     async def _call_openrouter_vision(
         self,

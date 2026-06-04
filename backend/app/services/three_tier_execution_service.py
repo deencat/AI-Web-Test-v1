@@ -24,6 +24,7 @@ from app.services.xpath_extractor import XPathExtractor
 from app.services.universal_llm import VisionNotSupportedError
 from app.models.execution_settings import ExecutionSettings, TierExecutionLog
 from app.schemas.execution_settings import FallbackStrategy
+from app.utils.llm_execution_context import set_llm_context, llm_exec_ctx
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +185,16 @@ class ThreeTierExecutionService:
             confirm_progress_snapshot = await capture_step_progress_snapshot(self.page)
         
         # TIER 1: Always attempt Playwright Direct first
-        tier1_result = await self._execute_tier1(step)
+        _ctx_token = set_llm_context(
+            execution_id=execution_id,
+            step_number=step_index,
+            tier=1,
+            caller="tier1_playwright",
+        )
+        try:
+            tier1_result = await self._execute_tier1(step)
+        finally:
+            llm_exec_ctx.reset(_ctx_token)
         execution_history.append(tier1_result)
 
         if tier1_result["success"] and not await self._step_made_expected_progress(step, confirm_progress_snapshot):
@@ -312,7 +322,16 @@ class ThreeTierExecutionService:
         await self._ensure_tier2_initialized()
 
         try:
-            tier2_result = await self.tier2_executor.execute_step(self.page, step)
+            _ctx_t2 = set_llm_context(
+                execution_id=None,
+                step_number=None,
+                tier=2,
+                caller="tier2_hybrid",
+            )
+            try:
+                tier2_result = await self.tier2_executor.execute_step(self.page, step)
+            finally:
+                llm_exec_ctx.reset(_ctx_t2)
         except VisionNotSupportedError:
             # Sprint 10.17: vision step escalates to Tier 3 even in Option A
             logger.info("[3-Tier] Option A: VisionNotSupported from Tier 2 → escalating to Tier 3")
@@ -345,7 +364,16 @@ class ThreeTierExecutionService:
         """
         await self._ensure_tier3_initialized()
         
-        tier3_result = await self.tier3_executor.execute_step(step)
+        _ctx_t3b = set_llm_context(
+            execution_id=None,
+            step_number=None,
+            tier=3,
+            caller="tier3_stagehand",
+        )
+        try:
+            tier3_result = await self.tier3_executor.execute_step(step)
+        finally:
+            llm_exec_ctx.reset(_ctx_t3b)
         execution_history.append(tier3_result)
 
         if tier3_result["success"] and not await self._step_made_expected_progress(step, confirm_progress_snapshot):
@@ -378,7 +406,16 @@ class ThreeTierExecutionService:
         await self._ensure_tier2_initialized()
 
         try:
-            tier2_result = await self.tier2_executor.execute_step(self.page, step)
+            _ctx_t2c = set_llm_context(
+                execution_id=None,
+                step_number=None,
+                tier=2,
+                caller="tier2_hybrid",
+            )
+            try:
+                tier2_result = await self.tier2_executor.execute_step(self.page, step)
+            finally:
+                llm_exec_ctx.reset(_ctx_t2c)
         except VisionNotSupportedError:
             # Sprint 10.17: vision step → skip directly to Tier 3
             logger.info("[3-Tier] Option C: VisionNotSupported from Tier 2 → escalating to Tier 3")
@@ -399,7 +436,16 @@ class ThreeTierExecutionService:
         
         await self._ensure_tier3_initialized()
         
-        tier3_result = await self.tier3_executor.execute_step(step)
+        _ctx_t3c = set_llm_context(
+            execution_id=None,
+            step_number=None,
+            tier=3,
+            caller="tier3_stagehand",
+        )
+        try:
+            tier3_result = await self.tier3_executor.execute_step(step)
+        finally:
+            llm_exec_ctx.reset(_ctx_t3c)
         execution_history.append(tier3_result)
 
         if tier3_result["success"] and not await self._step_made_expected_progress(step, confirm_progress_snapshot):
