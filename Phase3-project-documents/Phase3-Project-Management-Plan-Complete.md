@@ -4,7 +4,7 @@
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
 **Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials · ✅ Sprint 10.11 Developer B Step Library COMPLETE (May 6, 2026) — reusable `@module:` step sequences, Step Library sidebar page, Insert Module picker in TestStepEditor, backend `StepLibraryModule` CRUD, module rename Option C (Preview + Confirm Cascade) with `GET /{id}/rename-preview` dry-run + atomic cascade, dedicated Rename modal, name slug locked in Edit form · ✅ Sprint 10.12 Developer B **Feature A** AI-Powered Failure Root Cause Analysis COMPLETE (May 13, 2026) — `root_cause_analysis_service.py`, DOM snapshot capped at 16 000 chars, `execution_feedback.root_cause_analysis` TEXT column, amber collapsible panel in `ExecutionProgressPage`, 37 new tests, two production bugs fixed (Azure `max_completion_tokens`, `error_type` propagation) · ✅ Sprint 10.12 **Feature B** Re-Run from Failed Step COMPLETE (May 14, 2026) · ✅ Sprint 10.13 Developer B Local vLLM On-Premises Model Support COMPLETE (May 15, 2026) — `local_vllm` provider with GPT-OSS-20B, Qwen3.6-35B-A3B-NVFP4, DeepSeek-V4-Flash-4bit; per-model endpoint routing in `universal_llm.py` + Stagehand `initialize()` · ✅ Sprint 10.14 Developer B Ephemeral CRM Login Credentials COMPLETE (May 20, 2026) — JIT credential prompt at Run-time; `requires_runtime_credentials` flag on TestCase; `CredentialPromptModal` in `RunTestButton`; backend `LoginCredentials` schema (never persisted); password masked in logs and step text; `{{CRM_PASSWORD}}` placeholder in stored step records; session-level in-memory cache; `_build_crm_login_steps()` prepends 3 steps to execution pipeline; 30 backend + 11 frontend tests pass · ✅ Sprint 10.15 Developer B vLLM Thinking Mode Toggle COMPLETE (May 20, 2026) — `local_vllm_enable_thinking` user setting; `thinking_capable: bool` on `ModelOption`; `thinking_capable_models` list in `PROVIDER_CONFIGS`; `enable_thinking` kwarg threaded through `chat_completion()` → `_call_local_vllm()`; `extra_body={"chat_template_kwargs":{"enable_thinking":True}}` injected only for `RedHatAI/Qwen3.6-35B-A3B-NVFP4`; `LocalVllmClient.chat_completion()` added; conditional thinking toggle in Settings UI; DB migration `migrate_sprint10_15.py`; 14 backend unit tests pass · ✅ Sprint 10.16 Developer B XPath Cache Management UI COMPLETE (May 26, 2026) — `XPathCachePanel` in Settings with stats row, keyword filter, per-entry delete, Clear Invalid, Clear All; `ClearStepCacheButton` in each `StepCard` on Execution Progress page; 4 new backend API endpoints (`GET /settings/xpath-cache/stats`, `GET /settings/xpath-cache`, `DELETE /settings/xpath-cache/{id}`, `DELETE /settings/xpath-cache`); 4 new `settingsService` methods; 33 new tests (16 backend + 17 frontend); correct XPaths preserved — only the targeted step's cache is dropped · ✅ Sprint 10.17 Developer B AI Screenshot Verification COMPLETE (May 28, 2026) — `verify_screenshot` action, `ScreenshotVerificationService`, `UniversalLLMService.vision_completion()` for Azure/OpenRouter/Google, `ai_verification_result` persistence + badge UI, natural-language screenshot-verification parsing, Azure `gpt-5.2` vision request fix, and Tier 2 FAIL treated as authoritative for screenshot verification · ✅ Sprint 10.18 Developer B Qwen3.6-35B-A3B-MLX-8bit Always-Off Thinking Override COMPLETE (June 4, 2026) — model registered at `http://192.168.206.164:1235/v1`; added to all three thinking-capable sets; always-explicit `chat_template_kwargs: {"enable_thinking": <bool>}` injection in `local_vllm_client.py` and `universal_llm.py`; `LOCAL_VLLM_MLX_ENDPOINT`/`LOCAL_VLLM_MLX_API_KEY` in `env.example`; `TestSprint1018MLXModel` test class with 4 new tests; 7 points
-**Last Updated:** June 4, 2026 (Sprint 10.18 COMPLETE — Qwen3.6-35B-A3B-MLX-8bit: thinking-capable model registered with always-off thinking override via explicit `chat_template_kwargs: {enable_thinking: false}`)  
+**Last Updated:** June 4, 2026 (Sprint 10.19 PLANNED — 3-Tier Execution LLM Response & Timing Log: per-execution JSONL files in `backend/logs/llm/`, `contextvars` propagation, `LLMResponseLogger` utility, `universal_llm.py` instrumentation)  
 **Version:** 4.3
 
 > **📖 When to Use This Document:**
@@ -90,6 +90,7 @@ For detailed analysis, strategies, and agent-specific documentation, see the [Su
       - Sprint 10.16: XPath Cache Management UI ✅
       - Sprint 10.17: AI Screenshot Verification for Test Execution ✅
       - Sprint 10.18: Qwen3.6-35B-A3B-MLX-8bit — Always-Off Thinking Override ✅
+      - Sprint 10.19: 3-Tier Execution LLM Response & Timing Log (File-Based)
       - Sprint 11: Learning System Activation
       - Sprint 12: Security & Production Readiness
 
@@ -3469,6 +3470,113 @@ if model in _THINKING_CAPABLE_VLLM_MODELS:
 - [x] Existing `RedHatAI/Qwen3.6-35B-A3B-NVFP4` toggle-on path still injects `{"enable_thinking": true}` (no regression)
 - [x] Unit tests cover the new `enable_thinking=False + capable model → explicit false injected` scenario
 - [x] `backend/env.example` documents `LOCAL_VLLM_MLX_ENDPOINT` and `LOCAL_VLLM_MLX_API_KEY`
+
+---
+
+### Sprint 10.19: Developer B — 3-Tier Execution LLM Response & Timing Log (June 2026)
+
+**Focus:** Write a complete, structured log of every LLM call made during a 3-tier test execution — including the full response content, verbose thinking trace (if the model produced one), response time (ms), token counts, provider/model, and which tier triggered the call — to individual per-execution JSONL files in `backend/logs/llm/`. **The server console log is not changed in any way.** A brief one-liner summary continues to be emitted to the console as before; the full detail (including thinking output) is written only to the dedicated log files.
+
+**Background:** The existing logging strategy emits LLM output only to the server console (`logger.info`), which is lost on restart, mixed with all other server noise, and impractical for debugging multi-step executions. As test complexity grows (Tier 2 `observe()`, Tier 3 `act()`, screenshot verification, root-cause analysis all invoke the LLM), having a persistent, structured record per execution becomes essential for:
+- Measuring real-world LLM latency per provider and model
+- Auditing which tier triggered which LLM call and why
+- Token cost analysis per test execution
+- Post-mortem debugging of hallucinated selectors or false-positive screenshot verifications
+
+**Why a dedicated `logs/llm/` folder, not the server log:**
+
+| Factor | Server console / `server_YYYYMMDD.log` | `logs/llm/exec_{id}.jsonl` |
+|---|---|---|
+| LLM responses can be multi-KB JSON | Floods terminal | Isolated, structured JSONL |
+| Survives server restart | Lost (console) or mixed with noise (file) | Persistent, per-execution |
+| Cross-execution comparison | Requires grep | One file = one execution |
+| Token cost tracking | Manual extraction | Summed in each file |
+| Sensitive prompts | Mixed in shared log | Access-controlled sub-folder |
+| Structured queries (`jq`) | Not possible | Native JSONL |
+
+#### Architecture
+
+```
+contextvars
+  └─ llm_exec_ctx  ─── set by ThreeTierExecutionService.execute_step()
+                            carries: {execution_id, step_number, tier, caller}
+                            flows into all nested awaits (universal_llm.py, etc.)
+
+UniversalLLMService.chat_completion()
+UniversalLLMService.vision_completion()
+  └─ on return → LLMResponseLogger.write(entry)
+
+LLMResponseLogger
+  └─ logs/llm/exec_{execution_id}.jsonl   ← one JSON object per line
+  └─ logs/llm/misc.jsonl                  ← calls outside an execution context
+```
+
+**Log entry schema (one JSON object per line):**
+```json
+{
+  "ts": "2026-06-04T10:23:45.123Z",
+  "execution_id": 42,
+  "step_number": 3,
+  "tier": 2,
+  "caller": "xpath_extractor",
+  "provider": "local_vllm",
+  "model": "Qwen3.6-35B-A3B-MLX-8bit",
+  "prompt_chars": 1450,
+  "prompt_preview": "You are a test automation assistant...",
+  "response_time_ms": 3241,
+  "thinking_content": "<think>\nThe instruction says to click the Submit button...\n</think>",
+  "response_content": "//button[@type='submit']",
+  "prompt_tokens": 310,
+  "completion_tokens": 186,
+  "thinking_tokens": 138,
+  "total_tokens": 496,
+  "success": true,
+  "error": null
+}
+```
+- `thinking_content` — the full `<think>…</think>` chain-of-thought trace returned by thinking-capable models (Qwen3, DeepSeek-R1, etc.). `null` for non-thinking models or when thinking is off.
+- `thinking_tokens` — token count of the thinking trace if reported by the provider; `null` otherwise.
+- `prompt_preview` is capped at 500 chars by default. Set `LLM_LOG_FULL_PROMPT=true` to store the full message list.
+
+#### Tasks
+
+| # | Task | File | Points |
+|---|------|------|--------|
+| 1 | Create `llm_execution_context.py` — `ContextVar[dict]` (`llm_exec_ctx`) + `set_llm_context(execution_id, step_number, tier, caller)` helper returning a reset token | `backend/app/utils/llm_execution_context.py` | 1 |
+| 2 | Create `llm_response_logger.py` — `LLMResponseLogger` singleton: `get_log_path(execution_id)`, async `write(entry)` with `asyncio.to_thread` file append, file-count rotation (`LLM_LOG_MAX_FILES`, default 200) | `backend/app/utils/llm_response_logger.py` | 2 |
+| 3 | Instrument `chat_completion()`: record `start = time.monotonic()` before provider dispatch, call `LLMResponseLogger.write()` after return (wrapped in `try/except` so log failure never kills execution) | `backend/app/services/universal_llm.py` | 2 |
+| 4 | Instrument `vision_completion()`: same pattern as task 3; `caller` field auto-set to `"vision_verification"` | `backend/app/services/universal_llm.py` | 1 |
+| 5 | Set `llm_exec_ctx` before each tier attempt in `execute_step()`: `set_llm_context(execution_id, step_index, tier=1, ...)` before Tier 1, reset and re-set for Tier 2 and Tier 3 | `backend/app/services/three_tier_execution_service.py` | 1 |
+| 6 | Add `LLM_LOG_FULL_PROMPT: bool = False` and `LLM_LOG_MAX_FILES: int = 200` to settings + `env.example` | `backend/app/core/config.py`, `backend/env.example` | 0.5 |
+| 7 | Add `logs/llm/` to `.gitignore` | `backend/.gitignore` | 0.5 |
+| 8 | Unit tests: `test_llm_response_logger.py` — JSONL file created on first write, entry is valid JSON, rotation deletes oldest file, failed LLM call writes `success: false` entry | `backend/tests/unit/test_llm_response_logger.py` | 2 |
+
+**Sprint 10.19 total: 10 points / ~2 days**
+
+#### Architecture Notes
+
+- **Zero signature changes to callers.** `contextvars` propagation means `universal_llm.py` reads `llm_exec_ctx.get()` — no parameter threading needed through `test_generation.py`, `root_cause_analysis_service.py`, or `screenshot_verification_service.py`.
+- **Non-blocking writes.** `asyncio.to_thread(file.write, ...)` keeps the async execution loop responsive. A per-file `asyncio.Lock` prevents interleaved JSON lines from concurrent steps.
+- **Calls outside execution context** (test generation, root-cause analysis when called independently) write to `logs/llm/misc.jsonl` so all LLM calls are auditable.
+- **Sensitive data protection.** `LLM_LOG_FULL_PROMPT` defaults to `False`; only the first 500 chars of the last user message are stored by default. Full prompt storage is opt-in.
+- **Disk bounded.** File-count rotation (default 200 files) prevents unbounded growth. Each file covers one execution; typical size is 2–20 KB.
+- **Console log: no change.** Existing `logger.info` calls are untouched. A brief one-liner continues to be emitted: `"[LLM] provider=local_vllm model=Qwen3.6-35B-A3B-MLX-8bit tier=2 step=3 → 3241ms 496tok (thinking: 138tok)"`. The full response and complete thinking trace go only to the JSONL file.
+- **Thinking trace capture.** For thinking-capable models the API response may include `choices[0].message.reasoning_content` (vLLM/OpenAI-compatible field) or the trace may be embedded inline as `<think>…</think>` in `content`. The logger reads both locations: `reasoning_content` first, then strips the `<think>…</think>` block from `content` if present. The stripped remainder is stored as `response_content`; the trace is stored as `thinking_content`.
+
+#### Sprint 10.19 Success Criteria
+
+- [ ] Server console log behaviour is **unchanged** — existing `logger.info`/`logger.debug` calls are not modified
+- [ ] Every LLM call during a 3-tier execution produces exactly one JSONL line in `logs/llm/exec_{id}.jsonl` with `response_time_ms` populated
+- [ ] `execution_id`, `step_number`, and `tier` fields are correctly set (not `null`) for calls made inside `execute_step()`
+- [ ] A failed LLM call (timeout, API error) still writes a log entry with `success: false` and `error: "<message>"`
+- [ ] When a thinking-capable model returns a thinking trace, `thinking_content` contains the full verbose trace and `response_content` contains only the final answer (trace stripped)
+- [ ] When thinking is off or the model is non-thinking, `thinking_content` is `null`
+- [ ] `LLM_LOG_FULL_PROMPT=false` (default): `prompt_preview` contains at most 500 chars; full message list is NOT stored
+- [ ] `LLM_LOG_FULL_PROMPT=true`: full message list is serialized into the log entry
+- [ ] `logs/llm/misc.jsonl` captures LLM calls made outside a test execution (test generation, standalone root-cause analysis)
+- [ ] When file count exceeds `LLM_LOG_MAX_FILES`, the oldest file is deleted automatically
+- [ ] `logs/llm/` is listed in `backend/.gitignore`
+- [ ] All 8 unit tests pass
 
 ---
 
