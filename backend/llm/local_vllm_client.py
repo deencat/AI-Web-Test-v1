@@ -9,10 +9,19 @@ model is thinking-capable (currently only RedHatAI/Qwen3.6-35B-A3B-NVFP4),
 chat_completion() injects extra_body={"chat_template_kwargs":{"enable_thinking":True}}
 into the OpenAI SDK .create() call.  Non-capable models are unaffected.
 
+Sprint 10.18: Adds Qwen3.6-35B-A3B-MLX-8bit (8-bit MLX quantisation, same
+endpoint as DeepSeek at http://192.168.206.164:1235/v1, auth token 1235).
+Because this model defaults to thinking=on, chat_completion() now ALWAYS
+injects chat_template_kwargs for any thinking-capable model — sending
+{"enable_thinking": False} when the toggle is off so the model's built-in
+default is explicitly overridden.  Per-model API keys are resolved via a
+dedicated env var (LOCAL_VLLM_MLX_API_KEY) to prevent token leakage.
+
 Endpoint mapping (can be overridden via env vars):
-  openai/gpt-oss-20b          -> LOCAL_VLLM_GPT_OSS_20B_ENDPOINT
-  RedHatAI/Qwen3.6-35B-A3B-NVFP4 -> LOCAL_VLLM_QWEN3_35B_ENDPOINT
-  DeepSeek-V4-Flash-4bit      -> LOCAL_VLLM_DEEPSEEK_ENDPOINT  (default)
+  openai/gpt-oss-20b               -> LOCAL_VLLM_GPT_OSS_20B_ENDPOINT
+  RedHatAI/Qwen3.6-35B-A3B-NVFP4  -> LOCAL_VLLM_QWEN3_35B_ENDPOINT
+  DeepSeek-V4-Flash-4bit           -> LOCAL_VLLM_DEEPSEEK_ENDPOINT  (default)
+  Qwen3.6-35B-A3B-MLX-8bit         -> LOCAL_VLLM_MLX_ENDPOINT
 
 Interface is compatible with AzureClient / OpenRouterClient so all agents
 and AzureOpenAIAdapter can use it without modification.
@@ -24,9 +33,12 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# Sprint 10.15: models that support chain-of-thought thinking via chat_template_kwargs
+# Sprint 10.15 / 10.18: models that support chain-of-thought thinking via chat_template_kwargs.
+# For thinking-capable models, chat_template_kwargs is ALWAYS sent (even when enable_thinking=False)
+# so that models whose built-in default is thinking=on can be explicitly overridden.
 _THINKING_CAPABLE_MODELS: frozenset = frozenset({
     "RedHatAI/Qwen3.6-35B-A3B-NVFP4",
+    "Qwen3.6-35B-A3B-MLX-8bit",  # Sprint 10.18: always-off override required
 })
 
 _DEFAULT_MODEL = "DeepSeek-V4-Flash-4bit"
@@ -36,12 +48,20 @@ _DEFAULT_ENDPOINTS: dict = {
     "openai/gpt-oss-20b": "http://192.168.206.190:8000/openai--gpt-oss-20b/v1",
     "RedHatAI/Qwen3.6-35B-A3B-NVFP4": "http://192.168.206.190:8000/redhatai--qwen3.6-35b-a3b-nvfp4/v1",
     "DeepSeek-V4-Flash-4bit": "http://192.168.206.164:1235/v1",
+    "Qwen3.6-35B-A3B-MLX-8bit": "http://192.168.206.164:1235/v1",  # Sprint 10.18: MLX server
 }
 
 _ENV_ENDPOINT_KEYS: dict = {
     "openai/gpt-oss-20b": "LOCAL_VLLM_GPT_OSS_20B_ENDPOINT",
     "RedHatAI/Qwen3.6-35B-A3B-NVFP4": "LOCAL_VLLM_QWEN3_35B_ENDPOINT",
     "DeepSeek-V4-Flash-4bit": "LOCAL_VLLM_DEEPSEEK_ENDPOINT",
+    "Qwen3.6-35B-A3B-MLX-8bit": "LOCAL_VLLM_MLX_ENDPOINT",  # Sprint 10.18
+}
+
+# Sprint 10.18: per-model API key env vars and their defaults.
+# Prevents token leakage between vLLM deployments that use different auth tokens.
+_MODEL_API_KEY_ENV: dict = {
+    "Qwen3.6-35B-A3B-MLX-8bit": ("LOCAL_VLLM_MLX_API_KEY", "1235"),
 }
 
 try:
@@ -112,8 +132,17 @@ class LocalVllmClient:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.endpoint = _resolve_endpoint(model, override=endpoint)
-        self.api_key = api_key or os.getenv("LOCAL_VLLM_API_KEY", "local")
-        # Sprint 10.15: gated by both this flag AND model capability
+        # Sprint 10.18: resolve API key — prefer explicit arg, then per-model env var,
+        # then global LOCAL_VLLM_API_KEY env var.
+        if api_key:
+            self.api_key = api_key
+        elif model in _MODEL_API_KEY_ENV:
+            env_var, default = _MODEL_API_KEY_ENV[model]
+            self.api_key = os.getenv(env_var, default)
+        else:
+            self.api_key = os.getenv("LOCAL_VLLM_API_KEY", "local")
+        # Sprint 10.15/10.18: store user's choice; gated for non-capable models so
+        # self.enable_thinking is always False for models not in _THINKING_CAPABLE_MODELS.
         self.enable_thinking = enable_thinking and model in _THINKING_CAPABLE_MODELS
 
         if _OPENAI_AVAILABLE:
@@ -169,8 +198,9 @@ class LocalVllmClient:
             "max_tokens": max_tokens if max_tokens is not None else self.max_tokens,
         }
 
-        # Sprint 10.15: thinking mode — only for capable models, gated at __init__
-        if self.enable_thinking:
-            kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": True}}
+        # Sprint 10.18: for thinking-capable models always send chat_template_kwargs
+        # (even when False) so the model's built-in default of thinking=on is overridden.
+        if self.model in _THINKING_CAPABLE_MODELS:
+            kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": self.enable_thinking}}
 
         return self.client.chat.completions.create(**kwargs)

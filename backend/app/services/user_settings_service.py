@@ -77,16 +77,19 @@ class UserSettingsService:
         "local_vllm": {
             "display_name": "Local vLLM (On-Premises)",
             # Sprint 10.13: three on-prem vLLM servers; no API key required
+            # Sprint 10.18: adds Qwen3.6-35B-A3B-MLX-8bit (MLX 8-bit quantisation)
             "models": [
                 "openai/gpt-oss-20b",
                 "RedHatAI/Qwen3.6-35B-A3B-NVFP4",
                 "DeepSeek-V4-Flash-4bit",
+                "Qwen3.6-35B-A3B-MLX-8bit",
             ],
             "recommended": "DeepSeek-V4-Flash-4bit",
             "api_key_env": "LOCAL_VLLM_API_KEY",  # placeholder; vLLM ignores auth by default
-            # Sprint 10.15: models that accept chat_template_kwargs: { enable_thinking }
+            # Sprint 10.15 / 10.18: models that accept chat_template_kwargs: { enable_thinking }
             "thinking_capable_models": [
                 "RedHatAI/Qwen3.6-35B-A3B-NVFP4",
+                "Qwen3.6-35B-A3B-MLX-8bit",  # Sprint 10.18: always-off override required
             ],
         }
     }

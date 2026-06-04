@@ -8,9 +8,13 @@ import os
 from typing import List, Dict, Optional, Union
 from app.core.config import settings
 
-# Sprint 10.15: vLLM models that accept chat_template_kwargs: { enable_thinking }
+# Sprint 10.15 / 10.18: vLLM models that accept chat_template_kwargs: { enable_thinking }.
+# Sprint 10.18: chat_template_kwargs is ALWAYS sent for these models — even when
+# enable_thinking=False — so that models whose built-in default is thinking=on
+# (e.g. Qwen3.6-35B-A3B-MLX-8bit) are explicitly overridden.
 _THINKING_CAPABLE_VLLM_MODELS: frozenset = frozenset({
     "RedHatAI/Qwen3.6-35B-A3B-NVFP4",
+    "Qwen3.6-35B-A3B-MLX-8bit",  # Sprint 10.18: always-off override required
 })
 
 # Sprint 10.17: providers that support multimodal vision requests
@@ -55,6 +59,8 @@ class UniversalLLMService:
 
         # Sprint 10.13: Local vLLM per-model endpoint table (OpenAI-compatible, no real auth)
         _local_api_key = getattr(settings, "LOCAL_VLLM_API_KEY", "local") or os.getenv("LOCAL_VLLM_API_KEY", "local")
+        # Sprint 10.18: MLX model uses its own API key env var (default "1235")
+        _mlx_api_key = getattr(settings, "LOCAL_VLLM_MLX_API_KEY", None) or os.getenv("LOCAL_VLLM_MLX_API_KEY", "1235")
         self._local_vllm_model_endpoints: dict = {
             "openai/gpt-oss-20b": {
                 "endpoint": getattr(settings, "LOCAL_VLLM_GPT_OSS_20B_ENDPOINT", "http://192.168.206.190:8000/openai--gpt-oss-20b/v1") or os.getenv("LOCAL_VLLM_GPT_OSS_20B_ENDPOINT", "http://192.168.206.190:8000/openai--gpt-oss-20b/v1"),
@@ -67,6 +73,12 @@ class UniversalLLMService:
             "DeepSeek-V4-Flash-4bit": {
                 "endpoint": getattr(settings, "LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164:1235/v1") or os.getenv("LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164:1235/v1"),
                 "api_key": _local_api_key,
+            },
+            # Sprint 10.18: MLX 8-bit quantisation on http://192.168.206.164:1235/v1
+            # Endpoint collision with DeepSeek is intentional; vLLM dispatches via model field.
+            "Qwen3.6-35B-A3B-MLX-8bit": {
+                "endpoint": getattr(settings, "LOCAL_VLLM_MLX_ENDPOINT", "http://192.168.206.164:1235/v1") or os.getenv("LOCAL_VLLM_MLX_ENDPOINT", "http://192.168.206.164:1235/v1"),
+                "api_key": _mlx_api_key,
             },
         }
 
@@ -702,9 +714,10 @@ class UniversalLLMService:
         if max_tokens:
             payload["max_tokens"] = max_tokens
 
-        # Sprint 10.15: inject thinking flag only for capable models
-        if enable_thinking and model in _THINKING_CAPABLE_VLLM_MODELS:
-            payload["chat_template_kwargs"] = {"enable_thinking": True}
+        # Sprint 10.18: for thinking-capable models always inject chat_template_kwargs
+        # (even when False) so models whose built-in default is thinking=on are overridden.
+        if model in _THINKING_CAPABLE_VLLM_MODELS:
+            payload["chat_template_kwargs"] = {"enable_thinking": enable_thinking}
 
         client = await self._get_http_client()
         try:
