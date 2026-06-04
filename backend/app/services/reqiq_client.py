@@ -74,7 +74,11 @@ async def _request(
     Retries once on 401 (token expired mid-request) by re-logging in.
     Passes 429 responses through as-is so callers can forward Retry-After.
     """
-    async with httpx.AsyncClient(timeout=60) as client:
+    # trust_env=False prevents httpx from picking up HTTP_PROXY / HTTPS_PROXY
+    # environment variables.  Without this, corporate proxies intercept the
+    # loopback request to localhost:3001 and return 400 "Request on loopback
+    # from external IP".
+    async with httpx.AsyncClient(timeout=60, trust_env=False) as client:
         token = await _get_token(client)
         auth_headers = {"Authorization": f"Bearer {token}", **(headers or {})}
 
