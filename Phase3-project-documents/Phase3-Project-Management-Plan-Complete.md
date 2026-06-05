@@ -3473,7 +3473,7 @@ if model in _THINKING_CAPABLE_VLLM_MODELS:
 
 ---
 
-### Sprint 10.19: Developer B — 3-Tier Execution LLM Response & Timing Log (June 2026)
+### ✅ Sprint 10.19: Developer B — 3-Tier Execution LLM Response & Timing Log (June 5, 2026) — COMPLETE
 
 **Focus:** Write a complete, structured log of every LLM call made during a 3-tier test execution — including the full response content, verbose thinking trace (if the model produced one), response time (ms), token counts, provider/model, and which tier triggered the call — to individual per-execution JSONL files in `backend/logs/llm/`. **The server console log is not changed in any way.** A brief one-liner summary continues to be emitted to the console as before; the full detail (including thinking output) is written only to the dedicated log files.
 
@@ -3502,14 +3502,25 @@ contextvars
                             carries: {execution_id, step_number, tier, caller}
                             flows into all nested awaits (universal_llm.py, etc.)
 
-UniversalLLMService.chat_completion()
-UniversalLLMService.vision_completion()
-  └─ on return → LLMResponseLogger.write(entry)
+┌─────────────────────────────────────────────────────────────────────┐
+│  Path A — UniversalLLMService  (Tier 2 vision, Tier 3 act)         │
+│  chat_completion() / vision_completion()                             │
+│    └─ _write_llm_log() → LLMResponseLogger.write(entry)             │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│  Path B — Stagehand observe() / act()  (Tier 2 XPath extraction)   │
+│  StagehandExecutionService._instrument_stagehand_llm()              │
+│    wraps stagehand.llm.create_response()                             │
+│    └─ _write_stagehand_llm_log() → LLMResponseLogger.write(entry)   │
+└─────────────────────────────────────────────────────────────────────┘
 
 LLMResponseLogger
   └─ logs/llm/exec_{execution_id}.jsonl   ← one JSON object per line
   └─ logs/llm/misc.jsonl                  ← calls outside an execution context
 ```
+
+**Implementation note:** Tier 2 (`Tier2HybridExecutor`) succeeds via Stagehand `observe()` which calls LiteLLM directly inside the Stagehand library — completely bypassing `UniversalLLMService`. Without Path B, all successful Tier 2 steps produce no JSONL entries because the LLM call never passes through `chat_completion()`. The Stagehand wrapper (Task 9) was discovered as a required addition during production validation on executions #933–#935.
 
 **Log entry schema (one JSON object per line):**
 ```json
@@ -3540,18 +3551,19 @@ LLMResponseLogger
 
 #### Tasks
 
-| # | Task | File | Points |
-|---|------|------|--------|
-| 1 | Create `llm_execution_context.py` — `ContextVar[dict]` (`llm_exec_ctx`) + `set_llm_context(execution_id, step_number, tier, caller)` helper returning a reset token | `backend/app/utils/llm_execution_context.py` | 1 |
-| 2 | Create `llm_response_logger.py` — `LLMResponseLogger` singleton: `get_log_path(execution_id)`, async `write(entry)` with `asyncio.to_thread` file append, file-count rotation (`LLM_LOG_MAX_FILES`, default 200) | `backend/app/utils/llm_response_logger.py` | 2 |
-| 3 | Instrument `chat_completion()`: record `start = time.monotonic()` before provider dispatch, call `LLMResponseLogger.write()` after return (wrapped in `try/except` so log failure never kills execution) | `backend/app/services/universal_llm.py` | 2 |
-| 4 | Instrument `vision_completion()`: same pattern as task 3; `caller` field auto-set to `"vision_verification"` | `backend/app/services/universal_llm.py` | 1 |
-| 5 | Set `llm_exec_ctx` before each tier attempt in `execute_step()`: `set_llm_context(execution_id, step_index, tier=1, ...)` before Tier 1, reset and re-set for Tier 2 and Tier 3 | `backend/app/services/three_tier_execution_service.py` | 1 |
-| 6 | Add `LLM_LOG_FULL_PROMPT: bool = False` and `LLM_LOG_MAX_FILES: int = 200` to settings + `env.example` | `backend/app/core/config.py`, `backend/env.example` | 0.5 |
-| 7 | Add `logs/llm/` to `.gitignore` | `backend/.gitignore` | 0.5 |
-| 8 | Unit tests: `test_llm_response_logger.py` — JSONL file created on first write, entry is valid JSON, rotation deletes oldest file, failed LLM call writes `success: false` entry | `backend/tests/unit/test_llm_response_logger.py` | 2 |
+| # | Task | File | Points | Status |
+|---|------|------|--------|--------|
+| 1 | Create `llm_execution_context.py` — `ContextVar[dict]` (`llm_exec_ctx`) + `set_llm_context(execution_id, step_number, tier, caller)` helper returning a reset token | `backend/app/utils/llm_execution_context.py` | 1 | ✅ |
+| 2 | Create `llm_response_logger.py` — `LLMResponseLogger` singleton: `get_log_path(execution_id)`, async `write(entry)` with `asyncio.to_thread` file append, file-count rotation (`LLM_LOG_MAX_FILES`, default 200) | `backend/app/utils/llm_response_logger.py` | 2 | ✅ |
+| 3 | Instrument `chat_completion()`: record `start = time.monotonic()` before provider dispatch, call `LLMResponseLogger.write()` after return (wrapped in `try/except` so log failure never kills execution) | `backend/app/services/universal_llm.py` | 2 | ✅ |
+| 4 | Instrument `vision_completion()`: same pattern as task 3; `caller` field auto-set to `"vision_verification"` | `backend/app/services/universal_llm.py` | 1 | ✅ |
+| 5 | Set `llm_exec_ctx` before each tier attempt in `execute_step()`: `set_llm_context(execution_id, step_index, tier=1, ...)` before Tier 1, reset and re-set for Tier 2 and Tier 3 using a single wrapping `try/finally` | `backend/app/services/three_tier_execution_service.py` | 1 | ✅ |
+| 6 | Add `LLM_LOG_FULL_PROMPT: bool = False` and `LLM_LOG_MAX_FILES: int = 200` to settings + `env.example` | `backend/app/core/config.py`, `backend/env.example` | 0.5 | ✅ |
+| 7 | Add `logs/llm/` to `.gitignore` | `backend/.gitignore` | 0.5 | ✅ |
+| 8 | Unit tests: `test_llm_response_logger.py` — JSONL file created on first write, entry is valid JSON, rotation deletes oldest file, failed LLM call writes `success: false` entry | `backend/tests/unit/test_llm_response_logger.py` | 2 | ✅ |
+| 9 | **(Added during production validation)** Instrument Stagehand's internal LLM client: add `_instrument_stagehand_llm()`, `_write_stagehand_llm_log()`, `_set_stagehand_llm_identity()`, `_normalise_stagehand_response()` to `StagehandExecutionService`; call `_instrument_stagehand_llm()` after every `stagehand.init()` call (regular, CDP, persistent) so Stagehand `observe()`/`act()` calls also emit JSONL entries with execution context | `backend/app/services/stagehand_service.py` | 1 | ✅ |
 
-**Sprint 10.19 total: 10 points / ~2 days**
+**Sprint 10.19 total: 11 points (1 point added for Stagehand instrumentation)**
 
 #### Architecture Notes
 
@@ -3562,21 +3574,25 @@ LLMResponseLogger
 - **Disk bounded.** File-count rotation (default 200 files) prevents unbounded growth. Each file covers one execution; typical size is 2–20 KB.
 - **Console log: no change.** Existing `logger.info` calls are untouched. A brief one-liner continues to be emitted: `"[LLM] provider=local_vllm model=Qwen3.6-35B-A3B-MLX-8bit tier=2 step=3 → 3241ms 496tok (thinking: 138tok)"`. The full response and complete thinking trace go only to the JSONL file.
 - **Thinking trace capture.** For thinking-capable models the API response may include `choices[0].message.reasoning_content` (vLLM/OpenAI-compatible field) or the trace may be embedded inline as `<think>…</think>` in `content`. The logger reads both locations: `reasoning_content` first, then strips the `<think>…</think>` block from `content` if present. The stripped remainder is stored as `response_content`; the trace is stored as `thinking_content`.
+- **Stagehand LLM instrumentation (Task 9 — discovered in production).** Tier 2's `Tier2HybridExecutor` succeeds by calling Stagehand's `page.observe()` which dispatches LLM calls through Stagehand's internal `LLMClient.create_response()` (LiteLLM), completely bypassing `UniversalLLMService`. Without wrapping this path, every successful Tier 2 step produces no JSONL log entry. `_instrument_stagehand_llm()` monkey-patches `llm.create_response` with an async wrapper that records the same fields as `_write_llm_log()`. The wrapper is idempotent (guards on `_awt_llm_logging_wrapped`) and is applied immediately after each `stagehand.init()` call in `initialize()`, `initialize_with_cdp()`, and `initialize_persistent()`. The `caller` field is auto-set to `"stagehand_{function_name}"` (e.g., `"stagehand_observe"`, `"stagehand_act"`).
+- **`execute_step()` context lifetime.** The ContextVar token is set once before Tier 1 and reset in a single wrapping `try/finally` block that spans all tier dispatch including all fallback options. `set_llm_context()` is called again before each fallback option to update the `tier` and `caller` fields without creating a new token. This ensures `execution_id` and `step_number` remain populated throughout the step.
+- **Windows `reload=False`.** On Windows, `start_server.py` sets `USE_RELOAD = False` because `ProactorEventLoop` is required for Playwright subprocess support. Code changes only take effect after a manual server restart.
 
 #### Sprint 10.19 Success Criteria
 
-- [ ] Server console log behaviour is **unchanged** — existing `logger.info`/`logger.debug` calls are not modified
-- [ ] Every LLM call during a 3-tier execution produces exactly one JSONL line in `logs/llm/exec_{id}.jsonl` with `response_time_ms` populated
-- [ ] `execution_id`, `step_number`, and `tier` fields are correctly set (not `null`) for calls made inside `execute_step()`
-- [ ] A failed LLM call (timeout, API error) still writes a log entry with `success: false` and `error: "<message>"`
-- [ ] When a thinking-capable model returns a thinking trace, `thinking_content` contains the full verbose trace and `response_content` contains only the final answer (trace stripped)
-- [ ] When thinking is off or the model is non-thinking, `thinking_content` is `null`
-- [ ] `LLM_LOG_FULL_PROMPT=false` (default): `prompt_preview` contains at most 500 chars; full message list is NOT stored
-- [ ] `LLM_LOG_FULL_PROMPT=true`: full message list is serialized into the log entry
-- [ ] `logs/llm/misc.jsonl` captures LLM calls made outside a test execution (test generation, standalone root-cause analysis)
-- [ ] When file count exceeds `LLM_LOG_MAX_FILES`, the oldest file is deleted automatically
-- [ ] `logs/llm/` is listed in `backend/.gitignore`
-- [ ] All 8 unit tests pass
+- [x] Server console log behaviour is **unchanged** — existing `logger.info`/`logger.debug` calls are not modified
+- [x] Every LLM call during a 3-tier execution produces exactly one JSONL line in `logs/llm/exec_{id}.jsonl` with `response_time_ms` populated — covers both `UniversalLLMService` and Stagehand `observe()`/`act()` paths
+- [x] `execution_id`, `step_number`, and `tier` fields are correctly set (not `null`) for calls made inside `execute_step()`
+- [x] A failed LLM call (timeout, API error) still writes a log entry with `success: false` and `error: "<message>"`
+- [x] When a thinking-capable model returns a thinking trace, `thinking_content` contains the full verbose trace and `response_content` contains only the final answer (trace stripped)
+- [x] When thinking is off or the model is non-thinking, `thinking_content` is `null`
+- [x] `LLM_LOG_FULL_PROMPT=false` (default): `prompt_preview` contains at most 500 chars; full message list is NOT stored
+- [x] `LLM_LOG_FULL_PROMPT=true`: full message list is serialized into the log entry
+- [x] `logs/llm/misc.jsonl` captures LLM calls made outside a test execution (test generation, standalone root-cause analysis)
+- [x] When file count exceeds `LLM_LOG_MAX_FILES`, the oldest file is deleted automatically
+- [x] `logs/llm/` is listed in `backend/.gitignore`
+- [x] All 15 unit tests pass (8 original + 7 additional covering ContextVar helpers, Stagehand response normalization, and multi-step append)
+- [x] Stagehand `observe()` calls log to `exec_{id}.jsonl` with `caller: "stagehand_observe"` (validated via synthetic probe simulation)
 
 ---
 

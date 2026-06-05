@@ -112,6 +112,7 @@
 43. [ADR-002-43: AI-Powered Failure Root Cause Analysis](#adr-002-43-ai-powered-failure-root-cause-analysis)
 44. [ADR-002-44: Re-Run from Failed Step — Session Snapshot Persistence and Resume Architecture](#adr-002-44-re-run-from-failed-step--session-snapshot-persistence-and-resume-architecture)
 45. [ADR-002-45: XPath Cache Management UI and Step-Level Invalidation](#adr-002-45-xpath-cache-management-ui-and-step-level-invalidation)
+46. [ADR-002-46: Stagehand Internal LLM Client Wrapper for Sprint 10.19 JSONL Logging](#adr-002-46-stagehand-internal-llm-client-wrapper-for-sprint-1019-jsonl-logging)
 
 ---
 
@@ -3507,4 +3508,63 @@ The design assumes that most cache entries are useful and should survive localiz
 - `backend/tests/unit/test_xpath_cache_api.py` (new) — 16 backend tests covering stats response, list response, keyword filter, single-row delete, bulk delete, invalid-only delete, and ORM schema compatibility
 - `frontend/src/components/__tests__/XPathCachePanel.test.tsx` (new) — 17 frontend tests covering loading, stats row, keyword filter, per-row delete, clear-invalid, clear-all, empty state, and error state
 - Manual verification via the Settings page and Execution Progress page confirmed that targeted cache deletion leaves unrelated valid rows intact and that zero-match step clears surface a non-error message instead of failing
+
+---
+
+## ADR-002-46: Stagehand Internal LLM Client Wrapper for Sprint 10.19 JSONL Logging
+
+### Context
+
+Sprint 10.19 introduced per-execution JSONL log files covering every LLM call made during a 3-tier test execution. The original design assumed all LLM traffic flows through `UniversalLLMService.chat_completion()` or `vision_completion()`, both of which were instrumented to write log entries via `LLMResponseLogger`.
+
+Production validation on executions #933–#935 revealed a blind spot: **Tier 2 (`Tier2HybridExecutor`) succeeds primarily through Stagehand `page.observe()`**, which dispatches to an LLM via Stagehand’s own internal `LLMClient.create_response()` (backed by LiteLLM). This path never enters `UniversalLLMService`, so every successful Tier 2 XPath-extraction call was invisible to the Sprint 10.19 logger. Execution #935 used Tier 2 for all 7 steps and produced no `exec_935.jsonl` file at all, despite making 7 LLM calls.
+
+### Decision
+
+Instrument Stagehand’s internal LLM client by monkey-patching `stagehand.llm.create_response` immediately after each `stagehand.init()` call in `StagehandExecutionService`. Three new methods are added:
+
+**`_set_stagehand_llm_identity(provider: str, model_name: str)`**
+Stores the resolved provider and model name on the service instance after `StagehandConfig` is built but before `Stagehand()` is constructed. Called in every `initialize*` method alongside the config’s `model_provider` and `selected_model_name`.
+
+**`_instrument_stagehand_llm()`**
+Called after every `await self.stagehand.init()` (three call sites: `initialize()`, `initialize_with_cdp()`, `initialize_persistent()`). If `stagehand.llm` exists and has not been wrapped yet (guarded by `_awt_llm_logging_wrapped` sentinel attribute), replaces `llm.create_response` with an async wrapper that:
+1. Records `time.monotonic()` before the original call.
+2. Captures `response` on success or `error` string on exception.
+3. Always calls `await self._write_stagehand_llm_log(...)` in a `finally` block.
+4. Re-raises the original exception unchanged.
+
+**`_write_stagehand_llm_log(...)`**
+Builds and writes the JSONL entry. Reads the current `llm_exec_ctx` ContextVar to obtain `execution_id`, `step_number`, `tier`, and `caller`. Calls `_normalise_stagehand_response()` to convert the LiteLLM response object (which may be a Pydantic model or a plain dict) to a standard dict for field extraction. Sets `caller` to `"stagehand_{function_name}"` (e.g., `"stagehand_observe"`, `"stagehand_act"`). Swallows all logging exceptions so the wrapper never kills execution.
+
+**`_normalise_stagehand_response(response)`**
+Converts LiteLLM’s response object to `dict`. Tries `model_dump(mode="json")`, then `model_dump()`, then `model_dump_json()`, then `.dict()`, then falls back to `None`. This is needed because `litellm.acompletion` can return either a Pydantic `ModelResponse` or a plain dict depending on the LiteLLM version.
+
+**ContextVar update in `execute_step()`:**
+Before dispatching to Option A / B / C, `set_llm_context()` is called with the correct `tier` and `caller` for that option. Because the ContextVar is set before Stagehand `observe()` is invoked (Stagehand is called from within the option’s async call chain), the Stagehand wrapper reads the right `execution_id` and `tier` when it writes the JSONL entry.
+
+### Consequences
+
+**Positive**
+- All Stagehand `observe()` and `act()` LLM calls are now logged to `exec_{id}.jsonl` alongside `chat_completion()` and `vision_completion()` calls, completing the per-execution audit trail.
+- `caller: "stagehand_observe"` vs `caller: "stagehand_act"` distinguishes Tier 2 XPath extraction from Tier 3 full-AI execution in the log.
+- No change to Stagehand’s public API or `StagehandConfig`; wrapping happens post-init.
+- Idempotent guard prevents double-wrapping if `_instrument_stagehand_llm()` is accidentally called twice.
+- Stagehand LiteLLM response objects (Pydantic `ModelResponse`) are normalised to dict before field extraction, making the code version-independent.
+- Logging failures are fully swallowed: a broken logger never surfaces as a test failure.
+
+**Negative**
+- Monkey-patching an internal method (`llm.create_response`) creates a dependency on Stagehand’s private API. A Stagehand version upgrade that renames or removes `llm.create_response` will silently disable logging without raising an error (the wrapper simply won’t be applied).
+- `_instrument_stagehand_llm()` must be called at three separate `stagehand.init()` call sites (`initialize`, `initialize_with_cdp`, `initialize_persistent`). Adding a fourth initializer without calling `_instrument_stagehand_llm()` would reintroduce the blind spot.
+- `_normalise_stagehand_response()` applies a best-effort conversion; if none of the four strategies succeed, the response fields (`thinking_content`, `token_counts`) are `null` in the log entry. The entry still records `response_time_ms` and `success`.
+
+**Alternatives Considered**
+- **Use Stagehand’s `metrics_callback`**: The callback `_handle_llm_metrics` receives a LiteLLM response object and inference time, but its signature only accepts `(response, inference_time_ms, function_name)` and it is already wired to Stagehand’s own internal metrics tracking. Re-using it for JSONL logging would require calling an async logger from a synchronous callback (Stagehand’s `LLMClient` calls `metrics_callback` synchronously), which would require `asyncio.create_task` with no error surface. The wrapper approach is cleaner.
+- **Use Stagehand’s `external_logger` (log event stream)**: The logger callback receives structured log dicts but not raw LiteLLM response objects. Token counts and response content would need to be parsed from human-readable log strings, which is fragile.
+- **Subclass `LLMClient` and inject it**: Requires either modifying `StagehandConfig` to accept a custom LLM client class or post-init swapping of `stagehand.llm`. The post-init swap is functionally identical to the current monkey-patch and adds a class hierarchy for no benefit.
+- **Emit Stagehand token counts via the Stagehand `update_metrics()` pathway**: Only cumulative per-session totals are available; per-call timing and response content are not.
+
+### Tests
+
+- `backend/tests/unit/test_llm_response_logger.py` — 15 tests pass, including ContextVar helper tests (`test_set_llm_context_sets_contextvar`, `test_llm_exec_ctx_defaults_when_not_set`, `test_set_llm_context_reset_token`) that validate the mechanism the Stagehand wrapper depends on
+- End-to-end validated synthetically: a `FakeStagehand` with a `FakeLLM.create_response()` is wrapped via `_instrument_stagehand_llm()` with `execution_id=935` set in ContextVar; the resulting `exec_935.jsonl` entry confirms `execution_id=935`, `tier=2`, `caller="stagehand_observe"`, `provider="azure"`, `model="ChatGPT-UAT"`, `total_tokens=18`, `success=true`
 
