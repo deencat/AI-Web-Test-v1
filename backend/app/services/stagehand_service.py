@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Callable
@@ -27,6 +28,13 @@ from app.services.email_otp_service import (
 )
 from app.services.encryption_service import EncryptionService
 from app.services.step_module_resolver import resolve_steps
+from app.core.config import settings
+from app.utils.llm_execution_context import llm_exec_ctx
+from app.utils.llm_response_logger import (
+    build_prompt_preview,
+    extract_thinking_from_response,
+    llm_logger,
+)
 
 encryption_service = EncryptionService() if os.getenv("CREDENTIAL_ENCRYPTION_KEY") else None
 
@@ -103,6 +111,8 @@ class StagehandExecutionService:
         self.page = None
         # Set during execute_test / analysis realtime runs so _execute_navigation can embed HTTP Basic auth
         self._runtime_http_credentials: Optional[Dict[str, Any]] = None
+        self._stagehand_provider_name: Optional[str] = None
+        self._stagehand_model_name: Optional[str] = None
 
     def set_runtime_http_credentials(self, creds: Optional[Dict[str, Any]]) -> None:
         """HTTP Basic auth for navigations (e.g. UAT). Applied in _execute_navigation when URL is extracted."""
@@ -113,6 +123,128 @@ class StagehandExecutionService:
             }
         else:
             self._runtime_http_credentials = None
+
+    def _set_stagehand_llm_identity(self, provider: str, model_name: Optional[str]) -> None:
+        self._stagehand_provider_name = provider
+        self._stagehand_model_name = model_name
+
+    @staticmethod
+    def _normalise_stagehand_response(response: Any) -> Optional[Dict[str, Any]]:
+        if response is None:
+            return None
+        if isinstance(response, dict):
+            return response
+
+        model_dump = getattr(response, "model_dump", None)
+        if callable(model_dump):
+            try:
+                return model_dump(mode="json")
+            except TypeError:
+                return model_dump()
+
+        model_dump_json = getattr(response, "model_dump_json", None)
+        if callable(model_dump_json):
+            return json.loads(model_dump_json())
+
+        as_dict = getattr(response, "dict", None)
+        if callable(as_dict):
+            return as_dict()
+
+        return None
+
+    async def _write_stagehand_llm_log(
+        self,
+        *,
+        messages: list,
+        model: Optional[str],
+        response: Any,
+        error: Optional[str],
+        elapsed_ms: float,
+        function_name: Optional[str],
+    ) -> None:
+        try:
+            response_dict = self._normalise_stagehand_response(response)
+            ctx = llm_exec_ctx.get()
+            full_prompt = bool(getattr(settings, "LLM_LOG_FULL_PROMPT", False))
+
+            thinking_content = None
+            response_content = None
+            thinking_tokens = None
+            prompt_tokens = None
+            completion_tokens = None
+            total_tokens = None
+
+            if response_dict:
+                thinking_content, response_content, thinking_tokens = extract_thinking_from_response(
+                    response_dict
+                )
+                usage = response_dict.get("usage") or {}
+                prompt_tokens = usage.get("prompt_tokens")
+                completion_tokens = usage.get("completion_tokens")
+                total_tokens = usage.get("total_tokens")
+
+            caller_suffix = (function_name or "agent").lower()
+            entry = {
+                "ts": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.") + f"{int(datetime.utcnow().microsecond / 1000):03d}Z",
+                "execution_id": ctx.get("execution_id"),
+                "step_number": ctx.get("step_number"),
+                "tier": ctx.get("tier"),
+                "caller": f"stagehand_{caller_suffix}",
+                "provider": self._stagehand_provider_name,
+                "model": model or self._stagehand_model_name or "",
+                "prompt_chars": sum(len(str(message.get("content", ""))) for message in messages),
+                "prompt_preview": build_prompt_preview(messages, full_prompt=full_prompt),
+                "response_time_ms": round(elapsed_ms, 1),
+                "thinking_content": thinking_content,
+                "response_content": response_content,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "thinking_tokens": thinking_tokens,
+                "total_tokens": total_tokens,
+                "success": error is None,
+                "error": error,
+            }
+            await llm_logger.write(entry)
+        except Exception as exc:
+            logger.debug("Stagehand LLM logging failed (non-fatal): %s", exc)
+
+    def _instrument_stagehand_llm(self) -> None:
+        if not self.stagehand or not getattr(self.stagehand, "llm", None):
+            return
+
+        llm_client = self.stagehand.llm
+        if getattr(llm_client, "_awt_llm_logging_wrapped", False):
+            return
+
+        original_create_response = llm_client.create_response
+
+        async def wrapped_create_response(*, messages: list[dict[str, Any]], model: Optional[str] = None, function_name: Optional[str] = None, **kwargs: Any):
+            started = time.monotonic()
+            response = None
+            error = None
+            try:
+                response = await original_create_response(
+                    messages=messages,
+                    model=model,
+                    function_name=function_name,
+                    **kwargs,
+                )
+                return response
+            except Exception as exc:
+                error = str(exc)
+                raise
+            finally:
+                await self._write_stagehand_llm_log(
+                    messages=messages,
+                    model=model,
+                    response=response,
+                    error=error,
+                    elapsed_ms=(time.monotonic() - started) * 1000,
+                    function_name=function_name,
+                )
+
+        llm_client.create_response = wrapped_create_response
+        llm_client._awt_llm_logging_wrapped = True
 
     async def initialize(self, user_config: Optional[Dict[str, Any]] = None):
         """
@@ -164,6 +296,7 @@ class StagehandExecutionService:
                 elif use_google_direct:
                     model_provider = "google"
                 logger.info(f"StagehandExecutionService: Using .env default provider: {model_provider}")
+            selected_model_name: Optional[str] = None
             
             # Configure model based on provider
             if model_provider == "cerebras":
@@ -191,6 +324,7 @@ class StagehandExecutionService:
                     model_api_key=cerebras_api_key,
                     local_browser_launch_options=launch_options
                 )
+                selected_model_name = cerebras_model
                 logger.info(f"StagehandExecutionService: Using Cerebras API with model: {cerebras_model}")
                 if user_config:
                     logger.debug(
@@ -224,6 +358,7 @@ class StagehandExecutionService:
                     model_api_key=google_api_key,
                     local_browser_launch_options=launch_options
                 )
+                selected_model_name = google_model
                 logger.info(f"StagehandExecutionService: Using Google API directly with model: {google_model}")
                 if user_config:
                     logger.debug(
@@ -275,6 +410,7 @@ class StagehandExecutionService:
                     model_api_key=azure_api_key,
                     local_browser_launch_options=launch_options
                 )
+                selected_model_name = azure_model
                 logger.info(
                     "StagehandExecutionService: Using Azure OpenAI with deployment: %s",
                     azure_model,
@@ -306,6 +442,7 @@ class StagehandExecutionService:
                     model_api_key=openrouter_key,
                     local_browser_launch_options=launch_options
                 )
+                selected_model_name = openrouter_model
                 logger.info(f"StagehandExecutionService: Using OpenRouter with model: {openrouter_model}")
                 if user_config:
                     logger.debug(
@@ -358,6 +495,7 @@ class StagehandExecutionService:
                     model_client_options={"api_base": local_endpoint},
                     local_browser_launch_options=launch_options,
                 )
+                selected_model_name = local_model
                 logger.info(
                     "StagehandExecutionService: Using local vLLM model=%s endpoint=%s",
                     local_model,
@@ -383,6 +521,7 @@ class StagehandExecutionService:
                     model_api_key=openrouter_key,
                     local_browser_launch_options=launch_options,
                 )
+                selected_model_name = openrouter_model
                 logger.info(f"StagehandExecutionService: Fallback to OpenRouter with model: {openrouter_model}")
 
             
@@ -392,8 +531,10 @@ class StagehandExecutionService:
                 browser_slowmo,
             )
             
+            self._set_stagehand_llm_identity(model_provider, selected_model_name)
             self.stagehand = Stagehand(config)
             await self.stagehand.init()
+            self._instrument_stagehand_llm()
             self.page = self.stagehand.page
             
             if not self.page:
@@ -425,6 +566,7 @@ class StagehandExecutionService:
                 model_provider = user_config.get("provider", "openrouter").lower()
             else:
                 model_provider = os.getenv("MODEL_PROVIDER", "openrouter").lower()
+            selected_model_name: Optional[str] = None
             
             # Build browser launch options with CDP URL
             # NOTE: Python Stagehand uses "cdp_url" (underscore), not "cdpUrl" (camelCase)
@@ -447,6 +589,7 @@ class StagehandExecutionService:
                     model_api_key=cerebras_api_key,
                     local_browser_launch_options=launch_options
                 )
+                selected_model_name = cerebras_model
                 print(f"[DEBUG] ✅ CDP connection with Cerebras: {cerebras_model}")
                 
             elif model_provider == "google":
@@ -463,6 +606,7 @@ class StagehandExecutionService:
                     model_api_key=google_api_key,
                     local_browser_launch_options=launch_options
                 )
+                selected_model_name = google_model
                 print(f"[DEBUG] ✅ CDP connection with Google: {google_model}")
 
             elif model_provider == "azure":
@@ -500,6 +644,7 @@ class StagehandExecutionService:
                     model_api_key=azure_api_key,
                     local_browser_launch_options=launch_options
                 )
+                selected_model_name = azure_model
                 print(f"[DEBUG] ✅ CDP connection with Azure OpenAI deployment: {azure_model}")
 
             elif model_provider == "local_vllm":
@@ -544,6 +689,7 @@ class StagehandExecutionService:
                     model_client_options={"api_base": local_endpoint},
                     local_browser_launch_options=launch_options,
                 )
+                selected_model_name = local_model
                 print(f"[DEBUG] ✅ CDP connection with local vLLM model={local_model} endpoint={local_endpoint}")
 
             else:  # openrouter / fallback
@@ -560,10 +706,13 @@ class StagehandExecutionService:
                     model_api_key=openrouter_key,
                     local_browser_launch_options=launch_options
                 )
+                selected_model_name = openrouter_model
                 print(f"[DEBUG] ✅ CDP connection with OpenRouter: {openrouter_model}")
 
+            self._set_stagehand_llm_identity(model_provider, selected_model_name)
             self.stagehand = Stagehand(config)
             await self.stagehand.init()
+            self._instrument_stagehand_llm()
             self.page = self.stagehand.page
             
             if not self.page:
@@ -801,8 +950,10 @@ class StagehandExecutionService:
 
             print(f"[DEBUG] Persistent browser settings: headless=False (debug mode), devtools={devtools}")
             
+            self._set_stagehand_llm_identity(model_provider, locals().get("cerebras_model") or locals().get("google_model") or locals().get("azure_model") or locals().get("local_model") or locals().get("openrouter_model"))
             self.stagehand = Stagehand(config)
             await self.stagehand.init()
+            self._instrument_stagehand_llm()
             self.page = self.stagehand.page
             
             if not self.page:
