@@ -1,3 +1,6 @@
+# Customer export output (sibling folder — never commit)
+../Agentic_QA_v1/
+
 # API Keys and Secrets
 .cursor/mcp.json
 

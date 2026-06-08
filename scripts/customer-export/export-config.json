@@ -1,0 +1,65 @@
+{
+    "sourceRoot": "C:\\Users\\andrechw\\OneDrive - hutchison3hk\\Documents\\AI-Web-Test-v1-2",
+    "destRoot": "C:\\Users\\andrechw\\OneDrive - hutchison3hk\\Documents\\Agentic_QA_v1",
+    "overlayDir": "C:\\Users\\andrechw\\OneDrive - hutchison3hk\\Documents\\AI-Web-Test-v1-2\\scripts\\customer-export\\overlay",
+    "customerRepoUrl": "https://github.com/andrewchw/Agentic_QA_v1.git",
+    "gitUserName": "andrewchw",
+    "gitUserEmail": "andrewchw@users.noreply.github.com",
+  
+    "excludeDirs": [
+      ".git", ".cursor", ".github", ".git-workflow", ".vscode",
+      "Phase3-project-documents", "node_modules", "venv", "env",
+      "__pycache__", ".pytest_cache", "backend\\artifacts",
+      "stagehand-typescript-test", "documentation\\archive",
+      "scripts"
+    ],
+
+    "excludeFiles": [
+      ".env", ".env.local",
+      "*.db", "*.bak", "*.sqlite", "*.sqlite3",
+      "crawl_and_save_5g_voucher_plan_v2.ps1",
+      "crawl_and_save_5g_voucher_plan_v3.ps1",
+      "crawl_and_save_5g_world_plan.ps1",
+      "demo_loop_test.json",
+      "fix_ps1.py",
+      "test_loop_manual.py",
+      "test_loop_manual.sh",
+      "test_loop_persistence.sh",
+      "test_settings_integration.sh",
+      "test_sprint4_integration.sh",
+      "test_sprint5_5_frontend.sh",
+      "verify_phase3.sh",
+      "verify_sprint3_frontend.sh",
+      "run_test_101_scheduled.sh",
+      "start-integration-testing.ps1",
+      "test_*.txt",
+      "test_output*.txt",
+      "test_merge_integration*.txt",
+      "API-KEY-EXPLAINED.md"
+    ],
+
+    "scanExcludeFiles": [
+      "env.example",
+      ".env.example",
+      "API-KEY-EXPLAINED.md"
+    ],
+  
+    "includeDocWhitelist": [
+      "documentation\\AI-Web-Test-v1-MLOps-Architecture.md",
+      "documentation\\AI-Web-Test-v1-Database-Architecture.md",
+      "documentation\\AI-Web-Test-v1-Security-Architecture.md",
+      "documentation\\AI-Web-Test-v1-API-Documentation.md",
+      "documentation\\architecture.html",
+      "documentation\\ADR-002-test-execution-engine.md",
+      "documentation\\ADR-003-test-generation.md"
+    ],
+  
+    "secretScanPatterns": [
+      "sk-[a-zA-Z0-9]{20,}",
+      "csk-[a-zA-Z0-9]{20,}",
+      "AKIA[0-9A-Z]{16}",
+      "github\\.com/deencat",
+      "hutchison3hk",
+      "deencat"
+    ]
+  }
