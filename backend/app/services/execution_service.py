@@ -2166,6 +2166,8 @@ class ExecutionService:
                     # Phase 2: forward custom vLLM endpoint
                     custom_endpoint=self.three_tier_service.user_ai_config.get("local_vllm_custom_endpoint") if self.three_tier_service and self.three_tier_service.user_ai_config else None,
                     api_key=self.three_tier_service.user_ai_config.get("api_key") if self.three_tier_service and self.three_tier_service.user_ai_config else None,
+                    azure_endpoint=self.three_tier_service.user_ai_config.get("azure_endpoint") if self.three_tier_service and self.three_tier_service.user_ai_config else None,
+                    azure_api_version=self.three_tier_service.user_ai_config.get("azure_api_version") if self.three_tier_service and self.three_tier_service.user_ai_config else None,
                 )
             
             # Create feedback entry

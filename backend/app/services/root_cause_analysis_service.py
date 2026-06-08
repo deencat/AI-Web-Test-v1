@@ -104,6 +104,8 @@ async def generate_root_cause_analysis(
     enable_thinking: bool = False,
     custom_endpoint: Optional[str] = None,
     api_key: Optional[str] = None,
+    azure_endpoint: Optional[str] = None,
+    azure_api_version: Optional[str] = None,
 ) -> Optional[str]:
     """
     Generate an AI root cause analysis string for a failed test step.
@@ -155,6 +157,8 @@ async def generate_root_cause_analysis(
             enable_thinking=enable_thinking,
             custom_endpoint=custom_endpoint,
             api_key=api_key,
+            azure_endpoint=azure_endpoint,
+            azure_api_version=azure_api_version,
         )
         content = response["choices"][0]["message"]["content"]
         logger.info("[RCA] Root cause analysis generated (%d chars)", len(content))

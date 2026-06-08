@@ -101,6 +101,8 @@ class UniversalLLMService:
         enable_thinking: bool = False,
         custom_endpoint: Optional[str] = None,
         api_key: Optional[str] = None,
+        azure_endpoint: Optional[str] = None,
+        azure_api_version: Optional[str] = None,
     ) -> dict:
         """
         Call LLM API for chat completion with provider selection.
@@ -135,7 +137,11 @@ class UniversalLLMService:
             elif provider == "cerebras":
                 _response = await self._call_cerebras(messages, model, temperature, max_tokens)
             elif provider == "azure":
-                _response = await self._call_azure(messages, model, temperature, max_tokens)
+                _response = await self._call_azure(
+                    messages, model, temperature, max_tokens,
+                    endpoint_override=azure_endpoint,
+                    api_version_override=azure_api_version,
+                )
             elif provider == "local_vllm":
                 _response = await self._call_local_vllm(
                     messages,
@@ -677,13 +683,23 @@ class UniversalLLMService:
         messages: List[Dict[str, str]],
         model: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None
+        max_tokens: Optional[int] = None,
+        endpoint_override: Optional[str] = None,
+        api_version_override: Optional[str] = None,
     ) -> dict:
         """Call Azure OpenAI API (OpenAI-compatible)."""
         # Resolve per-model endpoint overrides (e.g. gpt-5.2 uses a dedicated resource)
         model_override = self._azure_model_endpoints.get(model or "", {})
-        effective_endpoint = model_override.get("endpoint") or self.azure_endpoint
-        effective_api_version = model_override.get("api_version") or self.azure_api_version
+        effective_endpoint = (
+            endpoint_override
+            or model_override.get("endpoint")
+            or self.azure_endpoint
+        )
+        effective_api_version = (
+            api_version_override
+            or model_override.get("api_version")
+            or self.azure_api_version
+        )
         effective_api_key = model_override.get("api_key") or self.azure_api_key
 
         if not effective_api_key:

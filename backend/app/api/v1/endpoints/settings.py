@@ -109,14 +109,23 @@ async def update_user_provider_settings(
 
 @router.get("/available-providers", response_model=AvailableProvidersResponse)
 async def get_available_providers(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Get list of available providers and their models.
     Shows which providers are configured (have API keys).
+    Sprint 10.20: merges per-user custom_models registry into model_options.
     """
     try:
-        providers = user_settings_service.get_available_providers()
+        user_settings = user_settings_service.get_user_settings(db, current_user.id)
+        custom_models = None
+        if user_settings:
+            custom_models = user_settings_service.parse_custom_models(
+                getattr(user_settings, "custom_models", None)
+            )
+
+        providers = user_settings_service.get_available_providers(custom_models=custom_models)
         
         # Get default configurations
         default_gen = user_settings_service.get_default_provider_config("generation")

@@ -1,5 +1,5 @@
 """User settings model for AI provider configuration."""
-from sqlalchemy import Boolean, Column, Integer, String, Float, ForeignKey, DateTime
+from sqlalchemy import Boolean, Column, Integer, String, Float, ForeignKey, DateTime, Text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.db.base import Base
@@ -14,13 +14,13 @@ class UserSetting(Base):
     
     # Test Generation Configuration (user-configurable)
     generation_provider = Column(String(50), nullable=False, default="openrouter")
-    generation_model = Column(String(100), nullable=False)
+    generation_model = Column(String(200), nullable=False)
     generation_temperature = Column(Float, default=0.7)
     generation_max_tokens = Column(Integer, default=4096)
     
     # Test Execution Configuration (Stagehand/Playwright)
     execution_provider = Column(String(50), nullable=False, default="openrouter")
-    execution_model = Column(String(100), nullable=False)
+    execution_model = Column(String(200), nullable=False)
     execution_temperature = Column(Float, default=0.7)
     execution_max_tokens = Column(Integer, default=4096)
     
@@ -41,13 +41,16 @@ class UserSetting(Base):
     # Per-Agent Model Overrides (Sprint 10.6: Per-Agent Model Provider & Model Selection)
     # NULL = use Azure default (ChatGPT-UAT) — no data migration required.
     observation_provider = Column(String(100), nullable=True)
-    observation_model = Column(String(100), nullable=True)
+    observation_model = Column(String(200), nullable=True)
     requirements_provider = Column(String(100), nullable=True)
-    requirements_model = Column(String(100), nullable=True)
+    requirements_model = Column(String(200), nullable=True)
     analysis_provider = Column(String(100), nullable=True)
-    analysis_model = Column(String(100), nullable=True)
+    analysis_model = Column(String(200), nullable=True)
     evolution_provider = Column(String(100), nullable=True)
-    evolution_model = Column(String(100), nullable=True)
+    evolution_model = Column(String(200), nullable=True)
+
+    # Sprint 10.20: per-user custom model registry (JSON stored as TEXT)
+    custom_models = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

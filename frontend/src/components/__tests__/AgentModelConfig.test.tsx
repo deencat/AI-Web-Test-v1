@@ -169,7 +169,7 @@ describe('AgentModelConfig', () => {
       );
       const modelValues = options.map((o) => o.value);
 
-      expect(modelValues).toEqual(['gemini-2.0-flash', 'gemini-1.5-pro']);
+      expect(modelValues).toEqual(['gemini-2.0-flash', 'gemini-1.5-pro', '__custom__']);
       // No Cerebras models should appear
       expect(modelValues).not.toContain('llama-4-scout-17b-16e-instruct');
     });
