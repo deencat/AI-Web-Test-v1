@@ -10,7 +10,14 @@ import { AgentWorkflowSettings } from '../components/AgentWorkflowSettings';
 import { EmailCredentialsSection } from '../features/settings/EmailCredentialsSection';
 import { XPathCachePanel } from '../components/XPathCachePanel';
 import settingsService from '../services/settingsService';
-import type { AvailableProvider, ModelOption, ExecutionSettingsUpdate } from '../types/api';
+import { ModelSelectWithCustom } from '../components/ModelSelectWithCustom';
+import type { CustomFieldValues } from '../components/ModelSelectWithCustom';
+import { CustomModelsPanel } from '../components/CustomModelsPanel';
+import {
+  getModelOptionsForProvider,
+  isCustomModelSelection,
+} from '../utils/modelSelectUtils';
+import type { AvailableProvider, CustomModelEntry, ExecutionSettingsUpdate } from '../types/api';
 
 export const SettingsPage: React.FC = () => {
   const [projectName, setProjectName] = useState('Agentic QA v1.0');
@@ -62,6 +69,28 @@ export const SettingsPage: React.FC = () => {
 
   // Sprint 10.15: vLLM Thinking Mode Toggle
   const [localVllmEnableThinking, setLocalVllmEnableThinking] = useState<boolean>(false);
+
+  // Phase 2: Custom vLLM model (shared across all local_vllm slots)
+  const [localVllmCustomModel, setLocalVllmCustomModel] = useState<string>('');
+  const [localVllmCustomEndpoint, setLocalVllmCustomEndpoint] = useState<string>('http://192.168.206.164:1235/v1');
+  const [localVllmApiKey, setLocalVllmApiKey] = useState<string>('');
+
+  // Sprint 10.20: per-user custom model registry
+  const [customModels, setCustomModels] = useState<Record<string, CustomModelEntry[]>>({});
+
+  // Sprint 10.20: custom field state for generation / execution slots
+  const [genCustomFields, setGenCustomFields] = useState<CustomFieldValues>({
+    modelId: '',
+    endpoint: '',
+    apiVersion: '',
+    apiKey: '',
+  });
+  const [execCustomFields, setExecCustomFields] = useState<CustomFieldValues>({
+    modelId: '',
+    endpoint: '',
+    apiVersion: '',
+    apiKey: '',
+  });
 
   // Load settings on mount
   useEffect(() => {
@@ -164,12 +193,65 @@ export const SettingsPage: React.FC = () => {
 
       // Sprint 10.15: thinking mode toggle (defaults to false when not in DB yet)
       setLocalVllmEnableThinking(settings.local_vllm_enable_thinking ?? false);
+
+      // Phase 2: custom vLLM model — load stored values
+      setLocalVllmCustomModel(settings.local_vllm_custom_model ?? '');
+      setLocalVllmCustomEndpoint(settings.local_vllm_custom_endpoint ?? 'http://192.168.206.164:1235/v1');
+      setLocalVllmApiKey(settings.local_vllm_api_key ?? '');
+
+      // Sprint 10.20: load custom_models registry
+      setCustomModels(settings.custom_models ?? {});
+
+      setGenCustomFields({
+        modelId: settings.local_vllm_custom_model ?? settings.generation_model ?? '',
+        endpoint: settings.local_vllm_custom_endpoint ?? '',
+        apiVersion: '',
+        apiKey: settings.local_vllm_api_key ?? '',
+      });
+      setExecCustomFields({
+        modelId: settings.local_vllm_custom_model ?? settings.execution_model ?? '',
+        endpoint: settings.local_vllm_custom_endpoint ?? '',
+        apiVersion: '',
+        apiKey: settings.local_vllm_api_key ?? '',
+      });
     } catch (error: any) {
       console.error('Failed to load settings:', error);
       setSaveMessage({ type: 'error', text: 'Failed to load settings' });
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const buildCustomModelsPayload = (): Record<string, CustomModelEntry[]> => {
+    let registry: Record<string, CustomModelEntry[]> = { ...customModels };
+
+    const addEntry = (
+      provider: string,
+      model: string,
+      fields?: CustomFieldValues,
+    ) => {
+      if (!model) return;
+      const entry: CustomModelEntry = { id: model };
+      if (provider === 'azure' && fields?.endpoint) {
+        entry.endpoint = fields.endpoint;
+        if (fields.apiVersion) entry.api_version = fields.apiVersion;
+      }
+      if (provider === 'local_vllm') {
+        if (fields?.endpoint) entry.endpoint = fields.endpoint;
+        if (fields?.apiKey) entry.api_key = fields.apiKey;
+      }
+      const existing = (registry[provider] ?? []).filter((e) => e.id !== model);
+      registry = { ...registry, [provider]: [...existing, entry] };
+    };
+
+    if (isCustomModelSelection(generationProvider, generationModel, availableProviders)) {
+      addEntry(generationProvider, generationModel, genCustomFields);
+    }
+    if (isCustomModelSelection(executionProvider, executionModel, availableProviders)) {
+      addEntry(executionProvider, executionModel, execCustomFields);
+    }
+
+    return registry;
   };
 
   const handleSaveSettings = async () => {
@@ -198,9 +280,18 @@ export const SettingsPage: React.FC = () => {
         evolution_model: evolutionModel,
         // Sprint 10.15: vLLM thinking mode toggle
         local_vllm_enable_thinking: localVllmEnableThinking,
+        // Phase 2: custom vLLM model
+        local_vllm_custom_model: localVllmCustomModel || null,
+        local_vllm_custom_endpoint: localVllmCustomEndpoint || null,
+        local_vllm_api_key: localVllmApiKey || null,
+        // Sprint 10.20: persist registry (backend also auto-appends unlisted models)
+        custom_models: buildCustomModelsPayload(),
       };
       
-      await settingsService.updateUserProviderSettings(updateData);
+      const saved = await settingsService.updateUserProviderSettings(updateData);
+      setCustomModels(saved.custom_models ?? buildCustomModelsPayload());
+      const providersRes = await settingsService.getAvailableProviders();
+      setAvailableProviders(providersRes.providers);
       
       // Save 3-Tier Execution Settings (if form state is available)
       if (executionSettingsFormState) {
@@ -258,45 +349,31 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
-  /**
-   * Sprint 10.5: Return rich ModelOption list for a provider.
-   * Prefers model_options from the API; falls back to constructing entries from
-   * the plain models list, using the :free suffix to detect free models.
-   */
-  const getModelOptionsForProvider = (providerName: string): ModelOption[] => {
-    const provider = availableProviders.find(p => p.name === providerName);
-    if (!provider) {
-      return [];
-    }
-    if (provider.model_options && provider.model_options.length > 0) {
-      return provider.model_options;
-    }
-    // Fallback: build from plain string list
-    return (provider.models || []).map((id) => ({
-      id,
-      display_name: id,
-      is_free: id.endsWith(':free'),
-    }));
+  const handleRemoveCustomModel = (provider: string, modelId: string) => {
+    setCustomModels((prev) => {
+      const updated = { ...prev };
+      const filtered = (updated[provider] ?? []).filter((e) => e.id !== modelId);
+      if (filtered.length === 0) {
+        delete updated[provider];
+      } else {
+        updated[provider] = filtered;
+      }
+      return updated;
+    });
   };
 
-  const getSafeModelOptionsForProvider = (
-    providerName: string,
-    currentModel: string | null,
-  ): ModelOption[] => {
-    const options = getModelOptionsForProvider(providerName);
-    if (options.length > 0) {
-      return options;
+  const handleGenerationModelChange = (modelId: string) => {
+    setGenerationModel(modelId);
+    if (generationProvider === 'local_vllm') {
+      setLocalVllmCustomModel(modelId);
     }
+  };
 
-    if (!currentModel) {
-      return [];
+  const handleExecutionModelChange = (modelId: string) => {
+    setExecutionModel(modelId);
+    if (executionProvider === 'local_vllm') {
+      setLocalVllmCustomModel(modelId);
     }
-
-    return [{
-      id: currentModel,
-      display_name: currentModel,
-      is_free: currentModel.endsWith(':free'),
-    }];
   };
 
   const isAvailableProvider = (providerName: string): boolean =>
@@ -489,40 +566,31 @@ export const SettingsPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Model Selection */}
+            {/* Model Selection - Generation */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Model
               </label>
-              <select
-                value={generationModel}
-                onChange={(e) => setGenerationModel(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
-              >
-                {(() => {
-                  const opts = getSafeModelOptionsForProvider(generationProvider, generationModel);
-                  const free = opts.filter(m => m.is_free);
-                  const paid = opts.filter(m => !m.is_free);
-                  return (
-                    <>
-                      {free.length > 0 && (
-                        <optgroup label="🆓 Free Models ($0/M tokens)">
-                          {free.map(m => (
-                            <option key={m.id} value={m.id}>{m.display_name} (Free)</option>
-                          ))}
-                        </optgroup>
-                      )}
-                      {paid.length > 0 && (
-                        <optgroup label="💰 Paid Models">
-                          {paid.map(m => (
-                            <option key={m.id} value={m.id}>{m.display_name}</option>
-                          ))}
-                        </optgroup>
-                      )}
-                    </>
-                  );
-                })()}
-              </select>
+              <ModelSelectWithCustom
+                providerName={generationProvider}
+                modelOptions={getModelOptionsForProvider(generationProvider, availableProviders)}
+                selectedModel={generationModel}
+                onModelChange={handleGenerationModelChange}
+                customFields={
+                  isCustomModelSelection(generationProvider, generationModel, availableProviders)
+                    ? genCustomFields
+                    : undefined
+                }
+                onCustomFieldsChange={(fields) => {
+                  setGenCustomFields(fields);
+                  if (generationProvider === 'local_vllm') {
+                    setLocalVllmCustomModel(fields.modelId);
+                    setLocalVllmCustomEndpoint(fields.endpoint ?? '');
+                    setLocalVllmApiKey(fields.apiKey ?? '');
+                  }
+                }}
+                availableProviders={availableProviders}
+              />
             </div>
 
             {/* Temperature */}
@@ -614,40 +682,31 @@ export const SettingsPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Model Selection */}
+            {/* Model Selection - Execution */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Model
               </label>
-              <select
-                value={executionModel}
-                onChange={(e) => setExecutionModel(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
-              >
-                {(() => {
-                  const opts = getSafeModelOptionsForProvider(executionProvider, executionModel);
-                  const free = opts.filter(m => m.is_free);
-                  const paid = opts.filter(m => !m.is_free);
-                  return (
-                    <>
-                      {free.length > 0 && (
-                        <optgroup label="🆓 Free Models ($0/M tokens)">
-                          {free.map(m => (
-                            <option key={m.id} value={m.id}>{m.display_name} (Free)</option>
-                          ))}
-                        </optgroup>
-                      )}
-                      {paid.length > 0 && (
-                        <optgroup label="💰 Paid Models">
-                          {paid.map(m => (
-                            <option key={m.id} value={m.id}>{m.display_name}</option>
-                          ))}
-                        </optgroup>
-                      )}
-                    </>
-                  );
-                })()}
-              </select>
+              <ModelSelectWithCustom
+                providerName={executionProvider}
+                modelOptions={getModelOptionsForProvider(executionProvider, availableProviders)}
+                selectedModel={executionModel}
+                onModelChange={handleExecutionModelChange}
+                customFields={
+                  isCustomModelSelection(executionProvider, executionModel, availableProviders)
+                    ? execCustomFields
+                    : undefined
+                }
+                onCustomFieldsChange={(fields) => {
+                  setExecCustomFields(fields);
+                  if (executionProvider === 'local_vllm') {
+                    setLocalVllmCustomModel(fields.modelId);
+                    setLocalVllmCustomEndpoint(fields.endpoint ?? '');
+                    setLocalVllmApiKey(fields.apiKey ?? '');
+                  }
+                }}
+                availableProviders={availableProviders}
+              />
             </div>
 
             {/* Temperature */}
@@ -685,6 +744,21 @@ export const SettingsPage: React.FC = () => {
               />
             </div>
           </div>
+        </Card>
+
+        {/* Sprint 10.20: Manage saved custom models */}
+        <Card>
+          <div className="mb-4">
+            <h2 className="text-xl font-semibold text-gray-900">Manage My Models</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Saved custom model IDs appear under &quot;⭐ My Models&quot; in every provider dropdown.
+            </p>
+          </div>
+          <CustomModelsPanel
+            customModels={customModels}
+            providers={availableProviders}
+            onRemove={handleRemoveCustomModel}
+          />
         </Card>
 
         {/* Sprint 10.6: Agent Workflow Configuration */}

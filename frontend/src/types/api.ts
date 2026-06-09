@@ -270,6 +270,15 @@ export interface UpdateSettingsRequest {
 
 // AI Provider Settings Types (Sprint 3 - Settings Page Dynamic Configuration)
 
+/** Sprint 10.20: User-defined model entry in the per-user custom_models registry. */
+export interface CustomModelEntry {
+  id: string;
+  display_name?: string;
+  endpoint?: string;
+  api_version?: string;
+  api_key?: string;
+}
+
 /** Sprint 10.5: Rich model metadata with free/paid flag for grouped dropdown UI. */
 export interface ModelOption {
   id: string;
@@ -277,6 +286,8 @@ export interface ModelOption {
   is_free: boolean;
   /** Sprint 10.15: True when the model supports chain-of-thought thinking mode. */
   thinking_capable?: boolean;
+  /** Sprint 10.20: True when the model comes from the user's custom_models registry. */
+  is_custom?: boolean;
 }
 
 export interface AvailableProvider {
@@ -319,6 +330,12 @@ export interface UserSettings {
   evolution_model?: string | null;
   // Sprint 10.15: vLLM thinking mode toggle
   local_vllm_enable_thinking?: boolean;
+  // Phase 2: Custom vLLM model support
+  local_vllm_custom_model?: string | null;
+  local_vllm_custom_endpoint?: string | null;
+  local_vllm_api_key?: string | null;
+  /** Sprint 10.20: per-user custom model registry keyed by provider name */
+  custom_models?: Record<string, CustomModelEntry[]> | null;
   created_at: string;
   updated_at: string | null;
 }
@@ -343,6 +360,12 @@ export interface UpdateUserSettingsRequest {
   evolution_model?: string | null;
   // Sprint 10.15: vLLM thinking mode toggle
   local_vllm_enable_thinking?: boolean;
+  // Phase 2: Custom vLLM model support
+  local_vllm_custom_model?: string | null;
+  local_vllm_custom_endpoint?: string | null;
+  local_vllm_api_key?: string | null;
+  /** Sprint 10.20: per-user custom model registry keyed by provider name */
+  custom_models?: Record<string, CustomModelEntry[]> | null;
 }
 
 // Agent Activity types

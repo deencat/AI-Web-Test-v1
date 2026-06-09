@@ -3,14 +3,23 @@ Universal LLM service that supports multiple providers.
 Handles Google Gemini, Cerebras, and OpenRouter.
 """
 import base64
+import datetime
 import httpx
+import logging
 import os
+import time
 from typing import List, Dict, Optional, Union
 from app.core.config import settings
 
-# Sprint 10.15: vLLM models that accept chat_template_kwargs: { enable_thinking }
+_svc_logger = logging.getLogger(__name__)
+
+# Sprint 10.15 / 10.18: vLLM models that accept chat_template_kwargs: { enable_thinking }.
+# Sprint 10.18: chat_template_kwargs is ALWAYS sent for these models — even when
+# enable_thinking=False — so that models whose built-in default is thinking=on
+# (e.g. Qwen3.6-35B-A3B-MLX-8bit) are explicitly overridden.
 _THINKING_CAPABLE_VLLM_MODELS: frozenset = frozenset({
     "RedHatAI/Qwen3.6-35B-A3B-NVFP4",
+    "Qwen3.6-35B-A3B-MLX-8bit",  # Sprint 10.18: always-off override required
 })
 
 # Sprint 10.17: providers that support multimodal vision requests
@@ -55,6 +64,8 @@ class UniversalLLMService:
 
         # Sprint 10.13: Local vLLM per-model endpoint table (OpenAI-compatible, no real auth)
         _local_api_key = getattr(settings, "LOCAL_VLLM_API_KEY", "local") or os.getenv("LOCAL_VLLM_API_KEY", "local")
+        # Sprint 10.18: MLX model uses its own API key env var (default "1235")
+        _mlx_api_key = getattr(settings, "LOCAL_VLLM_MLX_API_KEY", None) or os.getenv("LOCAL_VLLM_MLX_API_KEY", "1235")
         self._local_vllm_model_endpoints: dict = {
             "openai/gpt-oss-20b": {
                 "endpoint": getattr(settings, "LOCAL_VLLM_GPT_OSS_20B_ENDPOINT", "http://192.168.206.190:8000/openai--gpt-oss-20b/v1") or os.getenv("LOCAL_VLLM_GPT_OSS_20B_ENDPOINT", "http://192.168.206.190:8000/openai--gpt-oss-20b/v1"),
@@ -67,6 +78,12 @@ class UniversalLLMService:
             "DeepSeek-V4-Flash-4bit": {
                 "endpoint": getattr(settings, "LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164:1235/v1") or os.getenv("LOCAL_VLLM_DEEPSEEK_ENDPOINT", "http://192.168.206.164:1235/v1"),
                 "api_key": _local_api_key,
+            },
+            # Sprint 10.18: MLX 8-bit quantisation on http://192.168.206.164:1235/v1
+            # Endpoint collision with DeepSeek is intentional; vLLM dispatches via model field.
+            "Qwen3.6-35B-A3B-MLX-8bit": {
+                "endpoint": getattr(settings, "LOCAL_VLLM_MLX_ENDPOINT", "http://192.168.206.164:1235/v1") or os.getenv("LOCAL_VLLM_MLX_ENDPOINT", "http://192.168.206.164:1235/v1"),
+                "api_key": _mlx_api_key,
             },
         }
 
@@ -82,6 +99,10 @@ class UniversalLLMService:
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         enable_thinking: bool = False,
+        custom_endpoint: Optional[str] = None,
+        api_key: Optional[str] = None,
+        azure_endpoint: Optional[str] = None,
+        azure_api_version: Optional[str] = None,
     ) -> dict:
         """
         Call LLM API for chat completion with provider selection.
@@ -95,6 +116,9 @@ class UniversalLLMService:
             enable_thinking: Sprint 10.15 — when True and provider is local_vllm
                 and the model supports it, injects chat_template_kwargs into the
                 request payload.  Ignored for all other providers.
+            custom_endpoint: Phase 2 — optional override endpoint for local_vllm
+                models not in the hardcoded routing table.  Ignored for other
+                providers.
             
         Returns:
             Unified API response dict with choices, usage, etc.
@@ -104,17 +128,123 @@ class UniversalLLMService:
             Exception: If API call fails
         """
         provider = provider.lower()
-        
-        if provider == "google":
-            return await self._call_google(messages, model, temperature, max_tokens)
-        elif provider == "cerebras":
-            return await self._call_cerebras(messages, model, temperature, max_tokens)
-        elif provider == "azure":
-            return await self._call_azure(messages, model, temperature, max_tokens)
-        elif provider == "local_vllm":
-            return await self._call_local_vllm(messages, model, temperature, max_tokens, enable_thinking=enable_thinking)
-        else:  # default to openrouter
-            return await self._call_openrouter(messages, model, temperature, max_tokens)
+        _t0 = time.monotonic()
+        _error: Optional[str] = None
+        _response: Optional[dict] = None
+        try:
+            if provider == "google":
+                _response = await self._call_google(messages, model, temperature, max_tokens)
+            elif provider == "cerebras":
+                _response = await self._call_cerebras(messages, model, temperature, max_tokens)
+            elif provider == "azure":
+                _response = await self._call_azure(
+                    messages, model, temperature, max_tokens,
+                    endpoint_override=azure_endpoint,
+                    api_version_override=azure_api_version,
+                )
+            elif provider == "local_vllm":
+                _response = await self._call_local_vllm(
+                    messages,
+                    model,
+                    temperature,
+                    max_tokens,
+                    enable_thinking=enable_thinking,
+                    custom_endpoint=custom_endpoint,
+                    api_key=api_key,
+                )
+            else:  # default to openrouter
+                _response = await self._call_openrouter(messages, model, temperature, max_tokens)
+        except Exception as exc:
+            _error = str(exc)
+            raise
+        finally:
+            await self._write_llm_log(
+                messages=messages,
+                provider=provider,
+                model=model or "",
+                response=_response,
+                error=_error,
+                elapsed_ms=(time.monotonic() - _t0) * 1000,
+                caller="chat_completion",
+            )
+        return _response  # type: ignore[return-value]
+
+    async def _write_llm_log(
+        self,
+        *,
+        messages: list,
+        provider: str,
+        model: str,
+        response: Optional[dict],
+        error: Optional[str],
+        elapsed_ms: float,
+        caller: str,
+    ) -> None:
+        """Build and write one JSONL log entry for this LLM call (swallows errors)."""
+        try:
+            from app.utils.llm_execution_context import llm_exec_ctx
+            from app.utils.llm_response_logger import (
+                llm_logger,
+                build_prompt_preview,
+                extract_thinking_from_response,
+            )
+
+            ctx = llm_exec_ctx.get()
+            full_prompt = bool(getattr(settings, "LLM_LOG_FULL_PROMPT", False))
+
+            # Extract thinking / tokens from response (if any)
+            thinking_content = None
+            response_content = None
+            thinking_tokens = None
+            prompt_tokens = None
+            completion_tokens = None
+            total_tokens = None
+
+            if response:
+                thinking_content, response_content, thinking_tokens = (
+                    extract_thinking_from_response(response)
+                )
+                usage = response.get("usage") or {}
+                prompt_tokens = usage.get("prompt_tokens")
+                completion_tokens = usage.get("completion_tokens")
+                total_tokens = usage.get("total_tokens")
+
+            # Brief console summary (existing logger, no change to format)
+            thinking_info = f" (thinking: {thinking_tokens}tok)" if thinking_tokens else ""
+            _svc_logger.info(
+                "[LLM] provider=%s model=%s tier=%s step=%s → %.0fms %stok%s",
+                provider,
+                model,
+                ctx.get("tier"),
+                ctx.get("step_number"),
+                elapsed_ms,
+                total_tokens or "?",
+                thinking_info,
+            )
+
+            entry = {
+                "ts": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.") + f"{int(datetime.datetime.utcnow().microsecond / 1000):03d}Z",
+                "execution_id": ctx.get("execution_id"),
+                "step_number": ctx.get("step_number"),
+                "tier": ctx.get("tier"),
+                "caller": ctx.get("caller") or caller,
+                "provider": provider,
+                "model": model,
+                "prompt_chars": sum(len(str(m.get("content", ""))) for m in messages),
+                "prompt_preview": build_prompt_preview(messages, full_prompt=full_prompt),
+                "response_time_ms": round(elapsed_ms, 1),
+                "thinking_content": thinking_content,
+                "response_content": response_content,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "thinking_tokens": thinking_tokens,
+                "total_tokens": total_tokens,
+                "success": error is None,
+                "error": error,
+            }
+            await llm_logger.write(entry)
+        except Exception as log_exc:  # noqa: BLE001
+            _svc_logger.debug("LLM logging failed (non-fatal): %s", log_exc)
 
     # ------------------------------------------------------------------
     # Sprint 10.17: Multimodal vision completion
@@ -157,13 +287,35 @@ class UniversalLLMService:
             )
 
         image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-
-        if provider == "google":
-            return await self._call_google_vision(image_b64, system_prompt, user_text, model, max_tokens)
-        elif provider == "azure":
-            return await self._call_azure_vision(image_b64, system_prompt, user_text, model, max_tokens)
-        else:  # openrouter
-            return await self._call_openrouter_vision(image_b64, system_prompt, user_text, model, max_tokens)
+        _t0 = time.monotonic()
+        _error: Optional[str] = None
+        _response: Optional[dict] = None
+        try:
+            if provider == "google":
+                _response = await self._call_google_vision(image_b64, system_prompt, user_text, model, max_tokens)
+            elif provider == "azure":
+                _response = await self._call_azure_vision(image_b64, system_prompt, user_text, model, max_tokens)
+            else:  # openrouter
+                _response = await self._call_openrouter_vision(image_b64, system_prompt, user_text, model, max_tokens)
+        except Exception as exc:
+            _error = str(exc)
+            raise
+        finally:
+            # Log vision call using a synthetic text messages list for prompt_preview
+            _vision_messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_text},
+            ]
+            await self._write_llm_log(
+                messages=_vision_messages,
+                provider=provider,
+                model=model or "",
+                response=_response,
+                error=_error,
+                elapsed_ms=(time.monotonic() - _t0) * 1000,
+                caller="vision_verification",
+            )
+        return _response  # type: ignore[return-value]
 
     async def _call_openrouter_vision(
         self,
@@ -531,13 +683,23 @@ class UniversalLLMService:
         messages: List[Dict[str, str]],
         model: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None
+        max_tokens: Optional[int] = None,
+        endpoint_override: Optional[str] = None,
+        api_version_override: Optional[str] = None,
     ) -> dict:
         """Call Azure OpenAI API (OpenAI-compatible)."""
         # Resolve per-model endpoint overrides (e.g. gpt-5.2 uses a dedicated resource)
         model_override = self._azure_model_endpoints.get(model or "", {})
-        effective_endpoint = model_override.get("endpoint") or self.azure_endpoint
-        effective_api_version = model_override.get("api_version") or self.azure_api_version
+        effective_endpoint = (
+            endpoint_override
+            or model_override.get("endpoint")
+            or self.azure_endpoint
+        )
+        effective_api_version = (
+            api_version_override
+            or model_override.get("api_version")
+            or self.azure_api_version
+        )
         effective_api_key = model_override.get("api_key") or self.azure_api_key
 
         if not effective_api_key:
@@ -648,6 +810,8 @@ class UniversalLLMService:
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         enable_thinking: bool = False,
+        custom_endpoint: Optional[str] = None,
+        api_key: Optional[str] = None,
     ) -> dict:
         """Call an on-premises vLLM server (OpenAI-compatible /v1/chat/completions).
 
@@ -657,19 +821,27 @@ class UniversalLLMService:
         Sprint 10.15: when enable_thinking=True AND the model is thinking-capable,
         injects chat_template_kwargs: { enable_thinking: true } into the request body.
         For non-capable models this flag is silently ignored regardless of the setting.
+
+        Phase 2: when model is not in the hardcoded endpoint table and custom_endpoint
+        is provided, uses that endpoint with api_key="local".
         """
         if not model:
             model = "DeepSeek-V4-Flash-4bit"
 
         model_cfg = self._local_vllm_model_endpoints.get(model)
         if not model_cfg:
-            raise ValueError(
-                f"Unknown local_vllm model '{model}'. "
-                f"Supported models: {list(self._local_vllm_model_endpoints.keys())}"
-            )
+            # Phase 2: fall back to custom endpoint for user-defined models
+            if custom_endpoint:
+                model_cfg = {"endpoint": custom_endpoint, "api_key": api_key or "local"}
+            else:
+                raise ValueError(
+                    f"Unknown local_vllm model '{model}'. "
+                    f"Supported models: {list(self._local_vllm_model_endpoints.keys())}. "
+                    "Set a custom endpoint in Settings to use unlisted models."
+                )
 
         endpoint = model_cfg["endpoint"].rstrip("/")
-        api_key = model_cfg.get("api_key", "local")
+        api_key = api_key or model_cfg.get("api_key", "local")
 
         payload: Dict[str, object] = {
             "model": model,
@@ -679,9 +851,10 @@ class UniversalLLMService:
         if max_tokens:
             payload["max_tokens"] = max_tokens
 
-        # Sprint 10.15: inject thinking flag only for capable models
-        if enable_thinking and model in _THINKING_CAPABLE_VLLM_MODELS:
-            payload["chat_template_kwargs"] = {"enable_thinking": True}
+        # Sprint 10.18: for thinking-capable models always inject chat_template_kwargs
+        # (even when False) so models whose built-in default is thinking=on are overridden.
+        if model in _THINKING_CAPABLE_VLLM_MODELS:
+            payload["chat_template_kwargs"] = {"enable_thinking": enable_thinking}
 
         client = await self._get_http_client()
         try:

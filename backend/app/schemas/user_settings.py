@@ -1,7 +1,37 @@
 """Pydantic schemas for user settings."""
-from typing import Optional
+import re
+from typing import Optional, Dict, List
 from datetime import datetime
 from pydantic import BaseModel, Field, validator
+
+
+_MODEL_ID_PATTERN = re.compile(r"^[a-zA-Z0-9/_.:@-]+$")
+_MAX_MODEL_ID_LEN = 200
+
+
+def validate_model_id(model_id: str) -> str:
+    """Validate a custom model ID (length + charset)."""
+    if not model_id or not model_id.strip():
+        raise ValueError("Model ID must not be empty")
+    if len(model_id) > _MAX_MODEL_ID_LEN:
+        raise ValueError(f"Model ID must be at most {_MAX_MODEL_ID_LEN} characters")
+    if not _MODEL_ID_PATTERN.match(model_id):
+        raise ValueError("Model ID contains invalid characters")
+    return model_id
+
+
+class CustomModelEntry(BaseModel):
+    """A user-defined model entry in the per-user custom_models registry."""
+
+    id: str = Field(..., description="Model identifier")
+    display_name: Optional[str] = Field(default=None, description="Optional display label")
+    endpoint: Optional[str] = Field(default=None, description="Optional endpoint URL (Azure, local_vllm)")
+    api_version: Optional[str] = Field(default=None, description="Optional Azure API version")
+    api_key: Optional[str] = Field(default=None, description="Optional API token (local_vllm only)")
+
+    @validator("id")
+    def validate_id(cls, v):
+        return validate_model_id(v)
 
 
 class ModelOption(BaseModel):
@@ -12,6 +42,8 @@ class ModelOption(BaseModel):
     is_free: bool = Field(..., description="True if the model is $0/M input and $0/M output")
     # Sprint 10.15: vLLM thinking mode — True only for models that support chat_template_kwargs
     thinking_capable: bool = Field(default=False, description="True if the model supports chain-of-thought thinking mode via chat_template_kwargs")
+    # Sprint 10.20: user-saved custom model from registry
+    is_custom: bool = Field(default=False, description="True if this model comes from the user's custom_models registry")
 
 
 class UserSettingBase(BaseModel):
@@ -35,6 +67,12 @@ class UserSettingBase(BaseModel):
     # Global flag — only used when local_vllm provider is selected and the model supports thinking
     local_vllm_enable_thinking: bool = Field(default=False, description="Enable chain-of-thought thinking mode for capable vLLM models")
 
+    # Phase 2: Custom vLLM model — user-defined model name and endpoint URL
+    # NULL = no custom model configured; only active when a slot's model is not in the hardcoded list.
+    local_vllm_custom_model: Optional[str] = Field(default=None, description="Custom vLLM model name not in the hardcoded list")
+    local_vllm_custom_endpoint: Optional[str] = Field(default=None, description="HTTP endpoint for the custom vLLM model (e.g. http://192.168.206.164:1235/v1)")
+    local_vllm_api_key: Optional[str] = Field(default=None, description="Optional API token for local_vllm endpoints that require bearer auth")
+
     # Per-Agent Model Overrides (Sprint 10.6: Per-Agent Model Provider & Model Selection)
     # Optional — None means "use Azure default (ChatGPT-UAT)"
     observation_provider: Optional[str] = Field(default=None, description="LLM provider for ObservationAgent (overrides Azure default)")
@@ -45,6 +83,12 @@ class UserSettingBase(BaseModel):
     analysis_model: Optional[str] = Field(default=None, description="LLM model for AnalysisAgent")
     evolution_provider: Optional[str] = Field(default=None, description="LLM provider for EvolutionAgent")
     evolution_model: Optional[str] = Field(default=None, description="LLM model for EvolutionAgent")
+
+    # Sprint 10.20: per-user custom model registry keyed by provider name
+    custom_models: Optional[Dict[str, List[CustomModelEntry]]] = Field(
+        default=None,
+        description="User-defined model IDs per provider",
+    )
 
     @validator('generation_provider', 'execution_provider')
     def validate_provider(cls, v):
@@ -96,6 +140,11 @@ class UserSettingUpdate(BaseModel):
     # Sprint 10.15: vLLM Thinking Mode Toggle
     local_vllm_enable_thinking: Optional[bool] = None
 
+    # Phase 2: Custom vLLM model
+    local_vllm_custom_model: Optional[str] = None
+    local_vllm_custom_endpoint: Optional[str] = None
+    local_vllm_api_key: Optional[str] = None
+
     # Per-Agent Model Overrides (Sprint 10.6)
     observation_provider: Optional[str] = None
     observation_model: Optional[str] = None
@@ -105,6 +154,9 @@ class UserSettingUpdate(BaseModel):
     analysis_model: Optional[str] = None
     evolution_provider: Optional[str] = None
     evolution_model: Optional[str] = None
+
+    # Sprint 10.20: per-user custom model registry
+    custom_models: Optional[Dict[str, List[CustomModelEntry]]] = None
 
     @validator('generation_provider', 'execution_provider')
     def validate_provider(cls, v):
@@ -142,6 +194,25 @@ class UserSettingInDB(UserSettingBase):
     user_id: int
     created_at: datetime
     updated_at: Optional[datetime] = None
+
+    @validator("custom_models", pre=True)
+    def parse_custom_models_json(cls, v):
+        if v is None or isinstance(v, dict):
+            return v
+        if isinstance(v, str):
+            if not v.strip():
+                return None
+            import json
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, dict):
+                    return {
+                        prov: [CustomModelEntry(**e) if isinstance(e, dict) else e for e in entries]
+                        for prov, entries in parsed.items()
+                    }
+            except (json.JSONDecodeError, TypeError, ValueError):
+                return None
+        return v
     
     class Config:
         from_attributes = True

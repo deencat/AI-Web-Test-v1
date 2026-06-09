@@ -234,14 +234,13 @@ def run_all_migrations_auto():
     """Run all pending migrations non-interactively.
 
     Used by app startup (main.py) so every developer/desktop gets a fully
-    up-to-date schema automatically when the server starts.  On failure the
-    error is logged but startup continues rather than blocking the server.
+    up-to-date schema automatically when the server starts.  Failures are
+    printed to stdout and remaining migrations still run (independent migrations
+    should not be blocked by an unrelated failure).
     """
-    import logging
-    logger = logging.getLogger(__name__)
-
     init_migration_table()
     db = SessionLocal()
+    failed_count = 0
     try:
         applied = get_applied_migrations(db)
         available = get_available_migrations()
@@ -250,15 +249,24 @@ def run_all_migrations_auto():
         if not pending:
             return  # nothing to do — fast path
 
-        logger.info(f"[migrations] {len(pending)} pending migration(s) — applying now …")
+        print(f"[migrations] {len(pending)} pending migration(s) — applying now …")
         for migration in pending:
             success = run_migration(migration, db)
             if not success:
-                logger.error(
-                    f"[migrations] '{migration}' failed — skipping remaining migrations. "
-                    "Fix the error and restart the server."
+                failed_count += 1
+                print(
+                    f"[migrations] WARNING: '{migration}' failed — "
+                    "continuing with remaining migrations. "
+                    "Check the error above and restart the server after fixing it."
                 )
-                break
+
+        if failed_count:
+            print(
+                f"[migrations] {failed_count} migration(s) failed. "
+                "Some features may not work until the failures are resolved."
+            )
+        else:
+            print(f"[migrations] All {len(pending)} migration(s) applied successfully.")
     finally:
         db.close()
 

@@ -24,6 +24,7 @@ from app.services.xpath_extractor import XPathExtractor
 from app.services.universal_llm import VisionNotSupportedError
 from app.models.execution_settings import ExecutionSettings, TierExecutionLog
 from app.schemas.execution_settings import FallbackStrategy
+from app.utils.llm_execution_context import set_llm_context, llm_exec_ctx
 
 logger = logging.getLogger(__name__)
 
@@ -184,105 +185,139 @@ class ThreeTierExecutionService:
             confirm_progress_snapshot = await capture_step_progress_snapshot(self.page)
         
         # TIER 1: Always attempt Playwright Direct first
-        tier1_result = await self._execute_tier1(step)
-        execution_history.append(tier1_result)
-
-        if tier1_result["success"] and not await self._step_made_expected_progress(step, confirm_progress_snapshot):
-            tier1_result = self._mark_no_progress_failure(tier1_result, step)
-            execution_history[-1] = tier1_result
-        
-        if tier1_result["success"]:
-            # Success at Tier 1!
-            total_time_ms = (time.time() - overall_start_time) * 1000
-            
-            result = {
-                **tier1_result,
-                "total_time_ms": total_time_ms,
-                "execution_history": execution_history,
-                "strategy_used": strategy
-            }
-            
-            # Log tier execution
-            if execution_id is not None and step_index is not None:
-                await self._log_tier_execution(
-                    execution_id=execution_id,
-                    step_index=step_index,
-                    strategy=strategy,
-                    final_tier=1,
-                    success=True,
-                    execution_history=execution_history,
-                    total_time_ms=total_time_ms
-                )
-            
-            return result
-        
-        # Tier 1 failed, proceed with selected fallback strategy
-        logger.info(f"[3-Tier] Tier 1 failed, falling back to strategy {strategy}")
-        
+        # Sprint 10.19: context token spans entire step; reset in finally to keep context clean.
+        _ctx_token = set_llm_context(
+            execution_id=execution_id,
+            step_number=step_index,
+            tier=1,
+            caller="tier1_playwright",
+        )
         try:
-            if action == "verify_screenshot":
-                result = await self._execute_verify_screenshot(
-                    step,
-                    execution_history,
-                    confirm_progress_snapshot,
-                )
-            elif strategy == "option_a":
-                result = await self._execute_option_a(step, execution_history, confirm_progress_snapshot)
-            elif strategy == "option_b":
-                result = await self._execute_option_b(step, execution_history, confirm_progress_snapshot)
-            elif strategy == "option_c":
-                result = await self._execute_option_c(step, execution_history, confirm_progress_snapshot)
-            else:
-                raise ValueError(f"Unknown fallback strategy: {strategy}")
+            tier1_result = await self._execute_tier1(step)
+            execution_history.append(tier1_result)
+
+            if tier1_result["success"] and not await self._step_made_expected_progress(step, confirm_progress_snapshot):
+                tier1_result = self._mark_no_progress_failure(tier1_result, step)
+                execution_history[-1] = tier1_result
             
-            total_time_ms = (time.time() - overall_start_time) * 1000
-            result["total_time_ms"] = total_time_ms
-            result["strategy_used"] = strategy
+            if tier1_result["success"]:
+                # Success at Tier 1!
+                total_time_ms = (time.time() - overall_start_time) * 1000
+                
+                result = {
+                    **tier1_result,
+                    "total_time_ms": total_time_ms,
+                    "execution_history": execution_history,
+                    "strategy_used": strategy
+                }
+                
+                # Log tier execution
+                if execution_id is not None and step_index is not None:
+                    await self._log_tier_execution(
+                        execution_id=execution_id,
+                        step_index=step_index,
+                        strategy=strategy,
+                        final_tier=1,
+                        success=True,
+                        execution_history=execution_history,
+                        total_time_ms=total_time_ms
+                    )
+                
+                return result
             
-            # Log tier execution
-            if execution_id is not None and step_index is not None:
-                await self._log_tier_execution(
-                    execution_id=execution_id,
-                    step_index=step_index,
-                    strategy=strategy,
-                    final_tier=result["tier"],
-                    success=result["success"],
-                    execution_history=execution_history,
-                    total_time_ms=total_time_ms
-                )
+            # Tier 1 failed, proceed with selected fallback strategy
+            logger.info(f"[3-Tier] Tier 1 failed, falling back to strategy {strategy}")
             
-            return result
-            
-        except ExecutionFailedError as e:
-            total_time_ms = (time.time() - overall_start_time) * 1000
-            ai_verification_result = _latest_ai_verification_result(e.execution_history)
-            
-            logger.error(f"[3-Tier] ❌ All tiers exhausted: {e.message}")
-            
-            result = {
-                "success": False,
-                "tier": None,
-                "total_time_ms": total_time_ms,
-                "execution_history": e.execution_history,
-                "strategy_used": strategy,
-                "error": e.message,
-                "error_type": "all_tiers_exhausted",
-                "ai_verification_result": ai_verification_result,
-            }
-            
-            # Log tier execution
-            if execution_id is not None and step_index is not None:
-                await self._log_tier_execution(
-                    execution_id=execution_id,
-                    step_index=step_index,
-                    strategy=strategy,
-                    final_tier=None,
-                    success=False,
-                    execution_history=e.execution_history,
-                    total_time_ms=total_time_ms
-                )
-            
-            return result
+            try:
+                if action == "verify_screenshot":
+                    set_llm_context(
+                        execution_id=execution_id,
+                        step_number=step_index,
+                        tier=2,
+                        caller="tier2_hybrid",
+                    )
+                    result = await self._execute_verify_screenshot(
+                        step,
+                        execution_history,
+                        confirm_progress_snapshot,
+                    )
+                elif strategy == "option_a":
+                    set_llm_context(
+                        execution_id=execution_id,
+                        step_number=step_index,
+                        tier=2,
+                        caller="tier2_hybrid",
+                    )
+                    result = await self._execute_option_a(step, execution_history, confirm_progress_snapshot)
+                elif strategy == "option_b":
+                    set_llm_context(
+                        execution_id=execution_id,
+                        step_number=step_index,
+                        tier=3,
+                        caller="tier3_stagehand",
+                    )
+                    result = await self._execute_option_b(step, execution_history, confirm_progress_snapshot)
+                elif strategy == "option_c":
+                    set_llm_context(
+                        execution_id=execution_id,
+                        step_number=step_index,
+                        tier=2,
+                        caller="tier2_hybrid",
+                    )
+                    result = await self._execute_option_c(step, execution_history, confirm_progress_snapshot)
+                else:
+                    raise ValueError(f"Unknown fallback strategy: {strategy}")
+                
+                total_time_ms = (time.time() - overall_start_time) * 1000
+                result["total_time_ms"] = total_time_ms
+                result["strategy_used"] = strategy
+                
+                # Log tier execution
+                if execution_id is not None and step_index is not None:
+                    await self._log_tier_execution(
+                        execution_id=execution_id,
+                        step_index=step_index,
+                        strategy=strategy,
+                        final_tier=result["tier"],
+                        success=result["success"],
+                        execution_history=execution_history,
+                        total_time_ms=total_time_ms
+                    )
+                
+                return result
+                
+            except ExecutionFailedError as e:
+                total_time_ms = (time.time() - overall_start_time) * 1000
+                ai_verification_result = _latest_ai_verification_result(e.execution_history)
+                
+                logger.error(f"[3-Tier] ❌ All tiers exhausted: {e.message}")
+                
+                result = {
+                    "success": False,
+                    "tier": None,
+                    "total_time_ms": total_time_ms,
+                    "execution_history": e.execution_history,
+                    "strategy_used": strategy,
+                    "error": e.message,
+                    "error_type": "all_tiers_exhausted",
+                    "ai_verification_result": ai_verification_result,
+                }
+                
+                # Log tier execution
+                if execution_id is not None and step_index is not None:
+                    await self._log_tier_execution(
+                        execution_id=execution_id,
+                        step_index=step_index,
+                        strategy=strategy,
+                        final_tier=None,
+                        success=False,
+                        execution_history=e.execution_history,
+                        total_time_ms=total_time_ms
+                    )
+                
+                return result
+        finally:
+            llm_exec_ctx.reset(_ctx_token)
     
     async def _execute_tier1(self, step: Dict[str, Any]) -> Dict[str, Any]:
         """Execute Tier 1 (Playwright Direct)"""
@@ -399,6 +434,14 @@ class ThreeTierExecutionService:
         
         await self._ensure_tier3_initialized()
         
+        # Update tier in context (execution_id/step_number already set by execute_step)
+        _prior = llm_exec_ctx.get()
+        set_llm_context(
+            execution_id=_prior.get("execution_id"),
+            step_number=_prior.get("step_number"),
+            tier=3,
+            caller="tier3_stagehand",
+        )
         tier3_result = await self.tier3_executor.execute_step(step)
         execution_history.append(tier3_result)
 

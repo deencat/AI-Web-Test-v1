@@ -79,6 +79,8 @@ class RequirementsAgent(BaseAgent):
             self.llm_client = get_llm_client(
                 llm_provider,
                 llm_model,
+                custom_endpoint=config.get("llm_custom_endpoint"),
+                api_key=config.get("llm_api_key"),
             )
             if self.llm_client.enabled:
                 logger.info(

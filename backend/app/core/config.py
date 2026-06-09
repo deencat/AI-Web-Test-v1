@@ -104,6 +104,11 @@ class Settings(BaseSettings):
     # DM chat ID between your Telegram user account and the qa-manager bot
     QA_MANAGER_TELEGRAM_CHAT_ID: str | None = None
 
+    # Sprint 10.19: LLM Response & Timing Log
+    LLM_LOG_DIR: str = "logs/llm"
+    LLM_LOG_MAX_FILES: int = 200
+    LLM_LOG_FULL_PROMPT: bool = False
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,

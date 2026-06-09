@@ -1,11 +1,15 @@
 """Service for managing user settings."""
-from typing import Optional, Dict, Any, List
+import json
+from typing import Optional, Dict, Any, List, Union
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from app.models.user_settings import UserSetting
-from app.schemas.user_settings import UserSettingCreate, UserSettingUpdate, AvailableProvider, ModelOption
+from app.schemas.user_settings import UserSettingCreate, UserSettingUpdate, AvailableProvider, ModelOption, CustomModelEntry
 from app.core.config import settings
+
+
+_CUSTOM_SENTINEL = "__custom__"
 
 
 class UserSettingsService:
@@ -77,21 +81,149 @@ class UserSettingsService:
         "local_vllm": {
             "display_name": "Local vLLM (On-Premises)",
             # Sprint 10.13: three on-prem vLLM servers; no API key required
+            # Sprint 10.18: adds Qwen3.6-35B-A3B-MLX-8bit (MLX 8-bit quantisation)
             "models": [
                 "openai/gpt-oss-20b",
                 "RedHatAI/Qwen3.6-35B-A3B-NVFP4",
                 "DeepSeek-V4-Flash-4bit",
+                "Qwen3.6-35B-A3B-MLX-8bit",
             ],
             "recommended": "DeepSeek-V4-Flash-4bit",
             "api_key_env": "LOCAL_VLLM_API_KEY",  # placeholder; vLLM ignores auth by default
-            # Sprint 10.15: models that accept chat_template_kwargs: { enable_thinking }
+            # Sprint 10.15 / 10.18: models that accept chat_template_kwargs: { enable_thinking }
             "thinking_capable_models": [
                 "RedHatAI/Qwen3.6-35B-A3B-NVFP4",
+                "Qwen3.6-35B-A3B-MLX-8bit",  # Sprint 10.18: always-off override required
             ],
         }
     }
     
-    def get_available_providers(self) -> List[AvailableProvider]:
+    # ------------------------------------------------------------------
+    # Sprint 10.20: custom_models registry helpers
+    # ------------------------------------------------------------------
+
+    def parse_custom_models(
+        self, raw: Optional[Union[str, Dict[str, Any]]]
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Parse custom_models from DB TEXT column or dict."""
+        if raw is None:
+            return {}
+        if isinstance(raw, dict):
+            return {k: [e if isinstance(e, dict) else e.model_dump() for e in v] for k, v in raw.items()}
+        if isinstance(raw, str):
+            if not raw.strip():
+                return {}
+            try:
+                parsed = json.loads(raw)
+                return parsed if isinstance(parsed, dict) else {}
+            except json.JSONDecodeError:
+                return {}
+        return {}
+
+    def serialize_custom_models(self, registry: Dict[str, List[Dict[str, Any]]]) -> Optional[str]:
+        """Serialize registry to JSON string for DB storage."""
+        if not registry:
+            return None
+        return json.dumps(registry)
+
+    def add_custom_model(
+        self,
+        registry: Dict[str, List[Dict[str, Any]]],
+        provider: str,
+        entry: CustomModelEntry,
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Append a custom model entry; dedupe by id."""
+        updated = {k: list(v) for k, v in registry.items()}
+        entry_dict = entry.model_dump(exclude_none=True)
+        provider_list = updated.setdefault(provider, [])
+        if not any(e.get("id") == entry_dict["id"] for e in provider_list):
+            provider_list.append(entry_dict)
+        return updated
+
+    def remove_custom_model(
+        self,
+        registry: Dict[str, List[Dict[str, Any]]],
+        provider: str,
+        model_id: str,
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Remove a custom model entry by id."""
+        if provider not in registry:
+            return registry
+        updated = {k: list(v) for k, v in registry.items()}
+        updated[provider] = [e for e in updated[provider] if e.get("id") != model_id]
+        if not updated[provider]:
+            del updated[provider]
+        return updated
+
+    def resolve_custom_model_entry(
+        self,
+        registry: Dict[str, List[Dict[str, Any]]],
+        provider: str,
+        model_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Look up a custom model entry in the registry."""
+        for entry in registry.get(provider, []):
+            if entry.get("id") == model_id:
+                return entry
+        return None
+
+    def resolve_custom_model_for_provider(
+        self,
+        custom_models: Dict[str, List[Dict[str, Any]]],
+        provider: str,
+        model: str,
+        fallback_custom_name: Optional[str] = None,
+    ) -> str:
+        """
+        Resolve __custom__ sentinel or return model as-is.
+        Raises ValueError when sentinel cannot be resolved.
+        """
+        if model != _CUSTOM_SENTINEL:
+            return model
+
+        if fallback_custom_name:
+            return fallback_custom_name
+
+        # Try to find a single custom entry for this provider (last-resort)
+        entries = custom_models.get(provider, [])
+        if len(entries) == 1:
+            return entries[0]["id"]
+
+        raise ValueError(
+            f"No custom model configured for provider {provider!r}. "
+            "Select a model from 'My Models' or enter a custom model ID."
+        )
+
+    def _merge_custom_model_options(
+        self,
+        provider_name: str,
+        curated_options: List[ModelOption],
+        custom_models: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    ) -> tuple[List[ModelOption], List[str]]:
+        """Merge user custom models into model_options; curated wins on collision."""
+        registry = custom_models or {}
+        curated_ids = {o.id for o in curated_options}
+        merged = list(curated_options)
+
+        for entry in registry.get(provider_name, []):
+            model_id = entry.get("id", "")
+            if not model_id or model_id in curated_ids:
+                continue
+            merged.append(ModelOption(
+                id=model_id,
+                display_name=entry.get("display_name") or model_id,
+                is_free=model_id.endswith(":free"),
+                thinking_capable=False,
+                is_custom=True,
+            ))
+
+        flat_models = [o.id for o in merged]
+        return merged, flat_models
+
+    def get_available_providers(
+        self,
+        custom_models: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    ) -> List[AvailableProvider]:
         """
         Get list of available providers with their configuration status.
         
@@ -118,15 +250,20 @@ class UserSettingsService:
                     display_name=model_id,
                     is_free=model_id.endswith(":free"),
                     thinking_capable=model_id in thinking_capable_models,
+                    is_custom=False,
                 )
                 for model_id in config["models"]
             ]
+
+            model_options, flat_models = self._merge_custom_model_options(
+                name, model_options, custom_models
+            )
 
             providers.append(AvailableProvider(
                 name=name,
                 display_name=config["display_name"],
                 is_configured=is_configured,
-                models=config["models"],
+                models=flat_models,
                 recommended_model=config["recommended"],
                 model_options=model_options,
             ))
@@ -232,6 +369,25 @@ class UserSettingsService:
         
         # Update only provided fields
         update_data = settings_data.model_dump(exclude_unset=True)
+
+        # Sprint 10.20: serialize custom_models dict to JSON TEXT
+        if "custom_models" in update_data and update_data["custom_models"] is not None:
+            cm = update_data["custom_models"]
+            if isinstance(cm, dict):
+                serialized = {}
+                for prov, entries in cm.items():
+                    serialized[prov] = [
+                        e.model_dump(exclude_none=True) if hasattr(e, "model_dump") else e
+                        for e in entries
+                    ]
+                update_data["custom_models"] = self.serialize_custom_models(serialized)
+
+        # Auto-append unlisted models to registry on save
+        registry = self.parse_custom_models(getattr(db_settings, "custom_models", None))
+        registry = self._auto_append_models_to_registry(db_settings, update_data, registry)
+        if registry:
+            update_data["custom_models"] = self.serialize_custom_models(registry)
+
         for key, value in update_data.items():
             setattr(db_settings, key, value)
         
@@ -294,6 +450,77 @@ class UserSettingsService:
             return True
         return False
     
+    def _auto_append_models_to_registry(
+        self,
+        db_settings: UserSetting,
+        update_data: Dict[str, Any],
+        registry: Dict[str, List[Dict[str, Any]]],
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """When a model not in PROVIDER_CONFIGS is saved, append to custom_models."""
+        slot_fields = [
+            ("generation_provider", "generation_model"),
+            ("execution_provider", "execution_model"),
+            ("observation_provider", "observation_model"),
+            ("requirements_provider", "requirements_model"),
+            ("analysis_provider", "analysis_model"),
+            ("evolution_provider", "evolution_model"),
+        ]
+        updated = {k: list(v) for k, v in registry.items()}
+
+        for prov_field, model_field in slot_fields:
+            provider = update_data.get(prov_field, getattr(db_settings, prov_field, None))
+            model = update_data.get(model_field, getattr(db_settings, model_field, None))
+            if not provider or not model or model == _CUSTOM_SENTINEL:
+                continue
+            curated = self.PROVIDER_CONFIGS.get(provider, {}).get("models", [])
+            if model in curated:
+                continue
+            entry = CustomModelEntry(id=model)
+            # Carry vLLM endpoint fields when saving local_vllm custom models
+            if provider == "local_vllm":
+                endpoint = update_data.get(
+                    "local_vllm_custom_endpoint",
+                    getattr(db_settings, "local_vllm_custom_endpoint", None),
+                )
+                api_key = update_data.get(
+                    "local_vllm_api_key",
+                    getattr(db_settings, "local_vllm_api_key", None),
+                )
+                if endpoint:
+                    entry = CustomModelEntry(id=model, endpoint=endpoint, api_key=api_key)
+            updated = self.add_custom_model(updated, provider, entry)
+
+        return updated
+
+    def _resolve_model_with_custom(
+        self,
+        provider: str,
+        model: str,
+        user_settings: UserSetting,
+    ) -> tuple[str, Dict[str, Any]]:
+        """Resolve __custom__ sentinel and attach provider-specific overrides."""
+        registry = self.parse_custom_models(getattr(user_settings, "custom_models", None))
+        extras: Dict[str, Any] = {}
+
+        fallback = getattr(user_settings, "local_vllm_custom_model", None)
+        resolved = self.resolve_custom_model_for_provider(
+            registry, provider, model, fallback_custom_name=fallback
+        )
+
+        entry = self.resolve_custom_model_entry(registry, provider, resolved)
+        if entry:
+            if entry.get("endpoint"):
+                if provider == "azure":
+                    extras["azure_endpoint"] = entry["endpoint"]
+                    if entry.get("api_version"):
+                        extras["azure_api_version"] = entry["api_version"]
+                elif provider == "local_vllm":
+                    extras["local_vllm_custom_endpoint"] = entry["endpoint"]
+                    if entry.get("api_key"):
+                        extras["local_vllm_api_key"] = entry["api_key"]
+
+        return resolved, extras
+
     # Per-agent Azure fallbacks (Sprint 10.6)
     _AGENT_AZURE_DEFAULT = {"provider": "azure", "model": "ChatGPT-UAT"}
     _VALID_AGENT_NAMES = frozenset({"observation", "requirements", "analysis", "evolution"})
@@ -372,9 +599,46 @@ class UserSettingsService:
 
         # Provider is set to a non-default value (user explicitly chose it); use it.
         resolved_model = model_val if model_val else _default_model_for_provider(provider_val)
-        return {"provider": provider_val, "model": resolved_model}
+        if resolved_model == _CUSTOM_SENTINEL or (
+            resolved_model
+            and resolved_model not in self.PROVIDER_CONFIGS.get(provider_val, {}).get("models", [])
+        ):
+            try:
+                resolved_model, extras = self._resolve_model_with_custom(
+                    provider_val, resolved_model or _CUSTOM_SENTINEL, user_settings
+                )
+            except ValueError:
+                if resolved_model == _CUSTOM_SENTINEL:
+                    raise
+                extras = {}
+        else:
+            extras = {}
+            entry = self.resolve_custom_model_entry(
+                self.parse_custom_models(getattr(user_settings, "custom_models", None)),
+                provider_val,
+                resolved_model,
+            )
+            if entry and entry.get("endpoint"):
+                if provider_val == "azure":
+                    extras["azure_endpoint"] = entry["endpoint"]
+                    if entry.get("api_version"):
+                        extras["azure_api_version"] = entry["api_version"]
 
-    def _get_api_key_for_provider(self, provider: str) -> Optional[str]:
+        result = {
+            "provider": provider_val,
+            "model": resolved_model,
+            # Phase 2: carry custom endpoint so agents can route unknown models
+            "local_vllm_custom_endpoint": getattr(user_settings, "local_vllm_custom_endpoint", None),
+            "api_key": self._get_api_key_for_provider(provider_val, user_settings),
+        }
+        result.update(extras)
+        return result
+
+    def _get_api_key_for_provider(
+        self,
+        provider: str,
+        user_settings: Optional[UserSetting] = None,
+    ) -> Optional[str]:
         """
         Get the appropriate API key from environment variables based on provider.
         
@@ -395,7 +659,8 @@ class UserSettingsService:
         elif provider == "openrouter":
             return os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
         elif provider == "local_vllm":
-            return os.getenv("LOCAL_VLLM_API_KEY", "local")  # vLLM ignores auth by default
+            stored_key = getattr(user_settings, "local_vllm_api_key", None) if user_settings else None
+            return stored_key or os.getenv("LOCAL_VLLM_API_KEY", "local")
         else:
             # Default fallback
             return os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
@@ -424,30 +689,42 @@ class UserSettingsService:
             # Get API key from environment based on provider (not stored in database for security)
             import os
             
+            _custom_model_name = getattr(user_settings, "local_vllm_custom_model", None)
+
             if config_type == "generation":
                 provider = user_settings.generation_provider
-                api_key = self._get_api_key_for_provider(provider)
-                return {
+                api_key = self._get_api_key_for_provider(provider, user_settings)
+                gen_model = user_settings.generation_model
+                gen_model, extras = self._resolve_model_with_custom(provider, gen_model, user_settings)
+                result = {
                     "provider": provider,
-                    "model": user_settings.generation_model,
-                    "api_key": api_key,  # From environment variables
+                    "model": gen_model,
+                    "api_key": api_key,
                     "temperature": user_settings.generation_temperature,
                     "max_tokens": user_settings.generation_max_tokens,
-                    # Sprint 10.15: pass thinking flag so call sites can forward it
                     "enable_thinking": bool(getattr(user_settings, "local_vllm_enable_thinking", False)),
+                    "local_vllm_custom_endpoint": getattr(user_settings, "local_vllm_custom_endpoint", None),
+                    "local_vllm_api_key": getattr(user_settings, "local_vllm_api_key", None),
                 }
+                result.update(extras)
+                return result
             else:  # execution
                 provider = user_settings.execution_provider
-                api_key = self._get_api_key_for_provider(provider)
-                return {
+                api_key = self._get_api_key_for_provider(provider, user_settings)
+                exec_model = user_settings.execution_model
+                exec_model, extras = self._resolve_model_with_custom(provider, exec_model, user_settings)
+                result = {
                     "provider": provider,
-                    "model": user_settings.execution_model,
-                    "api_key": api_key,  # From environment variables
+                    "model": exec_model,
+                    "api_key": api_key,
                     "temperature": user_settings.execution_temperature,
                     "max_tokens": user_settings.execution_max_tokens,
-                    # Sprint 10.15: pass thinking flag so call sites can forward it
                     "enable_thinking": bool(getattr(user_settings, "local_vllm_enable_thinking", False)),
+                    "local_vllm_custom_endpoint": getattr(user_settings, "local_vllm_custom_endpoint", None),
+                    "local_vllm_api_key": getattr(user_settings, "local_vllm_api_key", None),
                 }
+                result.update(extras)
+                return result
         
         # Fallback to environment settings
         default_config = self.get_default_provider_config(config_type)
