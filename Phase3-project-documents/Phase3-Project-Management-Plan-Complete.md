@@ -3,9 +3,9 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials · ✅ Sprint 10.11 Developer B Step Library COMPLETE (May 6, 2026) — reusable `@module:` step sequences, Step Library sidebar page, Insert Module picker in TestStepEditor, backend `StepLibraryModule` CRUD, module rename Option C (Preview + Confirm Cascade) with `GET /{id}/rename-preview` dry-run + atomic cascade, dedicated Rename modal, name slug locked in Edit form · ✅ Sprint 10.12 Developer B **Feature A** AI-Powered Failure Root Cause Analysis COMPLETE (May 13, 2026) — `root_cause_analysis_service.py`, DOM snapshot capped at 16 000 chars, `execution_feedback.root_cause_analysis` TEXT column, amber collapsible panel in `ExecutionProgressPage`, 37 new tests, two production bugs fixed (Azure `max_completion_tokens`, `error_type` propagation) · ✅ Sprint 10.12 **Feature B** Re-Run from Failed Step COMPLETE (May 14, 2026) · ✅ Sprint 10.13 Developer B Local vLLM On-Premises Model Support COMPLETE (May 15, 2026) — `local_vllm` provider with GPT-OSS-20B, Qwen3.6-35B-A3B-NVFP4, DeepSeek-V4-Flash-4bit; per-model endpoint routing in `universal_llm.py` + Stagehand `initialize()` · ✅ Sprint 10.14 Developer B Ephemeral CRM Login Credentials COMPLETE (May 20, 2026) — JIT credential prompt at Run-time; `requires_runtime_credentials` flag on TestCase; `CredentialPromptModal` in `RunTestButton`; backend `LoginCredentials` schema (never persisted); password masked in logs and step text; `{{CRM_PASSWORD}}` placeholder in stored step records; session-level in-memory cache; `_build_crm_login_steps()` prepends 3 steps to execution pipeline; 30 backend + 11 frontend tests pass · ✅ Sprint 10.15 Developer B vLLM Thinking Mode Toggle COMPLETE (May 20, 2026) — `local_vllm_enable_thinking` user setting; `thinking_capable: bool` on `ModelOption`; `thinking_capable_models` list in `PROVIDER_CONFIGS`; `enable_thinking` kwarg threaded through `chat_completion()` → `_call_local_vllm()`; `extra_body={"chat_template_kwargs":{"enable_thinking":True}}` injected only for `RedHatAI/Qwen3.6-35B-A3B-NVFP4`; `LocalVllmClient.chat_completion()` added; conditional thinking toggle in Settings UI; DB migration `migrate_sprint10_15.py`; 14 backend unit tests pass · ✅ Sprint 10.16 Developer B XPath Cache Management UI COMPLETE (May 26, 2026) — `XPathCachePanel` in Settings with stats row, keyword filter, per-entry delete, Clear Invalid, Clear All; `ClearStepCacheButton` in each `StepCard` on Execution Progress page; 4 new backend API endpoints (`GET /settings/xpath-cache/stats`, `GET /settings/xpath-cache`, `DELETE /settings/xpath-cache/{id}`, `DELETE /settings/xpath-cache`); 4 new `settingsService` methods; 33 new tests (16 backend + 17 frontend); correct XPaths preserved — only the targeted step's cache is dropped · ✅ Sprint 10.17 Developer B AI Screenshot Verification COMPLETE (May 28, 2026) — `verify_screenshot` action, `ScreenshotVerificationService`, `UniversalLLMService.vision_completion()` for Azure/OpenRouter/Google, `ai_verification_result` persistence + badge UI, natural-language screenshot-verification parsing, Azure `gpt-5.2` vision request fix, and Tier 2 FAIL treated as authoritative for screenshot verification · ✅ Sprint 10.18 Developer B Qwen3.6-35B-A3B-MLX-8bit Always-Off Thinking Override COMPLETE (June 4, 2026) — model registered at `http://192.168.206.164:1235/v1`; added to all three thinking-capable sets; always-explicit `chat_template_kwargs: {"enable_thinking": <bool>}` injection in `local_vllm_client.py` and `universal_llm.py`; `LOCAL_VLLM_MLX_ENDPOINT`/`LOCAL_VLLM_MLX_API_KEY` in `env.example`; `TestSprint1018MLXModel` test class with 4 new tests; 7 points · 📋 Sprint 10.20 PLANNED — User-Configurable Custom AI Models (per-user model registry + Settings UI; eliminates deploy-for-every-new-model)
-**Last Updated:** June 8, 2026 (Sprint 10.20 PLANNED — User-Configurable Custom AI Models: per-user `custom_models` JSON registry, `__custom__` sentinel for all providers, shared `ModelSelectWithCustom` component, per-agent slot support)  
-**Version:** 4.5
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials · ✅ Sprint 10.11 Developer B Step Library COMPLETE (May 6, 2026) — reusable `@module:` step sequences, Step Library sidebar page, Insert Module picker in TestStepEditor, backend `StepLibraryModule` CRUD, module rename Option C (Preview + Confirm Cascade) with `GET /{id}/rename-preview` dry-run + atomic cascade, dedicated Rename modal, name slug locked in Edit form · ✅ Sprint 10.12 Developer B **Feature A** AI-Powered Failure Root Cause Analysis COMPLETE (May 13, 2026) — `root_cause_analysis_service.py`, DOM snapshot capped at 16 000 chars, `execution_feedback.root_cause_analysis` TEXT column, amber collapsible panel in `ExecutionProgressPage`, 37 new tests, two production bugs fixed (Azure `max_completion_tokens`, `error_type` propagation) · ✅ Sprint 10.12 **Feature B** Re-Run from Failed Step COMPLETE (May 14, 2026) · ✅ Sprint 10.13 Developer B Local vLLM On-Premises Model Support COMPLETE (May 15, 2026) — `local_vllm` provider with GPT-OSS-20B, Qwen3.6-35B-A3B-NVFP4, DeepSeek-V4-Flash-4bit; per-model endpoint routing in `universal_llm.py` + Stagehand `initialize()` · ✅ Sprint 10.14 Developer B Ephemeral CRM Login Credentials COMPLETE (May 20, 2026) — JIT credential prompt at Run-time; `requires_runtime_credentials` flag on TestCase; `CredentialPromptModal` in `RunTestButton`; backend `LoginCredentials` schema (never persisted); password masked in logs and step text; `{{CRM_PASSWORD}}` placeholder in stored step records; session-level in-memory cache; `_build_crm_login_steps()` prepends 3 steps to execution pipeline; 30 backend + 11 frontend tests pass · ✅ Sprint 10.15 Developer B vLLM Thinking Mode Toggle COMPLETE (May 20, 2026) — `local_vllm_enable_thinking` user setting; `thinking_capable: bool` on `ModelOption`; `thinking_capable_models` list in `PROVIDER_CONFIGS`; `enable_thinking` kwarg threaded through `chat_completion()` → `_call_local_vllm()`; `extra_body={"chat_template_kwargs":{"enable_thinking":True}}` injected only for `RedHatAI/Qwen3.6-35B-A3B-NVFP4`; `LocalVllmClient.chat_completion()` added; conditional thinking toggle in Settings UI; DB migration `migrate_sprint10_15.py`; 14 backend unit tests pass · ✅ Sprint 10.16 Developer B XPath Cache Management UI COMPLETE (May 26, 2026) — `XPathCachePanel` in Settings with stats row, keyword filter, per-entry delete, Clear Invalid, Clear All; `ClearStepCacheButton` in each `StepCard` on Execution Progress page; 4 new backend API endpoints (`GET /settings/xpath-cache/stats`, `GET /settings/xpath-cache`, `DELETE /settings/xpath-cache/{id}`, `DELETE /settings/xpath-cache`); 4 new `settingsService` methods; 33 new tests (16 backend + 17 frontend); correct XPaths preserved — only the targeted step's cache is dropped · ✅ Sprint 10.17 Developer B AI Screenshot Verification COMPLETE (May 28, 2026) — `verify_screenshot` action, `ScreenshotVerificationService`, `UniversalLLMService.vision_completion()` for Azure/OpenRouter/Google, `ai_verification_result` persistence + badge UI, natural-language screenshot-verification parsing, Azure `gpt-5.2` vision request fix, and Tier 2 FAIL treated as authoritative for screenshot verification · ✅ Sprint 10.18 Developer B Qwen3.6-35B-A3B-MLX-8bit Always-Off Thinking Override COMPLETE (June 4, 2026) — model registered at `http://192.168.206.164:1235/v1`; added to all three thinking-capable sets; always-explicit `chat_template_kwargs: {"enable_thinking": <bool>}` injection in `local_vllm_client.py` and `universal_llm.py`; `LOCAL_VLLM_MLX_ENDPOINT`/`LOCAL_VLLM_MLX_API_KEY` in `env.example`; `TestSprint1018MLXModel` test class with 4 new tests; 7 points · ✅ Sprint 10.20 Developer B User-Configurable Custom AI Models COMPLETE (June 8, 2026) — per-user `custom_models` JSON registry; `__custom__` sentinel for all providers; `ModelSelectWithCustom` + `CustomModelsPanel`; Azure endpoint override via `UniversalLLMService.chat_completion()`; 27 backend + 20 frontend tests pass
+**Last Updated:** June 8, 2026 (Sprint 10.20 COMPLETE — User-Configurable Custom AI Models: three-layer catalogue live in Settings; Stagehand Azure registry merge deferred to follow-up)  
+**Version:** 4.6
 
 > **📖 When to Use This Document:**
 > - **Sprint Planning:** Task assignments, story point estimates, dependencies
@@ -91,7 +91,7 @@ For detailed analysis, strategies, and agent-specific documentation, see the [Su
       - Sprint 10.17: AI Screenshot Verification for Test Execution ✅
       - Sprint 10.18: Qwen3.6-35B-A3B-MLX-8bit — Always-Off Thinking Override ✅
       - Sprint 10.19: 3-Tier Execution LLM Response & Timing Log (File-Based)
-      - Sprint 10.20: User-Configurable Custom AI Models (Settings)
+      - Sprint 10.20: User-Configurable Custom AI Models (Settings) ✅
       - Sprint 11: Learning System Activation
       - Sprint 12: Security & Production Readiness
 
@@ -3600,12 +3600,23 @@ LLMResponseLogger
 ### Sprint 10.20: Developer B — User-Configurable Custom AI Models (Settings) (June 2026)
 
 **Owner:** Developer B  
-**Status:** 📋 **PLANNED**  
+**Status:** ✅ **COMPLETE** (June 8, 2026)  
 **Branch:** `feature/sprint10-20-custom-ai-models`  
-**Story Points:** 14 points / ~3 days  
+**Story Points:** 14 points / ~3 days (delivered)  
 **Depends on:** Sprint 10.5 (OpenRouter `model_options` + optgroups), Sprint 10.6 (per-agent model slots), Sprint 10.13 (local_vllm custom model pattern)
 
-**Summary:** Allow users to add arbitrary AI model IDs from the Settings page without a backend deploy. Keep `PROVIDER_CONFIGS` as the team-curated baseline (free badges, thinking-capable metadata, recommended defaults) and add a per-user `custom_models` registry in the database. Extend the existing `local_vllm` `__custom__` sentinel pattern to all providers across Generation, Execution, and all four Agent Workflow slots.
+**Summary:** Users can add arbitrary AI model IDs from the Settings page without a backend deploy. `PROVIDER_CONFIGS` remains the team-curated baseline (free badges, thinking-capable metadata, recommended defaults). A per-user `custom_models` JSON registry on `user_settings` merges into provider API responses. The Sprint 10.13 `local_vllm` `__custom__` sentinel pattern is extended to all providers across Generation, Execution, and all four Agent Workflow slots.
+
+**Implementation highlights (June 8, 2026):**
+- **Backend:** `add_custom_models_registry.py` migration; `CustomModelEntry` + `validate_model_id()`; registry merge/CRUD in `user_settings_service.py`; `_resolve_model_with_custom()` for gen/exec + all 4 agents; `azure_endpoint` / `azure_api_version` forwarded through `UniversalLLMService.chat_completion()`, `test_generation.py`, `execution_service.py`, and `root_cause_analysis_service.py`
+- **Frontend:** new `ModelSelectWithCustom.tsx` (Free / Paid / ⭐ My Models / ⚙ Custom optgroups), `CustomModelsPanel.tsx`, shared `modelSelectUtils.ts`; `SettingsPage.tsx` and `AgentModelConfig.tsx` refactored; `custom_models` on `UserSettings` / `UpdateUserSettingsRequest`; `ModelOption.is_custom`
+- **Tests:** 27 backend unit tests (`test_custom_models_registry.py`, `test_custom_models_routing.py`); 7 `ModelSelectWithCustom` + 13 `AgentModelConfig` frontend tests; `SettingsPage.test.tsx` regression green
+- **Production fix:** `UniversalLLMService.chat_completion()` Azure path now accepts explicit `azure_endpoint` / `azure_api_version` kwargs (previously referenced undefined locals)
+
+**Deferred follow-up (not blocking sprint sign-off):**
+- `stagehand_service.py` — three `initialize()` paths still resolve Azure via env/`gpt-5.2` hardcode; user registry endpoint override not yet merged for TypeScript Stagehand runs
+- `documentation/ADR-001-llm-provider.md` — three-layer catalogue ADR not authored (file does not exist yet)
+- Registry delete in UI updates local state immediately; user must click **Save All Settings** to persist removal to DB
 
 **Motivation:** Every new model today requires editing `PROVIDER_CONFIGS` in `user_settings_service.py` and redeploying (e.g. Sprint 10.5 OpenRouter expansion, Sprint 10.9 `gpt-5.2` Azure routing, Sprint 10.18 MLX model registration). Sprint 10.13 partially solved this for `local_vllm` only. This sprint generalizes that pattern so any configured provider can accept user-defined model IDs at runtime.
 
@@ -3655,62 +3666,63 @@ LLMResponseLogger
 
 ---
 
-#### Phase 1: Database & Backend Schema (3 points)
+#### Phase 1: Database & Backend Schema (3 points) ✅ COMPLETE
 
 **Goal:** Persist per-user custom model registry; accept unlisted model IDs when provider is configured.
 
-| # | Task | File | Owner | Duration |
-|---|------|------|-------|----------|
-| 1.1 | **DB migration** — add `custom_models TEXT NULL` (JSON) to `user_settings`; bump `generation_model`, `execution_model`, and all 4 `*_model` agent columns from `VARCHAR(100)` → `VARCHAR(200)` | `backend/migrations/add_custom_models_registry.py`, `backend/app/models/user_settings.py` | Dev B | 0.25 day |
-| 1.2 | **Pydantic schemas** — add `CustomModelEntry` (`id`, optional `display_name`, optional `endpoint`, optional `api_version`, optional `api_key` for vLLM only); add `custom_models: Optional[Dict[str, List[CustomModelEntry]]]` to `UserSettingBase` / `UserSettingUpdate`; add `validate_model_id()` helper (length ≤ 200, charset `^[a-zA-Z0-9/_.:@-]+$`) | `backend/app/schemas/user_settings.py` | Dev B | 0.5 day |
-| 1.3 | **`get_available_providers()` merge** — for each provider, append user's saved `custom_models[provider]` to `model_options` with `is_custom=True`; dedupe by `id` (curated wins on collision) | `backend/app/services/user_settings_service.py` | Dev B | 0.5 day |
-| 1.4 | **Registry CRUD on save** — when settings update includes a model not in `PROVIDER_CONFIGS`, auto-append to `custom_models[provider]`; expose `add_custom_model()` / `remove_custom_model()` helpers | `backend/app/services/user_settings_service.py` | Dev B | 0.25 day |
-| 1.5 | **Backend unit tests** — registry merge, dedupe, validation rejects invalid IDs, empty registry backward-compat | `backend/tests/unit/test_custom_models_registry.py` | Dev B | 0.5 day |
+| # | Task | File | Owner | Status |
+|---|------|------|-------|--------|
+| 1.1 | **DB migration** — add `custom_models TEXT NULL` (JSON) to `user_settings`; bump model columns to `VARCHAR(200)` | `backend/migrations/add_custom_models_registry.py`, `backend/app/models/user_settings.py` | Dev B | ✅ |
+| 1.2 | **Pydantic schemas** — `CustomModelEntry`, `custom_models` on settings schemas, `validate_model_id()` | `backend/app/schemas/user_settings.py` | Dev B | ✅ |
+| 1.3 | **`get_available_providers()` merge** — append registry entries with `is_custom=True`; curated wins on collision | `backend/app/services/user_settings_service.py`, `backend/app/api/v1/endpoints/settings.py` | Dev B | ✅ |
+| 1.4 | **Registry CRUD on save** — auto-append unlisted models; `add_custom_model()` / `remove_custom_model()` helpers | `backend/app/services/user_settings_service.py` | Dev B | ✅ |
+| 1.5 | **Backend unit tests** — 18 tests in `test_custom_models_registry.py` | `backend/tests/unit/test_custom_models_registry.py` | Dev B | ✅ |
 
 **Total Phase 1: 3 points / ~2 days**
 
 ---
 
-#### Phase 2: Config Resolution & LLM Routing (4 points)
+#### Phase 2: Config Resolution & LLM Routing (4 points) ✅ COMPLETE (Stagehand follow-up deferred)
 
 **Goal:** All six model slots (generation, execution, 4 agents) resolve custom models correctly at runtime.
 
-| # | Task | File | Owner | Duration |
-|---|------|------|-------|----------|
-| 2.1 | **Extend `get_provider_config()`** — resolve `__custom__` sentinel for all providers (not only `local_vllm`); for cloud providers sentinel maps to registry entry or `local_vllm_custom_model` fallback during migration | `backend/app/services/user_settings_service.py` | Dev B | 0.25 day |
-| 2.2 | **Extend `get_agent_config()`** — same sentinel resolution; forward `local_vllm_custom_endpoint` + `api_key` for agent workflow paths (parity with gen/exec) | `backend/app/services/user_settings_service.py` | Dev B | 0.25 day |
-| 2.3 | **Azure custom endpoint routing** — at call time, merge user registry Azure entries with `UniversalLLMService._azure_model_endpoints` so custom deployments route without code change (same pattern as Sprint 10.9 `gpt-5.2`) | `backend/app/services/universal_llm.py`, `backend/llm/azure_client.py`, `backend/app/services/stagehand_service.py` | Dev B | 1 day |
-| 2.4 | **Pass custom Azure config through execution paths** — ensure `execution_service.py`, `test_generation.py`, `orchestration_service.py`, and all 4 agents receive resolved model + optional endpoint override | `backend/app/services/execution_service.py`, `backend/app/services/test_generation.py`, `backend/app/services/orchestration_service.py`, `backend/agents/*.py` | Dev B | 0.5 day |
-| 2.5 | **Routing unit tests** — custom OpenRouter model calls with env key; custom Azure model routes to user-provided endpoint; custom vLLM still uses endpoint override; unknown model without endpoint raises descriptive `ValueError` | `backend/tests/unit/test_custom_models_routing.py` | Dev B | 1 day |
+| # | Task | File | Owner | Status |
+|---|------|------|-------|--------|
+| 2.1 | **Extend `get_provider_config()`** — resolve `__custom__` for all providers; registry + `local_vllm_custom_model` migration fallback | `backend/app/services/user_settings_service.py` | Dev B | ✅ |
+| 2.2 | **Extend `get_agent_config()`** — same sentinel resolution; Azure/vLLM endpoint extras | `backend/app/services/user_settings_service.py` | Dev B | ✅ |
+| 2.3 | **Azure custom endpoint routing** — `chat_completion(azure_endpoint=, azure_api_version=)` → `_call_azure()` override | `backend/app/services/universal_llm.py` | Dev B | ✅ |
+| 2.3b | **Stagehand Azure registry merge** — pass user registry endpoint into all 3 Stagehand init paths | `backend/app/services/stagehand_service.py` | Dev B | ⏳ Deferred |
+| 2.4 | **Pass custom config through execution paths** — gen, exec, RCA, agents via `get_agent_config()` | `test_generation.py`, `execution_service.py`, `root_cause_analysis_service.py`, `orchestration_service.py` | Dev B | ✅ |
+| 2.5 | **Routing unit tests** — 9 tests in `test_custom_models_routing.py` incl. Azure override forwarding | `backend/tests/unit/test_custom_models_routing.py` | Dev B | ✅ |
 
 **Total Phase 2: 4 points / ~3 days**
 
 ---
 
-#### Phase 3: Frontend — Shared Component & Settings Integration (5 points)
+#### Phase 3: Frontend — Shared Component & Settings Integration (5 points) ✅ COMPLETE
 
 **Goal:** Extract duplicated custom-model UI; apply to all provider dropdowns and per-agent rows.
 
-| # | Task | File | Owner | Duration |
-|---|------|------|-------|----------|
-| 3.1 | **`ModelSelectWithCustom` component** — grouped optgroups (Free / Paid / My Models / Custom); `__custom__` sentinel; conditional fields: model ID text input for all providers; endpoint + API token fields for `local_vllm`; collapsible "Advanced" endpoint + API version fields for `azure` custom entries | `frontend/src/components/ModelSelectWithCustom.tsx` | Dev B | 1 day |
-| 3.2 | **Refactor `SettingsPage.tsx`** — replace inline gen/exec dropdown logic with `ModelSelectWithCustom`; load/save `custom_models` from API; remove duplicated `getSafeModelOptionsForProvider` / `handleLocalVllmModelChange` blocks | `frontend/src/pages/SettingsPage.tsx` | Dev B | 0.5 day |
-| 3.3 | **Update `AgentModelConfig.tsx`** — use `ModelSelectWithCustom` for per-agent model dropdown; support custom sentinel + registry entries | `frontend/src/components/AgentModelConfig.tsx` | Dev B | 0.5 day |
-| 3.4 | **TypeScript types + settings service** — add `CustomModelEntry`, `custom_models` to `UserSettings` / `UpdateUserSettingsRequest`; extend `ModelOption` with `is_custom?: boolean` | `frontend/src/types/api.ts`, `frontend/src/services/settingsService.ts` | Dev B | 0.25 day |
-| 3.5 | **"Manage My Models" mini-panel** — list saved custom models per provider with delete button (calls update with registry removal) | `frontend/src/components/CustomModelsPanel.tsx` | Dev B | 0.5 day |
-| 3.6 | **Frontend tests** — custom model save + reload persists; appears in "My Models" optgroup; per-agent custom model saves; vLLM endpoint fields shown only for `local_vllm` | `frontend/src/components/__tests__/ModelSelectWithCustom.test.tsx`, `frontend/src/pages/__tests__/SettingsPage.test.tsx` | Dev B | 1.25 day |
+| # | Task | File | Owner | Status |
+|---|------|------|-------|--------|
+| 3.1 | **`ModelSelectWithCustom` component** — optgroups + sentinel + provider-specific custom fields | `frontend/src/components/ModelSelectWithCustom.tsx` | Dev B | ✅ |
+| 3.2 | **Refactor `SettingsPage.tsx`** — gen/exec use shared component; load/save `custom_models` | `frontend/src/pages/SettingsPage.tsx` | Dev B | ✅ |
+| 3.3 | **Update `AgentModelConfig.tsx`** — `ModelSelectWithCustom` for per-agent dropdowns | `frontend/src/components/AgentModelConfig.tsx` | Dev B | ✅ |
+| 3.4 | **TypeScript types** — `CustomModelEntry`, `custom_models`, `ModelOption.is_custom` | `frontend/src/types/api.ts`, `frontend/src/utils/modelSelectUtils.ts` | Dev B | ✅ |
+| 3.5 | **"Manage My Models" panel** — list + delete per provider | `frontend/src/components/CustomModelsPanel.tsx` | Dev B | ✅ |
+| 3.6 | **Frontend tests** — 7 `ModelSelectWithCustom` + 13 `AgentModelConfig`; `SettingsPage` regression green | `frontend/src/components/__tests__/` | Dev B | ✅ |
 
 **Total Phase 3: 5 points / ~4 days**
 
 ---
 
-#### Phase 4: Documentation & Cleanup (2 points)
+#### Phase 4: Documentation & Cleanup (2 points) — Partial
 
-| # | Task | File | Owner | Duration |
-|---|------|------|-------|----------|
-| 4.1 | **ADR** — document three-layer catalogue, security model, Azure endpoint override precedence | `documentation/ADR-001-llm-provider.md` | Dev B | 0.25 day |
-| 4.2 | **Deprecate manual model-add sprints** — add note in plan that future model additions should use Settings UI unless team-wide curated promotion is needed | `Phase3-project-documents/Phase3-Project-Management-Plan-Complete.md` | Dev B | 0.25 day |
-| 4.3 | **Regression suite** — run existing Sprint 10.5/10.6/10.13/10.15 test suites; confirm curated models unchanged | CI / local | Dev B | 0.5 day |
+| # | Task | File | Owner | Status |
+|---|------|------|-------|--------|
+| 4.1 | **ADR** — three-layer catalogue, security model, Azure override precedence | `documentation/ADR-001-llm-provider.md` | Dev B | ⏳ Deferred |
+| 4.2 | **Deprecate manual model-add sprints** — note in plan (this document) | `Phase3-project-documents/Phase3-Project-Management-Plan-Complete.md` | Dev B | ✅ |
+| 4.3 | **Regression suite** — Sprint 10.5/10.6/10.13 component tests + new suites green locally | CI / local | Dev B | ✅ |
 
 **Total Phase 4: 2 points / ~1 day**
 
@@ -3718,51 +3730,52 @@ LLMResponseLogger
 
 #### Sprint 10.20 Combined Task Table
 
-| Task | Description | Points | Dependencies | Risk |
-|------|-------------|--------|--------------|------|
-| **10.20-B1** | DB migration: `custom_models` JSON + VARCHAR(200) bump | 1 | None | Low |
-| **10.20-B2** | Pydantic schemas + model ID validation | 1 | 10.20-B1 | Low |
-| **10.20-B3** | `get_available_providers()` registry merge | 1 | 10.20-B2 | Low |
-| **10.20-B4** | Config resolution (`get_provider_config` + `get_agent_config`) | 1 | 10.20-B3 | Medium |
-| **10.20-B5** | Azure custom endpoint runtime routing | 2 | 10.20-B4 | Medium |
-| **10.20-B6** | Execution path propagation (agents, stagehand, test gen) | 1 | 10.20-B5 | Medium |
-| **10.20-B7** | `ModelSelectWithCustom` + `CustomModelsPanel` components | 2 | 10.20-B3 | Low |
-| **10.20-B8** | `SettingsPage` + `AgentModelConfig` integration | 2 | 10.20-B7 | Medium |
-| **10.20-B9** | Backend + frontend test suites | 2 | 10.20-B6, 10.20-B8 | Low |
-| **10.20-B10** | ADR + regression verification | 1 | 10.20-B9 | Low |
+| Task | Description | Points | Status |
+|------|-------------|--------|--------|
+| **10.20-B1** | DB migration: `custom_models` JSON + VARCHAR(200) bump | 1 | ✅ |
+| **10.20-B2** | Pydantic schemas + model ID validation | 1 | ✅ |
+| **10.20-B3** | `get_available_providers()` registry merge | 1 | ✅ |
+| **10.20-B4** | Config resolution (`get_provider_config` + `get_agent_config`) | 1 | ✅ |
+| **10.20-B5** | Azure custom endpoint runtime routing (`UniversalLLMService`; Stagehand deferred) | 2 | ✅ Partial |
+| **10.20-B6** | Execution path propagation (gen, exec, RCA, agents) | 1 | ✅ |
+| **10.20-B7** | `ModelSelectWithCustom` + `CustomModelsPanel` components | 2 | ✅ |
+| **10.20-B8** | `SettingsPage` + `AgentModelConfig` integration | 2 | ✅ |
+| **10.20-B9** | Backend + frontend test suites (27 + 20 tests) | 2 | ✅ |
+| **10.20-B10** | ADR + regression verification | 1 | ⏳ ADR deferred; regression ✅ |
 
-**Sprint 10.20 total: 14 points / ~3 days**
+**Sprint 10.20 total: 14 points — COMPLETE (June 8, 2026)**
 
 ---
 
 #### Sprint 10.20 Success Criteria
 
-- [ ] Settings page shows **"⚙ Custom model..."** option for every configured provider (google, cerebras, openrouter, azure, local_vllm) in Generation, Execution, and all 4 Agent Workflow dropdowns
-- [ ] User can type an arbitrary model ID, save, reload, and the model persists without backend deploy
-- [ ] Saved custom models appear under **"⭐ My Models"** optgroup for that provider across all dropdowns
-- [ ] `local_vllm` custom flow unchanged: model name + endpoint URL + optional API token
-- [ ] Custom Azure deployment with user-provided endpoint + API version routes correctly through UniversalLLM, AzureClient, and Stagehand (no `PROVIDER_CONFIGS` edit required)
-- [ ] Custom OpenRouter/Google/Cerebras models call the standard provider API using `.env` API keys
-- [ ] Invalid model IDs rejected at API boundary with clear error message
-- [ ] `PROVIDER_CONFIGS` curated list unchanged — existing Sprint 10.5 free-model optgroups and Sprint 10.15 thinking-capable badges still work
-- [ ] User can delete a saved custom model from "Manage My Models" panel
-- [ ] All new backend + frontend tests pass; no regression in Sprint 10.6 per-agent or Sprint 10.13 vLLM flows
+- [x] Settings page shows **"⚙ Custom model..."** option for every configured provider (google, cerebras, openrouter, azure, local_vllm) in Generation, Execution, and all 4 Agent Workflow dropdowns
+- [x] User can type an arbitrary model ID, save, reload, and the model persists without backend deploy
+- [x] Saved custom models appear under **"⭐ My Models"** optgroup for that provider across all dropdowns
+- [x] `local_vllm` custom flow unchanged: model name + endpoint URL + optional API token
+- [x] Custom Azure deployment with user-provided endpoint + API version routes correctly through **UniversalLLM** and test generation / execution / RCA paths (no `PROVIDER_CONFIGS` edit required)
+- [~] Custom Azure routes through **Stagehand** TypeScript init paths — **deferred**; Stagehand still uses env/`gpt-5.2` hardcode (follow-up task)
+- [x] Custom OpenRouter/Google/Cerebras models call the standard provider API using `.env` API keys
+- [x] Invalid model IDs rejected at API boundary with clear error message (`validate_model_id()`)
+- [x] `PROVIDER_CONFIGS` curated list unchanged — existing Sprint 10.5 free-model optgroups and Sprint 10.15 thinking-capable badges still work
+- [x] User can delete a saved custom model from "Manage My Models" panel (persisted on **Save All Settings**)
+- [x] All new backend + frontend tests pass (27 backend + 20 frontend); no regression in Sprint 10.6 per-agent or Sprint 10.13 vLLM flows
 
 ---
 
-#### Files to Modify
+#### Files Delivered
 
 | Area | Files |
 |------|-------|
 | **DB / ORM** | `backend/app/models/user_settings.py`, `backend/migrations/add_custom_models_registry.py` |
 | **Schemas** | `backend/app/schemas/user_settings.py` |
 | **Service** | `backend/app/services/user_settings_service.py` |
-| **LLM routing** | `backend/app/services/universal_llm.py`, `backend/llm/azure_client.py`, `backend/app/services/stagehand_service.py`, `backend/llm/local_vllm_client.py` |
-| **Call sites** | `backend/app/services/execution_service.py`, `backend/app/services/test_generation.py`, `backend/app/services/orchestration_service.py`, `backend/agents/*.py` |
+| **LLM routing** | `backend/app/services/universal_llm.py`, `backend/app/services/test_generation.py`, `backend/app/services/execution_service.py`, `backend/app/services/root_cause_analysis_service.py` |
 | **API** | `backend/app/api/v1/endpoints/settings.py` |
-| **Frontend** | `frontend/src/components/ModelSelectWithCustom.tsx` *(new)*, `frontend/src/components/CustomModelsPanel.tsx` *(new)*, `frontend/src/components/AgentModelConfig.tsx`, `frontend/src/pages/SettingsPage.tsx`, `frontend/src/types/api.ts`, `frontend/src/services/settingsService.ts` |
-| **Tests** | `backend/tests/unit/test_custom_models_registry.py` *(new)*, `backend/tests/unit/test_custom_models_routing.py` *(new)*, `frontend/src/components/__tests__/ModelSelectWithCustom.test.tsx` *(new)* |
-| **Docs** | `documentation/ADR-001-llm-provider.md` |
+| **Frontend (new)** | `frontend/src/components/ModelSelectWithCustom.tsx`, `frontend/src/components/CustomModelsPanel.tsx`, `frontend/src/utils/modelSelectUtils.ts` |
+| **Frontend (updated)** | `frontend/src/components/AgentModelConfig.tsx`, `frontend/src/pages/SettingsPage.tsx`, `frontend/src/types/api.ts` |
+| **Tests (new)** | `backend/tests/unit/test_custom_models_registry.py`, `backend/tests/unit/test_custom_models_routing.py`, `frontend/src/components/__tests__/ModelSelectWithCustom.test.tsx` |
+| **Docs (deferred)** | `documentation/ADR-001-llm-provider.md` |
 
 ---
 
@@ -3796,7 +3809,7 @@ This sprint **supersedes the deploy-for-new-model pattern** used in:
 - Sprint 10.9 (`gpt-5.2` Azure hardcode — future Azure deployments use custom model + endpoint in Settings)
 - Sprint 10.13/10.18 (vLLM custom model — folded into unified registry; existing columns remain for backward compat during migration)
 
-**Promotion path:** When a user-added model is validated in production, a developer can optionally add it to `PROVIDER_CONFIGS` so all users see it in the curated list. This is a conscious team decision, not a prerequisite for individual use.
+**Promotion path:** When a user-added model is validated in production, a developer can optionally add it to `PROVIDER_CONFIGS` so all users see it in the curated list. **For individual use, Settings UI is now the default path** — manual sprint additions (10.5/10.9/10.18 style) are only needed for team-wide curated promotion.
 
 ---
 
@@ -4639,13 +4652,14 @@ Blockers Requiring CTO Decision:
 
 ## 📚 Document Control
 
-**Document Version:** 4.5  
+**Document Version:** 4.6  
 **Last Updated:** June 8, 2026  
-**Next Review:** Sprint 10.20 planning  
+**Next Review:** Sprint 11 planning  
 **Document Owner:** Developer A (Project Manager)  
 **Approval:** CTO (Sponsor)
 
 **Change Log:**
+- v4.6 (June 8, 2026): Sprint 10.20 COMPLETE — User-Configurable Custom AI Models. Delivered per-user `custom_models` JSON registry, `__custom__` sentinel for all providers, `ModelSelectWithCustom` + `CustomModelsPanel`, Azure endpoint override via `UniversalLLMService.chat_completion()`, gen/exec/agent config resolution. 27 backend + 20 frontend tests pass. Deferred: Stagehand Azure registry merge, ADR-001-llm-provider.md. 14 points.
 - v4.5 (June 8, 2026): Sprint 10.20 PLANNED — User-Configurable Custom AI Models. Per-user `custom_models` JSON registry on `user_settings`; `__custom__` sentinel extended to all providers; shared `ModelSelectWithCustom` component for Generation, Execution, and per-agent slots; Azure custom deployment endpoint override at runtime. Eliminates deploy-for-every-new-model pattern (supersedes manual additions in 10.5/10.9/10.18 for user-driven models). 14 points / ~3 days.
 - v4.4 (June 4, 2026): Sprint 10.18 COMPLETE — `Qwen3.6-35B-A3B-MLX-8bit` fully registered at `http://192.168.206.164:1235/v1` (API key `1235`). Model in all three thinking-capable sets (`_THINKING_CAPABLE_MODELS`, `_THINKING_CAPABLE_VLLM_MODELS`, `thinking_capable_models`). Always-explicit `chat_template_kwargs: {"enable_thinking": <bool>}` injected in both `local_vllm_client.py` and `universal_llm.py` for all thinking-capable models regardless of toggle state. `LOCAL_VLLM_MLX_ENDPOINT` / `LOCAL_VLLM_MLX_API_KEY` documented in `env.example`. `TestSprint1018MLXModel` test class added with 4 test methods covering always-explicit injection. All 8 success criteria met. 7 points.
 - v4.3 (June 4, 2026): Sprint 10.18 PLANNED — Register `Qwen3.6-35B-A3B-MLX-8bit` at `http://192.168.206.164:1235/v1` (API key `1235`). Model IS thinking-capable (added to all three capable-model sets). Existing Sprint 10.15 thinking-injection logic extended: for thinking-capable models always send explicit `chat_template_kwargs: {"enable_thinking": <bool>}` regardless of toggle state, so the model's default-on behaviour is overridden when toggle is off. Settings toggle is available (not greyed-out) but defaults to off. 7 points / ~1.5 days.
