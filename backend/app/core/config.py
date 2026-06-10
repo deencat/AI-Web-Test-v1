@@ -85,6 +85,9 @@ class Settings(BaseSettings):
     PREPROD_OTP_POLL_TIMEOUT: int = 60   # seconds to wait for OTP via API
     PREPROD_OTP_POLL_INTERVAL: int = 3   # seconds between API polls
     PREPROD_OTP_UAT_ONLY: bool = True   # only use API OTP on *.three.com.hk URLs
+    # Internal OpenShift preprod uses corp CA — not in public trust store by default
+    PREPROD_OTP_SSL_VERIFY: bool = False
+    PREPROD_OTP_SSL_CA_BUNDLE: str | None = None  # optional PEM path; overrides verify when set
 
     # Sprint 10.13: Local vLLM / on-premises OpenAI-compatible models
     # Each model has its own endpoint; no auth key required by default (set to "local" or a real key)

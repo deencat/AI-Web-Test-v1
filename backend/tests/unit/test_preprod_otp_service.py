@@ -11,6 +11,7 @@ import pytest
 from app.services.preprod_otp_service import (
     PreprodOtpService,
     parse_preprod_otp_records,
+    resolve_ssl_verify,
     select_matching_otp,
 )
 
@@ -153,6 +154,80 @@ class TestSelectMatchingOtp:
 # ---------------------------------------------------------------------------
 # PreprodOtpService.poll_otp
 # ---------------------------------------------------------------------------
+
+class TestPreprodOtpServiceSslVerify:
+    def test_resolve_ssl_verify_defaults_false_for_internal_preprod(self):
+        assert resolve_ssl_verify() is False
+
+    def test_poll_otp_disables_ssl_verify_for_internal_preprod_by_default(self):
+        service = PreprodOtpService()
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "data": [
+                {
+                    "otp": "482019",
+                    "msisdn": "85291234567",
+                    "otpType": "login",
+                    "createdAt": datetime.now(timezone.utc).isoformat(),
+                }
+            ]
+        }
+
+        with patch("app.services.preprod_otp_service.settings") as mock_settings:
+            mock_settings.PREPROD_OTP_SSL_VERIFY = False
+            mock_settings.PREPROD_OTP_SSL_CA_BUNDLE = None
+            with patch("app.services.preprod_otp_service.httpx.Client") as mock_client_cls:
+                mock_client = MagicMock()
+                mock_client.__enter__.return_value = mock_client
+                mock_client.get.return_value = response
+                mock_client_cls.return_value = mock_client
+
+                service.poll_otp(
+                    api_url="https://moapp-api-uat4-backend.apps.ocpppd.three.com.hk/otp",
+                    msisdn="85291234567",
+                    otp_type="login",
+                    timeout=5,
+                    interval=1,
+                )
+
+        mock_client_cls.assert_called_once()
+        assert mock_client_cls.call_args.kwargs["verify"] is False
+
+    def test_poll_otp_uses_ca_bundle_when_configured(self):
+        service = PreprodOtpService()
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "data": [
+                {
+                    "otp": "482019",
+                    "msisdn": "85291234567",
+                    "otpType": "login",
+                    "createdAt": datetime.now(timezone.utc).isoformat(),
+                }
+            ]
+        }
+
+        with patch("app.services.preprod_otp_service.settings") as mock_settings:
+            mock_settings.PREPROD_OTP_SSL_VERIFY = True
+            mock_settings.PREPROD_OTP_SSL_CA_BUNDLE = "/etc/ssl/corp-ca.pem"
+            with patch("app.services.preprod_otp_service.httpx.Client") as mock_client_cls:
+                mock_client = MagicMock()
+                mock_client.__enter__.return_value = mock_client
+                mock_client.get.return_value = response
+                mock_client_cls.return_value = mock_client
+
+                service.poll_otp(
+                    api_url="https://moapp-api-uat4-backend.apps.ocpppd.three.com.hk/otp",
+                    msisdn="85291234567",
+                    otp_type="login",
+                    timeout=5,
+                    interval=1,
+                )
+
+        assert mock_client_cls.call_args.kwargs["verify"] == "/etc/ssl/corp-ca.pem"
+
 
 class TestPreprodOtpServicePollOtp:
     def test_poll_otp_returns_matching_value(self):

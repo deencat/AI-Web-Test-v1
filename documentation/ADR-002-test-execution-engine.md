@@ -3609,6 +3609,8 @@ Per-digit expansion reuses existing `format_otp_steps()` and `otp_expanded_end` 
 - `PREPROD_OTP_POLL_TIMEOUT` (default 60)
 - `PREPROD_OTP_POLL_INTERVAL` (default 3)
 - `PREPROD_OTP_UAT_ONLY` (default true)
+- `PREPROD_OTP_SSL_VERIFY` (default false — internal OpenShift corp CA)
+- `PREPROD_OTP_SSL_CA_BUNDLE` (optional PEM path for proper TLS verification)
 
 ### Consequences
 

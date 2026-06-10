@@ -14,6 +14,8 @@ from typing import Any, Optional
 
 import httpx
 
+from app.core.config import settings
+
 logger = logging.getLogger(__name__)
 
 # Field aliases observed / expected from QA API (tolerant parser — spike 10.21-B7)
@@ -119,6 +121,20 @@ def _otp_type_matches(record_type: str, requested_type: Optional[str]) -> bool:
     return requested in record_type or record_type in requested
 
 
+def resolve_ssl_verify() -> bool | str:
+    """
+    Resolve httpx TLS verify setting for the internal preprod OTP API.
+
+    OpenShift/corp endpoints often use a private CA not in the public trust store.
+    Set PREPROD_OTP_SSL_CA_BUNDLE to a PEM path for proper verification, or
+    PREPROD_OTP_SSL_VERIFY=false to skip verification (default for preprod).
+    """
+    ca_bundle = getattr(settings, "PREPROD_OTP_SSL_CA_BUNDLE", None)
+    if ca_bundle:
+        return ca_bundle
+    return bool(getattr(settings, "PREPROD_OTP_SSL_VERIFY", False))
+
+
 def select_matching_otp(
     records: list[dict[str, Any]],
     msisdn: str,
@@ -190,8 +206,13 @@ class PreprodOtpService:
 
         deadline = time.monotonic() + timeout
         masked_msisdn = _mask_msisdn(msisdn)
+        ssl_verify = resolve_ssl_verify()
+        if ssl_verify is False:
+            logger.debug(
+                "PreprodOtpService: TLS certificate verification disabled for internal preprod API"
+            )
 
-        with httpx.Client(timeout=30.0) as client:
+        with httpx.Client(timeout=30.0, verify=ssl_verify) as client:
             while time.monotonic() < deadline:
                 try:
                     response = client.get(api_url)
