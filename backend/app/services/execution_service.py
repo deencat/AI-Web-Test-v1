@@ -30,13 +30,8 @@ from app.services.three_tier_execution_service import ThreeTierExecutionService
 from app.services.post_click_readiness import auto_dismiss_blocking_modals
 from app.utils.http_auth_credentials import http_credentials_for_url
 from app.utils.test_data_generator import TestDataGenerator
-from app.services.email_otp_service import (
-    email_otp_service,
-    format_otp_steps,
-    get_email_credential_for_user,
-    is_otp_step,
-)
-from app.services.encryption_service import EncryptionService as _EncryptionService
+from app.services.email_otp_service import is_otp_step
+from app.services.otp_source_router import fetch_otp_and_format_steps
 from app.services.step_module_resolver import resolve_steps
 from app.services.root_cause_analysis_service import generate_root_cause_analysis
 from app.services.user_settings_service import user_settings_service
@@ -142,7 +137,9 @@ class ExecutionService:
         
         return default_settings
 
-    def _expand_otp_steps_list(self, steps: list, db: Session, user_id: int) -> list:
+    def _expand_otp_steps_list(
+        self, steps: list, db: Session, user_id: int, test_url: Optional[str] = None
+    ) -> list:
         """
         Pre-expand any OTP step in *steps* into N individual per-digit steps.
         Returns a new list; non-OTP steps are passed through unchanged.
@@ -151,50 +148,28 @@ class ExecutionService:
         for step in steps:
             step_str = str(step)
             if is_otp_step(step_str):
-                expanded = self._fetch_otp_and_format_steps(step_str, db, user_id)
+                expanded = self._fetch_otp_and_format_steps(
+                    step_str, db, user_id, test_url=test_url
+                )
                 result.extend(expanded)
             else:
                 result.append(step)
         return result
 
-    def _fetch_otp_and_format_steps(self, step_description: str, db: Session, user_id: int) -> list:
+    def _fetch_otp_and_format_steps(
+        self,
+        step_description: str,
+        db: Session,
+        user_id: int,
+        test_url: Optional[str] = None,
+    ) -> list:
         """
-        Fetch OTP from IMAP and return a list of per-digit step descriptions.
+        Resolve OTP source (preprod API or IMAP) and return per-digit step descriptions.
         Falls back to a single error step if OTP cannot be retrieved.
         """
-        import os as _os
-        key = _os.getenv("CREDENTIAL_ENCRYPTION_KEY")
-        if not key:
-            logger.warning("OTP step detected but CREDENTIAL_ENCRYPTION_KEY not set; skipping IMAP poll")
-            return [step_description]
-
-        cred = get_email_credential_for_user(db, user_id)
-        if cred is None:
-            logger.warning(
-                "OTP step detected for user %s but no email credential configured", user_id
-            )
-            return [step_description]
-
-        try:
-            enc = _EncryptionService()
-            app_password = enc.decrypt_password(cred.imap_password_encrypted)
-            from app.core.config import settings as app_settings
-            otp = email_otp_service.poll_otp(
-                imap_host=cred.imap_host,
-                imap_port=cred.imap_port,
-                email_address=cred.email_address,
-                app_password=app_password,
-                timeout=app_settings.EMAIL_OTP_POLL_TIMEOUT,
-                interval=app_settings.EMAIL_OTP_POLL_INTERVAL,
-            )
-            logger.info("OTP resolved for user %s — expanding into %d steps", user_id, len(otp))
-            return format_otp_steps(otp)
-        except TimeoutError as exc:
-            logger.warning("OTP poll timed out for user %s: %s", user_id, exc)
-            return [f"Enter OTP (No OTP email received — {exc})"]
-        except Exception as exc:
-            logger.error("OTP resolution error for user %s: %s", user_id, exc)
-            return [step_description]
+        return fetch_otp_and_format_steps(
+            step_description, db, user_id, test_url=test_url
+        )
 
     async def initialize(self):
         """Initialize Playwright and browser."""
@@ -845,7 +820,9 @@ class ExecutionService:
                 # step and only if this index is NOT inside a previously-expanded range.
                 # CRM step dicts are never OTP steps — guard with isinstance check.
                 if idx > otp_expanded_end and isinstance(step_desc, str) and is_otp_step(step_desc):
-                    expanded = self._fetch_otp_and_format_steps(step_desc, db, user_id)
+                    expanded = self._fetch_otp_and_format_steps(
+                        step_desc, db, user_id, test_url=base_url
+                    )
                     steps[idx - 1:idx] = expanded
                     total_steps = len(steps)
                     otp_expanded_end = idx + len(expanded) - 1
