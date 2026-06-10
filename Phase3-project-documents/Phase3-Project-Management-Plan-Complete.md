@@ -3,9 +3,9 @@
 **Document Type:** Project Management Guide  
 **Purpose:** Comprehensive governance, team structure, sprint planning, budget, security, risk management, and autonomous learning  
 **Scope:** Sprint 7-12 execution framework with frontend integration and autonomous self-improvement (Jan 23 - Apr 15, 2026)  
-**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials · ✅ Sprint 10.11 Developer B Step Library COMPLETE (May 6, 2026) — reusable `@module:` step sequences, Step Library sidebar page, Insert Module picker in TestStepEditor, backend `StepLibraryModule` CRUD, module rename Option C (Preview + Confirm Cascade) with `GET /{id}/rename-preview` dry-run + atomic cascade, dedicated Rename modal, name slug locked in Edit form · ✅ Sprint 10.12 Developer B **Feature A** AI-Powered Failure Root Cause Analysis COMPLETE (May 13, 2026) — `root_cause_analysis_service.py`, DOM snapshot capped at 16 000 chars, `execution_feedback.root_cause_analysis` TEXT column, amber collapsible panel in `ExecutionProgressPage`, 37 new tests, two production bugs fixed (Azure `max_completion_tokens`, `error_type` propagation) · ✅ Sprint 10.12 **Feature B** Re-Run from Failed Step COMPLETE (May 14, 2026) · ✅ Sprint 10.13 Developer B Local vLLM On-Premises Model Support COMPLETE (May 15, 2026) — `local_vllm` provider with GPT-OSS-20B, Qwen3.6-35B-A3B-NVFP4, DeepSeek-V4-Flash-4bit; per-model endpoint routing in `universal_llm.py` + Stagehand `initialize()` · ✅ Sprint 10.14 Developer B Ephemeral CRM Login Credentials COMPLETE (May 20, 2026) — JIT credential prompt at Run-time; `requires_runtime_credentials` flag on TestCase; `CredentialPromptModal` in `RunTestButton`; backend `LoginCredentials` schema (never persisted); password masked in logs and step text; `{{CRM_PASSWORD}}` placeholder in stored step records; session-level in-memory cache; `_build_crm_login_steps()` prepends 3 steps to execution pipeline; 30 backend + 11 frontend tests pass · ✅ Sprint 10.15 Developer B vLLM Thinking Mode Toggle COMPLETE (May 20, 2026) — `local_vllm_enable_thinking` user setting; `thinking_capable: bool` on `ModelOption`; `thinking_capable_models` list in `PROVIDER_CONFIGS`; `enable_thinking` kwarg threaded through `chat_completion()` → `_call_local_vllm()`; `extra_body={"chat_template_kwargs":{"enable_thinking":True}}` injected only for `RedHatAI/Qwen3.6-35B-A3B-NVFP4`; `LocalVllmClient.chat_completion()` added; conditional thinking toggle in Settings UI; DB migration `migrate_sprint10_15.py`; 14 backend unit tests pass · ✅ Sprint 10.16 Developer B XPath Cache Management UI COMPLETE (May 26, 2026) — `XPathCachePanel` in Settings with stats row, keyword filter, per-entry delete, Clear Invalid, Clear All; `ClearStepCacheButton` in each `StepCard` on Execution Progress page; 4 new backend API endpoints (`GET /settings/xpath-cache/stats`, `GET /settings/xpath-cache`, `DELETE /settings/xpath-cache/{id}`, `DELETE /settings/xpath-cache`); 4 new `settingsService` methods; 33 new tests (16 backend + 17 frontend); correct XPaths preserved — only the targeted step's cache is dropped · ✅ Sprint 10.17 Developer B AI Screenshot Verification COMPLETE (May 28, 2026) — `verify_screenshot` action, `ScreenshotVerificationService`, `UniversalLLMService.vision_completion()` for Azure/OpenRouter/Google, `ai_verification_result` persistence + badge UI, natural-language screenshot-verification parsing, Azure `gpt-5.2` vision request fix, and Tier 2 FAIL treated as authoritative for screenshot verification · ✅ Sprint 10.18 Developer B Qwen3.6-35B-A3B-MLX-8bit Always-Off Thinking Override COMPLETE (June 4, 2026) — model registered at `http://192.168.206.164:1235/v1`; added to all three thinking-capable sets; always-explicit `chat_template_kwargs: {"enable_thinking": <bool>}` injection in `local_vllm_client.py` and `universal_llm.py`; `LOCAL_VLLM_MLX_ENDPOINT`/`LOCAL_VLLM_MLX_API_KEY` in `env.example`; `TestSprint1018MLXModel` test class with 4 new tests; 7 points · ✅ Sprint 10.20 Developer B User-Configurable Custom AI Models COMPLETE (June 8, 2026) — per-user `custom_models` JSON registry; `__custom__` sentinel for all providers; `ModelSelectWithCustom` + `CustomModelsPanel`; Azure endpoint override via `UniversalLLMService.chat_completion()`; 27 backend + 20 frontend tests pass
-**Last Updated:** June 8, 2026 (Sprint 10.20 COMPLETE — User-Configurable Custom AI Models: three-layer catalogue live in Settings; Stagehand Azure registry merge deferred to follow-up)  
-**Version:** 4.6
+**Status:** ✅ Sprint 9 COMPLETE (100%) - Phase 2+3 Merged, Gap Analysis Complete, Sprint 10 Developer B Phase 3 (10B.11/10B.12) COMPLETE (Feb 26) · ✅ Sprint 10.5 Developer B Feature 3 COMPLETE (ObservationAgent HTTP Credentials via CDP, Mar 13) · ✅ Sprint 10.6 Developer B Per-Agent Model Configuration COMPLETE (Mar 17) · ✅ Sprint 10 Developer A **10A.12–10A.19** COMPLETE (Observation `playwright_flow_recording` + locators, UAT card/signature/`max_browser_steps`, **`max_flow_timeout_seconds`** + timeout cancel, Mar 24) · ✅ Sprint 10.7 Developer B 3-Tier Execution — browser profile picker removed for all saved test runs; UAT credentials auto-injected; non-UAT URLs run directly COMPLETE (Mar 30) · ✅ Sprint 10.8 Developer B AgentWorkflowTrigger Missing Fields (`available_file_paths`, `scenario_types`, `max_scenarios`, `max_browser_steps`, `focus_goal_only`) COMPLETE (Mar 27) · ✅ Sprint 10.9 Developer B Add gpt-5.2 Azure Model to Settings Page COMPLETE (Mar 31) · ✅ Sprint 10.10 Developer B IMAP-Based Email OTP Service COMPLETE (Apr 28) — JIT IMAP polling, per-digit step expansion, context-aware OTP extraction, Fernet-encrypted credentials · ✅ Sprint 10.11 Developer B Step Library COMPLETE (May 6, 2026) — reusable `@module:` step sequences, Step Library sidebar page, Insert Module picker in TestStepEditor, backend `StepLibraryModule` CRUD, module rename Option C (Preview + Confirm Cascade) with `GET /{id}/rename-preview` dry-run + atomic cascade, dedicated Rename modal, name slug locked in Edit form · ✅ Sprint 10.12 Developer B **Feature A** AI-Powered Failure Root Cause Analysis COMPLETE (May 13, 2026) — `root_cause_analysis_service.py`, DOM snapshot capped at 16 000 chars, `execution_feedback.root_cause_analysis` TEXT column, amber collapsible panel in `ExecutionProgressPage`, 37 new tests, two production bugs fixed (Azure `max_completion_tokens`, `error_type` propagation) · ✅ Sprint 10.12 **Feature B** Re-Run from Failed Step COMPLETE (May 14, 2026) · ✅ Sprint 10.13 Developer B Local vLLM On-Premises Model Support COMPLETE (May 15, 2026) — `local_vllm` provider with GPT-OSS-20B, Qwen3.6-35B-A3B-NVFP4, DeepSeek-V4-Flash-4bit; per-model endpoint routing in `universal_llm.py` + Stagehand `initialize()` · ✅ Sprint 10.14 Developer B Ephemeral CRM Login Credentials COMPLETE (May 20, 2026) — JIT credential prompt at Run-time; `requires_runtime_credentials` flag on TestCase; `CredentialPromptModal` in `RunTestButton`; backend `LoginCredentials` schema (never persisted); password masked in logs and step text; `{{CRM_PASSWORD}}` placeholder in stored step records; session-level in-memory cache; `_build_crm_login_steps()` prepends 3 steps to execution pipeline; 30 backend + 11 frontend tests pass · ✅ Sprint 10.15 Developer B vLLM Thinking Mode Toggle COMPLETE (May 20, 2026) — `local_vllm_enable_thinking` user setting; `thinking_capable: bool` on `ModelOption`; `thinking_capable_models` list in `PROVIDER_CONFIGS`; `enable_thinking` kwarg threaded through `chat_completion()` → `_call_local_vllm()`; `extra_body={"chat_template_kwargs":{"enable_thinking":True}}` injected only for `RedHatAI/Qwen3.6-35B-A3B-NVFP4`; `LocalVllmClient.chat_completion()` added; conditional thinking toggle in Settings UI; DB migration `migrate_sprint10_15.py`; 14 backend unit tests pass · ✅ Sprint 10.16 Developer B XPath Cache Management UI COMPLETE (May 26, 2026) — `XPathCachePanel` in Settings with stats row, keyword filter, per-entry delete, Clear Invalid, Clear All; `ClearStepCacheButton` in each `StepCard` on Execution Progress page; 4 new backend API endpoints (`GET /settings/xpath-cache/stats`, `GET /settings/xpath-cache`, `DELETE /settings/xpath-cache/{id}`, `DELETE /settings/xpath-cache`); 4 new `settingsService` methods; 33 new tests (16 backend + 17 frontend); correct XPaths preserved — only the targeted step's cache is dropped · ✅ Sprint 10.17 Developer B AI Screenshot Verification COMPLETE (May 28, 2026) — `verify_screenshot` action, `ScreenshotVerificationService`, `UniversalLLMService.vision_completion()` for Azure/OpenRouter/Google, `ai_verification_result` persistence + badge UI, natural-language screenshot-verification parsing, Azure `gpt-5.2` vision request fix, and Tier 2 FAIL treated as authoritative for screenshot verification · ✅ Sprint 10.18 Developer B Qwen3.6-35B-A3B-MLX-8bit Always-Off Thinking Override COMPLETE (June 4, 2026) — model registered at `http://192.168.206.164:1235/v1`; added to all three thinking-capable sets; always-explicit `chat_template_kwargs: {"enable_thinking": <bool>}` injection in `local_vllm_client.py` and `universal_llm.py`; `LOCAL_VLLM_MLX_ENDPOINT`/`LOCAL_VLLM_MLX_API_KEY` in `env.example`; `TestSprint1018MLXModel` test class with 4 new tests; 7 points · ✅ Sprint 10.20 Developer B User-Configurable Custom AI Models COMPLETE (June 8, 2026) — per-user `custom_models` JSON registry; `__custom__` sentinel for all providers; `ModelSelectWithCustom` + `CustomModelsPanel`; Azure endpoint override via `UniversalLLMService.chat_completion()`; 27 backend + 20 frontend tests pass · 📋 Sprint 10.21 Developer B Three HK Preprod API OTP Service PLANNED (June 10, 2026) — backend `httpx` poll of `getOtpInfoListFor1Hour`; no headless/second browser; JIT OTP expansion reuses Sprint 10.10; 12 points
+**Last Updated:** June 10, 2026 (Sprint 10.21 PLANNED — Three HK preprod OTP via HTTP API polling; headless browser explicitly rejected for OTP retrieval)  
+**Version:** 4.7
 
 > **📖 When to Use This Document:**
 > - **Sprint Planning:** Task assignments, story point estimates, dependencies
@@ -92,6 +92,7 @@ For detailed analysis, strategies, and agent-specific documentation, see the [Su
       - Sprint 10.18: Qwen3.6-35B-A3B-MLX-8bit — Always-Off Thinking Override ✅
       - Sprint 10.19: 3-Tier Execution LLM Response & Timing Log (File-Based)
       - Sprint 10.20: User-Configurable Custom AI Models (Settings) ✅
+      - Sprint 10.21: Three HK Preprod API OTP Service (Non-Browser) 📋
       - Sprint 11: Learning System Activation
       - Sprint 12: Security & Production Readiness
 
@@ -140,7 +141,7 @@ For detailed analysis, strategies, and agent-specific documentation, see the [Su
 **Budget:** $160/month operational costs (simplified infrastructure)  
 **Timeline:** 12 weeks (Jan 23 - Apr 15, 2026)  
 **Team Size:** 2 developers (Developer A lead, Developer B support)  
-**Total Effort:** 354 story points  
+**Total Effort:** 366 story points *(354 delivered/planned + 12 Sprint 10.21 planned)*  
 **Target Launch:** April 15, 2026
 
 **Phase 3 Strategy: MVP First, Scale Later**
@@ -3813,6 +3814,182 @@ This sprint **supersedes the deploy-for-new-model pattern** used in:
 
 ---
 
+### Sprint 10.21: Developer B — Three HK Preprod API OTP Service (Non-Browser) (June 2026)
+
+**Owner:** Developer B  
+**Status:** 📋 **PLANNED** — Recommended next sprint after 10.20; unblocks Three HK UAT/preprod flows that use SMS/login OTP without IMAP email  
+**Story Points:** 12 points / ~2.5 days  
+**Depends on:** Sprint 10.10 (JIT OTP expansion, `format_otp_steps()`, `otp_expanded_end` guard), Sprint 10.7 (UAT credential auto-injection for `wwwuat.three.com.hk`)
+
+**Summary:** Add a **backend HTTP OTP poller** for the Three HK preprod diagnostic API (`getOtpInfoListFor1Hour`). When a 3-tier test reaches an OTP placeholder step, the execution engine polls this API **in-process via `httpx`** — no second browser, no headless browser, no context switch. The resolved OTP reuses the existing per-digit expansion from Sprint 10.10. The main Playwright/Stagehand browser session is never interrupted.
+
+**Preprod OTP API (provided by QA):**
+```
+GET https://moapp-api-uat4-backend.apps.ocpppd.three.com.hk/moapp-api/HTHK/THREE/THREE/intl/getOtpInfoListFor1Hour
+```
+Returns OTP records from the last hour (login OTP, contact-number OTP, etc.). Exact response schema to be confirmed during implementation spike; expected fields include OTP value, MSISDN/contact number, OTP type/purpose, and creation timestamp.
+
+---
+
+#### Recommendation: API Polling — Not Headless Browser
+
+| Approach | Verdict | Reason |
+|---|---|---|
+| **Headless browser** to read OTP from a portal/UI | ❌ **Rejected** | Second Playwright instance competes with the test browser (CPU, memory, CDP ports); 30–60 s navigation overhead; bot detection risk; unnecessary when a direct API exists |
+| **Same browser tab** navigates away to fetch OTP | ❌ **Rejected** | Destroys current page state, cookies, and multi-step flow; breaks 3-tier execution mid-test |
+| **Manual OTP entry** in test steps | ⚠️ Fallback only | Blocks CI/automation; acceptable when API unreachable |
+| **Backend HTTP API poll (`httpx`)** | ✅ **Selected** | Zero impact on test browser; sub-second per poll; same JIT timing model as IMAP; works in headed and headless test runs alike |
+
+**`HEADLESS_BROWSER` is unrelated to OTP retrieval.** It only controls whether the **test** browser window is visible. OTP fetching runs entirely in the Python backend as async HTTP — independent of Playwright visibility mode.
+
+---
+
+#### How It Works (Planned)
+
+```
+3-tier test browser (Playwright / Stagehand — headed or headless per HEADLESS_BROWSER)
+    │ user triggers "Send OTP" in preceding step
+    │ browser stays on app page — no navigation away
+    ▼
+Execution loop reaches OTP placeholder step (e.g. "Enter login OTP for 85291234567")
+    │
+    ▼  JIT — same pattern as Sprint 10.10
+OtpSourceRouter in _fetch_otp_and_format_steps()
+    │ detects source: three_preprod_api (from step metadata, msisdn in text, or test URL)
+    ▼
+PreprodOtpService.poll_otp()  — httpx GET, asyncio-friendly
+    │ GET .../getOtpInfoListFor1Hour
+    │ filter: msisdn + otp_type + created_at > poll_start_time
+    │ poll every 3s, timeout 60s (configurable)
+    ▼
+newest matching OTP value (e.g. "482019")
+    │
+    ▼
+format_otp_steps("482019")  — reused from email_otp_service.py
+    │
+    ▼
+execution loop fills per-digit boxes via Tier 1/2/3 — browser never left the app
+```
+
+**Stale-OTP prevention (mirrors Sprint 10.10 JIT):** Record `poll_start_time = utc_now()` immediately before the first HTTP poll at the OTP step. Only accept API records with `created_at >= poll_start_time - 5s` (grace window). Pick the **newest** matching record. This avoids reusing an OTP from a prior test run in the same hour window.
+
+---
+
+#### OTP Source Routing (Planned)
+
+Extend `_fetch_otp_and_format_steps()` in both `execution_service.py` and `stagehand_service.py` to dispatch by source:
+
+| Priority | Source selection | When used |
+|---|---|---|
+| 1 | Step metadata `otp_source: "three_preprod_api"` | Explicit in structured step dict |
+| 2 | Step text `Enter <type> OTP for <msisdn>` | Parsed MSISDN + type from description |
+| 3 | Test URL matches `*.three.com.hk` + user has preprod API enabled in Settings | Environment default |
+| 4 | User has IMAP email credential configured | Fallback to Sprint 10.10 `EmailOTPService` |
+| 5 | None | Graceful error step; execution continues with failure logged |
+
+**Planned step examples:**
+```
+Enter login OTP for 85291234567
+Enter contact number OTP for 85291234567
+@otp:api(msisdn=85291234567,type=login)
+```
+
+---
+
+#### Design Decisions
+
+| Decision | Choice | Rationale |
+|---|---|---|
+| Transport | `httpx` async GET (or `requests` in `asyncio.to_thread`) | No browser dependency; same backend process as execution engine |
+| Browser impact | **None** — OTP is out-of-band HTTP | User requirement: OTP fetch must not affect current browser test execution |
+| Step expansion | Reuse `format_otp_steps()` + `otp_expanded_end` guard | Proven in Sprint 10.10; handles split-box OTP UIs |
+| Poll timing | JIT at OTP step execution time | Prevents stale OTP from prior runs within the 1-hour API window |
+| Credential storage | Env vars + optional Settings override | API is internal preprod diagnostic endpoint; no per-user secrets expected initially |
+| Coexistence with IMAP | Router picks API or IMAP per step | Email OTP flows unchanged; Three HK SMS/login OTP uses API |
+
+---
+
+#### Planned Implementation
+
+| File | Change |
+|------|--------|
+| `backend/app/services/preprod_otp_service.py` | **New:** `PreprodOtpService.poll_otp(msisdn, otp_type, poll_start_time, timeout, interval)`; response parsing; newest-first match |
+| `backend/app/services/otp_source_router.py` | **New:** `resolve_otp_source(step, test_url)`, `parse_otp_step_params(step_description)` |
+| `backend/app/services/email_otp_service.py` | Extract shared `format_otp_steps()`, `is_otp_step()` (already present — import from here) |
+| `backend/app/services/execution_service.py` | Update `_fetch_otp_and_format_steps()` to call `OtpSourceRouter` |
+| `backend/app/services/stagehand_service.py` | Same router integration |
+| `backend/app/core/config.py` | Add `THREE_PREPROD_OTP_API_URL`, `PREPROD_OTP_POLL_TIMEOUT`, `PREPROD_OTP_POLL_INTERVAL` |
+| `backend/env.example` | Document preprod OTP env vars |
+| `frontend/src/features/settings/PreprodOtpSection.tsx` | **Optional:** toggle + default MSISDN; can defer to env-only in v1 |
+| `documentation/ADR-002-test-execution-engine.md` | ADR-002-43: Preprod API OTP via HTTP (non-browser) |
+| `backend/tests/unit/test_preprod_otp_service.py` | TDD: response parsing, msisdn/type filter, stale OTP rejection, timeout |
+| `backend/tests/integration/test_preprod_otp_execution.py` | TDD: router dispatch, JIT guard, API-vs-IMAP fallback |
+
+**New environment variables (add to `backend/.env`):**
+```
+# Three HK preprod OTP diagnostic API (Sprint 10.21)
+THREE_PREPROD_OTP_API_URL=https://moapp-api-uat4-backend.apps.ocpppd.three.com.hk/moapp-api/HTHK/THREE/THREE/intl/getOtpInfoListFor1Hour
+PREPROD_OTP_POLL_TIMEOUT=60
+PREPROD_OTP_POLL_INTERVAL=3
+# Optional: restrict API OTP to UAT hosts only (default true)
+PREPROD_OTP_UAT_ONLY=true
+```
+
+---
+
+#### Task Table (Planned)
+
+| Task | File | Description | Points | Status |
+|------|------|-------------|--------|--------|
+| **10.21-B1** | `test_preprod_otp_service.py` | TDD: mock HTTP responses; msisdn/type filter; newest-first; stale rejection; timeout | 2 | 📋 |
+| **10.21-B2** | `test_preprod_otp_execution.py` | TDD: router picks API vs IMAP; JIT `otp_expanded_end` guard; graceful fallback | 2 | 📋 |
+| **10.21-B3** | `preprod_otp_service.py` | `PreprodOtpService.poll_otp()` with httpx + poll loop | 2 | 📋 |
+| **10.21-B4** | `otp_source_router.py` | Source detection from step metadata, step text, test URL | 2 | 📋 |
+| **10.21-B5** | `execution_service.py` + `stagehand_service.py` | Wire router into `_fetch_otp_and_format_steps()` | 2 | 📋 |
+| **10.21-B6** | `config.py` + `env.example` + ADR-002-43 | Env vars, docs, architecture decision record | 1 | 📋 |
+| **10.21-B7** | Spike: live API response schema | Confirm JSON fields with one manual `curl` from corp network; adjust parser | 1 | 📋 |
+
+**Sprint 10.21 total: 12 points / ~2.5 days**
+
+---
+
+#### Sprint 10.21 Success Criteria
+
+- [ ] OTP placeholder step on Three HK UAT/preprod test resolves automatically via `getOtpInfoListFor1Hour` — no manual entry
+- [ ] OTP HTTP poll runs in backend only; **test browser session is not navigated away, paused, or replaced** during OTP fetch
+- [ ] Works identically whether `HEADLESS_BROWSER=true` or `false` (OTP path has no browser dependency)
+- [ ] Login OTP and contact-number OTP distinguishable via `otp_type` or step-text parsing
+- [ ] Stale OTP from prior run rejected via `poll_start_time` + newest-first selection within 1-hour API window
+- [ ] Per-digit step expansion reuses `format_otp_steps()` — split-box OTP UIs work without change
+- [ ] IMAP email OTP (Sprint 10.10) still works when no preprod API match; no regression
+- [ ] Graceful error step on API timeout (default 60s); execution log shows clear failure reason
+- [ ] Unit + integration tests pass; no regression in existing OTP or 3-tier execution tests
+
+---
+
+#### Risks & Mitigations
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|-----------|--------|------------|
+| API returns 503 outside corp/VPN network | High | Medium | Document network requirement; graceful fallback to manual step; spike task 10.21-B7 confirms reachability |
+| Response schema differs from assumption | Medium | Medium | Spike first; parser tolerant of field aliases (`otp`/`otpCode`/`verificationCode`) |
+| Multiple OTPs in 1-hour window for same MSISDN | Medium | High | `poll_start_time` filter + newest `created_at`; optional step-level `otp_type` |
+| API exposes real user OTPs — security | Low | High | Restrict to preprod URL allowlist; never log full OTP in production logs (mask like CRM password); env-gated `PREPROD_OTP_UAT_ONLY` |
+
+---
+
+#### Relationship to Sprint 10.10
+
+Sprint 10.10 solved **email-delivered** OTP via IMAP. Sprint 10.21 solves **SMS/app-delivered** OTP on Three HK preprod where QA exposes a diagnostic API. Both share:
+- `is_otp_step()` detection
+- `format_otp_steps()` per-digit expansion
+- JIT expansion at step execution time
+- `otp_expanded_end` re-poll guard
+
+The only new piece is the **OTP source router** and **`PreprodOtpService`** HTTP client. No changes to Tier 1/2/3 executors.
+
+---
+
 ### Sprint 11: Autonomous Learning System Activation (Mar 26 - Apr 2, 2026)
 
 **Focus:** Achieve true autonomous self-improvement through automated learning mechanisms  
@@ -4652,13 +4829,14 @@ Blockers Requiring CTO Decision:
 
 ## 📚 Document Control
 
-**Document Version:** 4.6  
-**Last Updated:** June 8, 2026  
-**Next Review:** Sprint 11 planning  
+**Document Version:** 4.7  
+**Last Updated:** June 10, 2026  
+**Next Review:** Sprint 10.21 implementation kickoff  
 **Document Owner:** Developer A (Project Manager)  
 **Approval:** CTO (Sponsor)
 
 **Change Log:**
+- v4.7 (June 10, 2026): Sprint 10.21 PLANNED — Three HK Preprod API OTP Service (Non-Browser). Recommends backend `httpx` polling of `getOtpInfoListFor1Hour` instead of headless browser; reuses Sprint 10.10 JIT OTP expansion and `format_otp_steps()`; adds `PreprodOtpService`, `OtpSourceRouter`, env vars, ADR-002-43. Explicitly documents that `HEADLESS_BROWSER` only affects test browser visibility, not OTP retrieval. 12 points / ~2.5 days.
 - v4.6 (June 8, 2026): Sprint 10.20 COMPLETE — User-Configurable Custom AI Models. Delivered per-user `custom_models` JSON registry, `__custom__` sentinel for all providers, `ModelSelectWithCustom` + `CustomModelsPanel`, Azure endpoint override via `UniversalLLMService.chat_completion()`, gen/exec/agent config resolution. 27 backend + 20 frontend tests pass. Deferred: Stagehand Azure registry merge, ADR-001-llm-provider.md. 14 points.
 - v4.5 (June 8, 2026): Sprint 10.20 PLANNED — User-Configurable Custom AI Models. Per-user `custom_models` JSON registry on `user_settings`; `__custom__` sentinel extended to all providers; shared `ModelSelectWithCustom` component for Generation, Execution, and per-agent slots; Azure custom deployment endpoint override at runtime. Eliminates deploy-for-every-new-model pattern (supersedes manual additions in 10.5/10.9/10.18 for user-driven models). 14 points / ~3 days.
 - v4.4 (June 4, 2026): Sprint 10.18 COMPLETE — `Qwen3.6-35B-A3B-MLX-8bit` fully registered at `http://192.168.206.164:1235/v1` (API key `1235`). Model in all three thinking-capable sets (`_THINKING_CAPABLE_MODELS`, `_THINKING_CAPABLE_VLLM_MODELS`, `thinking_capable_models`). Always-explicit `chat_template_kwargs: {"enable_thinking": <bool>}` injected in both `local_vllm_client.py` and `universal_llm.py` for all thinking-capable models regardless of toggle state. `LOCAL_VLLM_MLX_ENDPOINT` / `LOCAL_VLLM_MLX_API_KEY` documented in `env.example`. `TestSprint1018MLXModel` test class added with 4 test methods covering always-explicit injection. All 8 success criteria met. 7 points.
