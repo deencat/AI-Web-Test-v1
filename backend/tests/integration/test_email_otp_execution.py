@@ -74,19 +74,24 @@ class TestOtpResolutionInStagehandService:
         mock_enc.decrypt_password.return_value = "app-password"
 
         with patch(
-            "app.services.stagehand_service.get_email_credential_for_user",
+            "app.services.otp_source_router.get_email_credential_for_user",
             return_value=mock_cred,
         ):
             with patch(
-                "app.services.stagehand_service.email_otp_service.poll_otp",
+                "app.services.otp_source_router.email_otp_service.poll_otp",
                 return_value="482019",
             ):
-                with patch.object(stagehand_mod, "encryption_service", mock_enc):
-                    result = svc._fetch_otp_and_format_steps(
-                        "Enter the OTP sent to email",
-                        db=mock_db,
-                        user_id=1,
-                    )
+                with patch(
+                    "app.services.encryption_service.EncryptionService",
+                    return_value=mock_enc,
+                ):
+                    with patch.dict("os.environ", {"CREDENTIAL_ENCRYPTION_KEY": "test-key"}):
+                        result = svc._fetch_otp_and_format_steps(
+                            "Enter the OTP sent to email",
+                            db=mock_db,
+                            user_id=1,
+                            test_url="https://example.com/",
+                        )
 
         assert isinstance(result, list)
         assert len(result) == 6
@@ -111,14 +116,18 @@ class TestOtpResolutionInStagehandService:
         svc = StagehandExecutionService.__new__(StagehandExecutionService)
 
         with patch(
-            "app.services.stagehand_service.get_email_credential_for_user",
+            "app.services.otp_source_router.get_email_credential_for_user",
             return_value=None,
         ):
-            result = svc._fetch_otp_and_format_steps(
-                "Enter the OTP",
-                db=MagicMock(),
-                user_id=1,
-            )
+            with patch("app.services.otp_source_router.settings") as mock_settings:
+                mock_settings.THREE_PREPROD_OTP_API_URL = ""
+                mock_settings.PREPROD_OTP_UAT_ONLY = True
+                result = svc._fetch_otp_and_format_steps(
+                    "Enter the OTP",
+                    db=MagicMock(),
+                    user_id=1,
+                    test_url="https://example.com/",
+                )
 
         assert isinstance(result, list)
         assert result == ["Enter the OTP"]
@@ -134,19 +143,24 @@ class TestOtpResolutionInStagehandService:
         mock_enc.decrypt_password.return_value = "app-password"
 
         with patch(
-            "app.services.stagehand_service.get_email_credential_for_user",
+            "app.services.otp_source_router.get_email_credential_for_user",
             return_value=mock_cred,
         ):
             with patch(
-                "app.services.stagehand_service.email_otp_service.poll_otp",
+                "app.services.otp_source_router.email_otp_service.poll_otp",
                 side_effect=TimeoutError("No OTP email found"),
             ):
-                with patch.object(stagehand_mod, "encryption_service", mock_enc):
-                    result = svc._fetch_otp_and_format_steps(
-                        "Enter the OTP sent to email",
-                        db=MagicMock(),
-                        user_id=1,
-                    )
+                with patch(
+                    "app.services.encryption_service.EncryptionService",
+                    return_value=mock_enc,
+                ):
+                    with patch.dict("os.environ", {"CREDENTIAL_ENCRYPTION_KEY": "test-key"}):
+                        result = svc._fetch_otp_and_format_steps(
+                            "Enter the OTP sent to email",
+                            db=MagicMock(),
+                            user_id=1,
+                            test_url="https://example.com/",
+                        )
 
         assert isinstance(result, list)
         assert len(result) == 1
@@ -163,19 +177,24 @@ class TestOtpResolutionInStagehandService:
         mock_enc.decrypt_password.return_value = "app-password"
 
         with patch(
-            "app.services.stagehand_service.get_email_credential_for_user",
+            "app.services.otp_source_router.get_email_credential_for_user",
             return_value=mock_cred,
         ):
             with patch(
-                "app.services.stagehand_service.email_otp_service.poll_otp",
+                "app.services.otp_source_router.email_otp_service.poll_otp",
                 return_value="123456",
             ):
-                with patch.object(stagehand_mod, "encryption_service", mock_enc):
-                    result = svc._expand_otp_steps_list(
-                        ["Click login", "Enter the OTP", "Click submit"],
-                        db=MagicMock(),
-                        user_id=1,
-                    )
+                with patch(
+                    "app.services.encryption_service.EncryptionService",
+                    return_value=mock_enc,
+                ):
+                    with patch.dict("os.environ", {"CREDENTIAL_ENCRYPTION_KEY": "test-key"}):
+                        result = svc._expand_otp_steps_list(
+                            ["Click login", "Enter the OTP", "Click submit"],
+                            db=MagicMock(),
+                            user_id=1,
+                            test_url="https://example.com/",
+                        )
 
         assert result[0] == "Click login"
         assert result[-1] == "Click submit"
@@ -262,18 +281,19 @@ class TestJitOtpExpansion:
 
         import app.services.stagehand_service as stagehand_mod
 
-        with patch("app.services.stagehand_service.get_email_credential_for_user",
+        with patch("app.services.otp_source_router.get_email_credential_for_user",
                    return_value=mock_cred):
-            with patch("app.services.stagehand_service.email_otp_service.poll_otp",
+            with patch("app.services.otp_source_router.email_otp_service.poll_otp",
                        side_effect=counting_poll):
-                with patch.object(stagehand_mod, "encryption_service", mock_enc):
-                    # Simulate what happens when the engine processes step 1 (non-OTP):
-                    # poll_count should still be 0.
-                    result_non_otp = svc._fetch_otp_and_format_steps.__func__  # access method
-                    # The key assertion: processing the non-OTP step does NOT trigger a poll
-                    assert poll_call_count[0] == 0, (
-                        "IMAP should NOT be polled before the OTP step is reached"
-                    )
+                with patch("app.services.encryption_service.EncryptionService",
+                           return_value=mock_enc):
+                    with patch.dict("os.environ", {"CREDENTIAL_ENCRYPTION_KEY": "test-key"}):
+                        # Simulate what happens when the engine processes step 1 (non-OTP):
+                        # poll_count should still be 0.
+                        _ = svc._fetch_otp_and_format_steps.__func__
+                        assert poll_call_count[0] == 0, (
+                            "IMAP should NOT be polled before the OTP step is reached"
+                        )
 
     def test_stagehand_jit_otp_fetches_at_step_position(self):
         """
@@ -295,17 +315,19 @@ class TestJitOtpExpansion:
             poll_calls.append(kwargs)
             return "482019"
 
-        with patch("app.services.stagehand_service.get_email_credential_for_user",
+        with patch("app.services.otp_source_router.get_email_credential_for_user",
                    return_value=mock_cred):
-            with patch("app.services.stagehand_service.email_otp_service.poll_otp",
+            with patch("app.services.otp_source_router.email_otp_service.poll_otp",
                        side_effect=tracking_poll):
-                with patch.object(stagehand_mod, "encryption_service", mock_enc):
-                    # Simulate dispatcher reaching step 2 only
-                    result = svc._fetch_otp_and_format_steps(
-                        "Enter the OTP sent to email",
-                        db=MagicMock(),
-                        user_id=1,
-                    )
+                with patch("app.services.encryption_service.EncryptionService",
+                           return_value=mock_enc):
+                    with patch.dict("os.environ", {"CREDENTIAL_ENCRYPTION_KEY": "test-key"}):
+                        result = svc._fetch_otp_and_format_steps(
+                            "Enter the OTP sent to email",
+                            db=MagicMock(),
+                            user_id=1,
+                            test_url="https://example.com/",
+                        )
 
         assert len(poll_calls) == 1, "poll_otp must be called exactly once per OTP step"
         assert len(result) == 6  # 6 digits
@@ -333,16 +355,19 @@ class TestJitOtpExpansion:
             # JIT = only called on demand; always returns latest OTP at that moment
             return "999888"
 
-        with patch("app.services.stagehand_service.get_email_credential_for_user",
+        with patch("app.services.otp_source_router.get_email_credential_for_user",
                    return_value=mock_cred):
-            with patch("app.services.stagehand_service.email_otp_service.poll_otp",
+            with patch("app.services.otp_source_router.email_otp_service.poll_otp",
                        side_effect=fresh_poll):
-                with patch.object(stagehand_mod, "encryption_service", mock_enc):
-                    result = svc._fetch_otp_and_format_steps(
-                        "Enter the OTP",
-                        db=MagicMock(),
-                        user_id=1,
-                    )
+                with patch("app.services.encryption_service.EncryptionService",
+                           return_value=mock_enc):
+                    with patch.dict("os.environ", {"CREDENTIAL_ENCRYPTION_KEY": "test-key"}):
+                        result = svc._fetch_otp_and_format_steps(
+                            "Enter the OTP",
+                            db=MagicMock(),
+                            user_id=1,
+                            test_url="https://example.com/",
+                        )
 
         digits = [s for s in result if "9" in s or "8" in s]
         assert len(digits) >= 1, "Expanded steps should reflect the freshly polled OTP"
@@ -368,11 +393,11 @@ class TestJitOtpExpansion:
             poll_calls.append(True)
             return "123456"
 
-        with patch("app.services.execution_service.get_email_credential_for_user",
+        with patch("app.services.otp_source_router.get_email_credential_for_user",
                    return_value=mock_cred):
-            with patch("app.services.execution_service.email_otp_service.poll_otp",
+            with patch("app.services.otp_source_router.email_otp_service.poll_otp",
                        side_effect=tracking_poll):
-                with patch("app.services.execution_service._EncryptionService",
+                with patch("app.services.encryption_service.EncryptionService",
                            mock_enc_cls):
                     with patch.dict("os.environ",
                                    {"CREDENTIAL_ENCRYPTION_KEY": "test-key"}):
@@ -380,6 +405,7 @@ class TestJitOtpExpansion:
                             "Enter the one-time password",
                             db=MagicMock(),
                             user_id=42,
+                            test_url="https://example.com/",
                         )
 
         assert len(poll_calls) == 1
@@ -424,26 +450,29 @@ class TestJitOtpExpansion:
 
         steps = ["Click submit", "Enter the OTP", "Click continue"]
 
-        with patch("app.services.stagehand_service.get_email_credential_for_user",
+        with patch("app.services.otp_source_router.get_email_credential_for_user",
                    return_value=mock_cred):
-            with patch("app.services.stagehand_service.email_otp_service.poll_otp",
+            with patch("app.services.otp_source_router.email_otp_service.poll_otp",
                        side_effect=counting_poll):
-                with patch.object(stagehand_mod, "encryption_service", mock_enc):
-                    # Simulate the JIT expansion pass over the full steps list as
-                    # the engine would when iterating with otp_expanded_end guard.
-                    from app.services.email_otp_service import is_otp_step
-                    result_steps = list(steps)
-                    otp_expanded_end = 0
-                    i = 0
-                    while i < len(result_steps):
-                        step = result_steps[i]
-                        if i >= otp_expanded_end and is_otp_step(step):
-                            expanded = svc._fetch_otp_and_format_steps(
-                                step, db=MagicMock(), user_id=1
-                            )
-                            result_steps[i:i + 1] = expanded
-                            otp_expanded_end = i + len(expanded)
-                        i += 1
+                with patch("app.services.encryption_service.EncryptionService",
+                           return_value=mock_enc):
+                    with patch.dict("os.environ", {"CREDENTIAL_ENCRYPTION_KEY": "test-key"}):
+                        from app.services.email_otp_service import is_otp_step
+                        result_steps = list(steps)
+                        otp_expanded_end = 0
+                        i = 0
+                        while i < len(result_steps):
+                            step = result_steps[i]
+                            if i >= otp_expanded_end and is_otp_step(step):
+                                expanded = svc._fetch_otp_and_format_steps(
+                                    step,
+                                    db=MagicMock(),
+                                    user_id=1,
+                                    test_url="https://example.com/",
+                                )
+                                result_steps[i:i + 1] = expanded
+                                otp_expanded_end = i + len(expanded)
+                            i += 1
 
         # poll_otp must be called exactly once even though expanded steps
         # individually match is_otp_step()
