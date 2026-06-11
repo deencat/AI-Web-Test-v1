@@ -1,7 +1,7 @@
 # Hermes QA Factory — Agile Development Plan
 
-**Version:** 1.0 · **Date:** 2026-06-11  
-**Status:** Ready to execute  
+**Version:** 1.1 · **Date:** 2026-06-11  
+**Status:** HF-1 in progress on `feat/hermes-qa-factory`  
 **Parent design:** [Hermes_QA_Autonomous_Workflow_v5.md](Hermes_QA_Autonomous_Workflow_v5.md)  
 **Program code:** **HF** (Hermes Factory) — sprints **HF-1 … HF-6**
 
@@ -14,8 +14,8 @@
 | **Goal** | Production QA Factory: KB + UAT URLs → tests → 24×7 regression → change detection → self-healing, controlled via AI Web Test webapp (not Telegram) |
 | **Duration** | 12 weeks (6 × 2-week sprints) |
 | **Effort estimate** | ~120 story points (avg 20 pts/sprint) |
-| **Team model** | 1–2 developers; split **AWT** (this repo) vs **Hermes Node 1** (profiles + Bridge) |
-| **Repos** | `deencat/AI-Web-Test-v1` (primary) · Hermes config on Node 1 (not in git) |
+| **Team model** | **Dual mandatory track:** AWT backend/frontend **and** Hermes Node 1 (profiles + Bridge) — not optional |
+| **Repos** | `deencat/AI-Web-Test-v1` (AWT + `docs/hermes-profiles/` SOUL templates) · Node 1 `~/.hermes/profiles/` (deployed copy) |
 | **Launch criterion** | `full_cycle` job runnable from Agent Chat; Loops A–D on cron; Telegram disabled in prod |
 
 ### What already exists (do not rebuild)
@@ -44,6 +44,7 @@
 | **Change detection** | EPIC-HF-04 | Snapshots, diff, Loop C | HF-4 |
 | **Self-healing** | EPIC-HF-05 | Healer API, Loop D, Heal Review | HF-5 |
 | **Observability & launch** | EPIC-HF-06 | Reporter, Observatory, hardening | HF-6 |
+| **Hermes Node 1 profiles & Bridge** | EPIC-HF-07 | All 7 SOUL.md profiles, MCP config, deploy, Bridge | HF-2 … HF-6 |
 
 ---
 
@@ -61,12 +62,20 @@
 
 ### 3.2 Definition of Done (all stories)
 
-- [ ] Code merged to `main` with PR review
+**AWT stories (`[AWT-BE]`, `[AWT-FE]`, `[MCP]`):**
+- [ ] Code merged to `feat/hermes-qa-factory` (then `main`) with PR review
 - [ ] Unit or integration tests for new API routes (where applicable)
 - [ ] `env.example` updated for new env vars
 - [ ] RBAC enforced server-side (not UI-only)
 - [ ] No secrets in logs or committed files
 - [ ] Story acceptance criteria verified in demo
+
+**Hermes stories (`[HERMES]`, `[BRIDGE]`):**
+- [ ] SOUL.md + `config.yaml` committed under `docs/hermes-profiles/<profile>/`
+- [ ] Same files deployed to Node 1 `~/.hermes/profiles/<profile>/`
+- [ ] `hermes doctor` / profile smoke test passes on Node 1
+- [ ] MCP connectivity to AWT `:8001` verified (`health_check` tool)
+- [ ] Delegate smoke test documented in sprint demo notes
 
 ### 3.3 Story point scale
 
@@ -110,9 +119,57 @@ HF-3 Planner + Loop A ←── [HERMES] profiles (orchestrator,  │
 
 ---
 
+## 4.1 Hermes Node 1 mandatory track (do not skip)
+
+Hermes profiles are **required for production launch**, not a side quest. Version-control templates in this repo, then deploy to Node 1 each sprint.
+
+### Profile delivery matrix
+
+| Profile | Replaces | Sprint (draft in repo) | Sprint (deploy + smoke) | Loop / role |
+|---------|----------|------------------------|-------------------------|-------------|
+| **qa-orchestrator** | qa-manager | **HF-2** | HF-3 | Routes all jobs; single chat entry |
+| **qa-journey-planner** | qa-requirements | HF-3 | HF-3 | Loop A — coverage + backlog |
+| **qa-test-gen** | qa-test-gen (v4) | HF-3 | HF-3 | `crawl_and_save_test` batch |
+| **qa-dispatcher** | qa-dispatcher (v4) | HF-3 | HF-3 | `execute_test` |
+| **qa-reporter** | qa-reporter (v4) | HF-3 | HF-6 | Digests → webapp |
+| **qa-change-detector** | new | HF-4 | HF-4 | Loop C — snapshots |
+| **qa-healer** | new | HF-5 | HF-5 | Loop D — self-heal |
+
+### Repo layout (version control)
+
+```
+docs/hermes-profiles/
+  README.md
+  qa-orchestrator/SOUL.md, config.yaml
+  qa-journey-planner/SOUL.md, config.yaml
+  qa-change-detector/SOUL.md, config.yaml
+  qa-test-gen/SOUL.md, config.yaml
+  qa-healer/SOUL.md, config.yaml
+  qa-dispatcher/SOUL.md, config.yaml
+  qa-reporter/SOUL.md, config.yaml
+  bridge/README.md              # HF-6: Bridge install + event POST script
+```
+
+**Source templates:** [Hermes_QA_MultiAgent_Profiles_v4.md](Hermes_QA_MultiAgent_Profiles_v4.md) — adapt for v5 (no Telegram dependency in orchestrator).
+
+### Master checklist (tick before HF-6 launch)
+
+- [ ] HF-2.6 — `qa-orchestrator` SOUL.md drafted in repo
+- [ ] HF-3.1 — orchestrator, planner, test-gen deployed on Node 1
+- [ ] HF-3.6 — dispatcher, reporter deployed on Node 1
+- [ ] HF-4.5 — change-detector deployed on Node 1
+- [ ] HF-5.3 — healer deployed on Node 1
+- [ ] HF-6.6 — Hermes Bridge posts events to AWT
+- [ ] HF-6.7 — Chat path: AWT `agent/chat` → Bridge → `qa-orchestrator`
+- [ ] All profiles: MCP `AWT_MCP_SECRET` + `AWT_BASE_URL` in `config.yaml`
+
+---
+
 ## 5. Sprint HF-1 — Control plane & access (2 weeks)
 
 **Sprint goal:** Submit a factory job from webapp; see live status via SSE; cron can enqueue `run_regression`.
+
+**Status:** ✅ **Implemented** on branch `feat/hermes-qa-factory` (commit `e33a6b3`). Validate locally before HF-2.
 
 **Total:** 21 points
 
@@ -300,24 +357,67 @@ HF-3 Planner + Loop A ←── [HERMES] profiles (orchestrator,  │
 
 ---
 
+#### HF-2.6 — Draft `qa-orchestrator` in repo (3 pts) `[HERMES]` **mandatory**
+
+**As** a platform owner, **I want** `qa-orchestrator` SOUL.md version-controlled **so that** Node 1 work is not lost and HF-3 deploy is ready.
+
+**Tasks:**
+- Create `docs/hermes-profiles/README.md` (profile index + deploy instructions)
+- Create `docs/hermes-profiles/qa-orchestrator/SOUL.md` from v4 `qa-manager` SOUL.md:
+  - Remove Telegram-only assumptions; route via `delegate_task`
+  - Document job types: `drain_backlog`, `run_regression`, `full_cycle`, `heal_failures`, `scan_changes`
+  - Reference AWT Agent Console as production human entry (not Telegram)
+- Create `docs/hermes-profiles/qa-orchestrator/config.yaml` stub (model, MCP server URL, `AWT_MCP_SECRET` via env)
+
+**Acceptance criteria:**
+- SOUL.md committed in repo; peer-reviewed against v5 §4 and v4 profile doc
+- `config.yaml` documents required env vars (no secrets in git)
+
+---
+
+#### HF-2.7 — Shared Hermes MCP config template (2 pts) `[HERMES]` `[OPS]`
+
+**Tasks:**
+- Add `docs/hermes-profiles/_shared/mcp_servers.yaml.example` (MCP :8001, Bearer auth)
+- Document Node 1 deploy: `rsync` or manual copy `docs/hermes-profiles/*` → `~/.hermes/profiles/`
+- Verify `health_check` MCP tool from Node 1 against AWT
+
+**Acceptance criteria:** README steps reproduce MCP connectivity on Node 1.
+
+**HF-2 revised total:** 27 points (AWT 22 + Hermes 5)
+
+---
+
 ## 7. Sprint HF-3 — Planner & batch generation (2 weeks)
 
 **Sprint goal:** Loop A drains backlog — planner finds gaps, test-gen creates tests, schedules regression.
 
-**Total:** 24 points
+**Total:** 32 points (AWT 19 + Hermes 13)
 
 ### Stories
 
-#### HF-3.1 — Hermes profiles: orchestrator, planner, test-gen (8 pts) `[HERMES]`
+#### HF-3.1a — `qa-orchestrator` finalize + deploy (3 pts) `[HERMES]`
 
-- Create on Node 1:
-  - `qa-orchestrator/SOUL.md` (from v4 qa-manager, remove Telegram dependency)
-  - `qa-journey-planner/SOUL.md` (coverage + wiki + enqueue)
-  - `qa-test-gen/SOUL.md` (batch `crawl_and_save_test`)
-- MCP config in each `config.yaml`
-- Document in `docs/hermes-profiles/` (optional export folder for version control)
+- Finalize SOUL.md from HF-2.6; add `delegate_task` decision tree (v5 §7, v4 trigger tree)
+- Deploy to Node 1; `qa-orchestrator doctor` passes
+- **Acceptance:** `qa-orchestrator chat -q "run regression"` returns structured plan or delegates
 
-**Acceptance criteria:** Manual CLI: `qa-orchestrator chat -q "drain backlog for Three-HK"` delegates to planner → test-gen → returns test_case_id.
+#### HF-3.1b — `qa-journey-planner` SOUL + deploy (3 pts) `[HERMES]`
+
+- SOUL.md: `get_coverage_matrix`, `get_reqiq_readiness`, `suggest_scenarios_from_wiki`, `enqueue_journey`
+- Repo + Node 1 deploy
+- **Acceptance:** Delegated task returns backlog item for a coverage gap
+
+#### HF-3.1c — `qa-test-gen` SOUL + deploy (3 pts) `[HERMES]`
+
+- SOUL.md: batch `crawl_and_save_test`, `reference_test_id`, poll workflow
+- Repo + Node 1 deploy
+- **Acceptance:** Delegated task returns `{ test_case_id, status: success }`
+
+#### HF-3.1d — Orchestrator integration smoke (4 pts) `[HERMES]`
+
+- Manual CLI end-to-end: orchestrator → planner → test-gen
+- **Acceptance:** `qa-orchestrator chat -q "drain backlog for Three-HK"` returns `test_case_id`
 
 ---
 
@@ -356,11 +456,25 @@ HF-3 Planner + Loop A ←── [HERMES] profiles (orchestrator,  │
 
 ---
 
-#### HF-3.6 — Hermes dispatcher & reporter profiles (3 pts) `[HERMES]`
+#### HF-3.6a — `qa-dispatcher` SOUL + deploy (2 pts) `[HERMES]`
 
-- `qa-dispatcher/SOUL.md`, `qa-reporter/SOUL.md` (webapp notification stub in HF-3; full reporter in HF-6)
+- SOUL.md: `list_test_cases`, `execute_test`, `get_execution_status`, aggregate results
+- Repo + Node 1 deploy
 
-**Acceptance criteria:** `full_cycle` manual run: plan → gen → execute → summary event in job log.
+#### HF-3.6b — `qa-reporter` SOUL draft + deploy (2 pts) `[HERMES]`
+
+- SOUL.md: plain-language summary (HF-3: log/CLI output; HF-6: webapp notifications)
+- Repo + Node 1 deploy
+
+#### HF-3.6c — `full_cycle` Hermes smoke (2 pts) `[HERMES]`
+
+- **Acceptance:** Manual `full_cycle`: plan → gen → execute → reporter summary (Telegram disabled)
+
+#### HF-3.7 — Wire chat → Hermes Bridge stub (3 pts) `[BRIDGE]` `[AWT-BE]`
+
+- AWT `POST /api/v1/agent/chat` optionally forwards to Bridge when `HERMES_BRIDGE_URL` set
+- Bridge stub invokes `qa-orchestrator job run --json` on Node 1
+- HF-3: Bridge may log-only; full event POST in HF-6
 
 ---
 
@@ -404,13 +518,20 @@ HF-3 Planner + Loop A ←── [HERMES] profiles (orchestrator,  │
 
 ---
 
-#### HF-4.4 — qa-change-detector profile + Loop C (5 pts) `[HERMES]` `[AWT-BE]`
+#### HF-4.4 — Loop C worker + cron (3 pts) `[AWT-BE]`
 
-- Profile SOUL.md: iterate registry URLs, snapshot, diff, enqueue regenerate
 - Cron every 4h: `{ type: scan_changes }`
-- On material change: enqueue backlog with `reference_test_id` + diff summary as instruction hint
+- On material change: enqueue backlog with `reference_test_id` + diff summary
 
 **Acceptance criteria:** Simulated DOM change enqueues regeneration job.
+
+---
+
+#### HF-4.5 — `qa-change-detector` SOUL + deploy (4 pts) `[HERMES]` **mandatory**
+
+- `docs/hermes-profiles/qa-change-detector/SOUL.md`: `observe_url_snapshot`, `diff_url_snapshots`, `enqueue_journey`
+- Deploy Node 1; orchestrator delegates for `scan_changes` jobs
+- **Acceptance:** Manual delegate returns `material_change: true` on known diff fixture
 
 ---
 
@@ -444,13 +565,17 @@ HF-3 Planner + Loop A ←── [HERMES] profiles (orchestrator,  │
 
 ---
 
-#### HF-5.3 — qa-healer profile + Loop D (5 pts) `[HERMES]` `[AWT-BE]`
+#### HF-5.3a — Loop D worker + cron (3 pts) `[AWT-BE]`
 
-- `qa-healer/SOUL.md` per v5 §12.6
 - Cron every 1h: `{ type: heal_failures, since: last_run }`
-- Wire `learn_from_feedback` after successful heal (call `EvolutionAgent`)
+- Wire `learn_from_feedback` after successful heal
 
-**Acceptance criteria:** Recent failure auto-healed or escalated after 2 attempts.
+#### HF-5.3b — `qa-healer` SOUL + deploy (4 pts) `[HERMES]` **mandatory**
+
+- `docs/hermes-profiles/qa-healer/SOUL.md` per v5 §12.6
+- MCP: `get_execution_feedback`, `heal_test_from_feedback`, `clear_xpath_cache`
+- Deploy Node 1; orchestrator delegates for `heal_failures` jobs
+- **Acceptance:** Recent failure auto-healed or escalated after 2 attempts (manual + cron)
 
 ---
 
@@ -526,6 +651,24 @@ HF-3 Planner + Loop A ←── [HERMES] profiles (orchestrator,  │
 
 ---
 
+#### HF-6.6 — Hermes Bridge service on Node 1 (5 pts) `[BRIDGE]` **mandatory**
+
+- `docs/hermes-profiles/bridge/hermes_bridge.py` (or shell): receives AWT job JSON, runs orchestrator, POSTs events
+- Env: `HERMES_BRIDGE_SECRET`, `AWT_AGENT_EVENTS_URL`
+- systemd unit `hermes-factory-bridge.service` (optional)
+- **Acceptance:** One `full_cycle` from webapp chat produces delegate events in AWT job timeline
+
+---
+
+#### HF-6.7 — `qa-reporter` production wiring (2 pts) `[HERMES]` `[AWT-BE]`
+
+- Reporter SOUL updated to call AWT notification API (or worker hook) instead of Telegram
+- **Acceptance:** Job complete → in-app notification bell
+
+**HF-6 revised total:** 30 points
+
+---
+
 ## 11. Product backlog (post-launch)
 
 | ID | Story | Priority |
@@ -573,7 +716,7 @@ Test folder: `backend/tests/integration/test_factory_*.py` (create in HF-1).
 
 | Risk | Mitigation |
 |------|------------|
-| Hermes Node 1 not ready for HF-3 | HF-1–2 use worker+MCP only; Hermes profiles parallel track |
+| Hermes Node 1 not ready for HF-3 | **Blocked** — HF-2.6 orchestrator draft is mandatory gate; worker-only fallback is dev-only |
 | OneDrive file locks on docs | Close files before agent edits |
 | ReqIQ downtime blocks planner | Worker marks job `failed` with clear event; retry cron |
 | LLM cost on chat mapper | HF-1 keyword rules; optional LLM in HF-3 |
@@ -586,8 +729,8 @@ Test folder: `backend/tests/integration/test_factory_*.py` (create in HF-1).
 | Sprint | Weeks | Dates (example) | Goal |
 |--------|-------|-----------------|------|
 | HF-1 | 1–2 | Jun 16 – Jun 27, 2026 | Control plane + Agent Console shell |
-| HF-2 | 3–4 | Jun 30 – Jul 11, 2026 | MCP + registry/backlog |
-| HF-3 | 5–6 | Jul 14 – Jul 25, 2026 | Loop A/B + Hermes profiles |
+| HF-2 | 3–4 | Jun 30 – Jul 11, 2026 | MCP + registry + **qa-orchestrator draft** |
+| HF-3 | 5–6 | Jul 14 – Jul 25, 2026 | Loop A/B + **deploy 5 Hermes profiles** + Bridge stub |
 | HF-4 | 7–8 | Jul 28 – Aug 8, 2026 | Loop C change detection |
 | HF-5 | 9–10 | Aug 11 – Aug 22, 2026 | Loop D self-healing |
 | HF-6 | 11–12 | Aug 25 – Sep 5, 2026 | Observatory + production launch |
@@ -612,11 +755,25 @@ Adjust dates to your team start; maintain 2-week cadence.
 | Document | Use |
 |----------|-----|
 | [Hermes_QA_Autonomous_Workflow_v5.md](Hermes_QA_Autonomous_Workflow_v5.md) | Architecture, APIs, loops, Observatory |
-| [Hermes_QA_MultiAgent_Profiles_v4.md](Hermes_QA_MultiAgent_Profiles_v4.md) | SOUL.md templates for Hermes profiles |
+| [Hermes_QA_MultiAgent_Profiles_v4.md](Hermes_QA_MultiAgent_Profiles_v4.md) | SOUL.md source templates for Hermes profiles |
+| [hermes-profiles/README.md](hermes-profiles/README.md) | Version-controlled profile folder + deploy steps |
 | [ReqIQ-API-Integration-Guide.md](ReqIQ-API-Integration-Guide.md) | MCP / proxy behaviour |
 | [AI-Web-Test-Developer-Handoff.md](AI-Web-Test-Developer-Handoff.md) | ReqIQ proxy, platform context |
 | `Phase3-project-documents/Phase3-Project-Management-Plan-Complete.md` | Platform sprints (Sprint 10.x) — separate from HF program |
 
 ---
 
-*This plan implements v5 §9 sprints A–F as executable agile stories. Update story status in your task board; update this doc only when scope changes.*
+## 18. Sprint-by-sprint: what not to miss
+
+| Sprint | AWT (this repo) | Hermes Node 1 (mandatory) |
+|--------|-----------------|---------------------------|
+| **HF-1** ✅ | Jobs API, worker, Agent Console | — |
+| **HF-2** | MCP tools, registry, backlog UI | **HF-2.6** orchestrator SOUL draft · **HF-2.7** MCP template |
+| **HF-3** | Loop A/B, `drain_backlog` worker | Deploy orchestrator, planner, test-gen, dispatcher, reporter · Bridge stub |
+| **HF-4** | Snapshot/diff APIs, Loop C | Deploy **qa-change-detector** |
+| **HF-5** | Heal API, Heal Review UI, Loop D | Deploy **qa-healer** |
+| **HF-6** | Observatory, notifications | **Hermes Bridge** production · reporter → webapp |
+
+---
+
+*This plan implements v5 §9 sprints A–F as executable agile stories. Hermes Node 1 work is **EPIC-HF-07** and is required for launch — see §4.1 and §18. Update story status in your task board; update this doc when scope changes.*
