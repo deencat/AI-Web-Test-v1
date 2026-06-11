@@ -678,6 +678,7 @@ Every 1h (factory_scheduler, job_type: heal_failures):
 
 ## 13. References
 
+- [Hermes_QA_Factory_Agile_Development_Plan.md](Hermes_QA_Factory_Agile_Development_Plan.md) — executable sprint plan (HF-1 … HF-6) with user stories and acceptance criteria
 - [Hermes_QA_MultiAgent_Profiles_v4.md](Hermes_QA_MultiAgent_Profiles_v4.md) — SOUL.md templates; `delegate_task` communication flow
 - [ReqIQ-API-Integration-Guide.md](ReqIQ-API-Integration-Guide.md) — crawl-and-save, execution, feedback
 - [AI-Web-Test-Developer-Handoff.md](AI-Web-Test-Developer-Handoff.md) — ReqIQ proxy, wiki, coverage
