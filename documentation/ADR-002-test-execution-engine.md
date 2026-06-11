@@ -3577,7 +3577,8 @@ Before dispatching to Option A / B / C, `set_llm_context()` is called with the c
 
 ## ADR-002-47: Three HK Preprod API OTP via HTTP (Non-Browser)
 
-**Date:** June 10, 2026
+**Date:** June 10, 2026  
+**Status:** ✅ Implemented and production-validated (Test Case #1150 / Execution #950)
 
 ### Context
 
@@ -3585,13 +3586,16 @@ Sprint 10.10 added IMAP email OTP retrieval for tests that receive OTP via email
 
 `HEADLESS_BROWSER` only controls test browser visibility; OTP retrieval must run entirely in the Python backend.
 
+**Production incident (Execution #950):** Initial deployment used default `httpx` TLS verification (`verify=True`). The OpenShift endpoint `*.apps.ocpppd.three.com.hk` presents a corporate CA certificate not in the public trust store on developer Windows machines, causing `[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate` on every poll attempt. OTP step never resolved until `resolve_ssl_verify()` was added.
+
 ### Decision
 
 Add **`PreprodOtpService`** (`backend/app/services/preprod_otp_service.py`) — sync `httpx` GET polling with:
-- Tolerant JSON parsing (field aliases: `otp`/`otpCode`/`verificationCode`, etc.)
+- Tolerant JSON parsing (field aliases: `otp`/`otpCode`/`verificationCode`, `msisdn`/`contactNumber`, `otpType`/`type`, `createdAt`/`createTime`)
 - MSISDN + `otp_type` filtering
 - JIT `poll_start_time` with 5 s grace window and newest-first selection (mirrors Sprint 10.10 stale-OTP prevention)
 - MSISDN masking in logs
+- **`resolve_ssl_verify()`** — returns `PREPROD_OTP_SSL_CA_BUNDLE` path when set, else `PREPROD_OTP_SSL_VERIFY` (default `false` for internal preprod)
 
 Add **`OtpSourceRouter`** (`backend/app/services/otp_source_router.py`) — shared `fetch_otp_and_format_steps()` used by both `ExecutionService` and `StagehandExecutionService`:
 
@@ -3602,7 +3606,16 @@ Add **`OtpSourceRouter`** (`backend/app/services/otp_source_router.py`) — shar
 | 3 | `imap_email` | User has email credential (Sprint 10.10 path unchanged) |
 | 4 | none | Graceful fallback — original step kept, warning logged |
 
+Both execution engines delegate `_fetch_otp_and_format_steps()` to the router and pass `test_url=base_url` during JIT expansion inside the step loop (ADR-002-40 pattern unchanged).
+
 Per-digit expansion reuses existing `format_otp_steps()` and `otp_expanded_end` JIT guard from ADR-002-39/40.
+
+**Supported step text:**
+```
+Enter login OTP for 85291234567
+Enter contact number OTP for 85291234567
+@otp:api(msisdn=85291234567,type=login)
+```
 
 **Environment variables** (`backend/app/core/config.py`, `backend/env.example`):
 - `THREE_PREPROD_OTP_API_URL`
@@ -3610,7 +3623,9 @@ Per-digit expansion reuses existing `format_otp_steps()` and `otp_expanded_end` 
 - `PREPROD_OTP_POLL_INTERVAL` (default 3)
 - `PREPROD_OTP_UAT_ONLY` (default true)
 - `PREPROD_OTP_SSL_VERIFY` (default false — internal OpenShift corp CA)
-- `PREPROD_OTP_SSL_CA_BUNDLE` (optional PEM path for proper TLS verification)
+- `PREPROD_OTP_SSL_CA_BUNDLE` (optional PEM path; overrides verify when set)
+
+**Deferred:** `PreprodOtpSection.tsx` Settings UI — env-only configuration sufficient for v1.
 
 ### Consequences
 
@@ -3619,18 +3634,33 @@ Per-digit expansion reuses existing `format_otp_steps()` and `otp_expanded_end` 
 - Works identically in headed and headless test runs
 - IMAP email OTP flows unchanged when preprod API does not match
 - Login vs contact-number OTP distinguishable via step text or `otp_type`
+- Corp CA TLS issue resolved without requiring OS-level cert installation on every dev machine
 
 **Negative**
 - API requires corp/VPN network; 503 outside network — graceful timeout step returned
-- Response schema must be confirmed via spike (10.21-B7); parser is alias-tolerant but may need adjustment
+- `PREPROD_OTP_SSL_VERIFY=false` trades strict TLS for preprod convenience; teams with corp CA PEM should use `PREPROD_OTP_SSL_CA_BUNDLE` instead
+
+**Alternatives Considered**
+- **Headless browser to read OTP from portal:** Rejected — competes with test browser, slow, unnecessary when API exists
+- **Same browser tab navigates to OTP portal:** Rejected — destroys page state mid-flow
+- **Install corp root CA on every dev machine:** Rejected — high friction; optional via `PREPROD_OTP_SSL_CA_BUNDLE` for teams that prefer strict verify
+- **Global `httpx` verify=False:** Rejected — scoped to preprod OTP client only
 
 **Related files:**
 - `backend/app/services/preprod_otp_service.py`
 - `backend/app/services/otp_source_router.py`
 - `backend/app/services/execution_service.py`
 - `backend/app/services/stagehand_service.py`
+- `backend/app/core/config.py`
+- `backend/env.example`
 
 **Tests:**
-- `backend/tests/unit/test_preprod_otp_service.py`
-- `backend/tests/integration/test_preprod_otp_execution.py`
+- `backend/tests/unit/test_preprod_otp_service.py` — 11 tests (parsing, selection, poll loop, SSL verify)
+- `backend/tests/integration/test_preprod_otp_execution.py` — 13 tests (router dispatch, JIT guard, API-vs-IMAP)
+- `backend/tests/integration/test_email_otp_execution.py` — 25 tests (IMAP regression after router refactor)
+- **Total OTP test suite: 79 pass**
+
+**Production validation:**
+- Live API spike (10.21-B7): HTTP 200 from corp network; 8 OTP records parsed with alias-tolerant normaliser
+- Execution #950 / Test Case #1150: OTP step resolves after `PREPROD_OTP_SSL_VERIFY=false` fix
 
