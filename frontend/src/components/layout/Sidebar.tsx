@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Home, FileText, Database, Settings, PlayCircle, FolderOpen, Bot, Library, Globe, MessageSquare } from 'lucide-react';
+import { Home, FileText, Database, Settings, PlayCircle, FolderOpen, Bot, Library, Globe, MessageSquare, Map, ListOrdered } from 'lucide-react';
 
 const navItems = [
   { path: '/dashboard', icon: Home, label: 'Dashboard' },
@@ -12,6 +12,8 @@ const navItems = [
   { path: '/knowledge-base', icon: Database, label: 'Knowledge Base' },
   { path: '/agent-workflow', icon: Bot, label: 'Agent Workflow' },
   { path: '/agent-console', icon: MessageSquare, label: 'Agent Console' },
+  { path: '/journey-registry', icon: Map, label: 'Journey Registry' },
+  { path: '/backlog', icon: ListOrdered, label: 'Backlog' },
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];
 

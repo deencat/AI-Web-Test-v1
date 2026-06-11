@@ -1,4 +1,4 @@
-"""Background worker for Hermes QA Factory jobs (HF-1)."""
+"""Background worker for Hermes QA Factory jobs (HF-1, HF-3)."""
 import json
 import logging
 from datetime import datetime
@@ -6,17 +6,29 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
+from app.crud import journey_factory as crud_journey
 from app.crud import test_execution as crud_executions
 from app.db.session import SessionLocal
 from app.models.factory_job import FactoryJob, FactoryJobStatus
+from app.models.journey_factory import BacklogStatus, JourneyBacklogItem
 from app.models.test_case import TestCase
 from app.services.execution_queue import get_execution_queue
 from app.services.factory_job_service import append_job_event, get_factory_job, set_job_status
+from app.services.factory_journey_service import (
+    generate_journey_for_backlog_item,
+    generate_journey_for_entry,
+)
 from app.services.scheduler_service import _infer_target_url
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_JOB_TYPES = {"run_regression"}
+SUPPORTED_JOB_TYPES = {
+    "run_regression",
+    "drain_backlog",
+    "generate_journey",
+    "full_cycle",
+}
 
 
 def _parse_tags(raw: Any) -> List[str]:
@@ -71,9 +83,14 @@ def run_factory_job(job_id: str) -> None:
             message=f"Started {job.job_type}",
         )
 
-        if job.job_type == "run_regression":
-            _run_regression(db, job)
-        else:
+        handlers = {
+            "run_regression": _run_regression,
+            "drain_backlog": _drain_backlog,
+            "generate_journey": _generate_journey,
+            "full_cycle": _full_cycle,
+        }
+        handler = handlers.get(job.job_type)
+        if not handler:
             set_job_status(
                 db,
                 job,
@@ -88,6 +105,8 @@ def run_factory_job(job_id: str) -> None:
                 message=f"Unsupported job_type: {job.job_type}",
             )
             return
+
+        handler(db, job)
 
         job = get_factory_job(db, job_id)
         if job and job.status == FactoryJobStatus.RUNNING.value:
@@ -121,7 +140,7 @@ def _run_regression(db: Session, job: FactoryJob) -> None:
     if isinstance(tags, str):
         tags = [tags]
 
-    user_id = job.created_by_user_id or 1
+    user_id = job.created_by_user_id or settings.FACTORY_SERVICE_USER_ID
     cases = _test_cases_matching_tags(db, tags)
 
     append_job_event(
@@ -156,7 +175,7 @@ def _run_regression(db: Session, job: FactoryJob) -> None:
             environment=params.get("environment", "dev"),
             base_url=base_url,
         )
-        execution.triggered_by = "factory_regression"
+        execution.triggered_by = params.get("triggered_by", "factory_regression")
         execution.queued_at = datetime.utcnow()
         execution.priority = int(params.get("priority", 5))
         db.commit()
@@ -190,3 +209,156 @@ def _run_regression(db: Session, job: FactoryJob) -> None:
         message=f"Queued {len(execution_ids)} execution(s)",
         payload_summary={"execution_ids": execution_ids},
     )
+
+
+def _drain_backlog(db: Session, job: FactoryJob) -> None:
+    params: Dict[str, Any] = job.params or {}
+    max_items = int(params.get("max_items", settings.FACTORY_LOOP_A_MAX_ITEMS))
+    project = job.project or params.get("project")
+
+    items = crud_journey.list_backlog_items(
+        db,
+        status=BacklogStatus.PENDING.value,
+        project=project,
+        limit=max_items,
+    )
+
+    append_job_event(
+        db,
+        job.id,
+        event_type="backlog_drain_start",
+        profile="qa-journey-planner",
+        message=f"Processing {len(items)} pending backlog item(s)",
+        payload_summary={"max_items": max_items, "count": len(items), "project": project},
+    )
+
+    if not items:
+        append_job_event(
+            db,
+            job.id,
+            event_type="backlog_empty",
+            profile="qa-journey-planner",
+            message="No pending backlog items",
+        )
+        return
+
+    failed = 0
+    for item in items:
+        crud_journey.update_backlog_status(
+            db,
+            item.id,
+            BacklogStatus.IN_PROGRESS.value,
+            factory_job_id=job.id,
+        )
+        try:
+            test_case_id = generate_journey_for_backlog_item(db, job, item)
+            crud_journey.update_backlog_status(db, item.id, BacklogStatus.DONE.value)
+            append_job_event(
+                db,
+                job.id,
+                event_type="backlog_item_done",
+                profile="qa-test-gen",
+                message=f"Backlog #{item.id} → test_case_id={test_case_id}",
+                payload_summary={
+                    "backlog_id": item.id,
+                    "journey_slug": item.journey_slug,
+                    "test_case_id": test_case_id,
+                },
+            )
+        except Exception as exc:
+            failed += 1
+            crud_journey.update_backlog_status(
+                db,
+                item.id,
+                BacklogStatus.FAILED.value,
+                error_message=str(exc),
+            )
+            append_job_event(
+                db,
+                job.id,
+                event_type="backlog_item_failed",
+                profile="qa-test-gen",
+                message=f"Backlog #{item.id} failed: {exc}",
+                payload_summary={"backlog_id": item.id, "error": str(exc)},
+            )
+            logger.exception("[FactoryWorker] Backlog item %s failed", item.id)
+
+    if failed and failed == len(items):
+        raise RuntimeError(f"All {failed} backlog item(s) failed")
+
+
+def _generate_journey(db: Session, job: FactoryJob) -> None:
+    params: Dict[str, Any] = job.params or {}
+    project = job.project or params.get("project") or "Three-HK"
+
+    if params.get("backlog_item_id"):
+        item = db.query(JourneyBacklogItem).filter_by(id=int(params["backlog_item_id"])).first()
+        if not item:
+            raise ValueError(f"Backlog item {params['backlog_item_id']} not found")
+        crud_journey.update_backlog_status(
+            db, item.id, BacklogStatus.IN_PROGRESS.value, factory_job_id=job.id
+        )
+        try:
+            test_case_id = generate_journey_for_backlog_item(db, job, item)
+            crud_journey.update_backlog_status(db, item.id, BacklogStatus.DONE.value)
+        except Exception as exc:
+            crud_journey.update_backlog_status(
+                db, item.id, BacklogStatus.FAILED.value, error_message=str(exc)
+            )
+            raise
+        append_job_event(
+            db,
+            job.id,
+            event_type="journey_generated",
+            profile="qa-test-gen",
+            message=f"Generated test_case_id={test_case_id}",
+            payload_summary={"test_case_id": test_case_id, "backlog_id": item.id},
+        )
+        return
+
+    slug = params.get("journey_slug")
+    if not slug:
+        raise ValueError("generate_journey requires journey_slug or backlog_item_id")
+
+    entry = crud_journey.get_registry_by_slug(db, project, slug)
+    if not entry:
+        raise ValueError(f"Unknown journey slug '{slug}' for project '{project}'")
+
+    test_case_id = generate_journey_for_entry(
+        db, job, entry, extra_params=params.get("overrides")
+    )
+    append_job_event(
+        db,
+        job.id,
+        event_type="journey_generated",
+        profile="qa-test-gen",
+        message=f"Generated test_case_id={test_case_id}",
+        payload_summary={"test_case_id": test_case_id, "journey_slug": slug},
+    )
+
+
+def _full_cycle(db: Session, job: FactoryJob) -> None:
+    params: Dict[str, Any] = job.params or {}
+    append_job_event(
+        db,
+        job.id,
+        event_type="full_cycle_start",
+        profile="qa-orchestrator",
+        message="full_cycle: drain backlog then run regression",
+    )
+    try:
+        _drain_backlog(db, job)
+    except Exception:
+        # drain may partial-fail; continue to regression if any tests exist
+        logger.warning("[FactoryWorker] drain_backlog step had failures in full_cycle %s", job.id)
+
+    reg_params = {**params, "tags": params.get("tags") or ["regression"]}
+    regression_job = FactoryJob(
+        id=job.id,
+        job_type="run_regression",
+        project=job.project,
+        params=reg_params,
+        status=job.status,
+        created_by_user_id=job.created_by_user_id,
+    )
+    _run_regression(db, regression_job)

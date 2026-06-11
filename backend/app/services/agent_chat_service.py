@@ -1,24 +1,76 @@
-"""Natural-language → factory job mapping for Agent Chat (HF-1)."""
+"""Natural-language → factory job mapping for Agent Chat (HF-1, HF-3)."""
 import re
 from typing import Any, Dict, Tuple
 
+from app.core.config import settings
 from app.schemas.factory_job import FactoryJobCreate
 
 _REGRESSION_PATTERN = re.compile(
     r"\b(run|start|trigger|execute)\b.*\b(regression|regress)\b",
     re.IGNORECASE,
 )
+_DRAIN_PATTERN = re.compile(
+    r"\b(drain|process|empty)\b.*\b(backlog|queue)\b",
+    re.IGNORECASE,
+)
+_FULL_CYCLE_PATTERN = re.compile(
+    r"\b(full[_\s-]?cycle|end[_\s-]?to[_\s-]?end|e2e\s+factory)\b",
+    re.IGNORECASE,
+)
+_GENERATE_PATTERN = re.compile(
+    r"\b(generate|create|build)\b.*\b(journey|test)\b",
+    re.IGNORECASE,
+)
 
 
 def parse_chat_to_job(message: str, context: Dict[str, Any]) -> Tuple[FactoryJobCreate, str]:
-    """Map user message to a structured factory job. HF-1: keyword rules only."""
+    """Map user message to a structured factory job. HF-1/3: keyword rules only."""
     text = (message or "").strip()
     if not text:
         raise ValueError("Message cannot be empty")
 
-    project = context.get("project")
+    project = context.get("project") or "Three-HK"
+    lower = text.lower()
 
-    if _REGRESSION_PATTERN.search(text) or "regression" in text.lower():
+    if _FULL_CYCLE_PATTERN.search(text):
+        job = FactoryJobCreate(
+            job_type="full_cycle",
+            project=project,
+            params={
+                "max_items": context.get("max_items", settings.FACTORY_LOOP_A_MAX_ITEMS),
+                "tags": context.get("tags") or ["regression"],
+            },
+        )
+        return job, "Queued full_cycle: drain backlog then run regression."
+
+    if _DRAIN_PATTERN.search(text) or "drain backlog" in lower:
+        max_items = context.get("max_items", settings.FACTORY_LOOP_A_MAX_ITEMS)
+        job = FactoryJobCreate(
+            job_type="drain_backlog",
+            project=project,
+            params={"max_items": max_items},
+        )
+        return job, f"Queued drain_backlog (max {max_items} items)."
+
+    if _GENERATE_PATTERN.search(text):
+        slug = context.get("journey_slug")
+        if not slug:
+            for token in ("diy-dashboard", "postpaid-preprod4-entry"):
+                if token in lower:
+                    slug = token
+                    break
+        if not slug:
+            raise ValueError(
+                "Specify journey_slug in context or mention a known slug (e.g. diy-dashboard)."
+            )
+        job = FactoryJobCreate(
+            job_type="generate_journey",
+            project=project,
+            params={"journey_slug": slug},
+        )
+        return job, f"Queued generate_journey for slug: {slug}."
+
+    if _REGRESSION_PATTERN.search(text) or "regression" in lower:
         tags = context.get("tags") or ["regression"]
         if isinstance(tags, str):
             tags = [tags]
@@ -27,9 +79,9 @@ def parse_chat_to_job(message: str, context: Dict[str, Any]) -> Tuple[FactoryJob
             project=project,
             params={"tags": tags},
         )
-        reply = f"Queued run_regression for tags: {', '.join(tags)}."
-        return job, reply
+        return job, f"Queued run_regression for tags: {', '.join(tags)}."
 
     raise ValueError(
-        "Could not interpret request. Try: 'Run regression' or 'Run regression for tag smoke'."
+        "Could not interpret request. Try: 'Run regression', 'Drain backlog', "
+        "or 'Full cycle'."
     )

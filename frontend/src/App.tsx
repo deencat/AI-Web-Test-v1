@@ -14,6 +14,8 @@ import { FeedbackListPage } from './pages/FeedbackListPage';
 import { DebugSessionPage } from './pages/DebugSessionPage';
 import { AgentWorkflowPage } from './pages/AgentWorkflowPage';
 import { AgentConsolePage } from './pages/AgentConsolePage';
+import { JourneyRegistryPage } from './pages/JourneyRegistryPage';
+import { BacklogQueuePage } from './pages/BacklogQueuePage';
 import { StepLibraryPage } from './pages/StepLibraryPage';
 import { CrawlAndSavePage } from './pages/CrawlAndSavePage';
 import './index.css';
@@ -152,6 +154,22 @@ function App() {
           element={
             <ProtectedRoute>
               <AgentConsolePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/journey-registry"
+          element={
+            <ProtectedRoute>
+              <JourneyRegistryPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/backlog"
+          element={
+            <ProtectedRoute>
+              <BacklogQueuePage />
             </ProtectedRoute>
           }
         />

@@ -127,6 +127,7 @@ def get_executions(
     browser: Optional[str] = None,
     environment: Optional[str] = None,
     triggered_by: Optional[str] = None,
+    since: Optional[datetime] = None,
     skip: int = 0,
     limit: int = 100
 ) -> List[TestExecution]:
@@ -155,6 +156,9 @@ def get_executions(
 
     if triggered_by:
         query = query.filter(TestExecution.triggered_by == triggered_by)
+
+    if since is not None:
+        query = query.filter(TestExecution.completed_at >= since)
     
     return query.order_by(desc(TestExecution.created_at)).offset(skip).limit(limit).all()
 
@@ -168,6 +172,7 @@ def get_execution_count(
     browser: Optional[str] = None,
     environment: Optional[str] = None,
     triggered_by: Optional[str] = None,
+    since: Optional[datetime] = None,
 ) -> int:
     """Get count of executions matching filters."""
     query = db.query(func.count(TestExecution.id))
@@ -192,6 +197,9 @@ def get_execution_count(
 
     if triggered_by:
         query = query.filter(TestExecution.triggered_by == triggered_by)
+
+    if since is not None:
+        query = query.filter(TestExecution.completed_at >= since)
     
     return query.scalar()
 

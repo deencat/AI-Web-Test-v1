@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from app.api.v1.endpoints import health, auth, users, test_generation, tests, kb, executions, test_templates, test_scenarios, test_suites, settings, debug, versions, execution_feedback, browser_profiles, uploads, email_credentials, step_library, requirements, hermes, schedules
 from app.api.v1.endpoints.agent import jobs as agent_jobs, chat as agent_chat
+from app.api.v1.endpoints.agent import registry as agent_registry, backlog as agent_backlog
 
 api_router = APIRouter()
 
@@ -27,4 +28,6 @@ api_router.include_router(hermes.router, tags=["hermes"])
 api_router.include_router(schedules.router, tags=["schedules"])
 api_router.include_router(agent_jobs.router, prefix="/agent", tags=["agent-factory"])
 api_router.include_router(agent_chat.router, prefix="/agent", tags=["agent-factory"])
+api_router.include_router(agent_registry.router, prefix="/agent", tags=["agent-factory"])
+api_router.include_router(agent_backlog.router, prefix="/agent", tags=["agent-factory"])
 

@@ -1,7 +1,7 @@
 # Hermes QA Factory — Agile Development Plan
 
-**Version:** 1.1 · **Date:** 2026-06-11  
-**Status:** HF-1 in progress on `feat/hermes-qa-factory`  
+**Version:** 1.2 · **Date:** 2026-06-11  
+**Status:** HF-3 Phase A in progress on `feat/hermes-qa-factory` (HF-1 ✅ · HF-2 ✅)  
 **Parent design:** [Hermes_QA_Autonomous_Workflow_v5.md](Hermes_QA_Autonomous_Workflow_v5.md)  
 **Program code:** **HF** (Hermes Factory) — sprints **HF-1 … HF-6**
 
@@ -14,7 +14,7 @@
 | **Goal** | Production QA Factory: KB + UAT URLs → tests → 24×7 regression → change detection → self-healing, controlled via AI Web Test webapp (not Telegram) |
 | **Duration** | 12 weeks (6 × 2-week sprints) |
 | **Effort estimate** | ~120 story points (avg 20 pts/sprint) |
-| **Team model** | **Dual mandatory track:** AWT backend/frontend **and** Hermes Node 1 (profiles + Bridge) — not optional |
+| **Team model** | **AWT-first sequencing supported** (§4.2): finish all `[AWT-*]` / `[MCP]` stories, then Hermes + Bridge. Hermes still **required before launch**, not before AWT dev. |
 | **Repos** | `deencat/AI-Web-Test-v1` (AWT + `docs/hermes-profiles/` SOUL templates) · Node 1 `~/.hermes/profiles/` (deployed copy) |
 | **Launch criterion** | `full_cycle` job runnable from Agent Chat; Loops A–D on cron; Telegram disabled in prod |
 
@@ -162,6 +162,60 @@ docs/hermes-profiles/
 - [ ] HF-6.6 — Hermes Bridge posts events to AWT
 - [ ] HF-6.7 — Chat path: AWT `agent/chat` → Bridge → `qa-orchestrator`
 - [ ] All profiles: MCP `AWT_MCP_SECRET` + `AWT_BASE_URL` in `config.yaml`
+
+---
+
+## 4.2 AWT-first sequencing (recommended for solo / focused dev)
+
+**Yes — you can finish the entire AWT track before touching Node 1.** The plan’s sprint numbers stay the same; only **execution order** changes.
+
+### Why this works
+
+| Path | Without Hermes | With Hermes (launch) |
+|------|----------------|----------------------|
+| **Cron / factory_worker** | ✅ Calls MCP tools directly (`drain_backlog`, `run_regression`, heal, snapshots) | Same — worker stays deterministic |
+| **Agent Chat → job** | ✅ HF-1 keyword mapper → `factory_worker` (no LLM orchestration) | Bridge → `qa-orchestrator` delegates |
+| **Job Monitor timeline** | ✅ Worker events only | + delegate / LLM events from Bridge |
+| **Agent Observatory** | ✅ UI + APIs with stub/empty trace | Full Hermes session payloads |
+| **Production launch** | ❌ Not complete | ✅ Required |
+
+v5’s **hybrid execution** model means Loops A–D do **not** block on Hermes profiles during development — only **chat-driven multi-agent delegation** and **launch demo** do.
+
+### Phase A — AWT only (do this first)
+
+Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
+
+| Order | Stories | Outcome |
+|-------|---------|---------|
+| 1 | HF-1 ✅ | Control plane + Agent Console |
+| 2 | HF-2.1 – HF-2.5 | MCP tools, registry, backlog APIs + UI |
+| 3 | HF-3.2 – HF-3.5 | `drain_backlog` / `generate_journey` / `full_cycle` worker + Loops A & B cron |
+| 4 | HF-4.1, HF-4.2, HF-4.4, HF-4.5 (UI) | Snapshots, diff, Loop C |
+| 5 | HF-5.1, HF-5.3a, HF-5.4, HF-5.5 | Heal API, Heal Review, Loop D |
+| 6 | HF-6.1, HF-6.3, HF-6.4, HF-6.5 | Notifications, Observatory APIs + UI, ops runbook |
+
+**Defer until Phase B:** HF-2.6, HF-2.7, HF-3.1a–d, HF-3.6a–c, HF-3.7, HF-4.5 (Hermes), HF-5.3b, HF-6.2, HF-6.6, HF-6.7.
+
+**Phase A demo:** Trigger jobs from Agent Chat (keyword rules) or cron; verify Job Monitor, registry, backlog, heal queue, Observatory (empty trace OK).
+
+### Phase B — Hermes + Bridge (after Phase A)
+
+| Order | Stories | Outcome |
+|-------|---------|---------|
+| 1 | HF-2.6, HF-2.7 | `qa-orchestrator` SOUL draft + MCP template in repo |
+| 2 | HF-3.1a–d, HF-3.6a–c | Deploy all 5 core profiles; CLI `full_cycle` smoke |
+| 3 | HF-3.7 | Chat → Bridge stub |
+| 4 | HF-4.5 (Hermes) | `qa-change-detector` deploy |
+| 5 | HF-5.3b | `qa-healer` deploy |
+| 6 | HF-6.2, HF-6.6, HF-6.7 | Bridge production + reporter → webapp |
+
+**Launch gate:** §4.1 master checklist — all boxes ticked.
+
+### What you give up during Phase A
+
+- No `delegate_task` / multi-agent reasoning from chat
+- No real Hermes traces in Observatory (stub/empty is fine)
+- HF-6.5 E2E “chat → orchestrator → delegate” waits until Phase B
 
 ---
 
@@ -716,7 +770,7 @@ Test folder: `backend/tests/integration/test_factory_*.py` (create in HF-1).
 
 | Risk | Mitigation |
 |------|------------|
-| Hermes Node 1 not ready for HF-3 | **Blocked** — HF-2.6 orchestrator draft is mandatory gate; worker-only fallback is dev-only |
+| Hermes Node 1 not ready for HF-3 | **Not a blocker** if using AWT-first (§4.2): worker + MCP runs Loops A–D. Hermes required only for Phase B / launch. |
 | OneDrive file locks on docs | Close files before agent edits |
 | ReqIQ downtime blocks planner | Worker marks job `failed` with clear event; retry cron |
 | LLM cost on chat mapper | HF-1 keyword rules; optional LLM in HF-3 |
@@ -765,8 +819,10 @@ Adjust dates to your team start; maintain 2-week cadence.
 
 ## 18. Sprint-by-sprint: what not to miss
 
-| Sprint | AWT (this repo) | Hermes Node 1 (mandatory) |
-|--------|-----------------|---------------------------|
+### Default (parallel tracks)
+
+| Sprint | AWT (this repo) | Hermes Node 1 (mandatory at launch) |
+|--------|-----------------|-------------------------------------|
 | **HF-1** ✅ | Jobs API, worker, Agent Console | — |
 | **HF-2** | MCP tools, registry, backlog UI | **HF-2.6** orchestrator SOUL draft · **HF-2.7** MCP template |
 | **HF-3** | Loop A/B, `drain_backlog` worker | Deploy orchestrator, planner, test-gen, dispatcher, reporter · Bridge stub |
@@ -774,6 +830,13 @@ Adjust dates to your team start; maintain 2-week cadence.
 | **HF-5** | Heal API, Heal Review UI, Loop D | Deploy **qa-healer** |
 | **HF-6** | Observatory, notifications | **Hermes Bridge** production · reporter → webapp |
 
+### AWT-first (§4.2) — your preferred order
+
+| Phase | Do now | Defer to Phase B |
+|-------|--------|------------------|
+| **A** | HF-1 ✅ → HF-2.1–2.5 → HF-3.2–3.5 → HF-4 AWT → HF-5 AWT → HF-6.1, 6.3–6.5 | All `[HERMES]` + `[BRIDGE]` stories |
+| **B** | — | HF-2.6–2.7 → HF-3.1a–d, 3.6a–c, 3.7 → HF-4.5 Hermes → HF-5.3b → HF-6.2, 6.6, 6.7 |
+
 ---
 
-*This plan implements v5 §9 sprints A–F as executable agile stories. Hermes Node 1 work is **EPIC-HF-07** and is required for launch — see §4.1 and §18. Update story status in your task board; update this doc when scope changes.*
+*This plan implements v5 §9 sprints A–F as executable agile stories. Hermes Node 1 work is **EPIC-HF-07** and is required for **launch** — see §4.1. Use **§4.2 AWT-first** to finish this-repo development before Node 1. Update story status in your task board; update this doc when scope changes.*

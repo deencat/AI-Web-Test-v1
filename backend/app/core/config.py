@@ -105,11 +105,16 @@ class Settings(BaseSettings):
     # DM chat ID between your Telegram user account and the qa-manager bot
     QA_MANAGER_TELEGRAM_CHAT_ID: str | None = None
 
-    # Hermes QA Factory scheduler (HF-1)
+    # Hermes QA Factory scheduler (HF-1, HF-3)
     FACTORY_SCHEDULER_ENABLED: bool = False
     FACTORY_REGRESSION_CRON: str = "0 */2 * * *"
+    FACTORY_REGRESSION_NIGHTLY_CRON: str = "0 2 * * *"
     FACTORY_REGRESSION_TAGS: str = "regression"
     FACTORY_SERVICE_USER_ID: int = 1
+    FACTORY_LOOP_A_CRON: str = "0 */6 * * *"
+    FACTORY_LOOP_A_MAX_ITEMS: int = 3
+    FACTORY_AUTO_SCHEDULE_ENABLED: bool = True
+    FACTORY_AUTO_SCHEDULE_CRON: str = "0 2 * * *"
 
     # Sprint 10.19: LLM Response & Timing Log
     LLM_LOG_DIR: str = "logs/llm"

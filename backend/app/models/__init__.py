@@ -16,6 +16,12 @@ from app.models.browser_profile import BrowserProfile
 from app.models.email_credential import EmailCredential
 from app.models.step_library_module import StepLibraryModule
 from app.models.factory_job import FactoryJob, FactoryJobEvent, FactoryJobStatus
+from app.models.journey_factory import (
+    JourneyBacklogItem,
+    JourneyRegistryEntry,
+    JourneyRegistryProject,
+    BacklogStatus,
+)
 
 __all__ = [
     "User",
@@ -35,5 +41,6 @@ __all__ = [
     "EmailCredential",
     "StepLibraryModule",
     "FactoryJob", "FactoryJobEvent", "FactoryJobStatus",
+    "JourneyBacklogItem", "JourneyRegistryEntry", "JourneyRegistryProject", "BacklogStatus",
 ]
 

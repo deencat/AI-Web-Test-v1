@@ -16,6 +16,24 @@ import os
 import sys
 import importlib.util
 from datetime import datetime, timezone
+
+# Windows consoles often use cp1252; migration scripts print unicode status symbols.
+if sys.platform == "win32":
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+
+def _print(msg: str) -> None:
+    """Print without crashing on Windows cp1252 consoles (emoji in migration logs)."""
+    try:
+        print(msg)
+    except UnicodeEncodeError:
+        print(msg.encode("ascii", errors="replace").decode("ascii"))
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -81,7 +99,7 @@ def run_migration(migration_file, db):
     """Run a single migration"""
     migration_name = migration_file.replace(".py", "")
     
-    print(f"🔄 Running migration: {migration_name}")
+    _print(f"[migration] Running: {migration_name}")
     
     try:
         # Load migration module
@@ -99,14 +117,14 @@ def run_migration(migration_file, db):
         elif hasattr(module, "run_migration"):
             result = module.run_migration()
         else:
-            print(
-                f"  ⚠️  Migration {migration_name} has no main(), upgrade(), "
+            _print(
+                f"  WARN Migration {migration_name} has no main(), upgrade(), "
                 f"migrate_up(), or run_migration() function"
             )
             return False
 
         if result is False:
-            print(f"  ❌ Migration {migration_name} reported failure")
+            _print(f"  FAIL Migration {migration_name} reported failure")
             return False
         
         # Record successful migration
@@ -118,11 +136,11 @@ def run_migration(migration_file, db):
         db.add(history)
         db.commit()
         
-        print(f"  ✅ Migration {migration_name} completed successfully!")
+        _print(f"  OK Migration {migration_name} completed successfully!")
         return True
     
     except Exception as e:
-        print(f"  ❌ Migration {migration_name} FAILED: {str(e)}")
+        _print(f"  FAIL Migration {migration_name} FAILED: {str(e)}")
         
         # Record failed migration
         history = MigrationHistory(

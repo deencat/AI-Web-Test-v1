@@ -1,0 +1,25 @@
+project: Three-HK
+reqiq_project_id: cmp0zdx4g0004alp8z77ess7a
+default_env_config:
+  login_module: login_my3_andrew
+  existing_subscriber_module: plan_subscribe_flow_existing_preprod_andrew
+  new_subscriber_module: plan_subscriber_flow_andrew
+  max_browser_steps: 50
+  max_flow_timeout_seconds: 600
+
+journeys:
+  - id: postpaid-preprod4-entry
+    name: Postpaid Preprod4 Browse
+    feature_url: https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/
+    tags: [postpaid, preprod4, regression]
+    capability_keys: [POSTPAID_BROWSE]
+    reference_test_id: null
+    stop_at_page_hint: null
+
+  - id: diy-dashboard
+    name: DIY Account Dashboard
+    feature_url: https://wwwuat.three.com.hk/DTPPD/preprod3/DIY/en/account/dashboard/
+    tags: [diy, dashboard, regression, logged-in]
+    capability_keys: [DIY_DASHBOARD]
+    reference_test_id: null
+    requires_login: true

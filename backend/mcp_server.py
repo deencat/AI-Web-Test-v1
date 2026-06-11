@@ -47,6 +47,16 @@ Tools exposed
   list_executions            — List recent executions for a test case
   get_execution_stats        — Aggregated pass/fail statistics
   list_step_library_modules  — List reusable Step Library module names
+  get_execution_feedback     — Step-level failure feedback for an execution (HF-2)
+  list_failed_executions     — Recent failed executions (HF-2)
+  create_test_schedule       — Create cron/interval schedule for a test (HF-2)
+  list_test_schedules        — List schedules for current service account (HF-2)
+  delete_test_schedule       — Delete a schedule by id (HF-2)
+  get_coverage_matrix        — ReqIQ coverage matrix via AWT proxy (HF-2)
+  get_reqiq_readiness        — ReqIQ wiki readiness check (HF-2)
+  suggest_scenarios_from_wiki — Generate DRAFT requirements from wiki (HF-2)
+  list_journey_backlog       — Pending journey backlog items (HF-2)
+  enqueue_journey            — Add journey to factory backlog (HF-2)
 """
 from __future__ import annotations
 
@@ -481,7 +491,242 @@ async def list_step_library_modules(
 
 
 # ---------------------------------------------------------------------------
-# § 5 — Health
+# § 5 — Execution feedback & schedules (HF-2 factory tools)
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def get_execution_feedback(execution_id: int) -> list:
+    """Get step-level failure feedback for a test execution.
+
+    Args:
+        execution_id: Numeric execution id from execute_test or list_failed_executions.
+
+    Returns:
+        List of feedback objects with failure_type, step_index, selector, screenshot_url, etc.
+    """
+    return await _call("GET", f"/executions/{execution_id}/feedback")
+
+
+@mcp.tool()
+async def list_failed_executions(
+    since: Optional[str] = None,
+    limit: int = 20,
+    test_case_id: Optional[int] = None,
+) -> dict:
+    """List recent failed test executions.
+
+    Args:
+        since: ISO-8601 datetime — only failures completed on or after this time.
+        limit: Max results (default 20, max 100).
+        test_case_id: Optional filter by test case id.
+
+    Returns:
+        dict with items, total, skip, limit — same shape as list_executions API.
+    """
+    params: dict[str, Any] = {"result": "fail", "limit": min(limit, 100)}
+    if since:
+        params["since"] = since
+    if test_case_id is not None:
+        params["test_case_id"] = test_case_id
+    return await _call("GET", "/executions/", params=params)
+
+
+@mcp.tool()
+async def create_test_schedule(
+    test_case_id: int,
+    schedule_type: str = "cron",
+    cron_expression: Optional[str] = None,
+    interval_minutes: Optional[int] = None,
+    name: Optional[str] = None,
+    browser: str = "chromium",
+    environment: str = "staging",
+    enabled: bool = True,
+) -> dict:
+    """Create a recurring test schedule.
+
+    Args:
+        test_case_id: Test case to run on schedule.
+        schedule_type: 'cron' or 'interval' (default 'cron').
+        cron_expression: Required when schedule_type is 'cron' (e.g. '0 2 * * *').
+        interval_minutes: Required when schedule_type is 'interval'.
+        name: Optional display name.
+        browser: Browser target (default chromium).
+        environment: dev | staging | production.
+        enabled: Whether schedule is active (default True).
+
+    Returns:
+        Created schedule object with id, schedule_description, etc.
+    """
+    body: dict[str, Any] = {
+        "test_case_id": test_case_id,
+        "schedule_type": schedule_type,
+        "browser": browser,
+        "environment": environment,
+        "enabled": enabled,
+    }
+    if name:
+        body["name"] = name
+    if cron_expression:
+        body["cron_expression"] = cron_expression
+    if interval_minutes is not None:
+        body["interval_minutes"] = interval_minutes
+    return await _call("POST", "/schedules/", json=body)
+
+
+@mcp.tool()
+async def list_test_schedules() -> list:
+    """List all test schedules owned by the service account.
+
+    Returns:
+        List of schedule objects with id, test_case_id, cron_expression, enabled, etc.
+    """
+    return await _call("GET", "/schedules/")
+
+
+@mcp.tool()
+async def delete_test_schedule(schedule_id: int) -> dict:
+    """Delete a test schedule and stop its timer.
+
+    Args:
+        schedule_id: Schedule id from list_test_schedules or create_test_schedule.
+
+    Returns:
+        Empty dict on success (HTTP 204).
+    """
+    return await _call("DELETE", f"/schedules/{schedule_id}")
+
+
+# ---------------------------------------------------------------------------
+# § 6 — ReqIQ proxy (HF-2)
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def get_coverage_matrix(project_id: str) -> dict:
+    """Get scenario coverage matrix across capabilities from ReqIQ.
+
+    Args:
+        project_id: ReqIQ project id (e.g. from journey registry reqiq_project_id).
+
+    Returns:
+        Coverage matrix JSON from ReqIQ via AWT proxy.
+    """
+    return await _call("GET", f"/requirements/{project_id}/coverage-matrix")
+
+
+@mcp.tool()
+async def get_reqiq_readiness(
+    project_id: str,
+    query: str = "",
+    feature: str = "",
+) -> dict:
+    """Check ReqIQ wiki readiness for a project or feature.
+
+    Args:
+        project_id: ReqIQ project id.
+        query: Optional search query for wiki context.
+        feature: Optional feature name filter.
+
+    Returns:
+        dict with readinessScore, wikiContent, and related ReqIQ fields.
+    """
+    params: dict[str, str] = {}
+    if query:
+        params["query"] = query
+    if feature:
+        params["feature"] = feature
+    return await _call("GET", f"/requirements/{project_id}/readiness", params=params or None)
+
+
+@mcp.tool()
+async def suggest_scenarios_from_wiki(
+    project_id: str,
+    capability_keys: Optional[list[str]] = None,
+    max_scenarios: Optional[int] = None,
+    hints: Optional[str] = None,
+) -> dict:
+    """Generate DRAFT requirements / scenarios from compiled ReqIQ wiki.
+
+    Args:
+        project_id: ReqIQ project id.
+        capability_keys: Optional capability keys to focus on.
+        max_scenarios: Max scenarios to suggest.
+        hints: Optional planner hints for the LLM.
+
+    Returns:
+        ReqIQ suggest-from-wiki response with draft requirements.
+    """
+    body: dict[str, Any] = {}
+    if capability_keys:
+        body["capabilityKeys"] = capability_keys
+    if max_scenarios is not None:
+        body["maxScenarios"] = max_scenarios
+    if hints:
+        body["hints"] = hints
+    return await _call(
+        "POST",
+        f"/requirements/{project_id}/requirements/suggest-from-wiki",
+        json=body,
+    )
+
+
+# ---------------------------------------------------------------------------
+# § 7 — Journey registry backlog (HF-2)
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def list_journey_backlog(
+    status: Optional[str] = None,
+    project: Optional[str] = None,
+    limit: int = 50,
+) -> dict:
+    """List journey backlog items for the QA factory.
+
+    Args:
+        status: Filter by pending | in_progress | done | failed.
+        project: Filter by project name (e.g. 'Three-HK').
+        limit: Max items (default 50).
+
+    Returns:
+        dict with items and total count.
+    """
+    params: dict[str, Any] = {"limit": min(limit, 200)}
+    if status:
+        params["status"] = status
+    if project:
+        params["project"] = project
+    return await _call("GET", "/agent/backlog", params=params)
+
+
+@mcp.tool()
+async def enqueue_journey(
+    journey_slug: str,
+    project: str = "Three-HK",
+    priority: int = 0,
+    params: Optional[dict] = None,
+) -> dict:
+    """Enqueue a journey from the registry for test generation.
+
+    Args:
+        journey_slug: Registry slug (e.g. 'diy-dashboard').
+        project: Project name (default 'Three-HK').
+        priority: Higher runs first (default 0).
+        params: Optional overrides (user_instruction, tags, etc.).
+
+    Returns:
+        Created backlog item with id and status 'pending'.
+    """
+    body: dict[str, Any] = {
+        "journey_slug": journey_slug,
+        "project": project,
+        "priority": priority,
+    }
+    if params:
+        body["params"] = params
+    return await _call("POST", "/agent/backlog", json=body)
+
+
+# ---------------------------------------------------------------------------
+# § 8 — Health
 # ---------------------------------------------------------------------------
 
 @mcp.tool()

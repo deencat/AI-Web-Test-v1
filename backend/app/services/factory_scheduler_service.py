@@ -1,4 +1,4 @@
-"""Cron scheduler for Hermes QA Factory loops (HF-1: regression only)."""
+"""Cron scheduler for Hermes QA Factory loops (HF-1, HF-3)."""
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
@@ -16,12 +16,12 @@ logger = logging.getLogger(__name__)
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="factory-worker")
 
 
-def _enqueue_factory_job(job_type: str, params: dict) -> None:
+def _enqueue_factory_job(job_type: str, params: dict, project: str | None = None) -> None:
     db = SessionLocal()
     try:
         body = FactoryJobCreate(
             job_type=job_type,
-            project=params.get("project"),
+            project=project or params.get("project"),
             params=params,
         )
         job = create_factory_job(
@@ -41,8 +41,55 @@ def _run_scheduled_regression() -> None:
     tags = [t.strip() for t in settings.FACTORY_REGRESSION_TAGS.split(",") if t.strip()]
     _enqueue_factory_job(
         "run_regression",
-        {"tags": tags or ["regression"], "source": "factory_cron"},
+        {
+            "tags": tags or ["regression"],
+            "source": "factory_cron",
+            "triggered_by": "scheduled",
+        },
     )
+
+
+def _run_scheduled_regression_nightly() -> None:
+    tags = [t.strip() for t in settings.FACTORY_REGRESSION_TAGS.split(",") if t.strip()]
+    _enqueue_factory_job(
+        "run_regression",
+        {
+            "tags": tags or ["regression"],
+            "source": "factory_cron_nightly",
+            "triggered_by": "scheduled",
+        },
+        project="Three-HK",
+    )
+
+
+def _run_scheduled_drain_backlog() -> None:
+    _enqueue_factory_job(
+        "drain_backlog",
+        {
+            "max_items": settings.FACTORY_LOOP_A_MAX_ITEMS,
+            "source": "factory_loop_a",
+        },
+        project="Three-HK",
+    )
+
+
+def _register_cron_job(scheduler, job_id: str, cron_expr: str, func, label: str) -> None:
+    if scheduler.get_job(job_id):
+        scheduler.remove_job(job_id)
+    try:
+        trigger = CronTrigger.from_crontab(cron_expr, timezone="UTC")
+    except ValueError as exc:
+        logger.error("[FactoryScheduler] Invalid %s cron %r: %s", label, cron_expr, exc)
+        return
+    scheduler.add_job(
+        func,
+        trigger=trigger,
+        id=job_id,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    logger.info("[FactoryScheduler] Registered %s: %s", label, cron_expr)
 
 
 def register_factory_cron_jobs() -> None:
@@ -56,27 +103,26 @@ def register_factory_cron_jobs() -> None:
         logger.warning("[FactoryScheduler] APScheduler not started — skipping factory cron registration")
         return
 
-    job_id = "factory_regression_cron"
-    if scheduler.get_job(job_id):
-        scheduler.remove_job(job_id)
-
-    try:
-        trigger = CronTrigger.from_crontab(settings.FACTORY_REGRESSION_CRON, timezone="UTC")
-    except ValueError as exc:
-        logger.error("[FactoryScheduler] Invalid FACTORY_REGRESSION_CRON: %s", exc)
-        return
-
-    scheduler.add_job(
-        _run_scheduled_regression,
-        trigger=trigger,
-        id=job_id,
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True,
-    )
-    logger.info(
-        "[FactoryScheduler] Registered regression cron: %s",
+    _register_cron_job(
+        scheduler,
+        "factory_regression_cron",
         settings.FACTORY_REGRESSION_CRON,
+        _run_scheduled_regression,
+        "Loop B regression (2h)",
+    )
+    _register_cron_job(
+        scheduler,
+        "factory_regression_nightly",
+        settings.FACTORY_REGRESSION_NIGHTLY_CRON,
+        _run_scheduled_regression_nightly,
+        "Loop B regression (nightly)",
+    )
+    _register_cron_job(
+        scheduler,
+        "factory_loop_a_drain",
+        settings.FACTORY_LOOP_A_CRON,
+        _run_scheduled_drain_backlog,
+        "Loop A drain_backlog",
     )
 
 

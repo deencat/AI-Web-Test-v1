@@ -15,6 +15,10 @@ class TestAgentChatService:
         with pytest.raises(ValueError):
             parse_chat_to_job("hello there", {})
 
+    def test_parse_drain_backlog_keyword(self):
+        job, reply = parse_chat_to_job("Please drain backlog", {})
+        assert job.job_type == "drain_backlog"
+
 
 class TestRoleRank:
     def test_admin_meets_factory_operator(self):
