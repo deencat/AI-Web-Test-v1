@@ -74,6 +74,10 @@ start_queue_manager(
 # Start in-process scheduler (cross-platform, no OS cron dependency)
 scheduler_service.start()
 
+from app.services.factory_scheduler_service import register_factory_cron_jobs
+
+register_factory_cron_jobs()
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",

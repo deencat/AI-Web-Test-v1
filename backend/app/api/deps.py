@@ -1,4 +1,4 @@
-from typing import Generator, Optional
+from typing import Callable, Generator, Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
@@ -62,4 +62,37 @@ def get_current_active_user(
             detail="Inactive user"
         )
     return current_user
+
+
+# Role hierarchy for Hermes QA Factory (HF-1)
+_ROLE_RANK = {
+    "viewer": 0,
+    "user": 1,
+    "tester": 1,
+    "agent_operator": 2,
+    "admin": 3,
+    "superadmin": 4,
+}
+
+_FACTORY_OPERATOR_MIN_RANK = _ROLE_RANK["agent_operator"]
+
+
+def _role_rank(role: Optional[str]) -> int:
+    return _ROLE_RANK.get((role or "user").lower(), 0)
+
+
+def require_role(min_rank: int, label: str) -> Callable:
+    def dependency(current_user: User = Depends(get_current_active_user)) -> User:
+        if _role_rank(current_user.role) < min_rank:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Requires {label} role or higher",
+            )
+        return current_user
+
+    return dependency
+
+
+require_factory_operator = require_role(_FACTORY_OPERATOR_MIN_RANK, "agent_operator")
+require_superadmin = require_role(_ROLE_RANK["superadmin"], "superadmin")
 

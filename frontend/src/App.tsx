@@ -13,6 +13,7 @@ import { ExecutionHistoryPage } from './pages/ExecutionHistoryPage';
 import { FeedbackListPage } from './pages/FeedbackListPage';
 import { DebugSessionPage } from './pages/DebugSessionPage';
 import { AgentWorkflowPage } from './pages/AgentWorkflowPage';
+import { AgentConsolePage } from './pages/AgentConsolePage';
 import { StepLibraryPage } from './pages/StepLibraryPage';
 import { CrawlAndSavePage } from './pages/CrawlAndSavePage';
 import './index.css';
@@ -143,6 +144,14 @@ function App() {
           element={
             <ProtectedRoute>
               <AgentWorkflowPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/agent-console"
+          element={
+            <ProtectedRoute>
+              <AgentConsolePage />
             </ProtectedRoute>
           }
         />

@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from app.api.v1.endpoints import health, auth, users, test_generation, tests, kb, executions, test_templates, test_scenarios, test_suites, settings, debug, versions, execution_feedback, browser_profiles, uploads, email_credentials, step_library, requirements, hermes, schedules
+from app.api.v1.endpoints.agent import jobs as agent_jobs, chat as agent_chat
 
 api_router = APIRouter()
 
@@ -24,4 +25,6 @@ api_router.include_router(step_library.router, tags=["step-library"])
 api_router.include_router(requirements.router, prefix="/requirements", tags=["reqiq-proxy"])
 api_router.include_router(hermes.router, tags=["hermes"])
 api_router.include_router(schedules.router, tags=["schedules"])
+api_router.include_router(agent_jobs.router, prefix="/agent", tags=["agent-factory"])
+api_router.include_router(agent_chat.router, prefix="/agent", tags=["agent-factory"])
 

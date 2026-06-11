@@ -55,7 +55,17 @@ async def trigger_hermes(
 
     Returns 503 when Telegram credentials are not configured in .env.
     Returns 502 when the Telegram API call fails.
+    Returns 403 when HERMES_TELEGRAM_ENABLED=false (production).
     """
+    if not settings.HERMES_TELEGRAM_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Hermes Telegram trigger is disabled. "
+                "Use Agent Console (/api/v1/agent/chat) in production."
+            ),
+        )
+
     if not settings.TELEGRAM_BOT_TOKEN or not settings.QA_MANAGER_TELEGRAM_CHAT_ID:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

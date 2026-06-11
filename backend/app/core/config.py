@@ -98,11 +98,18 @@ class Settings(BaseSettings):
     AWT_SERVICE_USERNAME: str | None = None     # service account username for internal REST calls
     AWT_SERVICE_PASSWORD: str | None = None    # service account password
 
-    # Hermes Telegram trigger (H2 — "Generate via Hermes" button in UI)
+    # Hermes Telegram trigger (H2 — dev only; disabled in production)
+    HERMES_TELEGRAM_ENABLED: bool = True
     # Bot token from BotFather; same token as TELEGRAM_BOT_TOKEN in ~/.hermes/.env on Node 1
     TELEGRAM_BOT_TOKEN: str | None = None
     # DM chat ID between your Telegram user account and the qa-manager bot
     QA_MANAGER_TELEGRAM_CHAT_ID: str | None = None
+
+    # Hermes QA Factory scheduler (HF-1)
+    FACTORY_SCHEDULER_ENABLED: bool = False
+    FACTORY_REGRESSION_CRON: str = "0 */2 * * *"
+    FACTORY_REGRESSION_TAGS: str = "regression"
+    FACTORY_SERVICE_USER_ID: int = 1
 
     # Sprint 10.19: LLM Response & Timing Log
     LLM_LOG_DIR: str = "logs/llm"
