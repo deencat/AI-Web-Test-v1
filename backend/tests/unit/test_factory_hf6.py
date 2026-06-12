@@ -51,3 +51,58 @@ class TestObservatoryAccess:
         assert trace.hermes_session_ids == ["sess_abc"]
         assert db.add.called
         assert db.commit.called
+
+
+class TestHermesBridgeIngest:
+    def test_ingest_redacts_secrets_before_store(self):
+        from unittest.mock import patch
+
+        from app.schemas.hermes_bridge import HermesBridgeEventCreate
+        from app.services.hermes_bridge_ingest_service import ingest_hermes_bridge_event
+
+        db = MagicMock()
+        job = SimpleNamespace(id="job-1", status="running")
+        stored_event = SimpleNamespace(
+            id=99,
+            event_type="delegate_complete",
+            created_at=datetime(2026, 6, 8, 12, 0, 0),
+        )
+
+        with patch(
+            "app.services.hermes_bridge_ingest_service.get_factory_job",
+            return_value=job,
+        ), patch(
+            "app.services.hermes_bridge_ingest_service.append_job_event",
+            return_value=stored_event,
+        ) as append_mock:
+            body = HermesBridgeEventCreate(
+                job_id="job-1",
+                event_type="delegate_complete",
+                profile="qa-test-gen",
+                payload_full={"api_key": "secret-value"},
+            )
+            result = ingest_hermes_bridge_event(db, body)
+
+        assert result.event_id == 99
+        kwargs = append_mock.call_args.kwargs
+        assert kwargs["payload_full"]["api_key"] == "***REDACTED***"
+
+    def test_ingest_unknown_job_raises(self):
+        from unittest.mock import patch
+
+        from app.schemas.hermes_bridge import HermesBridgeEventCreate
+        from app.services.hermes_bridge_ingest_service import ingest_hermes_bridge_event
+
+        db = MagicMock()
+        with patch(
+            "app.services.hermes_bridge_ingest_service.get_factory_job",
+            return_value=None,
+        ):
+            try:
+                ingest_hermes_bridge_event(
+                    db,
+                    HermesBridgeEventCreate(job_id="missing", event_type="job_started"),
+                )
+                assert False, "expected ValueError"
+            except ValueError as exc:
+                assert str(exc) == "job_not_found"

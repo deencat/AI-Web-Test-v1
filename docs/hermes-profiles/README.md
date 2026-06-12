@@ -17,6 +17,7 @@ Version-controlled SOUL.md and config templates for Node 1 deployment.
 | qa-reporter | `qa-reporter/` | HF-3 draft · HF-6 webapp |
 | qa-change-detector | `qa-change-detector/` | HF-4 |
 | qa-healer | `qa-healer/` | HF-5 |
+| Hermes Bridge | `bridge/` | HF-6.2 ingest · HF-6.6 service |
 
 ## Deploy to Node 1
 

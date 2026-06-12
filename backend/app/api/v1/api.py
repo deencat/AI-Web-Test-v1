@@ -4,6 +4,7 @@ from app.api.v1.endpoints.agent import jobs as agent_jobs, chat as agent_chat
 from app.api.v1.endpoints.agent import registry as agent_registry, backlog as agent_backlog
 from app.api.v1.endpoints.agent import heal_review as agent_heal_review
 from app.api.v1.endpoints.agent import observatory as agent_observatory
+from app.api.v1.endpoints.agent import bridge as agent_bridge
 
 api_router = APIRouter()
 
@@ -34,5 +35,6 @@ api_router.include_router(agent_registry.router, prefix="/agent", tags=["agent-f
 api_router.include_router(agent_backlog.router, prefix="/agent", tags=["agent-factory"])
 api_router.include_router(agent_heal_review.router, prefix="/agent", tags=["agent-factory"])
 api_router.include_router(agent_observatory.router, prefix="/agent", tags=["agent-observatory"])
+api_router.include_router(agent_bridge.router, prefix="/agent", tags=["hermes-bridge"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 

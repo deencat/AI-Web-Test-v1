@@ -120,6 +120,10 @@ class Settings(BaseSettings):
     FACTORY_HEAL_MAX_ITEMS: int = 10
     FACTORY_HEAL_MAX_ATTEMPTS: int = 2
 
+    # Hermes Bridge (HF-6) — Node 1 posts delegate events to AWT
+    HERMES_BRIDGE_SECRET: str | None = None
+    HERMES_BRIDGE_URL: str | None = None  # optional forward target for chat (HF-3.7)
+
     # Sprint 10.19: LLM Response & Timing Log
     LLM_LOG_DIR: str = "logs/llm"
     LLM_LOG_MAX_FILES: int = 200

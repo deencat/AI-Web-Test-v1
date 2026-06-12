@@ -1,6 +1,10 @@
+import logging
 from typing import Callable, Generator, Optional
+
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2PasswordBearer
+
+from app.core.config import settings
 from jose import JWTError
 from sqlalchemy.orm import Session
 from app.core.security import decode_token
@@ -95,4 +99,31 @@ def require_role(min_rank: int, label: str) -> Callable:
 
 require_factory_operator = require_role(_FACTORY_OPERATOR_MIN_RANK, "agent_operator")
 require_superadmin = require_role(_ROLE_RANK["superadmin"], "superadmin")
+
+_bridge_bearer = HTTPBearer(auto_error=False)
+_bridge_logger = logging.getLogger(__name__)
+
+
+def require_hermes_bridge_secret(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bridge_bearer),
+) -> None:
+    """Validate Bearer token for Hermes Bridge → AWT event POSTs (HF-6.2)."""
+    secret = settings.HERMES_BRIDGE_SECRET
+    if not secret:
+        _bridge_logger.warning(
+            "HERMES_BRIDGE_SECRET not set; accepting bridge events without auth (dev only)"
+        )
+        return
+    if not credentials or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Bearer token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if credentials.credentials != secret:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid bridge secret",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 

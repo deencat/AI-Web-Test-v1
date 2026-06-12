@@ -72,6 +72,17 @@ cd backend
 
 **Phase B:** Hermes Bridge posts events to `POST /api/v1/agent/hermes/events` with `HERMES_BRIDGE_SECRET`.
 
+Smoke test (replace `JOB_ID`):
+
+```bash
+curl -X POST http://localhost:8000/api/v1/agent/hermes/events \
+  -H "Authorization: Bearer $HERMES_BRIDGE_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"job_id":"JOB_ID","event_type":"delegate_complete","profile":"qa-test-gen","hermes_session_id":"sess_smoke","message":"ops smoke"}'
+```
+
+Or use `docs/hermes-profiles/bridge/hermes_bridge.py post-event`.
+
 ---
 
 ## 6. Node 1 Hermes (Phase B — EPIC-HF-07)

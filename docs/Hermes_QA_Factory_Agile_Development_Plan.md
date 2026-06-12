@@ -1,7 +1,7 @@
 # Hermes QA Factory — Agile Development Plan
 
 **Version:** 1.3 · **Date:** 2026-06-11  
-**Status:** **HF-6 AWT in progress** · Phase B (Bridge/Hermes) remains before launch  
+**Status:** **HF-6 AWT done** · Phase B (Bridge service + Hermes profiles) in progress  
 **Parent design:** [Hermes_QA_Autonomous_Workflow_v5.md](Hermes_QA_Autonomous_Workflow_v5.md)  
 **Program code:** **HF** (Hermes Factory) — sprints **HF-1 … HF-6**
 
@@ -24,7 +24,7 @@
 | **HF-3** | ✅ Done (3.2–3.5) | ⬜ 3.1, 3.6, 3.7 | `drain_backlog`, Loops A & B cron |
 | **HF-4** | ✅ Done (4.1–4.4, 4.6) | ⬜ 4.5 Hermes | `scan_changes`, registry badges |
 | **HF-5** | ✅ Done (5.1–5.5 AWT) | ⬜ 5.3b | Heal API + Loop D |
-| **HF-6** | 🔜 AWT (6.1–6.5) | ⬜ 6.2, 6.6, 6.7 | Observatory + launch |
+| **HF-6** | ✅ AWT (6.1–6.5) · ✅ 6.2 ingest | ⬜ 6.6, 6.7 | Observatory + launch |
 
 ### Story checklist
 
@@ -70,7 +70,7 @@
 | HF-5.5 | Heal integration tests | ✅ | `test_factory_heal_hf5.py` |
 | **HF-6** | | | |
 | HF-6.1 | In-app notifications | ✅ | Bell + worker hook |
-| HF-6.2 | Hermes Bridge ingestion | ⏸ | Phase B |
+| HF-6.2 | Hermes Bridge ingestion | ✅ | `POST /agent/hermes/events` |
 | HF-6.3 | Observatory APIs | ✅ | hermes-trace + access log |
 | HF-6.4 | Observatory UI | ✅ | Agent Console panel |
 | HF-6.5 | Launch hardening + runbook | ✅ | `Hermes_QA_Factory_Ops_Runbook.md` |
@@ -761,7 +761,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-6.2 — Hermes Bridge event ingestion (5 pts) `[BRIDGE]` `[AWT-BE]` ⏸
+#### HF-6.2 — Hermes Bridge event ingestion (5 pts) `[BRIDGE]` `[AWT-BE]` ✅
 
 - Node 1: Bridge posts to `POST /api/v1/agent/hermes/events` (`HERMES_BRIDGE_SECRET`)
 - AWT: ingest service with secret redaction
