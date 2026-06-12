@@ -6,10 +6,35 @@ Sprint 5.5: 3-Tier Execution Engine
 import asyncio
 import time
 from typing import Dict, Any, Optional
+from urllib.parse import urlparse
 from stagehand import Stagehand
 import logging
 
 logger = logging.getLogger(__name__)
+
+_GW_PROXY_IFRAME_SELECTORS = {
+    "card_number": [
+        "iframe.gw-proxy-number",
+        "iframe[id*='card-number' i]",
+        "iframe[src*='/role/number/' i]",
+    ],
+    "expiry_month": [
+        "iframe.gw-proxy-expiry-month",
+        "iframe[src*='/role/expiryMonth/' i]",
+    ],
+    "expiry_year": [
+        "iframe.gw-proxy-expiry-year",
+        "iframe[src*='/role/expiryYear/' i]",
+    ],
+    "cvv": [
+        "iframe.gw-proxy-cvv",
+        "iframe[src*='/role/securityCode/' i]",
+    ],
+    "cardholder": [
+        "iframe.gw-proxy-name",
+        "iframe[src*='/role/cardholderName/' i]",
+    ],
+}
 
 
 class Tier3StagehandExecutor:
@@ -38,6 +63,76 @@ class Tier3StagehandExecutor:
         """
         self.stagehand = stagehand
         self.timeout_ms = timeout_ms
+
+    def _is_payment_field_instruction(self, instruction: str, action: str) -> bool:
+        if not instruction or action not in ("fill", "type", "input", "select"):
+            return False
+        instruction_lower = instruction.lower()
+        keywords = [
+            "card number", "credit card", "cardholder", "card holder",
+            "expiry", "expiration", "exp. date", "exp date", "cvv", "cvc",
+            "security code",
+        ]
+        return any(keyword in instruction_lower for keyword in keywords)
+
+    def _is_cross_origin_payment_host(self, url: str) -> bool:
+        hostname = (urlparse(url or "").hostname or "").lower()
+        return any(
+            kw in hostname
+            for kw in ("gateway", "mastercard", "checkout", "pay", "payment", "adyen", "stripe")
+        )
+
+    def _infer_payment_field_role(self, instruction_lower: str, action: str) -> Optional[str]:
+        if action == "select":
+            if "month" in instruction_lower:
+                return "expiry_month"
+            if "year" in instruction_lower:
+                return "expiry_year"
+        if "card number" in instruction_lower or "credit card" in instruction_lower:
+            return "card_number"
+        if "cvv" in instruction_lower or "cvc" in instruction_lower or "security code" in instruction_lower:
+            return "cvv"
+        if "cardholder" in instruction_lower or "card holder" in instruction_lower:
+            return "cardholder"
+        return None
+
+    async def _verify_payment_field_populated(
+        self,
+        instruction: str,
+        value: str,
+        action: str,
+    ) -> bool:
+        """Verify gw-proxy payment fields were populated after Stagehand act()."""
+        page = self.stagehand.page
+        if not self._is_cross_origin_payment_host(page.url):
+            return True
+
+        instruction_lower = (instruction or "").lower()
+        role = self._infer_payment_field_role(instruction_lower, action)
+        if not role:
+            return True
+
+        iframe_selectors = _GW_PROXY_IFRAME_SELECTORS.get(role, [])
+        for iframe_selector in iframe_selectors:
+            try:
+                if await page.locator(iframe_selector).count() == 0:
+                    continue
+                frame = page.frame_locator(iframe_selector)
+                if action == "select":
+                    locator = frame.locator("select").first
+                    await locator.wait_for(state="visible", timeout=2000)
+                    selected = await locator.input_value()
+                    return selected == value or bool(selected)
+                locator = frame.locator("input:not([type='hidden'])").first
+                await locator.wait_for(state="visible", timeout=2000)
+                filled = (await locator.input_value() or "").strip()
+                if role == "cvv":
+                    return bool(filled)
+                return filled == value
+            except Exception:
+                continue
+
+        return False
     
     async def execute_step(
         self,
@@ -97,6 +192,12 @@ class Tier3StagehandExecutor:
                 # Combine action with value for better instruction
                 full_instruction = f"{instruction} with value '{value}'"
                 result = await self.stagehand.page.act(full_instruction)
+                if self._is_payment_field_instruction(instruction, action):
+                    verified = await self._verify_payment_field_populated(instruction, value, action)
+                    if not verified:
+                        raise ValueError(
+                            f"Tier 3 act() did not populate payment field: {instruction}"
+                        )
                 
             elif action == "select" and value:
                 # Handle dropdown/select actions with explicit value
@@ -106,6 +207,12 @@ class Tier3StagehandExecutor:
                 
                 # Small delay for onChange handlers
                 await asyncio.sleep(0.3)
+                if self._is_payment_field_instruction(instruction, action):
+                    verified = await self._verify_payment_field_populated(instruction, value, action)
+                    if not verified:
+                        raise ValueError(
+                            f"Tier 3 act() did not populate payment field: {instruction}"
+                        )
                 
             elif action in ["assert", "verify"]:
                 # Use extract to verify content
@@ -246,6 +353,9 @@ class Tier3StagehandExecutor:
                             "input[name*='cardnumber']",
                             "iframe[name*='card']",  # Payment gateway iframes
                             "iframe[src*='payment']",
+                            "iframe[class*='gw-proxy']",
+                            "iframe.gw-proxy-number",
+                            "iframe[src*='gateway.mastercard.com']",
                         ]
                         
                         input_found = False

@@ -97,6 +97,65 @@ class Tier2HybridExecutor:
     }
 
     THREE_HK_TAB_ACTIVE_HINTS = ("active", "selected", "current")
+
+    # Mastercard Hosted Checkout gw-proxy iframe selectors by PCI field role (ADR-002-48).
+    _GW_PROXY_IFRAME_SELECTORS: Dict[str, list] = {
+        "card_number": [
+            "iframe.gw-proxy-number",
+            "iframe[id*='card-number' i]",
+            "iframe[src*='/role/number/' i]",
+        ],
+        "expiry_month": [
+            "iframe.gw-proxy-expiry-month",
+            "iframe[src*='/role/expiryMonth/' i]",
+            "iframe[src*='/role/expiry-month/' i]",
+        ],
+        "expiry_year": [
+            "iframe.gw-proxy-expiry-year",
+            "iframe[src*='/role/expiryYear/' i]",
+            "iframe[src*='/role/expiry-year/' i]",
+        ],
+        "cvv": [
+            "iframe.gw-proxy-cvv",
+            "iframe.gw-proxy-security-code",
+            "iframe[src*='/role/securityCode/' i]",
+            "iframe[src*='/role/cvv/' i]",
+        ],
+        "cardholder": [
+            "iframe.gw-proxy-name",
+            "iframe[src*='/role/cardholderName/' i]",
+            "iframe[src*='/role/name/' i]",
+        ],
+    }
+
+    _GW_PROXY_INNER_INPUT_SELECTORS = [
+        "input:not([type='hidden'])",
+        "input[type='text']",
+        "input[type='tel']",
+        "input[type='password']",
+    ]
+
+    _GW_PROXY_INNER_SELECT_SELECTORS = ["select"]
+
+    _LEGACY_PAYMENT_IFRAME_SELECTORS = [
+        "iframe[name*='card']",
+        "iframe[title*='payment']",
+        "iframe[src*='payment']",
+    ]
+
+    _GW_PROXY_PAYMENT_IFRAME_SELECTORS = [
+        "iframe.gw-proxy-number",
+        "iframe.gw-proxy-expiry-month",
+        "iframe.gw-proxy-expiry-year",
+        "iframe.gw-proxy-cvv",
+        "iframe.gw-proxy-name",
+        "iframe[class*='gw-proxy']",
+        "iframe[src*='gateway.mastercard.com'][src*='/role/']",
+        "iframe[src*='/role/number/' i]",
+        "iframe[src*='/role/expiryMonth/' i]",
+        "iframe[src*='/role/expiryYear/' i]",
+        "iframe[src*='/role/securityCode/' i]",
+    ]
     
     def __init__(
         self,
@@ -224,27 +283,59 @@ class Tier2HybridExecutor:
                 xpath = cached_xpath["xpath"]
                 cache_hit = True
                 logger.info(f"[Tier 2] ðŸŽ¯ Cache hit! Validating cached XPath: {xpath}")
-                
-                # Validate cached xpath - ensure element exists and matches step intent
-                try:
-                    is_valid_cache = await self._validate_cached_xpath_for_step(
+
+                if action in ("fill", "type", "input", "select") and self._xpath_targets_iframe(xpath):
+                    logger.info("[Tier 2] ðŸ§­ Cached XPath points to iframe container. Trying in-frame fill/select...")
+                    filled_inside_iframe = await self._try_fill_inside_iframe(
                         page=page,
-                        xpath=xpath,
                         action=action,
                         instruction=instruction,
                         value=value,
+                        iframe_xpath=xpath,
                     )
-                    if not is_valid_cache:
-                        raise ValueError("Cached XPath does not match current step intent")
+                    if filled_inside_iframe:
+                        total_time_ms = (time.time() - start_time) * 1000
+                        return {
+                            "success": True,
+                            "tier": 2,
+                            "execution_time_ms": total_time_ms,
+                            "extraction_time_ms": 0,
+                            "playwright_time_ms": 0,
+                            "cache_hit": True,
+                            "xpath": None,
+                            "error": None
+                        }
 
-                    logger.info(f"[Tier 2] âœ… Cached XPath validated successfully")
-                except Exception as e:
-                    # Element doesn't exist - cache is stale, invalidate and re-extract
-                    logger.warning(f"[Tier 2] âš ï¸ Cached XPath validation failed: {str(e)}")
-                    logger.info(f"[Tier 2] ðŸ”„ Invalidating stale cache and re-extracting...")
-                    self.cache_service.invalidate_cache(page_url, instruction, "Element not found on page")
+                    logger.warning("[Tier 2] âš ï¸ Cached iframe XPath fill/select failed — invalidating")
+                    self.cache_service.invalidate_cache(
+                        page_url,
+                        instruction,
+                        "Cached iframe XPath is not fillable",
+                    )
                     cache_hit = False
                     cached_xpath = None
+                    xpath = None
+                else:
+                    # Validate cached xpath - ensure element exists and matches step intent
+                    try:
+                        is_valid_cache = await self._validate_cached_xpath_for_step(
+                            page=page,
+                            xpath=xpath,
+                            action=action,
+                            instruction=instruction,
+                            value=value,
+                        )
+                        if not is_valid_cache:
+                            raise ValueError("Cached XPath does not match current step intent")
+
+                        logger.info(f"[Tier 2] âœ… Cached XPath validated successfully")
+                    except Exception as e:
+                        # Element doesn't exist - cache is stale, invalidate and re-extract
+                        logger.warning(f"[Tier 2] âš ï¸ Cached XPath validation failed: {str(e)}")
+                        logger.info(f"[Tier 2] ðŸ”„ Invalidating stale cache and re-extracting...")
+                        self.cache_service.invalidate_cache(page_url, instruction, "Element not found on page")
+                        cache_hit = False
+                        cached_xpath = None
 
             # Payment gateway readiness and direct field handling
             if not cached_xpath and self._is_payment_instruction(instruction, action):
@@ -318,6 +409,31 @@ class Tier2HybridExecutor:
                         }
 
                     raise ValueError(f"Could not verify iframe click fallback for step: {instruction}")
+
+                if action in ("fill", "type", "input", "select") and self._xpath_targets_iframe(xpath):
+                    logger.info("[Tier 2] ðŸ§­ XPath points to iframe container. Trying in-frame fill/select fallback...")
+                    filled_inside_iframe = await self._try_fill_inside_iframe(
+                        page=page,
+                        action=action,
+                        instruction=instruction,
+                        value=value,
+                        iframe_xpath=xpath,
+                    )
+                    if filled_inside_iframe:
+                        playwright_time_ms = 0
+                        total_time_ms = (time.time() - start_time) * 1000
+                        return {
+                            "success": True,
+                            "tier": 2,
+                            "execution_time_ms": total_time_ms,
+                            "extraction_time_ms": extraction_time_ms,
+                            "playwright_time_ms": playwright_time_ms,
+                            "cache_hit": cache_hit,
+                            "xpath": None,
+                            "error": None
+                        }
+
+                    raise ValueError(f"Could not fill/select inside iframe for step: {instruction}")
 
                 logger.info(f"[Tier 2] âœ… Extracted XPath in {extraction_time_ms:.2f}ms: {xpath}")
                 
@@ -443,6 +559,156 @@ class Tier2HybridExecutor:
         """Return True when XPath points to an iframe container element."""
         normalized_xpath = (xpath or "").lower()
         return "/iframe[" in normalized_xpath or normalized_xpath.endswith("/iframe")
+
+    def _payment_iframe_frame_selectors(self) -> list[str]:
+        """Combined legacy and gw-proxy iframe selectors for readiness and fan-out."""
+        return self._LEGACY_PAYMENT_IFRAME_SELECTORS + self._GW_PROXY_PAYMENT_IFRAME_SELECTORS
+
+    def _infer_payment_field_role(self, instruction_lower: str, action: str) -> Optional[str]:
+        """Map a payment step instruction to a gw-proxy PCI field role."""
+        if action == "select":
+            if "month" in instruction_lower:
+                return "expiry_month"
+            if "year" in instruction_lower:
+                return "expiry_year"
+
+        if "card number" in instruction_lower or "credit card" in instruction_lower:
+            return "card_number"
+        if "cvv" in instruction_lower or "cvc" in instruction_lower or "security code" in instruction_lower:
+            return "cvv"
+        if "cardholder" in instruction_lower or "card holder" in instruction_lower:
+            return "cardholder"
+
+        return None
+
+    def _payment_field_success_result(
+        self,
+        start_time: float,
+        page: Page,
+        log_message: str,
+    ) -> Dict[str, Any]:
+        """Build a standard success payload for payment direct-handler actions."""
+        execution_time_ms = (time.time() - start_time) * 1000
+        logger.info(log_message)
+        self.payment_gateway_ready = True
+        self.payment_gateway_url = page.url
+        return {
+            "success": True,
+            "tier": 2,
+            "execution_time_ms": execution_time_ms,
+            "extraction_time_ms": 0,
+            "cache_hit": False,
+            "xpath": None,
+            "error": None
+        }
+
+    async def _verify_filled_value(self, locator, value: str, role: Optional[str]) -> bool:
+        """Verify a fill/select action populated the target field."""
+        try:
+            if role == "cvv":
+                filled_value = (await locator.input_value() or "").strip()
+                return bool(filled_value)
+            filled_value = await locator.input_value()
+            return filled_value == value
+        except Exception:
+            return True
+
+    async def _try_gw_proxy_payment_field(
+        self,
+        page: Page,
+        action: str,
+        instruction_lower: str,
+        value: str,
+        start_time: float,
+        wait_timeout: int,
+    ) -> Optional[Dict[str, Any]]:
+        """Fill or select inside a role-specific Mastercard gw-proxy iframe."""
+        role = self._infer_payment_field_role(instruction_lower, action)
+        if not role:
+            return None
+
+        iframe_selectors = self._GW_PROXY_IFRAME_SELECTORS.get(role, [])
+        for iframe_selector in iframe_selectors:
+            try:
+                iframe_locator = page.locator(iframe_selector)
+                if await iframe_locator.count() == 0:
+                    continue
+
+                frame_locator = page.frame_locator(iframe_selector)
+                if action == "select":
+                    for inner_selector in self._GW_PROXY_INNER_SELECT_SELECTORS:
+                        locator = frame_locator.locator(inner_selector).first
+                        try:
+                            await locator.wait_for(state="visible", timeout=wait_timeout)
+                            try:
+                                await locator.select_option(value, timeout=self.timeout_ms)
+                            except Exception:
+                                await locator.select_option(label=value, timeout=self.timeout_ms)
+                            return self._payment_field_success_result(
+                                start_time,
+                                page,
+                                f"[Tier 2] ✅ Payment select set in gw-proxy iframe: {iframe_selector} -> {inner_selector}",
+                            )
+                        except Exception:
+                            continue
+                elif action in ("fill", "type", "input"):
+                    for inner_selector in self._GW_PROXY_INNER_INPUT_SELECTORS:
+                        locator = frame_locator.locator(inner_selector).first
+                        try:
+                            await locator.wait_for(state="visible", timeout=wait_timeout)
+                            await locator.fill(value, timeout=self.timeout_ms)
+                            if await self._verify_filled_value(locator, value, role):
+                                return self._payment_field_success_result(
+                                    start_time,
+                                    page,
+                                    f"[Tier 2] ✅ Payment input filled in gw-proxy iframe: {iframe_selector} -> {inner_selector}",
+                                )
+                        except Exception:
+                            continue
+            except Exception:
+                continue
+
+        return None
+
+    async def _try_fill_inside_iframe(
+        self,
+        page: Page,
+        action: str,
+        instruction: str,
+        value: str,
+        iframe_xpath: Optional[str] = None,
+    ) -> bool:
+        """Fill or select inside the iframe identified by observe() or cache."""
+        target_frame = await self._resolve_iframe_target_frame(page, iframe_xpath)
+        if not target_frame:
+            return False
+
+        instruction_lower = (instruction or "").lower()
+        role = self._infer_payment_field_role(instruction_lower, action)
+        inner_selectors = (
+            self._GW_PROXY_INNER_SELECT_SELECTORS
+            if action == "select"
+            else self._GW_PROXY_INNER_INPUT_SELECTORS
+        )
+
+        for inner_selector in inner_selectors:
+            locator = target_frame.locator(inner_selector).first
+            try:
+                await locator.wait_for(state="visible", timeout=2000)
+                if action == "select":
+                    try:
+                        await locator.select_option(value, timeout=self.timeout_ms)
+                    except Exception:
+                        await locator.select_option(label=value, timeout=self.timeout_ms)
+                    return True
+
+                await locator.fill(value, timeout=self.timeout_ms)
+                if await self._verify_filled_value(locator, value, role):
+                    return True
+            except Exception:
+                continue
+
+        return False
 
     def _select_xpath_from_option_xpath(self, xpath: str) -> str:
         """Convert option XPath to parent select XPath for Playwright select_option()."""
@@ -1474,10 +1740,8 @@ class Tier2HybridExecutor:
             "select[name*='year']",
             "select[id*='year']",
             "select[autocomplete='cc-exp-year']",
-            "iframe[name*='card']",
-            "iframe[title*='payment']",
-            "iframe[src*='payment']",
         ]
+        selectors.extend(self._payment_iframe_frame_selectors())
         return ", ".join(selectors)
 
     # Gateway hostnames shared by both detection methods below.
@@ -1625,11 +1889,7 @@ class Tier2HybridExecutor:
         if not input_selectors and not select_selectors:
             return None
 
-        frame_selectors = [
-            "iframe[name*='card']",
-            "iframe[title*='payment']",
-            "iframe[src*='payment']",
-        ]
+        frame_selectors = self._payment_iframe_frame_selectors()
 
         label_candidates = []
         if "card number" in instruction_lower or "credit card" in instruction_lower:
@@ -1748,6 +2008,18 @@ class Tier2HybridExecutor:
                     }
                 except Exception:
                     continue
+
+            if self._is_cross_origin_payment_host(page.url):
+                gw_proxy_result = await self._try_gw_proxy_payment_field(
+                    page=page,
+                    action=action,
+                    instruction_lower=instruction_lower,
+                    value=value,
+                    start_time=start_time,
+                    wait_timeout=wait_timeout,
+                )
+                if gw_proxy_result:
+                    return gw_proxy_result
 
             existing_frames = await _existing_payment_frames()
 
