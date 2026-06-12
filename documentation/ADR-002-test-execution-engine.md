@@ -23,6 +23,7 @@
 - `backend/tests/test_execution_service_uat_auto_creds.py`
 - `frontend/src/components/__tests__/RunTestButton.test.tsx`
 - `backend/tests/test_tier2_payment_helpers.py`
+- `backend/tests/test_tier3_payment_verification.py`
 - `backend/tests/test_post_click_readiness.py`
 - `backend/tests/test_three_tier_execution_service.py`
 - `backend/tests/test_step_progress_guard.py`
@@ -118,6 +119,8 @@
 45. [ADR-002-45: XPath Cache Management UI and Step-Level Invalidation](#adr-002-45-xpath-cache-management-ui-and-step-level-invalidation)
 46. [ADR-002-46: Stagehand Internal LLM Client Wrapper for Sprint 10.19 JSONL Logging](#adr-002-46-stagehand-internal-llm-client-wrapper-for-sprint-1019-jsonl-logging)
 47. [ADR-002-47: Three HK Preprod API OTP via HTTP (Non-Browser)](#adr-002-47-three-hk-preprod-api-otp-via-http-non-browser)
+48. [ADR-002-48: Mastercard gw-proxy Hosted Checkout — Role-Based Iframe Fill and Tier 3 Verification](#adr-002-48-mastercard-gw-proxy-hosted-checkout--role-based-iframe-fill-and-tier-3-verification)
+49. [ADR-002-49: gw-proxy Fast Path — Embedded Checkout Performance and Session-Scoped Readiness](#adr-002-49-gw-proxy-fast-path--embedded-checkout-performance-and-session-scoped-readiness)
 
 ---
 
@@ -193,7 +196,7 @@ Use Stagehand `observe()` to extract XPath selectors at the point of execution. 
 **Negative**
 - `observe()` can return no results if the page is mid-navigation or in a skeleton/loading state (addressed in ADR-002-5).
 - `observe()` can return an `<option>` XPath for `<select>` elements (addressed in ADR-002-6).
-- `observe()` can return an `<iframe>` XPath for embedded payment widgets (addressed in ADR-002-8).
+- `observe()` can return an `<iframe>` XPath for embedded payment widgets (addressed in ADR-002-8 for clicks; ADR-002-48 for fill/select inside gw-proxy iframes).
 
 **Alternatives Considered**
 - **CSS selector heuristic generation**: Not reliable for dynamic pages.
@@ -286,6 +289,8 @@ If the test step already has a `selector` field, attempt `wait_for(state="visibl
 - **Always use 8s timeout**: Simple but slow for embedded forms.
 - **Remove wait entirely**: Faster but causes fill failures when gateway iframe hasn't loaded.
 - **DOM-presence check before gateway wait**: Added as the fast-path for explicit selectors.
+
+> **Superseded in part by ADR-002-49 (June 2026):** When Mastercard `gw-proxy` iframes are visible in the DOM, `_maybe_wait_for_payment_gateway()` marks the gateway ready immediately without waiting for main-page CSS selectors. `payment_gateway_ready` is session-scoped across URL changes within a checkout flow.
 
 ---
 
@@ -836,10 +841,12 @@ Key properties:
 | 002-41 | Context-aware OTP extraction with 40-char lookahead keyword proximity; newest-first IMAP UID iteration; `ALL`+`SINCE` search to handle read emails | Accepted | Low |
 | 002-42 | Step Library `@module:` inline syntax; `StepLibraryModule` entity; `resolve_steps()` called in `execution_service.py` and `stagehand_service.py` | Accepted | Low |
 | 002-43 | AI-generated root cause analysis for `all_tiers_exhausted` failures; stored in `execution_feedback.root_cause_analysis`; amber collapsible panel in `ExecutionProgressPage` | Accepted | Low |
+| 002-48 | Mastercard gw-proxy role-based iframe fill/select; payment direct before cache; Tier 3 post-`act()` verification | Accepted | Low |
+| 002-49 | gw-proxy fast path: DOM detection, session-scoped readiness, probe reorder, role-scoped iframe fan-out, 300ms subsequent probes | Accepted | Low |
 
 ADR-002-24 and ADR-002-25 are low risk: ADR-002-24's overlay guard only fires for the two generic overlay selectors, leaving all other loading indicators unchanged; ADR-002-25's fast-path requires both conditions — URL unchanged and interactive modal visible — to be true simultaneously, which is conservative. ADR-002-26 is a one-line wiring fix with no behavioural change to step execution. All three were applied together to fix the repeated 10–20 s per-step stalls in Execution #637 and to restore tier-level diagnostics.
 
-ADR-002-27 is also low risk: it reorders existing Tier 2 fallbacks rather than introducing new ones, only skips iframe fan-out when no matching payment iframe exists in the DOM, and normalizes only the sessionized gateway path segment for XPath cache keys. Non-payment steps and non-sessionized URLs are unchanged.
+ADR-002-27 is also low risk: it reorders existing Tier 2 fallbacks rather than introducing new ones, only skips iframe fan-out when no matching payment iframe exists in the DOM, and normalizes only the sessionized gateway path segment for XPath cache keys. Non-payment steps and non-sessionized URLs are unchanged. **Note:** ADR-002-48 supersedes ADR-002-27-A for payment steps (payment direct handler now runs before cache lookup). ADR-002-49 supersedes ADR-002-27-B probe ordering on pages where gw-proxy iframes are present (role-based gw-proxy path runs before page CSS/labels).
 
 ADR-002-28 narrows ADR-002-20's original modal helper by splitting dismiss buttons into a safe list and a business-action list. `Confirm`, `Continue`, and `Done` are now auto-clicked only when the dialog text matches nuisance/info tokens such as reminder, notice, session-timeout, or maintenance messaging. This preserves the Three HK reminder-modal fix while avoiding silent consumption of business confirmation chains.
 
@@ -1808,11 +1815,15 @@ In `Tier2HybridExecutor.execute_step()`, the XPath cache lookup and validation n
 
 This preserves the existing self-healing path: stale cache entries are still invalidated and re-extracted, but stable payment/autopay instructions no longer pay the direct-probe cost on every run.
 
+> **Superseded for payment steps by ADR-002-48-D (June 2026):** Payment instructions again run the direct handler before cache lookup to prevent stale main-page input cache entries from winning over gw-proxy iframe fields. Non-payment steps retain cache-first ordering.
+
 #### ADR-002-27-B: Prefer page labels before iframe fan-out
 
 Within `_try_payment_field_action()`, page-local labels are now attempted before any iframe probing. The helper still tries page CSS selectors first, but if those miss it moves directly to `page.get_by_label(...)` instead of enumerating iframe selectors first.
 
 This reorders existing fallback logic rather than adding a new tier. The goal is to take the cheapest high-signal match first and only inspect iframe contents when page-local strategies have failed.
+
+> **Superseded on gw-proxy pages by ADR-002-49-C (June 2026):** When `iframe.gw-proxy-*` is present, `_try_gw_proxy_payment_field()` runs before page CSS and labels; page-local probes are skipped entirely.
 
 #### ADR-002-27-C: Add label fallback for single Exp. Date inputs
 
@@ -3663,4 +3674,185 @@ Enter contact number OTP for 85291234567
 **Production validation:**
 - Live API spike (10.21-B7): HTTP 200 from corp network; 8 OTP records parsed with alias-tolerant normaliser
 - Execution #950 / Test Case #1150: OTP step resolves after `PREPROD_OTP_SSL_VERIFY=false` fix
+
+---
+
+## ADR-002-48: Mastercard gw-proxy Hosted Checkout — Role-Based Iframe Fill and Tier 3 Verification
+
+**Date:** June 12, 2026  
+**Status:** ✅ Implemented and production-validated (Test Case #101 / Executions #893–#903)
+
+### Context
+
+Three HK checkout flows embed **Mastercard Hosted Checkout** using role-based `gw-proxy` iframes (`iframe.gw-proxy-number`, `iframe.gw-proxy-name`, `iframe.gw-proxy-expiry-month`, etc.). Each PCI field lives in a separate cross-origin iframe whose `src` follows `gateway.mastercard.com/.../role/<field>/`.
+
+Field testing (Executions #893, #894) exposed four independent failures:
+
+1. **`observe()` returns iframe container XPaths, not inner inputs** — Tier 2 cached `/html/.../iframe[1]` and Tier 3 `act()` attempted `Locator.fill` on the iframe element → `Element is not an input`.
+
+2. **Legacy iframe selectors missed gw-proxy markup** — `_try_payment_field_action()` probed `iframe[src*='payment']` and similar patterns. gw-proxy iframes use `class="gw-proxy-number"` and `src` containing `/role/number/`, so the direct handler never entered the correct frame.
+
+3. **ADR-002-27-A caused stale cache false positives** — Cache lookup ran before payment direct handling. A prior run cached a main-page `input[1]` on `?step=autopay`; a later gw-proxy checkout step hit that cache, `fill()` succeeded on the wrong element, and the card number field stayed empty on the gateway UI (Execution #894, Step 31).
+
+4. **Tier 3 reported false success** — `act()` logged fill errors internally but `execute_step()` returned `success: True` without verifying the PCI field was populated.
+
+ADR-002-8 addressed iframe **click** fallback; this ADR extends the same pattern to **fill** and **select** inside gw-proxy iframes.
+
+### Decision
+
+#### ADR-002-48-A: Role-based gw-proxy iframe selectors
+
+`Tier2HybridExecutor` defines `_GW_PROXY_IFRAME_SELECTORS` mapping PCI roles to iframe CSS patterns:
+
+| Role | Example selectors |
+|------|-------------------|
+| `card_number` | `iframe.gw-proxy-number`, `iframe[src*='/role/number/' i]` |
+| `cardholder` | `iframe.gw-proxy-name`, `iframe[src*='/role/cardholderName/' i]` |
+| `expiry_month` | `iframe.gw-proxy-expiry-month`, `iframe[src*='/role/expiryMonth/' i]` |
+| `expiry_year` | `iframe.gw-proxy-expiry-year`, `iframe[src*='/role/expiryYear/' i]` |
+| `cvv` | `iframe.gw-proxy-cvv`, `iframe[src*='/role/securityCode/' i]` |
+
+**`_infer_payment_field_role(instruction_lower, action)`** maps step text to a role (including `select` expiry month/year steps and combined `fill` expiry steps where applicable).
+
+**`_payment_input_css_selector()`** and **`_payment_iframe_frame_selectors()`** are extended to include gw-proxy patterns for readiness waits and iframe discovery.
+
+#### ADR-002-48-B: `_try_gw_proxy_payment_field()` direct handler
+
+When a role is inferred, Tier 2 uses `page.frame_locator(role_iframe_selector)` and probes inner inputs (`input:not([type='hidden'])`, `input[type='tel']`, `select`) inside that frame only.
+
+**`_fill_payment_locator()`** clicks, fills, falls back to `press_sequentially()`, then **`_verify_filled_value()`** confirms population (card numbers normalized by stripping spaces; CVV checks non-empty; verification returns `False` on read errors instead of assuming success).
+
+#### ADR-002-48-C: In-frame fill for observe() and cache iframe XPaths
+
+**`_try_fill_inside_iframe()`** resolves the target frame from an observe/cache iframe XPath via **`_resolve_iframe_target_frame()`**, then fills inner inputs using the same gw-proxy inner selectors.
+
+In `execute_step()`:
+- Cached iframe-container XPaths route through in-frame fill before invalidation.
+- Cached **main-page** input XPaths are invalidated when a gw-proxy role iframe exists for the same step (`_page_has_gw_proxy_role_iframe()`).
+
+#### ADR-002-48-D: Payment direct handler before cache (supersedes ADR-002-27-A for payment steps)
+
+For `_is_payment_instruction()` steps, `_maybe_wait_for_payment_gateway()` and `_try_payment_field_action()` now run **before** the XPath cache lookup.
+
+Rationale: gw-proxy fields are stable and role-deterministic; stale main-page cache entries were winning over the correct iframe path. Non-payment steps retain cache-first ordering from ADR-002-27.
+
+#### ADR-002-48-E: Tier 3 post-`act()` payment verification
+
+`Tier3StagehandExecutor` adds **`_verify_payment_field_populated()`** after `act()` on cross-origin payment hosts. If the inferred gw-proxy role iframe's inner input is still empty, the step returns `success: False` with `"did not populate payment field"` instead of a false positive.
+
+Tier 3 payment wait selectors are expanded to include `iframe[class*='gw-proxy']` and `iframe.gw-proxy-number`.
+
+### Consequences
+
+**Positive**
+- Card number, cardholder, expiry, and CVV steps fill inside the correct gw-proxy iframe without `observe()` on cross-origin PCI fields.
+- Stale main-page input cache entries no longer produce false success on embedded checkout.
+- Tier 3 false positives on payment fills are eliminated.
+- Extends ADR-002-8 iframe pattern from click to fill/select.
+
+**Negative**
+- Role inference is keyword-heuristic; uncommon field labels still require iframe fan-out or `observe()`.
+- Payment steps pay direct-handler cost even when a valid iframe XPath is cached — mitigated by ADR-002-49 fast path.
+- gw-proxy inner selectors are generic (`input[type='tel']`); unusual gateway markup may need selector expansion.
+
+**Alternatives Considered**
+- **Keep cache-first for payment (ADR-002-27-A)**: Rejected — stale main-page cache caused Execution #894 false success.
+- **Rely on Tier 3 `act()` alone**: Rejected — cannot verify cross-origin fill; produced false positives.
+- **Hardcode Three HK checkout selectors only**: Rejected — gw-proxy pattern is shared across Mastercard Hosted Checkout integrations.
+
+**Related files:**
+- `backend/app/services/tier2_hybrid.py`
+- `backend/app/services/tier3_stagehand.py`
+- `backend/tests/test_tier2_payment_helpers.py` — `TestGwProxyPaymentFieldRole`, `TestGwProxyIframeSelectors`, `TestGwProxyDirectHandler`, `TestPaymentDirectBeforeCache`, `TestFillInsideIframeFallback`
+- `backend/tests/test_tier3_payment_verification.py`
+
+**Production validation:**
+- Execution #893: payment steps 42–46 passed via Tier 2/3 after gw-proxy handling (prior to performance fix).
+- Execution #894: exposed stale-cache gap; fixed by ADR-002-48-D.
+- Execution #903: fields populated correctly; 48–93 s per-step probe stall documented and addressed in ADR-002-49.
+
+---
+
+## ADR-002-49: gw-proxy Fast Path — Embedded Checkout Performance and Session-Scoped Readiness
+
+**Date:** June 12, 2026  
+**Status:** ✅ Implemented (Test Case #101 / Execution #903 performance fix)
+
+### Context
+
+ADR-002-48 made payment fields **correct** on Mastercard gw-proxy checkout, but Execution #903 showed each fill step still took **48–93 seconds** even when the page was fully loaded. Log analysis identified serial probe fan-out:
+
+1. **`_maybe_wait_for_payment_gateway()` false-negative (≈8 s/step)** — Readiness waited for main-page `input[autocomplete='cc-number']`. On gw-proxy checkout, fields live inside iframes; readiness never confirmed (`⚠️ Payment gateway readiness not confirmed`).
+
+2. **gw-proxy path gated on cross-origin host only** — On embedded checkout (`three.com.hk?step=payment`), gw-proxy iframes exist in the DOM but `_is_cross_origin_payment_host()` is `False`, so `_try_gw_proxy_payment_field()` was skipped. Execution fell through to page CSS probes (5 selectors × 1.5–5 s) and generic iframe fan-out across **all** gw-proxy iframes.
+
+3. **Probe order was backwards for gw-proxy pages** — Order was: page CSS → page labels → gw-proxy (cross-origin only) → generic iframe fan-out. Cardholder on Execution #903 matched `input[id*='name']` inside `iframe.gw-proxy-number` after ~48 s — semantically wrong iframe, slow path.
+
+4. **`payment_gateway_ready` was URL-scoped** — After checkout redirected `three.com.hk` → `gphk.gateway.mastercard.com`, each subsequent field paid the 8 s readiness wait and 5000 ms cross-origin probe timeout again despite the form already being mounted.
+
+### Decision
+
+#### ADR-002-49-A: `_gw_proxy_checkout_active()` DOM detection
+
+New helper checks for any of:
+
+```python
+_GW_PROXY_CHECKOUT_DETECT_SELECTORS = [
+    "iframe.gw-proxy-number",
+    "iframe[class*='gw-proxy']",
+    "iframe[src*='gateway.mastercard.com'][src*='/role/']",
+]
+```
+
+Detection is **host-agnostic** — works on embedded same-origin checkout and full cross-origin gateway pages.
+
+#### ADR-002-49-B: Session-scoped `payment_gateway_ready`
+
+`_maybe_wait_for_payment_gateway()`:
+- Returns immediately when `payment_gateway_ready` is already `True` (no longer requires `payment_gateway_url == page.url`).
+- When `_gw_proxy_checkout_active()` is `True`, sets `payment_gateway_ready = True` without the 8 s main-page CSS wait.
+
+Extends ADR-002-4 readiness model: gw-proxy iframe visibility is a stronger ready signal than main-document CSS selectors for Hosted Checkout.
+
+#### ADR-002-49-C: gw-proxy-first probe order
+
+In `_try_payment_field_action()`, when `_gw_proxy_checkout_active()` is `True`:
+
+1. Run **`_try_gw_proxy_payment_field()` first** (before page CSS and labels).
+2. **Skip** page-level CSS and label probes entirely.
+3. Fall through to **role-scoped** iframe fan-out only (`_GW_PROXY_IFRAME_SELECTORS[role]`), not all payment iframes.
+
+When gw-proxy is not active, the ADR-002-27 probe order (page CSS → labels → cross-origin gw-proxy → generic iframe) is unchanged.
+
+#### ADR-002-49-D: Short subsequent-field probe timeout
+
+When `payment_gateway_ready` is `True` and gw-proxy checkout is active, per-selector `wait_timeout` is **300 ms** (was 3000–5000 ms). First field on a mounted form uses 1500 ms.
+
+**Target:** payment field steps **< 3 s each** when the form is already loaded (vs 48–93 s observed in Execution #903).
+
+### Consequences
+
+**Positive**
+- Eliminates 8 s false-negative readiness wait per step on gw-proxy checkout.
+- Embedded same-origin checkout (`?step=payment`) uses the same fast path as `gphk.gateway.mastercard.com`.
+- Subsequent fields (card number, expiry, CVV) reuse session readiness — no re-wait on URL redirect within checkout.
+- Role-scoped fan-out prevents cardholder selectors from matching inside `gw-proxy-number`.
+
+**Negative**
+- 300 ms subsequent probe timeout may be tight on very slow iframe content loads; first field still uses 1500 ms.
+- gw-proxy-first path skips page labels that might work on non-gw-proxy pages misclassified as gw-proxy-active (unlikely — detection requires gw-proxy iframe in DOM).
+- ADR-002-27-B label-before-iframe ordering no longer applies when gw-proxy iframes are present; intentional trade-off for Hosted Checkout.
+
+**Alternatives Considered**
+- **Increase global probe timeout to 60 s**: Rejected — stalls every step on genuinely missing elements.
+- **Keep cross-origin-only gw-proxy gate**: Rejected — embedded Three HK checkout is same-origin with gw-proxy iframes.
+- **Cache gw-proxy selectors per role after first success (P2)**: Deferred — session readiness + 300 ms probes achieve target latency without additional cache complexity.
+
+**Tests added (TDD):**
+- `backend/tests/test_tier2_payment_helpers.py::TestGwProxyFastPath` — 6 tests covering detection, readiness skip, embedded fast path, short timeout, role-scoped fan-out
+
+**Related commits:**
+- `67da478` — ADR-002-48 gw-proxy role handling and Tier 3 verification
+- `1e1453c` — payment direct before cache; stale cache invalidation
+- `aabe642` — ADR-002-49 gw-proxy fast path and session-scoped readiness
 
