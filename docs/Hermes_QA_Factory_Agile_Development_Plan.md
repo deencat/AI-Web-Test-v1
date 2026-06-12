@@ -13,14 +13,14 @@
 
 **Last updated:** 2026-06-08  
 **Branch:** `feat/hermes-qa-factory`  
-**Key commits:** HF-1 `e33a6b3` · HF-2+3 `503244e` · HF-4 `ff6af29` · HF-5 `e0e16cd` · HF-6 `07244fe` · superadmin RBAC `e77d1be` · Bridge ingest `173b4f7` · Bridge service `*(pending)*`
+**Key commits:** HF-1 `e33a6b3` · HF-2+3 `503244e` · HF-4 `ff6af29` · HF-5 `e0e16cd` · HF-6 `07244fe` · superadmin RBAC `e77d1be` · Bridge ingest `173b4f7` · Bridge service `e45a2dc`
 
 ### Current focus
 
 | Track | Status | Next |
 |-------|--------|------|
 | **Phase A (AWT)** | ✅ **Complete** | HF-1.6 SSE polish (optional) |
-| **Phase B (Bridge)** | 🔜 **HF-6.6 + HF-3.7** | Local demo: bridge `serve` + `HERMES_BRIDGE_URL` |
+| **Phase B (Bridge)** | ✅ **HF-6.6 + HF-3.7** (`e45a2dc`) | Local demo: bridge `serve` + `HERMES_BRIDGE_URL` |
 | **Phase B (Hermes)** | ⬜ Not started | HF-2.6 orchestrator SOUL → HF-3.1 deploy |
 
 ### Sprint rollup (AWT-first Phase A)
