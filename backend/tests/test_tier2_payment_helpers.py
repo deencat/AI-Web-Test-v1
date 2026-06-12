@@ -787,6 +787,7 @@ class TestPaymentFieldProbeOrdering:
         mock_fail_element.wait_for = AsyncMock(side_effect=Exception("not found"))
         mock_fail_locator = MagicMock()
         mock_fail_locator.first = mock_fail_element
+        mock_fail_locator.count = AsyncMock(return_value=0)
 
         tried_labels = []
 
@@ -1454,3 +1455,214 @@ class TestFillInsideIframeFallback:
 
         assert result["success"] is False
         self.executor.cache_service.invalidate_cache.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# ADR-002-49: gw-proxy fast path for embedded Mastercard checkout performance
+# ---------------------------------------------------------------------------
+
+class TestGwProxyFastPath:
+    """Payment fields must use gw-proxy first when iframes are visible (ADR-002-49)."""
+
+    def setup_method(self):
+        self.executor = Tier2HybridExecutor(db=MagicMock(), xpath_extractor=MagicMock(), timeout_ms=30000)
+
+    @pytest.mark.asyncio
+    async def test_gw_proxy_checkout_active_detects_embedded_iframes(self):
+        page = MagicMock()
+        present = MagicMock()
+        present.count = AsyncMock(return_value=1)
+        absent = MagicMock()
+        absent.count = AsyncMock(return_value=0)
+
+        def locator_side_effect(selector):
+            if selector == "iframe.gw-proxy-number":
+                return present
+            return absent
+
+        page.locator = MagicMock(side_effect=locator_side_effect)
+        assert await self.executor._gw_proxy_checkout_active(page) is True
+
+    @pytest.mark.asyncio
+    async def test_maybe_wait_skips_css_when_gw_proxy_visible(self):
+        page = MagicMock()
+        page.url = "https://wwwuat.three.com.hk/en/checkout?step=payment"
+        page.wait_for_selector = AsyncMock(side_effect=AssertionError("CSS wait must be skipped"))
+
+        present = MagicMock()
+        present.count = AsyncMock(return_value=1)
+        absent = MagicMock()
+        absent.count = AsyncMock(return_value=0)
+
+        def locator_side_effect(selector):
+            if selector.startswith("iframe"):
+                return present if "gw-proxy" in selector else absent
+            return absent
+
+        page.locator = MagicMock(side_effect=locator_side_effect)
+
+        await self.executor._maybe_wait_for_payment_gateway(page)
+
+        assert self.executor.payment_gateway_ready is True
+        page.wait_for_selector.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_maybe_wait_skips_when_session_ready_after_url_change(self):
+        page = MagicMock()
+        page.url = "https://gphk.gateway.mastercard.com/checkout/pay/SESSION123"
+        page.wait_for_selector = AsyncMock(side_effect=AssertionError("must not wait again"))
+
+        self.executor.payment_gateway_ready = True
+        self.executor.payment_gateway_url = "https://three.com.hk/checkout?step=payment"
+
+        await self.executor._maybe_wait_for_payment_gateway(page)
+
+        page.wait_for_selector.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_gw_proxy_runs_before_page_css_on_embedded_checkout(self):
+        page = MagicMock()
+        page.url = "https://wwwuat.three.com.hk/en/checkout?step=payment"
+
+        gw_proxy_calls = []
+
+        async def gw_proxy_side_effect(**kwargs):
+            gw_proxy_calls.append(kwargs)
+            return {
+                "success": True,
+                "tier": 2,
+                "execution_time_ms": 5,
+                "extraction_time_ms": 0,
+                "cache_hit": False,
+                "xpath": None,
+                "error": None,
+            }
+
+        page.locator = MagicMock(side_effect=AssertionError("page CSS must not run when gw-proxy active"))
+        page.get_by_label = MagicMock(side_effect=AssertionError("page labels must not run when gw-proxy active"))
+
+        with patch.object(
+            self.executor,
+            "_gw_proxy_checkout_active",
+            new=AsyncMock(return_value=True),
+        ), patch.object(
+            self.executor,
+            "_try_gw_proxy_payment_field",
+            new=AsyncMock(side_effect=gw_proxy_side_effect),
+        ):
+            result = await self.executor._try_payment_field_action(
+                page=page,
+                action="fill",
+                instruction="Step 45: Input card holder name test",
+                value="test input",
+                start_time=__import__("time").time(),
+            )
+
+        assert result is not None and result["success"] is True
+        assert len(gw_proxy_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_subsequent_gw_proxy_field_uses_short_probe_timeout(self):
+        page = MagicMock()
+        page.url = "https://gphk.gateway.mastercard.com/checkout/pay/SESSION123"
+        self.executor.payment_gateway_ready = True
+        self.executor.payment_gateway_url = page.url
+
+        captured = {}
+
+        async def capture_gw_proxy(**kwargs):
+            captured.update(kwargs)
+            return {
+                "success": True,
+                "tier": 2,
+                "execution_time_ms": 1,
+                "extraction_time_ms": 0,
+                "cache_hit": False,
+                "xpath": None,
+                "error": None,
+            }
+
+        with patch.object(
+            self.executor,
+            "_gw_proxy_checkout_active",
+            new=AsyncMock(return_value=True),
+        ), patch.object(
+            self.executor,
+            "_try_gw_proxy_payment_field",
+            new=AsyncMock(side_effect=capture_gw_proxy),
+        ):
+            await self.executor._try_payment_field_action(
+                page=page,
+                action="fill",
+                instruction="Step 42: Input credit card number 4111111111111111",
+                value="4111111111111111",
+                start_time=__import__("time").time(),
+            )
+
+        assert captured["wait_timeout"] == 300
+
+    @pytest.mark.asyncio
+    async def test_role_matched_iframe_fan_out_skips_unrelated_gw_proxy_iframe(self):
+        page = MagicMock()
+        page.url = "https://wwwuat.three.com.hk/en/checkout?step=payment"
+
+        mock_inner = AsyncMock()
+        mock_inner.wait_for = AsyncMock(return_value=None)
+        mock_inner.fill = AsyncMock(return_value=None)
+        mock_inner_locator = MagicMock()
+        mock_inner_locator.first = mock_inner
+
+        mock_name_frame = MagicMock()
+        mock_name_frame.locator = MagicMock(return_value=mock_inner_locator)
+
+        frame_calls = []
+
+        def frame_locator_side_effect(selector):
+            frame_calls.append(selector)
+            if selector == "iframe.gw-proxy-name":
+                return mock_name_frame
+            raise AssertionError(f"unexpected iframe fan-out target: {selector}")
+
+        absent = MagicMock()
+        absent.count = AsyncMock(return_value=0)
+        present_name = MagicMock()
+        present_name.count = AsyncMock(return_value=1)
+        present_detect = MagicMock()
+        present_detect.count = AsyncMock(return_value=1)
+
+        def locator_side_effect(selector):
+            if selector == "iframe.gw-proxy-name":
+                return present_name
+            if selector in ("iframe.gw-proxy-number", "iframe[class*='gw-proxy']"):
+                return present_detect
+            if selector.startswith("iframe"):
+                return absent
+            fail_element = AsyncMock()
+            fail_element.wait_for = AsyncMock(side_effect=Exception("not found"))
+            fail = MagicMock()
+            fail.first = fail_element
+            return fail
+
+        page.locator = MagicMock(side_effect=locator_side_effect)
+        page.frame_locator = MagicMock(side_effect=frame_locator_side_effect)
+        page.get_by_label = MagicMock(return_value=AsyncMock(
+            wait_for=AsyncMock(side_effect=Exception("not found"))
+        ))
+
+        self.executor._fill_payment_locator = AsyncMock(return_value=True)
+
+        with patch.object(
+            self.executor,
+            "_try_gw_proxy_payment_field",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await self.executor._try_payment_field_action(
+                page=page,
+                action="fill",
+                instruction="Step 45: Input card holder name test",
+                value="test input",
+                start_time=__import__("time").time(),
+            )
+
+        assert result is not None and result["success"] is True
+        assert frame_calls == ["iframe.gw-proxy-name"]

@@ -156,6 +156,13 @@ class Tier2HybridExecutor:
         "iframe[src*='/role/expiryYear/' i]",
         "iframe[src*='/role/securityCode/' i]",
     ]
+
+    # Fast detection for embedded Mastercard Hosted Checkout (ADR-002-49).
+    _GW_PROXY_CHECKOUT_DETECT_SELECTORS = [
+        "iframe.gw-proxy-number",
+        "iframe[class*='gw-proxy']",
+        "iframe[src*='gateway.mastercard.com'][src*='/role/']",
+    ]
     
     def __init__(
         self,
@@ -653,6 +660,16 @@ class Tier2HybridExecutor:
             return False
 
         for iframe_selector in self._GW_PROXY_IFRAME_SELECTORS.get(role, []):
+            try:
+                if await page.locator(iframe_selector).count() > 0:
+                    return True
+            except Exception:
+                continue
+        return False
+
+    async def _gw_proxy_checkout_active(self, page: Page) -> bool:
+        """Return True when Mastercard gw-proxy checkout iframes are in the DOM."""
+        for iframe_selector in self._GW_PROXY_CHECKOUT_DETECT_SELECTORS:
             try:
                 if await page.locator(iframe_selector).count() > 0:
                     return True
@@ -1851,8 +1868,14 @@ class Tier2HybridExecutor:
         return any(keyword in path_and_query for keyword in autopay_keywords)
 
     async def _maybe_wait_for_payment_gateway(self, page: Page) -> None:
-        """Wait once per page for payment gateway fields to appear."""
-        if self.payment_gateway_ready and self.payment_gateway_url == page.url:
+        """Wait once per checkout session for payment gateway fields to appear."""
+        if self.payment_gateway_ready:
+            return
+
+        if await self._gw_proxy_checkout_active(page):
+            logger.info("[Tier 2] Payment gateway ready (gw-proxy iframes visible)")
+            self.payment_gateway_ready = True
+            self.payment_gateway_url = page.url
             return
 
         timeout_ms = 8000 if self._is_external_payment_gateway_url(page.url) else 1500
@@ -1879,8 +1902,12 @@ class Tier2HybridExecutor:
     ) -> Optional[Dict[str, Any]]:
         """Try to interact with payment fields directly when possible."""
         instruction_lower = instruction.lower()
-        if self.payment_gateway_ready and self.payment_gateway_url == page.url:
-            wait_timeout = 3000
+        gw_proxy_active = await self._gw_proxy_checkout_active(page)
+
+        if self.payment_gateway_ready:
+            wait_timeout = 300 if gw_proxy_active else 3000
+        elif gw_proxy_active:
+            wait_timeout = 1500
         elif self._is_cross_origin_payment_host(page.url):
             # Cross-origin gateway iframe content can be slow to load
             wait_timeout = 5000
@@ -2000,9 +2027,9 @@ class Tier2HybridExecutor:
             else:
                 await locator.fill(value, timeout=self.timeout_ms)
 
-        async def _existing_payment_frames():
+        async def _existing_payment_frames(selectors_to_scan):
             existing_frames = []
-            for iframe_selector in frame_selectors:
+            for iframe_selector in selectors_to_scan:
                 try:
                     iframe_locator = page.locator(iframe_selector)
                     if await iframe_locator.count() > 0:
@@ -2011,70 +2038,22 @@ class Tier2HybridExecutor:
                     continue
             return existing_frames
 
+        def _payment_success(execution_time_ms: float, log_message: str) -> Dict[str, Any]:
+            logger.info(log_message)
+            self.payment_gateway_ready = True
+            self.payment_gateway_url = page.url
+            return {
+                "success": True,
+                "tier": 2,
+                "execution_time_ms": execution_time_ms,
+                "extraction_time_ms": 0,
+                "cache_hit": False,
+                "xpath": None,
+                "error": None,
+            }
+
         try:
-            if input_selectors:
-                for selector in input_selectors:
-                    locator = page.locator(selector).first
-                    try:
-                        await _try_fill(locator)
-                        execution_time_ms = (time.time() - start_time) * 1000
-                        logger.info(f"[Tier 2] âœ… Payment input filled using selector: {selector}")
-                        self.payment_gateway_ready = True
-                        self.payment_gateway_url = page.url
-                        return {
-                            "success": True,
-                            "tier": 2,
-                            "execution_time_ms": execution_time_ms,
-                            "extraction_time_ms": 0,
-                            "cache_hit": False,
-                            "xpath": None,
-                            "error": None
-                        }
-                    except Exception:
-                        continue
-
-            if select_selectors:
-                for selector in select_selectors:
-                    locator = page.locator(selector).first
-                    try:
-                        await _try_select(locator)
-                        execution_time_ms = (time.time() - start_time) * 1000
-                        logger.info(f"[Tier 2] âœ… Payment select set using selector: {selector}")
-                        self.payment_gateway_ready = True
-                        self.payment_gateway_url = page.url
-                        return {
-                            "success": True,
-                            "tier": 2,
-                            "execution_time_ms": execution_time_ms,
-                            "extraction_time_ms": 0,
-                            "cache_hit": False,
-                            "xpath": None,
-                            "error": None
-                        }
-                    except Exception:
-                        continue
-
-            for label in label_candidates:
-                try:
-                    locator = page.get_by_label(label, exact=False)
-                    await _try_label(locator)
-                    execution_time_ms = (time.time() - start_time) * 1000
-                    logger.info(f"[Tier 2] âœ… Payment field set using label: {label}")
-                    self.payment_gateway_ready = True
-                    self.payment_gateway_url = page.url
-                    return {
-                        "success": True,
-                        "tier": 2,
-                        "execution_time_ms": execution_time_ms,
-                        "extraction_time_ms": 0,
-                        "cache_hit": False,
-                        "xpath": None,
-                        "error": None
-                    }
-                except Exception:
-                    continue
-
-            if self._is_cross_origin_payment_host(page.url):
+            if gw_proxy_active:
                 gw_proxy_result = await self._try_gw_proxy_payment_field(
                     page=page,
                     action=action,
@@ -2085,8 +2064,64 @@ class Tier2HybridExecutor:
                 )
                 if gw_proxy_result:
                     return gw_proxy_result
+            else:
+                if input_selectors:
+                    for selector in input_selectors:
+                        locator = page.locator(selector).first
+                        try:
+                            await _try_fill(locator)
+                            execution_time_ms = (time.time() - start_time) * 1000
+                            return _payment_success(
+                                execution_time_ms,
+                                f"[Tier 2] Payment input filled using selector: {selector}",
+                            )
+                        except Exception:
+                            continue
 
-            existing_frames = await _existing_payment_frames()
+                if select_selectors:
+                    for selector in select_selectors:
+                        locator = page.locator(selector).first
+                        try:
+                            await _try_select(locator)
+                            execution_time_ms = (time.time() - start_time) * 1000
+                            return _payment_success(
+                                execution_time_ms,
+                                f"[Tier 2] Payment select set using selector: {selector}",
+                            )
+                        except Exception:
+                            continue
+
+                for label in label_candidates:
+                    try:
+                        locator = page.get_by_label(label, exact=False)
+                        await _try_label(locator)
+                        execution_time_ms = (time.time() - start_time) * 1000
+                        return _payment_success(
+                            execution_time_ms,
+                            f"[Tier 2] Payment field set using label: {label}",
+                        )
+                    except Exception:
+                        continue
+
+                if self._is_cross_origin_payment_host(page.url):
+                    gw_proxy_result = await self._try_gw_proxy_payment_field(
+                        page=page,
+                        action=action,
+                        instruction_lower=instruction_lower,
+                        value=value,
+                        start_time=start_time,
+                        wait_timeout=wait_timeout,
+                    )
+                    if gw_proxy_result:
+                        return gw_proxy_result
+
+            role = self._infer_payment_field_role(instruction_lower, action)
+            if gw_proxy_active and role:
+                iframe_scan_selectors = self._GW_PROXY_IFRAME_SELECTORS.get(role, [])
+            else:
+                iframe_scan_selectors = frame_selectors
+
+            existing_frames = await _existing_payment_frames(iframe_scan_selectors)
 
             for iframe_selector, frame_locator in existing_frames:
                 if input_selectors:
