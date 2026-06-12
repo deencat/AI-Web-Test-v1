@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_factory_operator, require_role, _ROLE_RANK
 from app.crud import journey_factory as crud
+from app.services.factory_change_scan_service import snapshot_status_for_url
 from app.models.user import User
 from app.schemas.journey_factory import (
     JourneyRegistryEntryCreate,
@@ -51,6 +52,20 @@ def create_registry_entry(
         )
     row = crud.create_registry_entry(db, body)
     return JourneyRegistryEntryResponse.model_validate(row)
+
+
+@router.get("/registry/snapshot-status")
+def registry_snapshot_status(
+    project: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_factory_operator),
+) -> dict:
+    """Per-journey change-detection status for registry UI badges (HF-4)."""
+    items = crud.list_registry_entries(db, project=project)
+    return {
+        row.slug: snapshot_status_for_url(db, row.feature_url)
+        for row in items
+    }
 
 
 @router.patch("/registry/{entry_id}", response_model=JourneyRegistryEntryResponse)

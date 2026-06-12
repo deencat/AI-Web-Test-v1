@@ -41,6 +41,23 @@ export interface JourneyBacklogListResponse {
   total: number;
 }
 
+export interface JourneySnapshotStatus {
+  has_baseline: boolean;
+  material_change: boolean;
+  summary: string;
+  last_captured_at?: string | null;
+}
+
+export async function getRegistrySnapshotStatus(
+  project?: string,
+): Promise<Record<string, JourneySnapshotStatus>> {
+  const { data } = await api.get<Record<string, JourneySnapshotStatus>>(
+    '/agent/registry/snapshot-status',
+    { params: project ? { project } : undefined },
+  );
+  return data;
+}
+
 export async function listJourneyRegistry(project?: string): Promise<JourneyRegistryListResponse> {
   const { data } = await api.get<JourneyRegistryListResponse>('/agent/registry', {
     params: project ? { project } : undefined,

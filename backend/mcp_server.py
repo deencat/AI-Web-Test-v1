@@ -57,6 +57,9 @@ Tools exposed
   suggest_scenarios_from_wiki — Generate DRAFT requirements from wiki (HF-2)
   list_journey_backlog       — Pending journey backlog items (HF-2)
   enqueue_journey            — Add journey to factory backlog (HF-2)
+  observe_url_snapshot       — Capture URL snapshot for change detection (HF-4)
+  get_url_snapshot           — Get latest snapshot by url_hash (HF-4)
+  diff_url_snapshots         — Diff snapshots for material DOM change (HF-4)
 """
 from __future__ import annotations
 
@@ -726,7 +729,71 @@ async def enqueue_journey(
 
 
 # ---------------------------------------------------------------------------
-# § 8 — Health
+# § 8 — URL snapshots / change detection (HF-4)
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def observe_url_snapshot(
+    url: str,
+    http_auth_username: Optional[str] = None,
+    http_auth_password: Optional[str] = None,
+) -> dict:
+    """Capture a lightweight URL snapshot (HTML summary + element fingerprint).
+
+    Args:
+        url: Page URL to observe (e.g. journey feature_url).
+        http_auth_username: Optional HTTP Basic auth username for UAT gate.
+        http_auth_password: Optional HTTP Basic auth password.
+
+    Returns:
+        Snapshot record with id, url_hash, element_fingerprint, captured_at.
+    """
+    body: dict[str, Any] = {"url": url}
+    if http_auth_username and http_auth_password:
+        body["http_credentials"] = {
+            "username": http_auth_username,
+            "password": http_auth_password,
+        }
+    return await _call_v2("POST", "/observe-snapshot", json=body)
+
+
+@mcp.tool()
+async def get_url_snapshot(url_hash: str) -> dict:
+    """Get the latest stored snapshot for a URL hash.
+
+    Args:
+        url_hash: Hash from observe_url_snapshot response.
+
+    Returns:
+        Latest snapshot object or 404 if none stored.
+    """
+    return await _call_v2("GET", f"/snapshots/{url_hash}")
+
+
+@mcp.tool()
+async def diff_url_snapshots(
+    url: str,
+    capture_new: bool = True,
+    baseline_snapshot_id: Optional[int] = None,
+) -> dict:
+    """Compare URL snapshots and detect material page changes.
+
+    Args:
+        url: URL to diff (captures new snapshot when capture_new=true).
+        capture_new: If true, fetch current page before diffing (default true).
+        baseline_snapshot_id: Optional explicit baseline snapshot id.
+
+    Returns:
+        dict with material_change (bool), summary (str), similarity_score, etc.
+    """
+    body: dict[str, Any] = {"url": url, "capture_new": capture_new}
+    if baseline_snapshot_id is not None:
+        body["baseline_snapshot_id"] = baseline_snapshot_id
+    return await _call_v2("POST", "/snapshots/diff", json=body)
+
+
+# ---------------------------------------------------------------------------
+# § 9 — Health
 # ---------------------------------------------------------------------------
 
 @mcp.tool()

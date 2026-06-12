@@ -1,7 +1,7 @@
 # Hermes QA Factory — Agile Development Plan
 
 **Version:** 1.2 · **Date:** 2026-06-11  
-**Status:** HF-3 Phase A in progress on `feat/hermes-qa-factory` (HF-1 ✅ · HF-2 ✅)  
+**Status:** HF-4 Phase A in progress on `feat/hermes-qa-factory` (HF-1 ✅ · HF-2 ✅ · HF-3 ✅)  
 **Parent design:** [Hermes_QA_Autonomous_Workflow_v5.md](Hermes_QA_Autonomous_Workflow_v5.md)  
 **Program code:** **HF** (Hermes Factory) — sprints **HF-1 … HF-6**
 

@@ -13,6 +13,10 @@ _DRAIN_PATTERN = re.compile(
     r"\b(drain|process|empty)\b.*\b(backlog|queue)\b",
     re.IGNORECASE,
 )
+_SCAN_PATTERN = re.compile(
+    r"\b(scan|check|detect)\b.*\b(change|changes|snapshot)\b",
+    re.IGNORECASE,
+)
 _FULL_CYCLE_PATTERN = re.compile(
     r"\b(full[_\s-]?cycle|end[_\s-]?to[_\s-]?end|e2e\s+factory)\b",
     re.IGNORECASE,
@@ -31,6 +35,14 @@ def parse_chat_to_job(message: str, context: Dict[str, Any]) -> Tuple[FactoryJob
 
     project = context.get("project") or "Three-HK"
     lower = text.lower()
+
+    if _SCAN_PATTERN.search(text) or "scan changes" in lower:
+        job = FactoryJobCreate(
+            job_type="scan_changes",
+            project=project,
+            params={},
+        )
+        return job, "Queued scan_changes for journey registry URLs."
 
     if _FULL_CYCLE_PATTERN.search(text):
         job = FactoryJobCreate(
@@ -83,5 +95,5 @@ def parse_chat_to_job(message: str, context: Dict[str, Any]) -> Tuple[FactoryJob
 
     raise ValueError(
         "Could not interpret request. Try: 'Run regression', 'Drain backlog', "
-        "or 'Full cycle'."
+        "'Scan changes', or 'Full cycle'."
     )

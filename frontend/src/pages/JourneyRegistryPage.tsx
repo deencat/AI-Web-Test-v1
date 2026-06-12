@@ -6,6 +6,8 @@ import {
   JourneyRegistryEntry,
   createJourneyRegistryEntry,
   deleteJourneyRegistryEntry,
+  getRegistrySnapshotStatus,
+  JourneySnapshotStatus,
   listJourneyRegistry,
 } from '../services/journeyFactoryService';
 
@@ -25,6 +27,7 @@ const DEFAULT_PROJECT = 'Three-HK';
 
 export const JourneyRegistryPage: React.FC = () => {
   const [items, setItems] = useState<JourneyRegistryEntry[]>([]);
+  const [snapshotStatus, setSnapshotStatus] = useState<Record<string, JourneySnapshotStatus>>({});
   const [projectMeta, setProjectMeta] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,8 +45,12 @@ export const JourneyRegistryPage: React.FC = () => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await listJourneyRegistry(DEFAULT_PROJECT);
+      const [res, status] = await Promise.all([
+        listJourneyRegistry(DEFAULT_PROJECT),
+        getRegistrySnapshotStatus(DEFAULT_PROJECT).catch(() => ({})),
+      ]);
       setItems(res.items);
+      setSnapshotStatus(status);
       setProjectMeta(res.project_meta?.reqiq_project_id ?? null);
       setError(null);
     } catch (e) {
@@ -166,6 +173,7 @@ export const JourneyRegistryPage: React.FC = () => {
                   <th className="p-3">Name</th>
                   <th className="p-3">URL</th>
                   <th className="p-3">Tags</th>
+                  <th className="p-3">Change</th>
                   <th className="p-3" />
                 </tr>
               </thead>
@@ -178,6 +186,30 @@ export const JourneyRegistryPage: React.FC = () => {
                       {row.feature_url}
                     </td>
                     <td className="p-3">{(row.tags || []).join(', ')}</td>
+                    <td className="p-3">
+                      {(() => {
+                        const st = snapshotStatus[row.slug];
+                        if (!st) return <span className="text-gray-400 text-xs">—</span>;
+                        if (!st.has_baseline) {
+                          return <span className="text-gray-500 text-xs" title={st.summary}>Baseline</span>;
+                        }
+                        if (st.material_change) {
+                          return (
+                            <span
+                              className="px-2 py-0.5 rounded text-xs bg-orange-100 text-orange-800"
+                              title={st.summary}
+                            >
+                              Changed
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="px-2 py-0.5 rounded text-xs bg-green-100 text-green-800" title={st.summary}>
+                            Stable
+                          </span>
+                        );
+                      })()}
+                    </td>
                     <td className="p-3 text-right">
                       <button
                         type="button"

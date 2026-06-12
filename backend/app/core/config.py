@@ -115,6 +115,7 @@ class Settings(BaseSettings):
     FACTORY_LOOP_A_MAX_ITEMS: int = 3
     FACTORY_AUTO_SCHEDULE_ENABLED: bool = True
     FACTORY_AUTO_SCHEDULE_CRON: str = "0 2 * * *"
+    FACTORY_LOOP_C_CRON: str = "0 */4 * * *"
 
     # Sprint 10.19: LLM Response & Timing Log
     LLM_LOG_DIR: str = "logs/llm"

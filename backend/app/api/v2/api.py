@@ -20,6 +20,7 @@ try:
         evolution,
         improve_tests,
         crawl_and_save,
+        url_snapshots,
     )
 
     api_router = APIRouter()
@@ -32,6 +33,7 @@ try:
     api_router.include_router(evolution.router, tags=["agent-workflow"])
     api_router.include_router(improve_tests.router, tags=["agent-workflow"])
     api_router.include_router(crawl_and_save.router, tags=["agent-workflow"])
+    api_router.include_router(url_snapshots.router, tags=["agent-workflow"])
     # Workflow resource: status, results, stream, cancel
     api_router.include_router(workflows.router, prefix="/workflows", tags=["agent-workflow"])
     api_router.include_router(sse_stream.router, prefix="/workflows", tags=["agent-workflow"])

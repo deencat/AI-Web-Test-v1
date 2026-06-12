@@ -62,6 +62,14 @@ def _run_scheduled_regression_nightly() -> None:
     )
 
 
+def _run_scheduled_scan_changes() -> None:
+    _enqueue_factory_job(
+        "scan_changes",
+        {"source": "factory_loop_c"},
+        project="Three-HK",
+    )
+
+
 def _run_scheduled_drain_backlog() -> None:
     _enqueue_factory_job(
         "drain_backlog",
@@ -123,6 +131,13 @@ def register_factory_cron_jobs() -> None:
         settings.FACTORY_LOOP_A_CRON,
         _run_scheduled_drain_backlog,
         "Loop A drain_backlog",
+    )
+    _register_cron_job(
+        scheduler,
+        "factory_loop_c_scan",
+        settings.FACTORY_LOOP_C_CRON,
+        _run_scheduled_scan_changes,
+        "Loop C scan_changes",
     )
 
 

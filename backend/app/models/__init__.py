@@ -22,6 +22,7 @@ from app.models.journey_factory import (
     JourneyRegistryProject,
     BacklogStatus,
 )
+from app.models.url_snapshot import UrlSnapshot
 
 __all__ = [
     "User",
@@ -42,5 +43,6 @@ __all__ = [
     "StepLibraryModule",
     "FactoryJob", "FactoryJobEvent", "FactoryJobStatus",
     "JourneyBacklogItem", "JourneyRegistryEntry", "JourneyRegistryProject", "BacklogStatus",
+    "UrlSnapshot",
 ]
 

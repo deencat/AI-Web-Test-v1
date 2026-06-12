@@ -19,6 +19,7 @@ from app.services.factory_journey_service import (
     generate_journey_for_backlog_item,
     generate_journey_for_entry,
 )
+from app.services.factory_change_scan_service import scan_registry_changes
 from app.services.scheduler_service import _infer_target_url
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ SUPPORTED_JOB_TYPES = {
     "drain_backlog",
     "generate_journey",
     "full_cycle",
+    "scan_changes",
 }
 
 
@@ -88,6 +90,7 @@ def run_factory_job(job_id: str) -> None:
             "drain_backlog": _drain_backlog,
             "generate_journey": _generate_journey,
             "full_cycle": _full_cycle,
+            "scan_changes": _scan_changes,
         }
         handler = handlers.get(job.job_type)
         if not handler:
@@ -334,6 +337,17 @@ def _generate_journey(db: Session, job: FactoryJob) -> None:
         profile="qa-test-gen",
         message=f"Generated test_case_id={test_case_id}",
         payload_summary={"test_case_id": test_case_id, "journey_slug": slug},
+    )
+
+
+def _scan_changes(db: Session, job: FactoryJob) -> None:
+    params: Dict[str, Any] = job.params or {}
+    project = job.project or params.get("project")
+    scan_registry_changes(
+        db,
+        job,
+        project=project,
+        http_credentials=params.get("http_credentials"),
     )
 
 
