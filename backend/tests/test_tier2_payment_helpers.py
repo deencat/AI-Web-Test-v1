@@ -504,7 +504,7 @@ class TestTier2PaymentHelpers:
         self.executor._execute_action_with_xpath.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_execute_step_prefers_cached_xpath_before_payment_probes(self):
+    async def test_execute_step_tries_payment_direct_before_cached_xpath(self):
         page = MagicMock()
         page.url = "https://three.com.hk/postpaid/en/checkout/checkout?promotionId=HPPRM0000000187&step=autopay"
 
@@ -516,6 +516,46 @@ class TestTier2PaymentHelpers:
         self.executor._validate_cached_xpath_for_step = AsyncMock(return_value=True)
         self.executor._execute_action_with_xpath = AsyncMock(return_value=None)
         self.executor._maybe_wait_for_payment_gateway = AsyncMock(return_value=None)
+        self.executor._page_has_gw_proxy_role_iframe = AsyncMock(return_value=False)
+        self.executor._try_payment_field_action = AsyncMock(return_value={
+            "success": True,
+            "tier": 2,
+            "execution_time_ms": 10,
+            "extraction_time_ms": 0,
+            "cache_hit": False,
+            "xpath": None,
+            "error": None,
+        })
+        self.executor.xpath_extractor.extract_xpath_with_page = AsyncMock()
+
+        result = await self.executor.execute_step(
+            page,
+            {
+                "action": "fill",
+                "instruction": "Step 32: Input card holder name test",
+                "value": "test",
+            },
+        )
+
+        assert result["success"] is True
+        self.executor._try_payment_field_action.assert_awaited_once()
+        self.executor._execute_action_with_xpath.assert_not_awaited()
+        self.executor.xpath_extractor.extract_xpath_with_page.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_execute_step_falls_back_to_cache_when_payment_direct_fails(self):
+        page = MagicMock()
+        page.url = "https://three.com.hk/postpaid/en/checkout/checkout?promotionId=HPPRM0000000187&step=autopay"
+
+        self.executor.cache_service.get_cached_xpath = MagicMock(return_value={"xpath": "/html/body/form/input[1]"})
+        self.executor.cache_service.invalidate_cache = MagicMock()
+        self.executor.cache_service.cache_xpath = MagicMock()
+        self.executor.cache_service.validate_and_update = MagicMock()
+
+        self.executor._validate_cached_xpath_for_step = AsyncMock(return_value=True)
+        self.executor._execute_action_with_xpath = AsyncMock(return_value=None)
+        self.executor._maybe_wait_for_payment_gateway = AsyncMock(return_value=None)
+        self.executor._page_has_gw_proxy_role_iframe = AsyncMock(return_value=False)
         self.executor._try_payment_field_action = AsyncMock(return_value=None)
         self.executor.xpath_extractor.extract_xpath_with_page = AsyncMock()
 
@@ -529,9 +569,7 @@ class TestTier2PaymentHelpers:
         )
 
         assert result["success"] is True
-        self.executor._maybe_wait_for_payment_gateway.assert_not_awaited()
-        self.executor._try_payment_field_action.assert_not_awaited()
-        self.executor.xpath_extractor.extract_xpath_with_page.assert_not_awaited()
+        self.executor._try_payment_field_action.assert_awaited_once()
         self.executor._execute_action_with_xpath.assert_awaited_once_with(
             page,
             "fill",
@@ -1075,6 +1113,8 @@ class TestGwProxyPaymentFieldRole:
         ("Step 42: Input credit card number 4111111111111111", "fill", "card_number"),
         ("Step 43: Select expiry month 01 from dropdown", "select", "expiry_month"),
         ("Step 44: Select expiry year 39 from dropdown", "select", "expiry_year"),
+        ("Input expiry month '01'", "fill", "expiry_month"),
+        ("Input expiry year '39'", "fill", "expiry_year"),
         ("Step 45: Input card holder name test", "fill", "cardholder"),
         ("Step 46: Input CVV 100", "fill", "cvv"),
     ])
@@ -1116,7 +1156,9 @@ class TestGwProxyDirectHandler:
 
         mock_inner = AsyncMock()
         mock_inner.wait_for = AsyncMock(return_value=None)
+        mock_inner.click = AsyncMock(return_value=None)
         mock_inner.fill = AsyncMock(return_value=None)
+        mock_inner.press_sequentially = AsyncMock(return_value=None)
         mock_inner.select_option = AsyncMock(return_value=None)
         mock_inner.input_value = AsyncMock(return_value="4111111111111111")
 
@@ -1217,6 +1259,46 @@ class TestGwProxyDirectHandler:
         gw_proxy_mock.assert_not_awaited()
 
 
+class TestPaymentDirectBeforeCache:
+    """Payment direct handler must run before stale cached main-page input XPaths."""
+
+    def setup_method(self):
+        self.executor = Tier2HybridExecutor(db=MagicMock(), xpath_extractor=MagicMock(), timeout_ms=30000)
+
+    @pytest.mark.asyncio
+    async def test_stale_main_page_cache_invalidated_when_gw_proxy_iframe_exists(self):
+        page = MagicMock()
+        page.url = "https://gphk.gateway.mastercard.com/checkout/pay/SESSION123"
+
+        self.executor.cache_service.get_cached_xpath = MagicMock(return_value={
+            "xpath": "/html/body/div/form/input[1]",
+        })
+        self.executor.cache_service.invalidate_cache = MagicMock()
+        self.executor._maybe_wait_for_payment_gateway = AsyncMock(return_value=None)
+        self.executor._try_payment_field_action = AsyncMock(return_value={
+            "success": True,
+            "tier": 2,
+            "execution_time_ms": 5,
+            "extraction_time_ms": 0,
+            "cache_hit": False,
+            "xpath": None,
+            "error": None,
+        })
+
+        result = await self.executor.execute_step(
+            page,
+            {
+                "action": "fill",
+                "instruction": "Step 31: Input credit card number 4111111111111111",
+                "value": "4111111111111111",
+            },
+        )
+
+        assert result["success"] is True
+        self.executor._try_payment_field_action.assert_awaited_once()
+        self.executor.cache_service.invalidate_cache.assert_not_called()
+
+
 class TestFillInsideIframeFallback:
     """fill/select must use in-frame fallback when observe() returns an iframe XPath."""
 
@@ -1230,14 +1312,12 @@ class TestFillInsideIframeFallback:
 
         mock_inner = AsyncMock()
         mock_inner.wait_for = AsyncMock(return_value=None)
-        mock_inner.fill = AsyncMock(return_value=None)
-        mock_inner.input_value = AsyncMock(return_value="4111111111111111")
-
         mock_inner_locator = MagicMock()
         mock_inner_locator.first = mock_inner
         target_frame.locator = MagicMock(return_value=mock_inner_locator)
 
         self.executor._resolve_iframe_target_frame = AsyncMock(return_value=target_frame)
+        self.executor._fill_payment_locator = AsyncMock(return_value=True)
 
         filled = await self.executor._try_fill_inside_iframe(
             page=page,
@@ -1248,7 +1328,33 @@ class TestFillInsideIframeFallback:
         )
 
         assert filled is True
-        mock_inner.fill.assert_awaited_once_with("4111111111111111", timeout=self.executor.timeout_ms)
+        self.executor._fill_payment_locator.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_verify_filled_value_normalizes_card_number_spaces(self):
+        locator = AsyncMock()
+        locator.input_value = AsyncMock(return_value="4111 1111 1111 1111")
+
+        verified = await self.executor._verify_filled_value(
+            locator,
+            "4111111111111111",
+            "card_number",
+        )
+
+        assert verified is True
+
+    @pytest.mark.asyncio
+    async def test_verify_filled_value_returns_false_on_read_error(self):
+        locator = AsyncMock()
+        locator.input_value = AsyncMock(side_effect=Exception("cross-origin"))
+
+        verified = await self.executor._verify_filled_value(
+            locator,
+            "4111111111111111",
+            "card_number",
+        )
+
+        assert verified is False
 
     @pytest.mark.asyncio
     async def test_execute_step_fill_uses_iframe_fallback_when_xpath_is_iframe(self):

@@ -276,9 +276,50 @@ class Tier2HybridExecutor:
                     return tab_click_result
                 raise ValueError(f"Could not verify Three HK plan tab click for step: {instruction}")
             
+            # Payment direct handler runs before cache for payment steps (ADR-002-48).
+            # Stale cached XPaths to main-page inputs were winning over gw-proxy iframes.
+            if self._is_payment_instruction(instruction, action) and self.payment_direct_enabled:
+                selector = step.get("selector")
+                if selector:
+                    try:
+                        await page.locator(selector).first.wait_for(state="visible", timeout=1500)
+                        self.payment_gateway_ready = True
+                        self.payment_gateway_url = page.url
+                    except Exception:
+                        await self._maybe_wait_for_payment_gateway(page)
+                else:
+                    await self._maybe_wait_for_payment_gateway(page)
+
+                direct_result = await self._try_payment_field_action(
+                    page,
+                    action,
+                    instruction,
+                    value,
+                    start_time,
+                )
+                if direct_result:
+                    return direct_result
+
             # Step 1: Try to get XPath from cache
             cached_xpath = self.cache_service.get_cached_xpath(page_url, instruction)
-            
+
+            if cached_xpath:
+                cached_xpath_value = cached_xpath["xpath"]
+                if (
+                    self._is_payment_instruction(instruction, action)
+                    and not self._xpath_targets_iframe(cached_xpath_value)
+                    and await self._page_has_gw_proxy_role_iframe(page, instruction, action)
+                ):
+                    logger.info(
+                        "[Tier 2] 🔄 Stale payment cache points to main-page input while gw-proxy iframe exists — invalidating"
+                    )
+                    self.cache_service.invalidate_cache(
+                        page_url,
+                        instruction,
+                        "Payment field is inside gw-proxy iframe",
+                    )
+                    cached_xpath = None
+
             if cached_xpath:
                 xpath = cached_xpath["xpath"]
                 cache_hit = True
@@ -337,30 +378,6 @@ class Tier2HybridExecutor:
                         cache_hit = False
                         cached_xpath = None
 
-            # Payment gateway readiness and direct field handling
-            if not cached_xpath and self._is_payment_instruction(instruction, action):
-                selector = step.get("selector")
-                if selector:
-                    try:
-                        await page.locator(selector).first.wait_for(state="visible", timeout=1500)
-                        self.payment_gateway_ready = True
-                        self.payment_gateway_url = page.url
-                    except Exception:
-                        await self._maybe_wait_for_payment_gateway(page)
-                else:
-                    await self._maybe_wait_for_payment_gateway(page)
-
-                if self.payment_direct_enabled:
-                    direct_result = await self._try_payment_field_action(
-                        page,
-                        action,
-                        instruction,
-                        value,
-                        start_time
-                    )
-                    if direct_result:
-                        return direct_result
-            
             if not cached_xpath:
                 # Step 2: Extract XPath using Stagehand observe()
                 logger.info(f"[Tier 2] ðŸ“¡ Cache miss, extracting XPath via observe()...")
@@ -566,11 +583,14 @@ class Tier2HybridExecutor:
 
     def _infer_payment_field_role(self, instruction_lower: str, action: str) -> Optional[str]:
         """Map a payment step instruction to a gw-proxy PCI field role."""
-        if action == "select":
-            if "month" in instruction_lower:
-                return "expiry_month"
-            if "year" in instruction_lower:
-                return "expiry_year"
+        if "month" in instruction_lower and (
+            action == "select" or "expiry" in instruction_lower or "expiration" in instruction_lower
+        ):
+            return "expiry_month"
+        if "year" in instruction_lower and (
+            action == "select" or "expiry" in instruction_lower or "expiration" in instruction_lower
+        ):
+            return "expiry_year"
 
         if "card number" in instruction_lower or "credit card" in instruction_lower:
             return "card_number"
@@ -602,16 +622,54 @@ class Tier2HybridExecutor:
             "error": None
         }
 
+    def _normalize_payment_value(self, value: str, role: Optional[str]) -> str:
+        """Normalize values for post-fill verification."""
+        if role == "card_number":
+            return re.sub(r"\D", "", value or "")
+        return (value or "").strip()
+
     async def _verify_filled_value(self, locator, value: str, role: Optional[str]) -> bool:
         """Verify a fill/select action populated the target field."""
         try:
             if role == "cvv":
-                filled_value = (await locator.input_value() or "").strip()
-                return bool(filled_value)
-            filled_value = await locator.input_value()
-            return filled_value == value
+                return bool((await locator.input_value() or "").strip())
+            filled_value = self._normalize_payment_value(await locator.input_value() or "", role)
+            expected_value = self._normalize_payment_value(value, role)
+            if role == "card_number":
+                return filled_value == expected_value and bool(expected_value)
+            return filled_value == expected_value
         except Exception:
+            return False
+
+    async def _page_has_gw_proxy_role_iframe(
+        self,
+        page: Page,
+        instruction: str,
+        action: str,
+    ) -> bool:
+        """Return True when a gw-proxy iframe exists for this payment step role."""
+        role = self._infer_payment_field_role((instruction or "").lower(), action)
+        if not role:
+            return False
+
+        for iframe_selector in self._GW_PROXY_IFRAME_SELECTORS.get(role, []):
+            try:
+                if await page.locator(iframe_selector).count() > 0:
+                    return True
+            except Exception:
+                continue
+        return False
+
+    async def _fill_payment_locator(self, locator, value: str, role: Optional[str]) -> bool:
+        """Fill a payment input, falling back to sequential keypress for stubborn gateways."""
+        await locator.click(timeout=self.timeout_ms)
+        await locator.fill(value, timeout=self.timeout_ms)
+        if await self._verify_filled_value(locator, value, role):
             return True
+
+        await locator.fill("", timeout=self.timeout_ms)
+        await locator.press_sequentially(value, delay=30, timeout=self.timeout_ms)
+        return await self._verify_filled_value(locator, value, role)
 
     async def _try_gw_proxy_payment_field(
         self,
@@ -656,8 +714,7 @@ class Tier2HybridExecutor:
                         locator = frame_locator.locator(inner_selector).first
                         try:
                             await locator.wait_for(state="visible", timeout=wait_timeout)
-                            await locator.fill(value, timeout=self.timeout_ms)
-                            if await self._verify_filled_value(locator, value, role):
+                            if await self._fill_payment_locator(locator, value, role):
                                 return self._payment_field_success_result(
                                     start_time,
                                     page,
@@ -702,8 +759,7 @@ class Tier2HybridExecutor:
                         await locator.select_option(label=value, timeout=self.timeout_ms)
                     return True
 
-                await locator.fill(value, timeout=self.timeout_ms)
-                if await self._verify_filled_value(locator, value, role):
+                if await self._fill_payment_locator(locator, value, role):
                     return True
             except Exception:
                 continue
@@ -1526,7 +1582,16 @@ class Tier2HybridExecutor:
                     
         elif action in ["fill", "type", "input"]:
             await element.wait_for(state="visible", timeout=self.timeout_ms)
-            await element.fill(value, timeout=self.timeout_ms)
+            instruction_lower = (instruction or "").lower()
+            role = self._infer_payment_field_role(instruction_lower, action)
+            if self._is_payment_instruction(instruction, action) and role:
+                filled = await self._fill_payment_locator(element, value, role)
+                if not filled:
+                    raise ValueError(
+                        f"Payment field fill did not stick for step: {instruction}"
+                    )
+            else:
+                await element.fill(value, timeout=self.timeout_ms)
             # Small delay to allow any input event handlers to complete
             await asyncio.sleep(0.3)
             
