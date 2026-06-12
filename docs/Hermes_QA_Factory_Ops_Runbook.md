@@ -31,7 +31,9 @@ cd backend
 | Telegram disabled | `HERMES_TELEGRAM_ENABLED=false` | `POST /api/v1/hermes/trigger` returns 403 |
 | Factory cron | `FACTORY_SCHEDULER_ENABLED=true` | Logs show Loop A–D registration |
 | MCP secret | `AWT_MCP_SECRET` rotated | Hermes MCP auth works |
-| Bridge secret | `HERMES_BRIDGE_SECRET` set (Phase B) | Bridge events accepted |
+| Bridge secret | `HERMES_BRIDGE_SECRET` set | Bridge events + `/run` auth |
+| Bridge URL | `HERMES_BRIDGE_URL` (optional) | Chat routes to bridge instead of worker |
+| Bridge service | `python hermes_bridge.py serve` on :8790 | Demo or orchestrator mode |
 | Service user | `FACTORY_SERVICE_USER_ID` valid | Cron jobs enqueue |
 | DB migrations | HF-1 … HF-6 tables exist | `user_notifications`, `observatory_access_log` |
 
@@ -70,7 +72,9 @@ cd backend
 - Secrets redacted at read: API keys, passwords, tokens.
 - Every trace view logged in `observatory_access_log`.
 
-**Phase B:** Hermes Bridge posts events to `POST /api/v1/agent/hermes/events` with `HERMES_BRIDGE_SECRET`.
+**Bridge path (HF-3.7 + HF-6.6):** Set `HERMES_BRIDGE_URL=http://localhost:8790` on AWT. Run bridge with `HERMES_BRIDGE_DEMO_MODE=1` for local delegate simulation without Node 1 Hermes.
+
+**Event ingest (HF-6.2):** Bridge posts to `POST /api/v1/agent/hermes/events` with `HERMES_BRIDGE_SECRET`.
 
 Smoke test (replace `JOB_ID`):
 

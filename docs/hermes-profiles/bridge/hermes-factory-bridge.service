@@ -1,0 +1,15 @@
+[Unit]
+Description=Hermes QA Factory Bridge (AWT job runner + event POST)
+After=network.target
+
+[Service]
+Type=simple
+User=hermes
+WorkingDirectory=/home/hermes/.hermes/profiles/bridge
+EnvironmentFile=/home/hermes/.hermes/.env
+ExecStart=/usr/bin/python3 hermes_bridge.py serve --port 8790
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

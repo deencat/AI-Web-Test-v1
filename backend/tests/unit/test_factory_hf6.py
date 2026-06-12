@@ -106,3 +106,22 @@ class TestHermesBridgeIngest:
                 assert False, "expected ValueError"
             except ValueError as exc:
                 assert str(exc) == "job_not_found"
+
+
+class TestBridgeClient:
+    def test_bridge_routing_disabled_without_url(self):
+        from unittest.mock import patch
+
+        from app.services import factory_bridge_client as bridge
+
+        with patch.object(bridge.settings, "HERMES_BRIDGE_URL", None):
+            assert bridge.bridge_routing_enabled() is False
+            assert bridge.submit_job_to_bridge_async("job-1") is False
+
+    def test_bridge_routing_enabled_with_url(self):
+        from unittest.mock import patch
+
+        from app.services import factory_bridge_client as bridge
+
+        with patch.object(bridge.settings, "HERMES_BRIDGE_URL", "http://localhost:8790"):
+            assert bridge.bridge_routing_enabled() is True

@@ -1,7 +1,7 @@
 # Hermes QA Factory — Agile Development Plan
 
-**Version:** 1.3 · **Date:** 2026-06-11  
-**Status:** **HF-6 AWT done** · Phase B (Bridge service + Hermes profiles) in progress  
+**Version:** 1.4 · **Date:** 2026-06-08  
+**Status:** **Phase A complete** · **Phase B in progress** (Bridge ✅ · Hermes profiles ⬜)  
 **Parent design:** [Hermes_QA_Autonomous_Workflow_v5.md](Hermes_QA_Autonomous_Workflow_v5.md)  
 **Program code:** **HF** (Hermes Factory) — sprints **HF-1 … HF-6**
 
@@ -13,7 +13,15 @@
 
 **Last updated:** 2026-06-08  
 **Branch:** `feat/hermes-qa-factory`  
-**Key commits:** HF-1 `e33a6b3` · HF-2+3 `503244e` · HF-4 `ff6af29` · HF-5 *(local)*
+**Key commits:** HF-1 `e33a6b3` · HF-2+3 `503244e` · HF-4 `ff6af29` · HF-5 `e0e16cd` · HF-6 `07244fe` · superadmin RBAC `e77d1be` · Bridge ingest `173b4f7` · Bridge service `*(pending)*`
+
+### Current focus
+
+| Track | Status | Next |
+|-------|--------|------|
+| **Phase A (AWT)** | ✅ **Complete** | HF-1.6 SSE polish (optional) |
+| **Phase B (Bridge)** | 🔜 **HF-6.6 + HF-3.7** | Local demo: bridge `serve` + `HERMES_BRIDGE_URL` |
+| **Phase B (Hermes)** | ⬜ Not started | HF-2.6 orchestrator SOUL → HF-3.1 deploy |
 
 ### Sprint rollup (AWT-first Phase A)
 
@@ -24,7 +32,7 @@
 | **HF-3** | ✅ Done (3.2–3.5) | ⬜ 3.1, 3.6, 3.7 | `drain_backlog`, Loops A & B cron |
 | **HF-4** | ✅ Done (4.1–4.4, 4.6) | ⬜ 4.5 Hermes | `scan_changes`, registry badges |
 | **HF-5** | ✅ Done (5.1–5.5 AWT) | ⬜ 5.3b | Heal API + Loop D |
-| **HF-6** | ✅ AWT (6.1–6.5) · ✅ 6.2 ingest | ⬜ 6.6, 6.7 | Observatory + launch |
+| **HF-6** | ✅ AWT (6.1–6.5) · ✅ 6.2 ingest · ✅ 6.6 service · ✅ 3.7 chat→bridge | ⬜ 6.7 | Observatory + launch |
 
 ### Story checklist
 
@@ -33,7 +41,7 @@
 | **HF-1** | | | |
 | HF-1.1 | Database models & migrations | ✅ | `e33a6b3` |
 | HF-1.2 | Agent jobs REST API + SSE | ✅ | `e33a6b3` |
-| HF-1.3 | RBAC roles | ⚠️ | Roles enforced; superadmin bootstrap/promotion endpoint **not** implemented |
+| HF-1.3 | RBAC roles | ⚠️ | Superadmin-only Agent Console (`e77d1be`); `bootstrap_factory_users.py`; promotion API **not** implemented |
 | HF-1.4 | Factory worker (`run_regression`) | ✅ | `e33a6b3` |
 | HF-1.5 | Agent chat endpoint | ✅ | `e33a6b3` |
 | HF-1.6 | Agent Console shell | ⚠️ | Single page; job monitor uses **polling** (SSE auth deferred) |
@@ -53,7 +61,7 @@
 | HF-3.4 | Auto-schedule on generation | ✅ | `503244e` |
 | HF-3.5 | Loop B regression scheduler | ✅ | `503244e` |
 | HF-3.6a–c | Dispatcher / reporter / Hermes smoke | ⏸ | Phase B |
-| HF-3.7 | Chat → Bridge stub | ⏸ | Phase B |
+| HF-3.7 | Chat → Bridge stub | ✅ | `HERMES_BRIDGE_URL` → `factory_bridge_client` |
 | **HF-4** | | | |
 | HF-4.1 | Observe snapshot API | ✅ | `ff6af29` — httpx capture (lightweight; not full ObservationAgent) |
 | HF-4.2 | Snapshot diff API | ✅ | `ff6af29` |
@@ -74,7 +82,8 @@
 | HF-6.3 | Observatory APIs | ✅ | hermes-trace + access log |
 | HF-6.4 | Observatory UI | ✅ | Agent Console panel |
 | HF-6.5 | Launch hardening + runbook | ✅ | `Hermes_QA_Factory_Ops_Runbook.md` |
-| HF-6.6–6.7 | Bridge + reporter Hermes | ⏸ | Phase B |
+| HF-6.6 | Bridge HTTP service + demo delegates | ✅ | `hermes_bridge.py serve` |
+| HF-6.7 | Reporter → webapp notifications | ⬜ | Worker hook already notifies superadmin |
 
 ### Loops (factory_worker — no Hermes required)
 
@@ -85,9 +94,18 @@
 | **C** — Change scan | `FACTORY_LOOP_C_CRON` | `scan_changes` | ✅ |
 | **D** — Self-heal | `FACTORY_LOOP_D_CRON` | `heal_failures` | ✅ |
 
-### Phase B gate (unchanged — required before launch)
+### Phase B gate (required before launch)
 
-See §4.1 master checklist — all Hermes profile + Bridge items still ⬜.
+| Item | Status |
+|------|--------|
+| HF-6.2 Bridge event ingest | ✅ `173b4f7` |
+| HF-6.6 Bridge service on Node 1 | ✅ demo + orchestrator CLI mode |
+| HF-3.7 Chat → Bridge | ✅ when `HERMES_BRIDGE_URL` set |
+| HF-2.6–2.7 Hermes MCP template | ⬜ |
+| HF-3.1, 3.6, 4.5, 5.3b profile deploy | ⬜ |
+| HF-6.7 Reporter Hermes wiring | ⬜ |
+
+See §4.1 master checklist for full tick list.
 
 ---
 
@@ -127,7 +145,7 @@ See §4.1 master checklist — all Hermes profile + Bridge items still ⬜.
 | **Autonomous generation** | EPIC-HF-03 | Planner profiles, Loop A, batch test-gen | HF-3 | ✅ AWT · ⬜ Hermes |
 | **Change detection** | EPIC-HF-04 | Snapshots, diff, Loop C | HF-4 | ✅ AWT · ⬜ Hermes |
 | **Self-healing** | EPIC-HF-05 | Healer API, Loop D, Heal Review | HF-5 | 🔜 |
-| **Observability & launch** | EPIC-HF-06 | Reporter, Observatory, hardening | HF-6 | ⬜ |
+| **Observability & launch** | EPIC-HF-06 | Reporter, Observatory, hardening | HF-6 | 🔜 Bridge ✅ · Hermes reporter ⬜ |
 | **Hermes Node 1 profiles & Bridge** | EPIC-HF-07 | All 7 SOUL.md profiles, MCP config, deploy, Bridge | HF-2 … HF-6 | ⬜ Phase B |
 
 ---
@@ -243,8 +261,10 @@ docs/hermes-profiles/
 - [ ] HF-3.6 — dispatcher, reporter deployed on Node 1
 - [ ] HF-4.5 — change-detector deployed on Node 1
 - [ ] HF-5.3 — healer deployed on Node 1
-- [ ] HF-6.6 — Hermes Bridge posts events to AWT
-- [ ] HF-6.7 — Chat path: AWT `agent/chat` → Bridge → `qa-orchestrator`
+- [x] HF-6.2 — AWT ingests `POST /api/v1/agent/hermes/events`
+- [x] HF-6.6 — Hermes Bridge `serve` + posts events to AWT (demo or orchestrator CLI)
+- [x] HF-3.7 — Chat path: AWT `agent/chat` → Bridge when `HERMES_BRIDGE_URL` set
+- [ ] HF-6.7 — `qa-reporter` Hermes → webapp (worker hook covers AWT path today)
 - [ ] All profiles: MCP `AWT_MCP_SECRET` + `AWT_BASE_URL` in `config.yaml`
 
 ---
@@ -275,10 +295,13 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 | 2 | HF-2.1 – HF-2.5 ✅ | MCP tools, registry, backlog APIs + UI |
 | 3 | HF-3.2 – HF-3.5 ✅ | `drain_backlog` / `generate_journey` / `full_cycle` worker + Loops A & B cron |
 | 4 | HF-4.1 – HF-4.4, HF-4.6 ✅ | Snapshots, diff, Loop C |
-| 5 | HF-5.1, HF-5.3a, HF-5.4, HF-5.5 🔜 | Heal API, Heal Review, Loop D |
-| 6 | HF-6.1, HF-6.3, HF-6.4, HF-6.5 ⬜ | Notifications, Observatory APIs + UI, ops runbook |
+| 5 | HF-5.1, HF-5.3a, HF-5.4, HF-5.5 ✅ | Heal API, Heal Review, Loop D |
+| 6 | HF-6.1, HF-6.3, HF-6.4, HF-6.5 ✅ | Notifications, Observatory APIs + UI, ops runbook |
 
-**Defer until Phase B:** HF-2.6, HF-2.7, HF-3.1a–d, HF-3.6a–c, HF-3.7, HF-4.5 (Hermes), HF-5.3b, HF-6.2, HF-6.6, HF-6.7.
+**Phase A:** ✅ **Complete** (2026-06-08).
+
+**Defer until Phase B (remaining):** HF-2.6, HF-2.7, HF-3.1a–d, HF-3.6a–c, HF-4.5 (Hermes), HF-5.3b, HF-6.7.
+**Phase B Bridge (done):** HF-6.2, HF-6.6, HF-3.7.
 
 **Phase A demo:** Trigger jobs from Agent Chat (keyword rules) or cron; verify Job Monitor, registry, backlog, heal queue, Observatory (empty trace OK).
 
@@ -612,11 +635,11 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 - **Acceptance:** Manual `full_cycle`: plan → gen → execute → reporter summary (Telegram disabled)
 
-#### HF-3.7 — Wire chat → Hermes Bridge stub (3 pts) `[BRIDGE]` `[AWT-BE]` ⏸
+#### HF-3.7 — Wire chat → Hermes Bridge stub (3 pts) `[BRIDGE]` `[AWT-BE]` ✅
 
-- AWT `POST /api/v1/agent/chat` optionally forwards to Bridge when `HERMES_BRIDGE_URL` set
-- Bridge stub invokes `qa-orchestrator job run --json` on Node 1
-- HF-3: Bridge may log-only; full event POST in HF-6
+- AWT `POST /api/v1/agent/chat` forwards to Bridge when `HERMES_BRIDGE_URL` set (`factory_bridge_client`)
+- Otherwise falls back to `factory_worker`
+- Bridge invokes `qa-orchestrator job run --json` or demo delegate simulation
 
 ---
 
@@ -745,7 +768,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 **Sprint goal:** Production-ready: in-app reports, superadmin Observatory, Telegram off, ops runbook.
 
-**Status:** ✅ **Phase A done** (6.1, 6.3–6.5). ⏸ 6.2, 6.6, 6.7 Phase B.
+**Status:** ✅ Phase A done · ✅ 6.2 ingest · ✅ 6.6 bridge service · ✅ 3.7 chat→bridge · ⬜ 6.7 reporter Hermes.
 
 **Total:** 23 points
 
@@ -799,12 +822,12 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-6.6 — Hermes Bridge service on Node 1 (5 pts) `[BRIDGE]` **mandatory**
+#### HF-6.6 — Hermes Bridge service on Node 1 (5 pts) `[BRIDGE]` **mandatory** ✅
 
-- `docs/hermes-profiles/bridge/hermes_bridge.py` (or shell): receives AWT job JSON, runs orchestrator, POSTs events
-- Env: `HERMES_BRIDGE_SECRET`, `AWT_AGENT_EVENTS_URL`
-- systemd unit `hermes-factory-bridge.service` (optional)
-- **Acceptance:** One `full_cycle` from webapp chat produces delegate events in AWT job timeline
+- `docs/hermes-profiles/bridge/hermes_bridge.py serve`: `POST /run`, demo delegates or orchestrator CLI
+- Env: `HERMES_BRIDGE_SECRET`, `AWT_AGENT_EVENTS_URL`, `HERMES_BRIDGE_DEMO_MODE`
+- systemd unit `hermes-factory-bridge.service`
+- **Acceptance:** `full_cycle` from Agent Chat (with `HERMES_BRIDGE_URL`) shows delegate events in timeline
 
 ---
 
@@ -923,15 +946,15 @@ Adjust dates to your team start; maintain 2-week cadence.
 | **HF-2** ✅ | MCP tools, registry, backlog UI | ⬜ **HF-2.6** orchestrator SOUL · **HF-2.7** MCP template |
 | **HF-3** ✅ | Loop A/B, `drain_backlog` worker | ⬜ Deploy orchestrator, planner, test-gen, dispatcher, reporter · Bridge stub |
 | **HF-4** ✅ | Snapshot/diff APIs, Loop C, registry badges | ⬜ Deploy **qa-change-detector** |
-| **HF-5** 🔜 | Heal API, Heal Review UI, Loop D | ⬜ Deploy **qa-healer** |
-| **HF-6** | Observatory, notifications | **Hermes Bridge** production · reporter → webapp |
+| **HF-5** ✅ | Heal API, Heal Review UI, Loop D | ⬜ Deploy **qa-healer** |
+| **HF-6** 🔜 | Observatory, notifications, Bridge ingest+service | ⬜ **qa-reporter** Hermes · profile deploy |
 
 ### AWT-first (§4.2) — your preferred order
 
 | Phase | Do now | Defer to Phase B |
 |-------|--------|------------------|
-| **A** | HF-1 ✅ → HF-2.1–2.5 ✅ → HF-3.2–3.5 ✅ → HF-4 AWT ✅ → **HF-5 AWT** 🔜 → HF-6.1, 6.3–6.5 ⬜ | All `[HERMES]` + `[BRIDGE]` stories ⬜ |
-| **B** | — | HF-2.6–2.7 → HF-3.1a–d, 3.6a–c, 3.7 → HF-4.5 Hermes → HF-5.3b → HF-6.2, 6.6, 6.7 |
+| **A** | HF-1 ✅ → HF-6 AWT ✅ **(complete)** | — |
+| **B** | HF-6.2, 6.6, 3.7 ✅ | HF-2.6–2.7 → HF-3.1a–d, 3.6a–c → HF-4.5 → HF-5.3b → HF-6.7 |
 
 ---
 
