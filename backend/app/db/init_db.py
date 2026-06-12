@@ -17,7 +17,23 @@ def init_db(db: Session) -> None:
         )
         user = create_user(db, user_in)
         print(f"Created admin user: {user.username}")
-    
+
+    # Separate superadmin account (Observatory) — not the same login as admin
+    superadmin = get_user_by_username(db, username="superadmin")
+    if not superadmin:
+        import os
+        super_pw = os.getenv("FACTORY_SUPERADMIN_PASSWORD", "superadmin123")
+        superadmin = create_user(
+            db,
+            UserCreate(
+                email="superadmin@aiwebtest.com",
+                username="superadmin",
+                password=super_pw,
+                role="superadmin",
+            ),
+        )
+        print(f"Created superadmin user: {superadmin.username}")
+
     # Initialize KB categories
     init_kb_categories(db)
 

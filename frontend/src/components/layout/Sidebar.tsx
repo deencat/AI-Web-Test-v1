@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { Home, FileText, Database, Settings, PlayCircle, FolderOpen, Bot, Library, Globe, MessageSquare, Map, ListOrdered, Stethoscope } from 'lucide-react';
+import { isSuperadmin } from '../../utils/roles';
 
 const navItems = [
   { path: '/dashboard', icon: Home, label: 'Dashboard' },
@@ -18,11 +19,18 @@ const navItems = [
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];
 
+const SUPERADMIN_ONLY_PATHS = new Set(['/agent-console']);
+
 export const Sidebar: React.FC = () => {
+  const superadmin = isSuperadmin();
+  const visibleItems = navItems.filter(
+    (item) => superadmin || !SUPERADMIN_ONLY_PATHS.has(item.path),
+  );
+
   return (
     <aside className="w-64 bg-white border-r border-gray-200 fixed left-0 top-16 bottom-0 z-40">
       <nav className="p-4 space-y-2">
-        {navItems.map((item) => (
+        {visibleItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}

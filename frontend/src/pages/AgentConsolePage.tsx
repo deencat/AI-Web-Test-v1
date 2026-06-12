@@ -9,43 +9,14 @@ import {
   pollFactoryJob,
   postAgentChat,
 } from '../services/agentFactoryService';
-
-function isSuperadmin(): boolean {
-  try {
-    const raw = localStorage.getItem('user');
-    if (!raw) return false;
-    const user = JSON.parse(raw) as { role?: string };
-    return (user.role || '').toLowerCase() === 'superadmin';
-  } catch {
-    return false;
-  }
-}
-
-function canAccessAgentConsole(): boolean {
-  try {
-    const raw = localStorage.getItem('user');
-    if (!raw) return false;
-    const user = JSON.parse(raw) as { role?: string };
-    const role = (user.role || 'user').toLowerCase();
-    const rank: Record<string, number> = {
-      viewer: 0,
-      user: 1,
-      tester: 1,
-      agent_operator: 2,
-      admin: 3,
-      superadmin: 4,
-    };
-    return (rank[role] ?? 1) >= 2;
-  } catch {
-    return false;
-  }
-}
+import { isSuperadmin } from '../utils/roles';
 
 export const AgentConsolePage: React.FC = () => {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const jobFromUrl = searchParams.get('job');
   const [message, setMessage] = useState('Run regression');
   const [reply, setReply] = useState<string | null>(null);
-  const [jobId, setJobId] = useState<string | null>(searchParams.get('job'));
+  const [jobId, setJobId] = useState<string | null>(jobFromUrl);
   const [jobStatus, setJobStatus] = useState<string | null>(null);
   const [events, setEvents] = useState<FactoryJobEvent[]>([]);
   const [trace, setTrace] = useState<HermesTrace | null>(null);
@@ -54,8 +25,7 @@ export const AgentConsolePage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const allowed = canAccessAgentConsole();
-  const superadmin = isSuperadmin();
+  const allowed = isSuperadmin();
 
   useEffect(() => {
     return () => {
@@ -84,13 +54,11 @@ export const AgentConsolePage: React.FC = () => {
         (ev) => setEvents((prev) => [...prev, ev]),
         async (status) => {
           setJobStatus(status);
-          if (superadmin) {
-            try {
-              const t = await getHermesTrace(res.job_id);
-              setTrace(t);
-            } catch {
-              setTrace(null);
-            }
+          try {
+            const t = await getHermesTrace(res.job_id);
+            setTrace(t);
+          } catch {
+            setTrace(null);
           }
         },
         abortRef.current.signal,
@@ -111,23 +79,38 @@ export const AgentConsolePage: React.FC = () => {
     const job = await getFactoryJob(jobId);
     setJobStatus(job.status);
     setEvents(job.events);
-    if (superadmin) {
-      try {
-        const t = await getHermesTrace(jobId);
-        setTrace(t);
-        setTraceError(null);
-      } catch (err: unknown) {
-        setTrace(null);
-        setTraceError(err instanceof Error ? err.message : 'Observatory unavailable');
-      }
+    try {
+      const t = await getHermesTrace(jobId);
+      setTrace(t);
+      setTraceError(null);
+    } catch (err: unknown) {
+      setTrace(null);
+      setTraceError(err instanceof Error ? err.message : 'Observatory unavailable');
     }
   };
+
+  // Sync job id when opening a notification link (?job=uuid) while already on this page
+  useEffect(() => {
+    if (jobFromUrl && jobFromUrl !== jobId) {
+      setJobId(jobFromUrl);
+      setEvents([]);
+      setTrace(null);
+      setJobStatus(null);
+    }
+  }, [jobFromUrl, jobId]);
 
   useEffect(() => {
     if (jobId && allowed) {
       refreshJob().catch(() => undefined);
     }
-  }, [jobId, allowed, superadmin]);
+  }, [jobId, allowed]);
+
+  // Keep URL in sync when a new job starts from chat
+  useEffect(() => {
+    if (jobId && jobFromUrl !== jobId) {
+      setSearchParams({ job: jobId }, { replace: true });
+    }
+  }, [jobId, jobFromUrl, setSearchParams]);
 
   if (!allowed) {
     return (
@@ -135,9 +118,8 @@ export const AgentConsolePage: React.FC = () => {
         <div className="max-w-3xl mx-auto bg-white rounded-lg shadow p-8">
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Agent Console</h1>
           <p className="text-gray-600">
-            Access requires <code className="bg-gray-100 px-1 rounded">agent_operator</code>,{' '}
-            <code className="bg-gray-100 px-1 rounded">admin</code>, or{' '}
-            <code className="bg-gray-100 px-1 rounded">superadmin</code> role.
+            Access requires the <code className="bg-gray-100 px-1 rounded">superadmin</code> role.
+            Log in as <code className="bg-gray-100 px-1 rounded">superadmin</code> (not <code className="bg-gray-100 px-1 rounded">admin</code>).
           </p>
         </div>
       </Layout>
@@ -154,7 +136,7 @@ export const AgentConsolePage: React.FC = () => {
           </p>
         </div>
 
-        <div className={`grid grid-cols-1 gap-6 ${superadmin && jobId ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}>
+        <div className={`grid grid-cols-1 gap-6 ${jobId ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}>
           <section className="bg-white rounded-lg shadow p-6">
             <h2 className="text-lg font-semibold mb-4">Agent Chat</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -219,7 +201,7 @@ export const AgentConsolePage: React.FC = () => {
             )}
           </section>
 
-          {superadmin && jobId && (
+          {jobId && (
             <section className="bg-white rounded-lg shadow p-6 border border-amber-200">
               <h2 className="text-lg font-semibold mb-1">Agent Observatory</h2>
               <p className="text-xs text-amber-700 mb-4">Superadmin only — delegate payloads &amp; LLM turns</p>

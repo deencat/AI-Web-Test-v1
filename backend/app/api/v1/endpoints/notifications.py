@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_active_user, get_db
+from app.api.deps import get_db, require_superadmin
 from app.crud import notification as crud
 from app.models.user import User
 from app.schemas.notification import NotificationListResponse, NotificationResponse
@@ -16,7 +16,7 @@ def list_my_notifications(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_superadmin),
 ) -> NotificationListResponse:
     items, total, unread = crud.list_notifications(
         db,
@@ -36,7 +36,7 @@ def list_my_notifications(
 def mark_read(
     notification_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_superadmin),
 ) -> NotificationResponse:
     row = crud.mark_notification_read(db, notification_id, current_user.id)
     if not row:

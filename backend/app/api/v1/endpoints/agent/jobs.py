@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_factory_operator
+from app.api.deps import get_db, require_superadmin
 from app.models.user import User
 from app.schemas.factory_job import (
     FactoryJobCreate,
@@ -45,7 +45,7 @@ def _job_to_response(job) -> FactoryJobResponse:
 def create_job(
     body: FactoryJobCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_factory_operator),
+    current_user: User = Depends(require_superadmin),
 ) -> FactoryJobCreatedResponse:
     job = create_factory_job(db, body, created_by_user_id=current_user.id)
     submit_factory_job_async(job.id)
@@ -60,7 +60,7 @@ def create_job(
 def get_job(
     job_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_factory_operator),
+    current_user: User = Depends(require_superadmin),
 ) -> FactoryJobResponse:
     job = get_factory_job(db, job_id)
     if not job:
@@ -77,7 +77,7 @@ def get_job_events(
     job_id: str,
     after_id: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_factory_operator),
+    current_user: User = Depends(require_superadmin),
 ) -> list[FactoryJobEventResponse]:
     job = get_factory_job(db, job_id)
     if not job:
@@ -133,7 +133,7 @@ async def stream_job(
     request: Request,
     job_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_factory_operator),
+    current_user: User = Depends(require_superadmin),
 ) -> StreamingResponse:
     job = get_factory_job(db, job_id)
     if not job:

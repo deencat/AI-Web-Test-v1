@@ -1,12 +1,12 @@
-"""Factory job completion notifications (HF-6)."""
+"""Factory job completion notifications (HF-6) — superadmin only."""
 import logging
-from typing import Optional
+from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.crud import notification as crud_notifications
 from app.models.factory_job import FactoryJob, FactoryJobStatus
+from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -27,30 +27,44 @@ def _digest_for_job(job: FactoryJob) -> tuple[str, str]:
     return title, body
 
 
+def _superadmin_user_ids(db: Session) -> List[int]:
+    rows = db.query(User.id).filter(User.role == "superadmin").all()
+    return [r[0] for r in rows]
+
+
 def notify_factory_job_complete(db: Session, job: FactoryJob) -> Optional[int]:
-    """Create in-app notification for job creator (or factory service user)."""
-    user_id = job.created_by_user_id or settings.FACTORY_SERVICE_USER_ID
-    if not user_id:
+    """Create in-app notifications for all superadmin users (Agent Console is superadmin-only)."""
+    user_ids = _superadmin_user_ids(db)
+    if not user_ids:
+        logger.warning("[FactoryNotify] No superadmin users — skipping notification")
         return None
 
     title, body = _digest_for_job(job)
+    last_id: Optional[int] = None
+
     try:
-        row = crud_notifications.create_notification(
-            db,
-            user_id=user_id,
-            title=title,
-            body=body,
-            notification_type="factory_job",
-            link=f"/agent-console?job={job.id}",
-            metadata={
-                "job_id": job.id,
-                "job_type": job.job_type,
-                "status": job.status,
-                "project": job.project,
-            },
+        for user_id in user_ids:
+            row = crud_notifications.create_notification(
+                db,
+                user_id=user_id,
+                title=title,
+                body=body,
+                notification_type="factory_job",
+                link=f"/agent-console?job={job.id}",
+                metadata={
+                    "job_id": job.id,
+                    "job_type": job.job_type,
+                    "status": job.status,
+                    "project": job.project,
+                },
+            )
+            last_id = row.id
+        logger.info(
+            "[FactoryNotify] Notified %s superadmin user(s) for job %s",
+            len(user_ids),
+            job.id,
         )
-        logger.info("[FactoryNotify] Created notification %s for user %s", row.id, user_id)
-        return row.id
+        return last_id
     except Exception as exc:
         logger.warning("[FactoryNotify] Failed to notify: %s", exc)
         return None

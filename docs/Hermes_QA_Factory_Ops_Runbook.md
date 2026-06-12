@@ -6,7 +6,25 @@
 
 ---
 
-## 1. Production checklist (before launch)
+## 1. Factory login accounts (separate users)
+
+| Username | Role | Password (dev) | Use for |
+|----------|------|----------------|---------|
+| `admin` | `admin` | `admin123` | Journey registry, backlog, heal review (no Agent Console) |
+| `superadmin` | `superadmin` | `superadmin123` or `FACTORY_SUPERADMIN_PASSWORD` | **Agent Console**, notifications bell, Observatory |
+
+**Do not** promote `admin` to `superadmin` — use two accounts.
+
+Bootstrap / fix local DB:
+
+```powershell
+cd backend
+.\venv\Scripts\python.exe scripts\bootstrap_factory_users.py --fix-admin-role
+```
+
+---
+
+## 2. Production checklist (before launch)
 
 | Item | Setting | Verify |
 |------|---------|--------|
@@ -19,7 +37,7 @@
 
 ---
 
-## 2. Factory loops (AWT worker)
+## 3. Factory loops (AWT worker)
 
 | Loop | Env cron | Job type | Purpose |
 |------|----------|----------|---------|
@@ -32,15 +50,15 @@
 
 ---
 
-## 3. Notifications (HF-6.1)
+## 4. Notifications (HF-6.1)
 
-- On job **completed** or **failed**, creator receives in-app notification (`user_notifications`).
+- On job **completed** or **failed**, all **superadmin** users receive in-app notifications (`user_notifications`). The bell is hidden for other roles.
 - Bell icon in header; link opens Agent Console with job id.
 - Stretch: wire email via existing email infra.
 
 ---
 
-## 4. Agent Observatory (HF-6.3–6.4)
+## 5. Agent Observatory (HF-6.3–6.4)
 
 **Who:** `superadmin` only (`admin` gets 403).
 
@@ -56,7 +74,7 @@
 
 ---
 
-## 5. Node 1 Hermes (Phase B — EPIC-HF-07)
+## 6. Node 1 Hermes (Phase B — EPIC-HF-07)
 
 Before production launch:
 
@@ -67,19 +85,19 @@ Before production launch:
 
 ---
 
-## 6. Troubleshooting
+## 7. Troubleshooting
 
 | Symptom | Check |
 |---------|-------|
 | Cron not running | `FACTORY_SCHEDULER_ENABLED`, APScheduler started in logs |
-| No notifications | `created_by_user_id` on job; `user_notifications` table |
+| No notifications | Log in as `superadmin`; check `user_notifications` for superadmin user id |
 | Heal review growing | Inspect `heal_review_items`; fix UAT or raise `FACTORY_HEAL_MAX_ATTEMPTS` |
 | Observatory 403 | User must be `superadmin` |
 | Migration errors | Run `PYTHONPATH=. python -c "from migrations.add_observatory_hf6 import upgrade; upgrade()"` |
 
 ---
 
-## 7. Restart procedure
+## 8. Restart procedure
 
 ```powershell
 cd backend

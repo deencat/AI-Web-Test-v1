@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_factory_operator
+from app.api.deps import get_db, require_superadmin
 from app.models.user import User
 from app.schemas.factory_job import AgentChatRequest, AgentChatResponse
 from app.services.agent_chat_service import parse_chat_to_job
@@ -20,7 +20,7 @@ router = APIRouter()
 def agent_chat(
     body: AgentChatRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_factory_operator),
+    current_user: User = Depends(require_superadmin),
 ) -> AgentChatResponse:
     try:
         job_body, reply = parse_chat_to_job(body.message, body.context)

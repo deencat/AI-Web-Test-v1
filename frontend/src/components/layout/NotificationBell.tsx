@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Bell } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   listNotifications,
   markNotificationRead,
@@ -8,6 +8,7 @@ import {
 } from '../../services/notificationService';
 
 export const NotificationBell: React.FC = () => {
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<UserNotification[]>([]);
   const [unread, setUnread] = useState(0);
@@ -28,12 +29,17 @@ export const NotificationBell: React.FC = () => {
     return () => clearInterval(t);
   }, [load]);
 
-  const handleOpen = async (n: UserNotification) => {
+  const handleNotificationClick = async (n: UserNotification) => {
+    setOpen(false);
+
+    if (n.link) {
+      navigate(n.link);
+    }
+
     if (!n.read) {
       await markNotificationRead(n.id).catch(() => undefined);
       await load();
     }
-    setOpen(false);
   };
 
   return (
@@ -52,37 +58,37 @@ export const NotificationBell: React.FC = () => {
         )}
       </button>
       {open && (
-        <div className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto">
-          {items.length === 0 ? (
-            <p className="p-4 text-sm text-gray-500">No notifications</p>
-          ) : (
-            <ul>
-              {items.map((n) => (
-                <li key={n.id} className={`border-b border-gray-100 ${n.read ? '' : 'bg-blue-50'}`}>
-                  {n.link ? (
-                    <Link
-                      to={n.link.replace(/^\/agent-console/, '/agent-console')}
-                      onClick={() => handleOpen(n)}
-                      className="block p-3 hover:bg-gray-50 text-sm"
-                    >
-                      <div className="font-medium text-gray-900">{n.title}</div>
-                      {n.body && <div className="text-gray-600 mt-1">{n.body}</div>}
-                    </Link>
-                  ) : (
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-40 cursor-default"
+            aria-label="Close notifications"
+            onClick={() => setOpen(false)}
+          />
+          <div className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto">
+            {items.length === 0 ? (
+              <p className="p-4 text-sm text-gray-500">No notifications</p>
+            ) : (
+              <ul>
+                {items.map((n) => (
+                  <li key={n.id} className={`border-b border-gray-100 ${n.read ? '' : 'bg-blue-50'}`}>
                     <button
                       type="button"
-                      onClick={() => handleOpen(n)}
-                      className="block w-full text-left p-3 hover:bg-gray-50 text-sm"
+                      onClick={() => handleNotificationClick(n)}
+                      className="block w-full text-left p-3 hover:bg-gray-50 text-sm cursor-pointer"
                     >
                       <div className="font-medium text-gray-900">{n.title}</div>
                       {n.body && <div className="text-gray-600 mt-1">{n.body}</div>}
+                      {n.link && (
+                        <div className="text-xs text-blue-600 mt-1">Open in Agent Console →</div>
+                      )}
                     </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </>
       )}
     </div>
   );

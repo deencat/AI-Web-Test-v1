@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { NotificationBell } from './NotificationBell';
+import { isSuperadmin } from '../../utils/roles';
 
 export const Header: React.FC = () => {
   const navigate = useNavigate();
@@ -21,7 +22,7 @@ export const Header: React.FC = () => {
       </div>
 
       <div className="flex items-center gap-4">
-        {user && <NotificationBell />}
+        {user && isSuperadmin() && <NotificationBell />}
         <span className="text-sm text-gray-600">{user?.username || 'User'}</span>
         <button
           onClick={handleLogout}
