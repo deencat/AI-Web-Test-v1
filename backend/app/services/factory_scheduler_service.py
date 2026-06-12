@@ -70,6 +70,21 @@ def _run_scheduled_scan_changes() -> None:
     )
 
 
+def _run_scheduled_heal_failures() -> None:
+    from datetime import datetime, timedelta, timezone
+
+    since = (datetime.now(timezone.utc) - timedelta(hours=2)).replace(tzinfo=None)
+    _enqueue_factory_job(
+        "heal_failures",
+        {
+            "source": "factory_loop_d",
+            "since": since.isoformat(),
+            "limit": settings.FACTORY_HEAL_MAX_ITEMS,
+        },
+        project="Three-HK",
+    )
+
+
 def _run_scheduled_drain_backlog() -> None:
     _enqueue_factory_job(
         "drain_backlog",
@@ -138,6 +153,13 @@ def register_factory_cron_jobs() -> None:
         settings.FACTORY_LOOP_C_CRON,
         _run_scheduled_scan_changes,
         "Loop C scan_changes",
+    )
+    _register_cron_job(
+        scheduler,
+        "factory_loop_d_heal",
+        settings.FACTORY_LOOP_D_CRON,
+        _run_scheduled_heal_failures,
+        "Loop D heal_failures",
     )
 
 

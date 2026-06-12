@@ -47,6 +47,36 @@ export async function createFactoryJob(body: {
 }
 
 /** Poll job events (JWT-friendly; SSE can be added in HF-6 with cookie auth). */
+export interface HealReviewItem {
+  id: number;
+  execution_id: number;
+  test_case_id?: number | null;
+  reason: string;
+  status: string;
+  created_at: string;
+  resolved_at?: string | null;
+  resolved_by_user_id?: number | null;
+}
+
+export interface HealReviewListResponse {
+  items: HealReviewItem[];
+  total: number;
+}
+
+export async function listHealReview(status?: string): Promise<HealReviewListResponse> {
+  const { data } = await api.get<HealReviewListResponse>('/agent/heal-review', {
+    params: status ? { status } : {},
+  });
+  return data;
+}
+
+export async function resolveHealReviewItem(itemId: number): Promise<HealReviewItem> {
+  const { data } = await api.patch<HealReviewItem>(`/agent/heal-review/${itemId}`, {
+    status: 'resolved',
+  });
+  return data;
+}
+
 export async function pollFactoryJob(
   jobId: string,
   onEvent: (event: FactoryJobEvent) => void,

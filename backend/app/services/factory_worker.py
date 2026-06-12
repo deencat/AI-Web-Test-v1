@@ -20,6 +20,7 @@ from app.services.factory_journey_service import (
     generate_journey_for_entry,
 )
 from app.services.factory_change_scan_service import scan_registry_changes
+from app.services.factory_heal_service import scan_and_heal_failures
 from app.services.scheduler_service import _infer_target_url
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,7 @@ SUPPORTED_JOB_TYPES = {
     "generate_journey",
     "full_cycle",
     "scan_changes",
+    "heal_failures",
 }
 
 
@@ -91,6 +93,7 @@ def run_factory_job(job_id: str) -> None:
             "generate_journey": _generate_journey,
             "full_cycle": _full_cycle,
             "scan_changes": _scan_changes,
+            "heal_failures": _heal_failures,
         }
         handler = handlers.get(job.job_type)
         if not handler:
@@ -338,6 +341,20 @@ def _generate_journey(db: Session, job: FactoryJob) -> None:
         message=f"Generated test_case_id={test_case_id}",
         payload_summary={"test_case_id": test_case_id, "journey_slug": slug},
     )
+
+
+def _heal_failures(db: Session, job: FactoryJob) -> None:
+    from datetime import datetime
+
+    params: Dict[str, Any] = job.params or {}
+    since_raw = params.get("since")
+    since = None
+    if since_raw:
+        since = datetime.fromisoformat(str(since_raw).replace("Z", "+00:00"))
+        if since.tzinfo:
+            since = since.replace(tzinfo=None)
+
+    scan_and_heal_failures(db, job, since=since)
 
 
 def _scan_changes(db: Session, job: FactoryJob) -> None:

@@ -60,6 +60,8 @@ Tools exposed
   observe_url_snapshot       — Capture URL snapshot for change detection (HF-4)
   get_url_snapshot           — Get latest snapshot by url_hash (HF-4)
   diff_url_snapshots         — Diff snapshots for material DOM change (HF-4)
+  heal_test_from_feedback    — Heal failed test from execution feedback (HF-5)
+  clear_xpath_cache          — Clear XPath cache entries (HF-5)
 """
 from __future__ import annotations
 
@@ -790,6 +792,44 @@ async def diff_url_snapshots(
     if baseline_snapshot_id is not None:
         body["baseline_snapshot_id"] = baseline_snapshot_id
     return await _call_v2("POST", "/snapshots/diff", json=body)
+
+
+# ---------------------------------------------------------------------------
+# § 8 — Self-healing (HF-5)
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def heal_test_from_feedback(
+    execution_id: int,
+    retry_execution: bool = True,
+) -> dict:
+    """Heal a failed test using execution feedback (Loop D / qa-healer).
+
+    Args:
+        execution_id: Failed execution id from list_failed_executions.
+        retry_execution: For xpath failures, queue a re-run after cache clear.
+
+    Returns:
+        Heal result with action, strategy, test_case_id, attempt_count, etc.
+    """
+    return await _call_v2(
+        "POST",
+        "/heal-from-feedback",
+        json={"execution_id": execution_id, "retry_execution": retry_execution},
+    )
+
+
+@mcp.tool()
+async def clear_xpath_cache(invalid_only: bool = True) -> dict:
+    """Clear XPath cache entries (bulk).
+
+    Args:
+        invalid_only: If true, remove only invalid entries; if false, clear all.
+
+    Returns:
+        dict with deleted count and message.
+    """
+    return await _call("DELETE", "/settings/xpath-cache", params={"invalid_only": invalid_only})
 
 
 # ---------------------------------------------------------------------------

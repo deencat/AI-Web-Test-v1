@@ -1,9 +1,88 @@
 # Hermes QA Factory — Agile Development Plan
 
-**Version:** 1.2 · **Date:** 2026-06-11  
-**Status:** HF-4 Phase A in progress on `feat/hermes-qa-factory` (HF-1 ✅ · HF-2 ✅ · HF-3 ✅)  
+**Version:** 1.3 · **Date:** 2026-06-11  
+**Status:** **HF-6 next** · Phase A complete through HF-5 on `feat/hermes-qa-factory`  
 **Parent design:** [Hermes_QA_Autonomous_Workflow_v5.md](Hermes_QA_Autonomous_Workflow_v5.md)  
 **Program code:** **HF** (Hermes Factory) — sprints **HF-1 … HF-6**
+
+**Legend:** ✅ Done · ⚠️ Partial · 🔜 Next · ⬜ Not started · ⏸ Phase B (Hermes Node 1)
+
+---
+
+## 0. Progress tracker (live)
+
+**Last updated:** 2026-06-08  
+**Branch:** `feat/hermes-qa-factory`  
+**Key commits:** HF-1 `e33a6b3` · HF-2+3 `503244e` · HF-4 `ff6af29` · HF-5 *(local)*
+
+### Sprint rollup (AWT-first Phase A)
+
+| Sprint | Phase A status | Hermes (Phase B) | Demo / validation |
+|--------|----------------|------------------|-------------------|
+| **HF-1** | ✅ Done | — | Agent Console + `run_regression` |
+| **HF-2** | ✅ Done (2.1–2.5) | ⬜ 2.6–2.7 | Registry, backlog, MCP tools |
+| **HF-3** | ✅ Done (3.2–3.5) | ⬜ 3.1, 3.6, 3.7 | `drain_backlog`, Loops A & B cron |
+| **HF-4** | ✅ Done (4.1–4.4, 4.6) | ⬜ 4.5 Hermes | `scan_changes`, registry badges |
+| **HF-5** | ✅ Done (5.1–5.5 AWT) | ⬜ 5.3b | Heal API + Loop D |
+| **HF-6** | 🔜 **Next** | ⬜ 6.2, 6.6, 6.7 | Observatory + launch |
+
+### Story checklist
+
+| ID | Story | Status | Commit / note |
+|----|-------|--------|---------------|
+| **HF-1** | | | |
+| HF-1.1 | Database models & migrations | ✅ | `e33a6b3` |
+| HF-1.2 | Agent jobs REST API + SSE | ✅ | `e33a6b3` |
+| HF-1.3 | RBAC roles | ⚠️ | Roles enforced; superadmin bootstrap/promotion endpoint **not** implemented |
+| HF-1.4 | Factory worker (`run_regression`) | ✅ | `e33a6b3` |
+| HF-1.5 | Agent chat endpoint | ✅ | `e33a6b3` |
+| HF-1.6 | Agent Console shell | ⚠️ | Single page; job monitor uses **polling** (SSE auth deferred) |
+| HF-1.7 | Factory scheduler + Telegram flag | ✅ | `e33a6b3` |
+| **HF-2** | | | |
+| HF-2.1 | MCP execution & schedule tools | ✅ | `503244e` |
+| HF-2.2 | MCP ReqIQ proxy tools | ✅ | `503244e` |
+| HF-2.3 | Journey registry API | ✅ | `503244e` |
+| HF-2.4 | Journey backlog API | ✅ | `503244e` |
+| HF-2.5 | Registry & backlog UI | ✅ | `503244e` |
+| HF-2.6 | `qa-orchestrator` SOUL draft | ⚠️ | `hermes-profiles/README.md` only — SOUL.md **not** drafted |
+| HF-2.7 | Shared Hermes MCP config template | ⬜ | Phase B |
+| **HF-3** | | | |
+| HF-3.1a–d | Hermes orchestrator / planner / test-gen | ⏸ | Phase B |
+| HF-3.2 | Worker: `drain_backlog`, `generate_journey`, `full_cycle` | ✅ | `503244e` |
+| HF-3.3 | Loop A scheduler | ✅ | `503244e` |
+| HF-3.4 | Auto-schedule on generation | ✅ | `503244e` |
+| HF-3.5 | Loop B regression scheduler | ✅ | `503244e` |
+| HF-3.6a–c | Dispatcher / reporter / Hermes smoke | ⏸ | Phase B |
+| HF-3.7 | Chat → Bridge stub | ⏸ | Phase B |
+| **HF-4** | | | |
+| HF-4.1 | Observe snapshot API | ✅ | `ff6af29` — httpx capture (lightweight; not full ObservationAgent) |
+| HF-4.2 | Snapshot diff API | ✅ | `ff6af29` |
+| HF-4.3 | MCP snapshot tools | ✅ | `ff6af29` |
+| HF-4.4 | Loop C worker + cron (`scan_changes`) | ✅ | `ff6af29` |
+| HF-4.5 | `qa-change-detector` Hermes deploy | ⏸ | Phase B |
+| HF-4.6 | Change detection registry badge | ✅ | `ff6af29` |
+| **HF-5** | | | |
+| HF-5.1 | Heal from feedback API | ✅ | `POST /api/v2/heal-from-feedback` |
+| HF-5.2 | MCP heal tools | ✅ | `heal_test_from_feedback`, `clear_xpath_cache` |
+| HF-5.3a | Loop D worker + cron | ✅ | `heal_failures` + `FACTORY_LOOP_D_CRON` |
+| HF-5.3b | `qa-healer` Hermes deploy | ⏸ | Phase B |
+| HF-5.4 | Heal Review queue | ✅ | `/agent/heal-review` + UI |
+| HF-5.5 | Heal integration tests | ✅ | `test_factory_heal_hf5.py` |
+| **HF-6** | | | |
+| HF-6.1–6.7 | Observatory, Bridge, launch | ⬜ | After HF-5 AWT |
+
+### Loops (factory_worker — no Hermes required)
+
+| Loop | Schedule env | Job type | Status |
+|------|--------------|----------|--------|
+| **A** — Backlog drain | `FACTORY_LOOP_A_CRON` | `drain_backlog` | ✅ |
+| **B** — Regression | `FACTORY_REGRESSION_CRON` + nightly | `run_regression` | ✅ |
+| **C** — Change scan | `FACTORY_LOOP_C_CRON` | `scan_changes` | ✅ |
+| **D** — Self-heal | `FACTORY_LOOP_D_CRON` | `heal_failures` | ✅ |
+
+### Phase B gate (unchanged — required before launch)
+
+See §4.1 master checklist — all Hermes profile + Bridge items still ⬜.
 
 ---
 
@@ -36,15 +115,15 @@
 
 ## 2. Epics
 
-| Epic | ID | Outcome | Sprints |
-|------|-----|---------|---------|
-| **Control plane** | EPIC-HF-01 | Jobs API, RBAC, scheduler, Agent Console shell | HF-1 |
-| **MCP & registry** | EPIC-HF-02 | New MCP tools, journey registry, backlog | HF-2 |
-| **Autonomous generation** | EPIC-HF-03 | Planner profiles, Loop A, batch test-gen | HF-3 |
-| **Change detection** | EPIC-HF-04 | Snapshots, diff, Loop C | HF-4 |
-| **Self-healing** | EPIC-HF-05 | Healer API, Loop D, Heal Review | HF-5 |
-| **Observability & launch** | EPIC-HF-06 | Reporter, Observatory, hardening | HF-6 |
-| **Hermes Node 1 profiles & Bridge** | EPIC-HF-07 | All 7 SOUL.md profiles, MCP config, deploy, Bridge | HF-2 … HF-6 |
+| Epic | ID | Outcome | Sprints | Status |
+|------|-----|---------|---------|--------|
+| **Control plane** | EPIC-HF-01 | Jobs API, RBAC, scheduler, Agent Console shell | HF-1 | ✅ AWT |
+| **MCP & registry** | EPIC-HF-02 | New MCP tools, journey registry, backlog | HF-2 | ✅ AWT |
+| **Autonomous generation** | EPIC-HF-03 | Planner profiles, Loop A, batch test-gen | HF-3 | ✅ AWT · ⬜ Hermes |
+| **Change detection** | EPIC-HF-04 | Snapshots, diff, Loop C | HF-4 | ✅ AWT · ⬜ Hermes |
+| **Self-healing** | EPIC-HF-05 | Healer API, Loop D, Heal Review | HF-5 | 🔜 |
+| **Observability & launch** | EPIC-HF-06 | Reporter, Observatory, hardening | HF-6 | ⬜ |
+| **Hermes Node 1 profiles & Bridge** | EPIC-HF-07 | All 7 SOUL.md profiles, MCP config, deploy, Bridge | HF-2 … HF-6 | ⬜ Phase B |
 
 ---
 
@@ -188,11 +267,11 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 | Order | Stories | Outcome |
 |-------|---------|---------|
 | 1 | HF-1 ✅ | Control plane + Agent Console |
-| 2 | HF-2.1 – HF-2.5 | MCP tools, registry, backlog APIs + UI |
-| 3 | HF-3.2 – HF-3.5 | `drain_backlog` / `generate_journey` / `full_cycle` worker + Loops A & B cron |
-| 4 | HF-4.1, HF-4.2, HF-4.4, HF-4.5 (UI) | Snapshots, diff, Loop C |
-| 5 | HF-5.1, HF-5.3a, HF-5.4, HF-5.5 | Heal API, Heal Review, Loop D |
-| 6 | HF-6.1, HF-6.3, HF-6.4, HF-6.5 | Notifications, Observatory APIs + UI, ops runbook |
+| 2 | HF-2.1 – HF-2.5 ✅ | MCP tools, registry, backlog APIs + UI |
+| 3 | HF-3.2 – HF-3.5 ✅ | `drain_backlog` / `generate_journey` / `full_cycle` worker + Loops A & B cron |
+| 4 | HF-4.1 – HF-4.4, HF-4.6 ✅ | Snapshots, diff, Loop C |
+| 5 | HF-5.1, HF-5.3a, HF-5.4, HF-5.5 🔜 | Heal API, Heal Review, Loop D |
+| 6 | HF-6.1, HF-6.3, HF-6.4, HF-6.5 ⬜ | Notifications, Observatory APIs + UI, ops runbook |
 
 **Defer until Phase B:** HF-2.6, HF-2.7, HF-3.1a–d, HF-3.6a–c, HF-3.7, HF-4.5 (Hermes), HF-5.3b, HF-6.2, HF-6.6, HF-6.7.
 
@@ -223,13 +302,13 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 **Sprint goal:** Submit a factory job from webapp; see live status via SSE; cron can enqueue `run_regression`.
 
-**Status:** ✅ **Implemented** on branch `feat/hermes-qa-factory` (commit `e33a6b3`). Validate locally before HF-2.
+**Status:** ✅ **Done** (commit `e33a6b3`). Gaps: HF-1.3 superadmin bootstrap, HF-1.6 SSE in UI — see §0.
 
 **Total:** 21 points
 
 ### Stories
 
-#### HF-1.1 — Database models & migrations (5 pts) `[AWT-BE]`
+#### HF-1.1 — Database models & migrations (5 pts) `[AWT-BE]` ✅
 
 **As** a platform developer, **I want** persistent factory job storage **so that** all factory activity is auditable.
 
@@ -245,7 +324,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-1.2 — Agent jobs REST API (5 pts) `[AWT-BE]`
+#### HF-1.2 — Agent jobs REST API (5 pts) `[AWT-BE]` ✅
 
 **As** an `agent_operator`, **I want** to submit and poll factory jobs **so that** I can trigger work without Telegram.
 
@@ -263,7 +342,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-1.3 — RBAC roles (3 pts) `[AWT-BE]`
+#### HF-1.3 — RBAC roles (3 pts) `[AWT-BE]` ⚠️
 
 **As** an admin, **I want** `agent_operator` and `superadmin` roles **so that** factory access is tiered.
 
@@ -279,7 +358,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-1.4 — Factory worker (5 pts) `[AWT-BE]`
+#### HF-1.4 — Factory worker (5 pts) `[AWT-BE]` ✅
 
 **As** the system, **I want** a background worker **so that** queued jobs execute without blocking HTTP.
 
@@ -297,7 +376,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-1.5 — Agent chat endpoint (3 pts) `[AWT-BE]`
+#### HF-1.5 — Agent chat endpoint (3 pts) `[AWT-BE]` ✅
 
 **As** an `agent_operator`, **I want** a chat endpoint **so that** natural language maps to structured jobs.
 
@@ -312,7 +391,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-1.6 — Agent Console shell (3 pts) `[AWT-FE]`
+#### HF-1.6 — Agent Console shell (3 pts) `[AWT-FE]` ⚠️
 
 **As** an `agent_operator`, **I want** Agent Console pages **so that** I can chat and monitor jobs.
 
@@ -330,7 +409,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-1.7 — Factory scheduler + Telegram flag (2 pts) `[AWT-BE]` `[OPS]`
+#### HF-1.7 — Factory scheduler + Telegram flag (2 pts) `[AWT-BE]` `[OPS]` ✅
 
 **As** ops, **I want** cron and a Telegram kill switch **so that** 24×7 runs work and prod disables Telegram.
 
@@ -358,11 +437,13 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 **Sprint goal:** Hermes can call all backlog/schedule/feedback tools via MCP; journey registry seeded for Three HK UAT.
 
-**Total:** 22 points
+**Status:** ✅ **Phase A done** (HF-2.1–2.5, commit `503244e`). ⬜ HF-2.6–2.7 deferred to Phase B.
+
+**Total:** 22 points (AWT) + 5 (Hermes deferred)
 
 ### Stories
 
-#### HF-2.1 — MCP execution & schedule tools (5 pts) `[MCP]`
+#### HF-2.1 — MCP execution & schedule tools (5 pts) `[MCP]` ✅
 
 - `get_execution_feedback` → `GET /api/v1/executions/{id}/feedback`
 - `list_failed_executions` → extend executions list with `result=fail&since=`
@@ -373,7 +454,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-2.2 — MCP ReqIQ proxy tools (3 pts) `[MCP]`
+#### HF-2.2 — MCP ReqIQ proxy tools (3 pts) `[MCP]` ✅
 
 - `get_coverage_matrix`, `get_reqiq_readiness`, `suggest_scenarios_from_wiki`
 - Thin wrappers around existing `requirements.py` proxy logic (shared internal function)
@@ -382,7 +463,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-2.3 — Journey registry API (5 pts) `[AWT-BE]`
+#### HF-2.3 — Journey registry API (5 pts) `[AWT-BE]` ✅
 
 - Model: `JourneyRegistryEntry` (id, name, feature_url, tags, capability_keys, reference_test_id, requires_login, project)
 - `GET/POST/PATCH/DELETE /api/v1/agent/registry` — `admin`+ only
@@ -392,7 +473,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-2.4 — Journey backlog API (5 pts) `[AWT-BE]`
+#### HF-2.4 — Journey backlog API (5 pts) `[AWT-BE]` ✅
 
 - Model: `JourneyBacklogItem` (status: pending | in_progress | done | failed)
 - `GET /api/v1/agent/backlog`, `POST /api/v1/agent/backlog` (enqueue)
@@ -402,7 +483,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-2.5 — Registry & backlog UI (4 pts) `[AWT-FE]`
+#### HF-2.5 — Registry & backlog UI (4 pts) `[AWT-FE]` ✅
 
 - `JourneyRegistryPage.tsx`, `BacklogQueuePage.tsx`
 - Admin-only registry; backlog visible to `agent_operator`+
@@ -411,7 +492,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-2.6 — Draft `qa-orchestrator` in repo (3 pts) `[HERMES]` **mandatory**
+#### HF-2.6 — Draft `qa-orchestrator` in repo (3 pts) `[HERMES]` **mandatory** ⚠️
 
 **As** a platform owner, **I want** `qa-orchestrator` SOUL.md version-controlled **so that** Node 1 work is not lost and HF-3 deploy is ready.
 
@@ -429,7 +510,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-2.7 — Shared Hermes MCP config template (2 pts) `[HERMES]` `[OPS]`
+#### HF-2.7 — Shared Hermes MCP config template (2 pts) `[HERMES]` `[OPS]` ⬜
 
 **Tasks:**
 - Add `docs/hermes-profiles/_shared/mcp_servers.yaml.example` (MCP :8001, Bearer auth)
@@ -446,36 +527,38 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 **Sprint goal:** Loop A drains backlog — planner finds gaps, test-gen creates tests, schedules regression.
 
+**Status:** ✅ **Phase A done** (HF-3.2–3.5, commit `503244e`). ⏸ HF-3.1, 3.6, 3.7 deferred to Phase B.
+
 **Total:** 32 points (AWT 19 + Hermes 13)
 
 ### Stories
 
-#### HF-3.1a — `qa-orchestrator` finalize + deploy (3 pts) `[HERMES]`
+#### HF-3.1a — `qa-orchestrator` finalize + deploy (3 pts) `[HERMES]` ⏸
 
 - Finalize SOUL.md from HF-2.6; add `delegate_task` decision tree (v5 §7, v4 trigger tree)
 - Deploy to Node 1; `qa-orchestrator doctor` passes
 - **Acceptance:** `qa-orchestrator chat -q "run regression"` returns structured plan or delegates
 
-#### HF-3.1b — `qa-journey-planner` SOUL + deploy (3 pts) `[HERMES]`
+#### HF-3.1b — `qa-journey-planner` SOUL + deploy (3 pts) `[HERMES]` ⏸
 
 - SOUL.md: `get_coverage_matrix`, `get_reqiq_readiness`, `suggest_scenarios_from_wiki`, `enqueue_journey`
 - Repo + Node 1 deploy
 - **Acceptance:** Delegated task returns backlog item for a coverage gap
 
-#### HF-3.1c — `qa-test-gen` SOUL + deploy (3 pts) `[HERMES]`
+#### HF-3.1c — `qa-test-gen` SOUL + deploy (3 pts) `[HERMES]` ⏸
 
 - SOUL.md: batch `crawl_and_save_test`, `reference_test_id`, poll workflow
 - Repo + Node 1 deploy
 - **Acceptance:** Delegated task returns `{ test_case_id, status: success }`
 
-#### HF-3.1d — Orchestrator integration smoke (4 pts) `[HERMES]`
+#### HF-3.1d — Orchestrator integration smoke (4 pts) `[HERMES]` ⏸
 
 - Manual CLI end-to-end: orchestrator → planner → test-gen
 - **Acceptance:** `qa-orchestrator chat -q "drain backlog for Three-HK"` returns `test_case_id`
 
 ---
 
-#### HF-3.2 — Factory worker: `drain_backlog` + `generate_journey` (5 pts) `[AWT-BE]`
+#### HF-3.2 — Factory worker: `drain_backlog` + `generate_journey` (5 pts) `[AWT-BE]` ✅
 
 - Worker job types: `drain_backlog`, `generate_journey`, `full_cycle` (orchestrates sub-steps)
 - HF-3: cron path uses **factory_worker + MCP** (deterministic); chat path can invoke Hermes Bridge (stub OK if worker-only for demo)
@@ -484,7 +567,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-3.3 — Loop A scheduler (3 pts) `[AWT-BE]`
+#### HF-3.3 — Loop A scheduler (3 pts) `[AWT-BE]` ✅
 
 - Cron every 6h: `{ type: drain_backlog, max_items: 3 }`
 - Configurable via env: `FACTORY_LOOP_A_CRON`
@@ -493,7 +576,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-3.4 — Auto-schedule on successful generation (3 pts) `[AWT-BE]`
+#### HF-3.4 — Auto-schedule on successful generation (3 pts) `[AWT-BE]` ✅
 
 - After successful `crawl_and_save_test`: `create_test_schedule` cron `0 2 * * *` with regression tag
 
@@ -501,7 +584,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-3.5 — Loop B regression scheduler (2 pts) `[AWT-BE]`
+#### HF-3.5 — Loop B regression scheduler (2 pts) `[AWT-BE]` ✅
 
 - Cron every 2h: `run_regression` with `tags: [regression]`
 - Nightly full run: `0 2 * * *`
@@ -510,21 +593,21 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-3.6a — `qa-dispatcher` SOUL + deploy (2 pts) `[HERMES]`
+#### HF-3.6a — `qa-dispatcher` SOUL + deploy (2 pts) `[HERMES]` ⏸
 
 - SOUL.md: `list_test_cases`, `execute_test`, `get_execution_status`, aggregate results
 - Repo + Node 1 deploy
 
-#### HF-3.6b — `qa-reporter` SOUL draft + deploy (2 pts) `[HERMES]`
+#### HF-3.6b — `qa-reporter` SOUL draft + deploy (2 pts) `[HERMES]` ⏸
 
 - SOUL.md: plain-language summary (HF-3: log/CLI output; HF-6: webapp notifications)
 - Repo + Node 1 deploy
 
-#### HF-3.6c — `full_cycle` Hermes smoke (2 pts) `[HERMES]`
+#### HF-3.6c — `full_cycle` Hermes smoke (2 pts) `[HERMES]` ⏸
 
 - **Acceptance:** Manual `full_cycle`: plan → gen → execute → reporter summary (Telegram disabled)
 
-#### HF-3.7 — Wire chat → Hermes Bridge stub (3 pts) `[BRIDGE]` `[AWT-BE]`
+#### HF-3.7 — Wire chat → Hermes Bridge stub (3 pts) `[BRIDGE]` `[AWT-BE]` ⏸
 
 - AWT `POST /api/v1/agent/chat` optionally forwards to Bridge when `HERMES_BRIDGE_URL` set
 - Bridge stub invokes `qa-orchestrator job run --json` on Node 1
@@ -544,11 +627,13 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 **Sprint goal:** Loop C detects UAT URL changes and enqueues regeneration.
 
+**Status:** ✅ **Phase A done** (HF-4.1–4.4 + registry UI, commit `ff6af29`). ⏸ HF-4.5 Hermes deferred.
+
 **Total:** 20 points
 
 ### Stories
 
-#### HF-4.1 — Observe snapshot API (5 pts) `[AWT-BE]`
+#### HF-4.1 — Observe snapshot API (5 pts) `[AWT-BE]` ✅
 
 - `POST /api/v2/observe-snapshot` — wraps `ObservationAgent` for URL-only capture
 - Store: `url_snapshots` table (url_hash, html_summary, element_fingerprint, captured_at)
@@ -557,7 +642,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-4.2 — Snapshot diff API (5 pts) `[AWT-BE]`
+#### HF-4.2 — Snapshot diff API (5 pts) `[AWT-BE]` ✅
 
 - `GET /api/v2/snapshots/{url_hash}`
 - `POST /api/v2/snapshots/diff` — returns `material_change: bool` + summary text
@@ -566,13 +651,13 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-4.3 — MCP snapshot tools (3 pts) `[MCP]`
+#### HF-4.3 — MCP snapshot tools (3 pts) `[MCP]` ✅
 
 - `observe_url_snapshot`, `get_url_snapshot`, `diff_url_snapshots`
 
 ---
 
-#### HF-4.4 — Loop C worker + cron (3 pts) `[AWT-BE]`
+#### HF-4.4 — Loop C worker + cron (3 pts) `[AWT-BE]` ✅
 
 - Cron every 4h: `{ type: scan_changes }`
 - On material change: enqueue backlog with `reference_test_id` + diff summary
@@ -581,7 +666,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-4.5 — `qa-change-detector` SOUL + deploy (4 pts) `[HERMES]` **mandatory**
+#### HF-4.5 — `qa-change-detector` SOUL + deploy (4 pts) `[HERMES]` **mandatory** ⏸
 
 - `docs/hermes-profiles/qa-change-detector/SOUL.md`: `observe_url_snapshot`, `diff_url_snapshots`, `enqueue_journey`
 - Deploy Node 1; orchestrator delegates for `scan_changes` jobs
@@ -589,9 +674,9 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-4.5 — Change detection UI badge (2 pts) `[AWT-FE]`
+#### HF-4.6 — Change detection UI badge (2 pts) `[AWT-FE]` ✅
 
-- Journey Registry shows last snapshot time + change flag
+- Journey Registry shows last snapshot time + change flag *(was HF-4.5 UI in early drafts)*
 
 ---
 
@@ -599,11 +684,13 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 **Sprint goal:** Loop D heals failures; double-fail escalates to Heal Review.
 
+**Status:** ✅ **Phase A done** — HF-5.1–5.5 implemented. ⏸ HF-5.3b Hermes deferred.
+
 **Total:** 22 points
 
 ### Stories
 
-#### HF-5.1 — Heal from feedback API (5 pts) `[AWT-BE]`
+#### HF-5.1 — Heal from feedback API (5 pts) `[AWT-BE]` ✅
 
 - `POST /api/v2/heal-from-feedback` — input: `execution_id`
 - Logic: load feedback → if flow break, `crawl_and_save` with `reference_test_id`; if xpath, clear cache first
@@ -613,18 +700,18 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-5.2 — MCP heal tools (3 pts) `[MCP]`
+#### HF-5.2 — MCP heal tools (3 pts) `[MCP]` ✅
 
 - `heal_test_from_feedback`, `clear_xpath_cache` (wrap settings DELETE routes)
 
 ---
 
-#### HF-5.3a — Loop D worker + cron (3 pts) `[AWT-BE]`
+#### HF-5.3a — Loop D worker + cron (3 pts) `[AWT-BE]` ✅
 
 - Cron every 1h: `{ type: heal_failures, since: last_run }`
 - Wire `learn_from_feedback` after successful heal
 
-#### HF-5.3b — `qa-healer` SOUL + deploy (4 pts) `[HERMES]` **mandatory**
+#### HF-5.3b — `qa-healer` SOUL + deploy (4 pts) `[HERMES]` **mandatory** ⏸
 
 - `docs/hermes-profiles/qa-healer/SOUL.md` per v5 §12.6
 - MCP: `get_execution_feedback`, `heal_test_from_feedback`, `clear_xpath_cache`
@@ -633,7 +720,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-5.4 — Heal Review queue (5 pts) `[AWT-BE]` `[AWT-FE]`
+#### HF-5.4 — Heal Review queue (5 pts) `[AWT-BE]` `[AWT-FE]` ✅
 
 - Model: `HealReviewItem` (execution_id, test_case_id, reason, status: open | resolved)
 - API: `GET/PATCH /api/v1/agent/heal-review`
@@ -643,7 +730,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-5.5 — Heal integration tests (4 pts) `[AWT-BE]`
+#### HF-5.5 — Heal integration tests (4 pts) `[AWT-BE]` ✅
 
 - Test: feedback → heal API → execute passes (mock browser tier acceptable)
 
@@ -652,6 +739,8 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 ## 10. Sprint HF-6 — Reporting, Observatory & launch (2 weeks)
 
 **Sprint goal:** Production-ready: in-app reports, superadmin Observatory, Telegram off, ops runbook.
+
+**Status:** ⬜ **Not started** — after HF-5 Phase A.
 
 **Total:** 23 points
 
@@ -780,14 +869,14 @@ Test folder: `backend/tests/integration/test_factory_*.py` (create in HF-1).
 
 ## 15. Sprint calendar (suggested)
 
-| Sprint | Weeks | Dates (example) | Goal |
-|--------|-------|-----------------|------|
-| HF-1 | 1–2 | Jun 16 – Jun 27, 2026 | Control plane + Agent Console shell |
-| HF-2 | 3–4 | Jun 30 – Jul 11, 2026 | MCP + registry + **qa-orchestrator draft** |
-| HF-3 | 5–6 | Jul 14 – Jul 25, 2026 | Loop A/B + **deploy 5 Hermes profiles** + Bridge stub |
-| HF-4 | 7–8 | Jul 28 – Aug 8, 2026 | Loop C change detection |
-| HF-5 | 9–10 | Aug 11 – Aug 22, 2026 | Loop D self-healing |
-| HF-6 | 11–12 | Aug 25 – Sep 5, 2026 | Observatory + production launch |
+| Sprint | Weeks | Dates (example) | Goal | Status |
+|--------|-------|-----------------|------|--------|
+| HF-1 | 1–2 | Jun 16 – Jun 27, 2026 | Control plane + Agent Console shell | ✅ |
+| HF-2 | 3–4 | Jun 30 – Jul 11, 2026 | MCP + registry (+ orchestrator draft Phase B) | ✅ AWT |
+| HF-3 | 5–6 | Jul 14 – Jul 25, 2026 | Loop A/B (+ Hermes profiles Phase B) | ✅ AWT |
+| HF-4 | 7–8 | Jul 28 – Aug 8, 2026 | Loop C change detection | ✅ AWT |
+| HF-5 | 9–10 | Aug 11 – Aug 22, 2026 | Loop D self-healing | 🔜 |
+| HF-6 | 11–12 | Aug 25 – Sep 5, 2026 | Observatory + production launch | ⬜ |
 
 Adjust dates to your team start; maintain 2-week cadence.
 
@@ -795,12 +884,13 @@ Adjust dates to your team start; maintain 2-week cadence.
 
 ## 16. How to use this plan day-to-day
 
-1. **Sprint planning:** Copy HF-* stories into your board (Jira/GitHub Projects/Tasks.json) as To Do.
-2. **Each story:** Create branch `feat/HF-1.2-agent-jobs-api`; link PR to story ID.
-3. **Status tags:** `Done` | `In Progress` | `To Do` | `Backlog` (per team convention).
-4. **Design reference:** When acceptance criteria are unclear, read [Hermes_QA_Autonomous_Workflow_v5.md](Hermes_QA_Autonomous_Workflow_v5.md) section cited in story.
-5. **Demo:** Use sprint demo script at end of each sprint section.
-6. **After HF-6:** Move §11 backlog items into HF-7+ planning.
+1. **Progress:** Update **§0 Progress tracker** when a story lands on `feat/hermes-qa-factory` (commit hash + status emoji).
+2. **Sprint planning:** Copy HF-* stories into your board (Jira/GitHub Projects/Tasks.json) as To Do.
+3. **Each story:** Create branch `feat/HF-1.2-agent-jobs-api`; link PR to story ID.
+4. **Status tags:** `Done` | `In Progress` | `To Do` | `Backlog` (per team convention).
+5. **Design reference:** When acceptance criteria are unclear, read [Hermes_QA_Autonomous_Workflow_v5.md](Hermes_QA_Autonomous_Workflow_v5.md) section cited in story.
+6. **Demo:** Use sprint demo script at end of each sprint section.
+7. **After HF-6:** Move §11 backlog items into HF-7+ planning.
 
 ---
 
@@ -824,19 +914,19 @@ Adjust dates to your team start; maintain 2-week cadence.
 | Sprint | AWT (this repo) | Hermes Node 1 (mandatory at launch) |
 |--------|-----------------|-------------------------------------|
 | **HF-1** ✅ | Jobs API, worker, Agent Console | — |
-| **HF-2** | MCP tools, registry, backlog UI | **HF-2.6** orchestrator SOUL draft · **HF-2.7** MCP template |
-| **HF-3** | Loop A/B, `drain_backlog` worker | Deploy orchestrator, planner, test-gen, dispatcher, reporter · Bridge stub |
-| **HF-4** | Snapshot/diff APIs, Loop C | Deploy **qa-change-detector** |
-| **HF-5** | Heal API, Heal Review UI, Loop D | Deploy **qa-healer** |
+| **HF-2** ✅ | MCP tools, registry, backlog UI | ⬜ **HF-2.6** orchestrator SOUL · **HF-2.7** MCP template |
+| **HF-3** ✅ | Loop A/B, `drain_backlog` worker | ⬜ Deploy orchestrator, planner, test-gen, dispatcher, reporter · Bridge stub |
+| **HF-4** ✅ | Snapshot/diff APIs, Loop C, registry badges | ⬜ Deploy **qa-change-detector** |
+| **HF-5** 🔜 | Heal API, Heal Review UI, Loop D | ⬜ Deploy **qa-healer** |
 | **HF-6** | Observatory, notifications | **Hermes Bridge** production · reporter → webapp |
 
 ### AWT-first (§4.2) — your preferred order
 
 | Phase | Do now | Defer to Phase B |
 |-------|--------|------------------|
-| **A** | HF-1 ✅ → HF-2.1–2.5 → HF-3.2–3.5 → HF-4 AWT → HF-5 AWT → HF-6.1, 6.3–6.5 | All `[HERMES]` + `[BRIDGE]` stories |
+| **A** | HF-1 ✅ → HF-2.1–2.5 ✅ → HF-3.2–3.5 ✅ → HF-4 AWT ✅ → **HF-5 AWT** 🔜 → HF-6.1, 6.3–6.5 ⬜ | All `[HERMES]` + `[BRIDGE]` stories ⬜ |
 | **B** | — | HF-2.6–2.7 → HF-3.1a–d, 3.6a–c, 3.7 → HF-4.5 Hermes → HF-5.3b → HF-6.2, 6.6, 6.7 |
 
 ---
 
-*This plan implements v5 §9 sprints A–F as executable agile stories. Hermes Node 1 work is **EPIC-HF-07** and is required for **launch** — see §4.1. Use **§4.2 AWT-first** to finish this-repo development before Node 1. Update story status in your task board; update this doc when scope changes.*
+*This plan implements v5 §9 sprints A–F as executable agile stories. Hermes Node 1 work is **EPIC-HF-07** and is required for **launch** — see §4.1. Use **§4.2 AWT-first** to finish this-repo development before Node 1. **Keep §0 Progress tracker current** after each merge to `feat/hermes-qa-factory`.*

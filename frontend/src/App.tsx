@@ -16,6 +16,7 @@ import { AgentWorkflowPage } from './pages/AgentWorkflowPage';
 import { AgentConsolePage } from './pages/AgentConsolePage';
 import { JourneyRegistryPage } from './pages/JourneyRegistryPage';
 import { BacklogQueuePage } from './pages/BacklogQueuePage';
+import { HealReviewPage } from './pages/HealReviewPage';
 import { StepLibraryPage } from './pages/StepLibraryPage';
 import { CrawlAndSavePage } from './pages/CrawlAndSavePage';
 import './index.css';
@@ -170,6 +171,14 @@ function App() {
           element={
             <ProtectedRoute>
               <BacklogQueuePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/heal-review"
+          element={
+            <ProtectedRoute>
+              <HealReviewPage />
             </ProtectedRoute>
           }
         />

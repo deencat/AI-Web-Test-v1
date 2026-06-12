@@ -1,7 +1,8 @@
 ﻿# Hermes QA Factory — Autonomous Workflow Design (v5)
 
 **Version:** 5.0 · **Date:** 2026-06-08  
-**Status:** Phase 2 implementation target  
+**Status:** Phase 2 in progress on `feat/hermes-qa-factory` — **HF-1–HF-5 AWT done**, **HF-6 next**  
+**Implementation tracker:** [Hermes_QA_Factory_Agile_Development_Plan.md §0](Hermes_QA_Factory_Agile_Development_Plan.md#0-progress-tracker-live)  
 **Supersedes:** Telegram-first patterns in v4 for production; v4 remains valid for dev bootstrap.
 
 ---

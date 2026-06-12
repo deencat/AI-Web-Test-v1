@@ -25,6 +25,10 @@ _GENERATE_PATTERN = re.compile(
     r"\b(generate|create|build)\b.*\b(journey|test)\b",
     re.IGNORECASE,
 )
+_HEAL_PATTERN = re.compile(
+    r"\b(heal|fix|repair)\b.*\b(fail|failure|feedback)\b",
+    re.IGNORECASE,
+)
 
 
 def parse_chat_to_job(message: str, context: Dict[str, Any]) -> Tuple[FactoryJobCreate, str]:
@@ -35,6 +39,14 @@ def parse_chat_to_job(message: str, context: Dict[str, Any]) -> Tuple[FactoryJob
 
     project = context.get("project") or "Three-HK"
     lower = text.lower()
+
+    if _HEAL_PATTERN.search(text) or "heal failures" in lower:
+        job = FactoryJobCreate(
+            job_type="heal_failures",
+            project=project,
+            params={"limit": context.get("limit", settings.FACTORY_HEAL_MAX_ITEMS)},
+        )
+        return job, "Queued heal_failures for recent failed executions."
 
     if _SCAN_PATTERN.search(text) or "scan changes" in lower:
         job = FactoryJobCreate(
@@ -95,5 +107,5 @@ def parse_chat_to_job(message: str, context: Dict[str, Any]) -> Tuple[FactoryJob
 
     raise ValueError(
         "Could not interpret request. Try: 'Run regression', 'Drain backlog', "
-        "'Scan changes', or 'Full cycle'."
+        "'Scan changes', 'Heal failures', or 'Full cycle'."
     )
