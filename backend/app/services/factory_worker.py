@@ -21,6 +21,7 @@ from app.services.factory_journey_service import (
 )
 from app.services.factory_change_scan_service import scan_registry_changes
 from app.services.factory_heal_service import scan_and_heal_failures
+from app.services.factory_notification_service import notify_factory_job_complete
 from app.services.scheduler_service import _infer_target_url
 
 logger = logging.getLogger(__name__)
@@ -121,9 +122,12 @@ def run_factory_job(job_id: str) -> None:
                 db,
                 job_id,
                 event_type="job_complete",
-                profile="factory_worker",
+                profile="qa-reporter",
                 message="Job completed successfully",
             )
+            job = get_factory_job(db, job_id)
+            if job:
+                notify_factory_job_complete(db, job)
     except Exception as exc:
         logger.exception("[FactoryWorker] Job %s failed", job_id)
         job = get_factory_job(db, job_id)
@@ -136,6 +140,9 @@ def run_factory_job(job_id: str) -> None:
                 profile="factory_worker",
                 message=str(exc),
             )
+            job = get_factory_job(db, job_id)
+            if job:
+                notify_factory_job_complete(db, job)
     finally:
         db.close()
 

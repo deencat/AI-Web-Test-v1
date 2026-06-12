@@ -55,6 +55,10 @@ def append_job_event(
     profile: Optional[str] = None,
     message: Optional[str] = None,
     payload_summary: Optional[Dict[str, Any]] = None,
+    payload_full: Optional[Dict[str, Any]] = None,
+    llm_turns: Optional[Any] = None,
+    hermes_session_id: Optional[str] = None,
+    parent_profile: Optional[str] = None,
 ) -> FactoryJobEvent:
     event = FactoryJobEvent(
         job_id=job_id,
@@ -62,6 +66,10 @@ def append_job_event(
         profile=profile,
         message=message,
         payload_summary=payload_summary,
+        payload_full=payload_full,
+        llm_turns=llm_turns,
+        hermes_session_id=hermes_session_id,
+        parent_profile=parent_profile,
     )
     db.add(event)
     db.commit()

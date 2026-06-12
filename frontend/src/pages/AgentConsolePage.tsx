@@ -1,11 +1,25 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import {
   FactoryJobEvent,
   getFactoryJob,
+  getHermesTrace,
+  HermesTrace,
   pollFactoryJob,
   postAgentChat,
 } from '../services/agentFactoryService';
+
+function isSuperadmin(): boolean {
+  try {
+    const raw = localStorage.getItem('user');
+    if (!raw) return false;
+    const user = JSON.parse(raw) as { role?: string };
+    return (user.role || '').toLowerCase() === 'superadmin';
+  } catch {
+    return false;
+  }
+}
 
 function canAccessAgentConsole(): boolean {
   try {
@@ -28,16 +42,20 @@ function canAccessAgentConsole(): boolean {
 }
 
 export const AgentConsolePage: React.FC = () => {
+  const [searchParams] = useSearchParams();
   const [message, setMessage] = useState('Run regression');
   const [reply, setReply] = useState<string | null>(null);
-  const [jobId, setJobId] = useState<string | null>(null);
+  const [jobId, setJobId] = useState<string | null>(searchParams.get('job'));
   const [jobStatus, setJobStatus] = useState<string | null>(null);
   const [events, setEvents] = useState<FactoryJobEvent[]>([]);
+  const [trace, setTrace] = useState<HermesTrace | null>(null);
+  const [traceError, setTraceError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const allowed = canAccessAgentConsole();
+  const superadmin = isSuperadmin();
 
   useEffect(() => {
     return () => {
@@ -64,7 +82,17 @@ export const AgentConsolePage: React.FC = () => {
       await pollFactoryJob(
         res.job_id,
         (ev) => setEvents((prev) => [...prev, ev]),
-        (status) => setJobStatus(status),
+        async (status) => {
+          setJobStatus(status);
+          if (superadmin) {
+            try {
+              const t = await getHermesTrace(res.job_id);
+              setTrace(t);
+            } catch {
+              setTrace(null);
+            }
+          }
+        },
         abortRef.current.signal,
       );
     } catch (err: unknown) {
@@ -83,7 +111,23 @@ export const AgentConsolePage: React.FC = () => {
     const job = await getFactoryJob(jobId);
     setJobStatus(job.status);
     setEvents(job.events);
+    if (superadmin) {
+      try {
+        const t = await getHermesTrace(jobId);
+        setTrace(t);
+        setTraceError(null);
+      } catch (err: unknown) {
+        setTrace(null);
+        setTraceError(err instanceof Error ? err.message : 'Observatory unavailable');
+      }
+    }
   };
+
+  useEffect(() => {
+    if (jobId && allowed) {
+      refreshJob().catch(() => undefined);
+    }
+  }, [jobId, allowed, superadmin]);
 
   if (!allowed) {
     return (
@@ -110,7 +154,7 @@ export const AgentConsolePage: React.FC = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className={`grid grid-cols-1 gap-6 ${superadmin && jobId ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}>
           <section className="bg-white rounded-lg shadow p-6">
             <h2 className="text-lg font-semibold mb-4">Agent Chat</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -174,6 +218,45 @@ export const AgentConsolePage: React.FC = () => {
               </ul>
             )}
           </section>
+
+          {superadmin && jobId && (
+            <section className="bg-white rounded-lg shadow p-6 border border-amber-200">
+              <h2 className="text-lg font-semibold mb-1">Agent Observatory</h2>
+              <p className="text-xs text-amber-700 mb-4">Superadmin only — delegate payloads &amp; LLM turns</p>
+              {traceError && (
+                <p className="text-sm text-red-600 mb-2">{traceError}</p>
+              )}
+              {!trace ? (
+                <p className="text-gray-500 text-sm">Load trace via Refresh on Job Monitor.</p>
+              ) : (
+                <div className="space-y-3 max-h-[420px] overflow-y-auto text-xs">
+                  {trace.hermes_session_ids.length > 0 && (
+                    <p className="text-gray-600">
+                      Sessions: {trace.hermes_session_ids.join(', ')}
+                    </p>
+                  )}
+                  {trace.events.map((ev) => (
+                    <details key={ev.id} className="border border-gray-200 rounded p-2">
+                      <summary className="cursor-pointer font-mono">
+                        {ev.profile || 'system'} · {ev.event_type}
+                      </summary>
+                      {ev.message && <p className="mt-1 text-gray-700">{ev.message}</p>}
+                      {ev.payload_full && (
+                        <pre className="mt-2 bg-gray-50 p-2 overflow-x-auto rounded">
+                          {JSON.stringify(ev.payload_full, null, 2)}
+                        </pre>
+                      )}
+                      {ev.llm_turns && ev.llm_turns.length > 0 && (
+                        <pre className="mt-2 bg-purple-50 p-2 overflow-x-auto rounded">
+                          {JSON.stringify(ev.llm_turns, null, 2)}
+                        </pre>
+                      )}
+                    </details>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
         </div>
       </div>
     </Layout>

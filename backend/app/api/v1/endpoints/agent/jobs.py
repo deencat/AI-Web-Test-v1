@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_factory_operator, require_superadmin
+from app.api.deps import get_db, require_factory_operator
 from app.models.user import User
 from app.schemas.factory_job import (
     FactoryJobCreate,
@@ -149,21 +149,3 @@ async def stream_job(
         },
     )
 
-
-@router.get(
-    "/jobs/{job_id}/hermes-trace",
-    summary="Superadmin Hermes trace (HF-6 stub)",
-)
-def get_hermes_trace(
-    job_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_superadmin),
-):
-    job = get_factory_job(db, job_id)
-    if not job:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
-    return {
-        "job_id": job_id,
-        "message": "Hermes Bridge trace ingestion planned for HF-6",
-        "events": [FactoryJobEventResponse.model_validate(e).model_dump(mode="json") for e in job.events],
-    }

@@ -70,6 +70,32 @@ export async function listHealReview(status?: string): Promise<HealReviewListRes
   return data;
 }
 
+export interface HermesTraceEvent {
+  id: number;
+  event_type: string;
+  profile?: string | null;
+  parent_profile?: string | null;
+  message?: string | null;
+  payload_summary?: Record<string, unknown> | null;
+  payload_full?: Record<string, unknown> | null;
+  llm_turns?: Record<string, unknown>[] | null;
+  hermes_session_id?: string | null;
+  created_at: string;
+}
+
+export interface HermesTrace {
+  job_id: string;
+  job_type: string;
+  status: string;
+  hermes_session_ids: string[];
+  events: HermesTraceEvent[];
+}
+
+export async function getHermesTrace(jobId: string): Promise<HermesTrace> {
+  const { data } = await api.get<HermesTrace>(`/agent/jobs/${jobId}/hermes-trace`);
+  return data;
+}
+
 export async function resolveHealReviewItem(itemId: number): Promise<HealReviewItem> {
   const { data } = await api.patch<HealReviewItem>(`/agent/heal-review/${itemId}`, {
     status: 'resolved',

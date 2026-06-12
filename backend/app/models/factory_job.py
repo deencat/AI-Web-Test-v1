@@ -47,6 +47,10 @@ class FactoryJobEvent(Base):
     profile = Column(String(64), nullable=True)
     message = Column(Text, nullable=True)
     payload_summary = Column(JSON, nullable=True)
+    payload_full = Column(JSON, nullable=True)
+    llm_turns = Column(JSON, nullable=True)
+    hermes_session_id = Column(String(128), nullable=True, index=True)
+    parent_profile = Column(String(64), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     job = relationship("FactoryJob", back_populates="events")

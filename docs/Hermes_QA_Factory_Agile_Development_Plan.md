@@ -1,7 +1,7 @@
 # Hermes QA Factory — Agile Development Plan
 
 **Version:** 1.3 · **Date:** 2026-06-11  
-**Status:** **HF-6 next** · Phase A complete through HF-5 on `feat/hermes-qa-factory`  
+**Status:** **HF-6 AWT in progress** · Phase B (Bridge/Hermes) remains before launch  
 **Parent design:** [Hermes_QA_Autonomous_Workflow_v5.md](Hermes_QA_Autonomous_Workflow_v5.md)  
 **Program code:** **HF** (Hermes Factory) — sprints **HF-1 … HF-6**
 
@@ -24,7 +24,7 @@
 | **HF-3** | ✅ Done (3.2–3.5) | ⬜ 3.1, 3.6, 3.7 | `drain_backlog`, Loops A & B cron |
 | **HF-4** | ✅ Done (4.1–4.4, 4.6) | ⬜ 4.5 Hermes | `scan_changes`, registry badges |
 | **HF-5** | ✅ Done (5.1–5.5 AWT) | ⬜ 5.3b | Heal API + Loop D |
-| **HF-6** | 🔜 **Next** | ⬜ 6.2, 6.6, 6.7 | Observatory + launch |
+| **HF-6** | 🔜 AWT (6.1–6.5) | ⬜ 6.2, 6.6, 6.7 | Observatory + launch |
 
 ### Story checklist
 
@@ -69,7 +69,12 @@
 | HF-5.4 | Heal Review queue | ✅ | `/agent/heal-review` + UI |
 | HF-5.5 | Heal integration tests | ✅ | `test_factory_heal_hf5.py` |
 | **HF-6** | | | |
-| HF-6.1–6.7 | Observatory, Bridge, launch | ⬜ | After HF-5 AWT |
+| HF-6.1 | In-app notifications | ✅ | Bell + worker hook |
+| HF-6.2 | Hermes Bridge ingestion | ⏸ | Phase B |
+| HF-6.3 | Observatory APIs | ✅ | hermes-trace + access log |
+| HF-6.4 | Observatory UI | ✅ | Agent Console panel |
+| HF-6.5 | Launch hardening + runbook | ✅ | `Hermes_QA_Factory_Ops_Runbook.md` |
+| HF-6.6–6.7 | Bridge + reporter Hermes | ⏸ | Phase B |
 
 ### Loops (factory_worker — no Hermes required)
 
@@ -740,13 +745,13 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 **Sprint goal:** Production-ready: in-app reports, superadmin Observatory, Telegram off, ops runbook.
 
-**Status:** ⬜ **Not started** — after HF-5 Phase A.
+**Status:** ✅ **Phase A done** (6.1, 6.3–6.5). ⏸ 6.2, 6.6, 6.7 Phase B.
 
 **Total:** 23 points
 
 ### Stories
 
-#### HF-6.1 — In-app notifications (5 pts) `[AWT-BE]` `[AWT-FE]`
+#### HF-6.1 — In-app notifications (5 pts) `[AWT-BE]` `[AWT-FE]` ✅
 
 - `notifications` table + bell icon in header
 - `qa-reporter` posts digest on job complete (worker hook)
@@ -756,7 +761,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-6.2 — Hermes Bridge event ingestion (5 pts) `[BRIDGE]` `[AWT-BE]`
+#### HF-6.2 — Hermes Bridge event ingestion (5 pts) `[BRIDGE]` `[AWT-BE]` ⏸
 
 - Node 1: Bridge posts to `POST /api/v1/agent/hermes/events` (`HERMES_BRIDGE_SECRET`)
 - AWT: ingest service with secret redaction
@@ -766,7 +771,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-6.3 — Superadmin Observatory APIs (5 pts) `[AWT-BE]`
+#### HF-6.3 — Superadmin Observatory APIs (5 pts) `[AWT-BE]` ✅
 
 - `GET /api/v1/agent/jobs/{id}/hermes-trace` — superadmin only
 - `GET /api/v1/agent/hermes/sessions/{sess_id}`
@@ -776,7 +781,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-6.4 — Agent Observatory UI (5 pts) `[AWT-FE]`
+#### HF-6.4 — Agent Observatory UI (5 pts) `[AWT-FE]` ✅
 
 - Job detail: Observatory tab (superadmin only; tab hidden for others)
 - Expandable delegate payloads, LLM turns, session link
@@ -785,7 +790,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-6.5 — Launch hardening (3 pts) `[AWT-BE]` `[OPS]`
+#### HF-6.5 — Launch hardening (3 pts) `[AWT-BE]` `[OPS]` ✅
 
 - Integration test: end-to-end `full_cycle` from chat API
 - Integration test: Observatory 403 for non-superadmin
@@ -899,6 +904,7 @@ Adjust dates to your team start; maintain 2-week cadence.
 | Document | Use |
 |----------|-----|
 | [Hermes_QA_Autonomous_Workflow_v5.md](Hermes_QA_Autonomous_Workflow_v5.md) | Architecture, APIs, loops, Observatory |
+| [Hermes_QA_Factory_Ops_Runbook.md](Hermes_QA_Factory_Ops_Runbook.md) | Production checklist, loops, troubleshooting (HF-6) |
 | [Hermes_QA_MultiAgent_Profiles_v4.md](Hermes_QA_MultiAgent_Profiles_v4.md) | SOUL.md source templates for Hermes profiles |
 | [hermes-profiles/README.md](hermes-profiles/README.md) | Version-controlled profile folder + deploy steps |
 | [ReqIQ-API-Integration-Guide.md](ReqIQ-API-Integration-Guide.md) | MCP / proxy behaviour |
