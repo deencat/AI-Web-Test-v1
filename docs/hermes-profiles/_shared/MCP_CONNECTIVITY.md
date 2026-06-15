@@ -68,10 +68,22 @@ Expected: tool returns AWT `/health` response.
 
 ## Step 4 — Factory MCP tools smoke (optional)
 
-From orchestrator chat or test-gen profile:
+From orchestrator chat:
 
 ```text
 Use MCP list_journey_backlog with status pending and limit 5.
+```
+
+After **qa-journey-planner** deploy:
+
+```text
+Call get_coverage_matrix for REQIQ_PROJECT_ID from env, then list_test_cases with tag three-hk limit 5.
+```
+
+After **qa-test-gen** deploy (long-running — use a real backlog item):
+
+```text
+health_check only — full crawl_and_save_test smoke is HF-3.1d.
 ```
 
 ## Troubleshooting

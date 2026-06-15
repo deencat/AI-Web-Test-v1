@@ -11,6 +11,8 @@ Package Hermes profiles from a **dev Ubuntu mini PC** and deploy to **production
 | `pack-profiles.sh` | Tarball `~/.hermes/profiles` (no memories, no `.env`) | After dev smoke passes |
 | `deploy-profiles.sh` | Restore from tarball or git `docs/hermes-profiles/` | New prod (or DR) Ubuntu |
 | `smoke-check.sh` | MCP + Bridge + optional AWT event POST | After deploy |
+| `smoke-integration-3.1d.sh` | HF-3.1d orchestrator → planner → test-gen | After 3 profiles deployed |
+| `smoke-awt-prereq-3.1d.ps1` | AWT MCP + backlog prereq (Windows) | Before Ubuntu full smoke |
 
 ## Quick start (dev)
 

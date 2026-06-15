@@ -50,3 +50,4 @@ if [[ ! -f "${HERMES_HOME}/.env" ]]; then
 fi
 
 echo "Deploy complete. Run: ./smoke-check.sh"
+echo "HF-3.1d: see docs/hermes-profiles/HF-3.1d_Integration_Smoke.md"

@@ -8,7 +8,7 @@
 #   qa-reporter
 #     → optional read-only MCP for execution stats
 #   qa-journey-planner
-#     → orchestrator block + ReqIQ via curl (REQIQ_API_KEY in .env), not separate MCP
+#     → orchestrator block; ReqIQ via MCP proxy (REQIQ_PROJECT_ID in .env)
 #
 # NEVER commit real secrets. Set in ~/.hermes/.env:
 #   AWT_MCP_URL=http://<awt-host>:8001

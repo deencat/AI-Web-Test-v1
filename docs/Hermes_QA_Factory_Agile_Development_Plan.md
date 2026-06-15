@@ -1,7 +1,7 @@
 # Hermes QA Factory — Agile Development Plan
 
-**Version:** 1.5 · **Date:** 2026-06-08  
-**Status:** **Phase A complete** · **Phase B in progress** (Bridge ✅ · Hermes profiles ⬜ · **HF-7 migration pack** ✅)  
+**Version:** 1.6 · **Date:** 2026-06-12  
+**Status:** **Phase A complete** · **Phase B in progress** (Bridge ✅ · Hermes profiles HF-3.1 SOUL+smoke ✅ · deploy ⏸ · **HF-7 migration pack** ✅)  
 **Parent design:** [Hermes_QA_Autonomous_Workflow_v5.md](Hermes_QA_Autonomous_Workflow_v5.md)  
 **Program code:** **HF** (Hermes Factory) — sprints **HF-1 … HF-6**
 
@@ -11,9 +11,9 @@
 
 ## 0. Progress tracker (live)
 
-**Last updated:** 2026-06-08  
+**Last updated:** 2026-06-12  
 **Branch:** `feat/hermes-qa-factory`  
-**Key commits:** HF-1 `e33a6b3` · HF-2+3 `503244e` · HF-4 `ff6af29` · HF-5 `e0e16cd` · HF-6 `07244fe` · Bridge `e45a2dc` · HF-2.6/2.7 + HF-7 `21ba427`
+**Key commits:** HF-1 `e33a6b3` · HF-2+3 `503244e` · Bridge `e45a2dc` · HF-2.6/2.7 + HF-7 `f7745a0` · **HF-3.1b–d** (this commit)
 
 ### Current focus
 
@@ -21,7 +21,7 @@
 |-------|--------|------|
 | **Phase A (AWT)** | ✅ **Complete** | HF-1.6 SSE polish (optional) |
 | **Phase B (Bridge)** | ✅ **HF-6.6 + HF-3.7** (`e45a2dc`) | Local demo: bridge `serve` + `HERMES_BRIDGE_URL` |
-| **Phase B (Hermes)** | 🔜 **HF-2.6–2.7 done** | HF-3.1 deploy orchestrator on Ubuntu dev PC |
+| **Phase B (Hermes)** | ✅ **HF-3.1b–d in repo** | Deploy 3 profiles on Ubuntu + run `smoke-integration-3.1d.sh` |
 | **HF-7 Migration** | ✅ **Guide + script stubs** | Harden scripts after first dev smoke (HF-7.5 prod cutover) |
 
 ### Sprint rollup (AWT-first Phase A)
@@ -30,7 +30,7 @@
 |--------|----------------|------------------|-------------------|
 | **HF-1** | ✅ Done | — | Agent Console + `run_regression` |
 | **HF-2** | ✅ Done (2.1–2.5) | ✅ 2.6–2.7 | Registry, backlog, MCP tools |
-| **HF-3** | ✅ Done (3.2–3.5) | ⬜ 3.1, 3.6, 3.7 | `drain_backlog`, Loops A & B cron |
+| **HF-3** | ✅ Done (3.2–3.5) | ✅ 3.1b–d SOUL+smoke · ⏸ deploy + 3.6 | `drain_backlog`, Loops A & B cron |
 | **HF-4** | ✅ Done (4.1–4.4, 4.6) | ⬜ 4.5 Hermes | `scan_changes`, registry badges |
 | **HF-5** | ✅ Done (5.1–5.5 AWT) | ⬜ 5.3b | Heal API + Loop D |
 | **HF-6** | ✅ AWT (6.1–6.5) · ✅ 6.2 ingest · ✅ 6.6 service · ✅ 3.7 chat→bridge | ⬜ 6.7 | Observatory + launch |
@@ -56,7 +56,10 @@
 | HF-2.6 | `qa-orchestrator` SOUL draft | ✅ | `docs/hermes-profiles/qa-orchestrator/` |
 | HF-2.7 | Shared Hermes MCP config template | ✅ | `_shared/mcp_servers.yaml.example` |
 | **HF-3** | | | |
-| HF-3.1a–d | Hermes orchestrator / planner / test-gen | ⏸ | Phase B |
+| HF-3.1a | `qa-orchestrator` deploy + doctor | ⏸ | SOUL ✅ HF-2.6 |
+| HF-3.1b | `qa-journey-planner` SOUL | ✅ | `docs/hermes-profiles/qa-journey-planner/` · deploy ⏸ |
+| HF-3.1c | `qa-test-gen` SOUL | ✅ | `docs/hermes-profiles/qa-test-gen/` · deploy ⏸ |
+| HF-3.1d | Orchestrator → planner → test-gen smoke | ✅ | Runbook + `smoke-integration-3.1d.sh` · execute on Ubuntu ⏸ |
 | HF-3.2 | Worker: `drain_backlog`, `generate_journey`, `full_cycle` | ✅ | `503244e` |
 | HF-3.3 | Loop A scheduler | ✅ | `503244e` |
 | HF-3.4 | Auto-schedule on generation | ✅ | `503244e` |
@@ -109,7 +112,8 @@
 | HF-6.6 Bridge service on Node 1 | ✅ demo + orchestrator CLI mode |
 | HF-3.7 Chat → Bridge | ✅ when `HERMES_BRIDGE_URL` set |
 | HF-2.6–2.7 Hermes MCP template | ✅ |
-| HF-3.1, 3.6, 4.5, 5.3b profile deploy | ⬜ |
+| HF-3.1b–d SOUL + integration smoke runbook | ✅ | `qa-journey-planner`, `qa-test-gen`, HF-3.1d runbook · **deploy on Ubuntu ⏸** |
+| HF-3.6a–c Dispatcher / reporter / Hermes smoke | ⬜ | Next after HF-3.1d execute |
 | HF-6.7 Reporter Hermes wiring | ⬜ |
 | HF-7.5 Prod migration cutover | ⬜ | After dev Ubuntu sign-off |
 
@@ -283,7 +287,8 @@ docs/hermes-profiles/
 ### Master checklist (tick before HF-6 launch)
 
 - [x] HF-2.6 — `qa-orchestrator` SOUL.md drafted in repo
-- [ ] HF-3.1 — orchestrator, planner, test-gen deployed on Node 1
+- [x] HF-3.1b–d — planner + test-gen SOUL + HF-3.1d runbook/smoke scripts in repo
+- [ ] HF-3.1 — orchestrator, planner, test-gen **deployed** on Node 1 + live `test_case_id` smoke
 - [ ] HF-3.6 — dispatcher, reporter deployed on Node 1
 - [ ] HF-4.5 — change-detector deployed on Node 1
 - [ ] HF-5.3 — healer deployed on Node 1
@@ -594,22 +599,23 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 - Deploy to Node 1; `qa-orchestrator doctor` passes
 - **Acceptance:** `qa-orchestrator chat -q "run regression"` returns structured plan or delegates
 
-#### HF-3.1b — `qa-journey-planner` SOUL + deploy (3 pts) `[HERMES]` ⏸
+#### HF-3.1b — `qa-journey-planner` SOUL + deploy (3 pts) `[HERMES]` ✅ SOUL · ⏸ deploy
 
 - SOUL.md: `get_coverage_matrix`, `get_reqiq_readiness`, `suggest_scenarios_from_wiki`, `enqueue_journey`
 - Repo + Node 1 deploy
 - **Acceptance:** Delegated task returns backlog item for a coverage gap
 
-#### HF-3.1c — `qa-test-gen` SOUL + deploy (3 pts) `[HERMES]` ⏸
+#### HF-3.1c — `qa-test-gen` SOUL + deploy (3 pts) `[HERMES]` ✅ SOUL · ⏸ deploy
 
 - SOUL.md: batch `crawl_and_save_test`, `reference_test_id`, poll workflow
 - Repo + Node 1 deploy
 - **Acceptance:** Delegated task returns `{ test_case_id, status: success }`
 
-#### HF-3.1d — Orchestrator integration smoke (4 pts) `[HERMES]` ⏸
+#### HF-3.1d — Orchestrator integration smoke (4 pts) `[HERMES]` ✅ runbook · ⏸ execute
 
 - Manual CLI end-to-end: orchestrator → planner → test-gen
 - **Acceptance:** `qa-orchestrator chat -q "drain backlog for Three-HK"` returns `test_case_id`
+- **Repo:** `docs/hermes-profiles/HF-3.1d_Integration_Smoke.md`, `scripts/hermes-migrate/smoke-integration-3.1d.sh`
 
 ---
 

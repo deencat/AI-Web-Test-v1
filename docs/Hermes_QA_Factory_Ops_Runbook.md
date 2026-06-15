@@ -93,10 +93,11 @@ Or use `docs/hermes-profiles/bridge/hermes_bridge.py post-event`.
 
 Before production launch:
 
-1. Deploy all 7 SOUL.md profiles (`qa-orchestrator` **in repo** — copy to `~/.hermes/profiles/`, then planner, test-gen, dispatcher, healer, change-detector, reporter).
+1. Deploy Hermes profiles from `docs/hermes-profiles/` (`qa-orchestrator`, `qa-journey-planner`, `qa-test-gen` **in repo**; then dispatcher, healer, change-detector, reporter).
 2. Configure shared MCP template (`_shared/mcp_servers.yaml.example`) — verify [MCP_CONNECTIVITY.md](hermes-profiles/_shared/MCP_CONNECTIVITY.md).
-3. Run Hermes Bridge for chat → orchestrator path.
-4. Smoke: `full_cycle` from webapp → delegate events in job timeline.
+3. **HF-3.1d integration smoke:** [HF-3.1d_Integration_Smoke.md](hermes-profiles/HF-3.1d_Integration_Smoke.md) · `scripts/hermes-migrate/smoke-integration-3.1d.sh`
+4. Run Hermes Bridge for chat → orchestrator path (`HERMES_BRIDGE_DEMO_MODE=0` when profiles ready).
+5. Smoke: `drain backlog` / `full_cycle` from webapp → delegate events in job timeline.
 
 ---
 
@@ -109,7 +110,7 @@ Before production launch:
 | Guide | [hermes-profiles/Hermes_Environment_Migration_Guide.md](hermes-profiles/Hermes_Environment_Migration_Guide.md) |
 | Pack (dev) | `scripts/hermes-migrate/pack-profiles.sh` |
 | Deploy (prod) | `scripts/hermes-migrate/deploy-profiles.sh --from-git <repo>` |
-| Smoke | `scripts/hermes-migrate/smoke-check.sh --env prod` |
+| Smoke | `scripts/hermes-migrate/smoke-check.sh` · HF-3.1d: `smoke-integration-3.1d.sh` |
 | AWT side | Update `HERMES_BRIDGE_URL` + `HERMES_BRIDGE_SECRET` in `backend/.env` (see `awt-bridge.env.patch.example`) |
 
 **Dev sign-off checklist:** migration guide §4 (MCP health, Bridge, Agent Console `full_cycle`, Observatory).

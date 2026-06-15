@@ -1,0 +1,15 @@
+# qa-test-gen — Hermes profile config (HF-3.1c)
+# Copy to: ~/.hermes/profiles/qa-test-gen/config.yaml
+# Secrets: ~/.hermes/.env (AWT_MCP_SECRET, TEST_LOGIN_*, HTTP_AUTH_*) — see scripts/hermes-migrate/hermes.env.*.example
+
+# MCP — test_gen block (long crawl-and-save) from _shared/mcp_servers.yaml.example
+mcp_servers:
+  ai-web-test:
+    url: "${AWT_MCP_URL}/mcp"
+    headers:
+      Authorization: "Bearer ${AWT_MCP_SECRET}"
+    timeout: 600
+    connect_timeout: 30
+
+# Crawl jobs can run 3–15 minutes; allow full poll window + tool overhead.
+tool_timeout_seconds: 1200

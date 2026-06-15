@@ -20,8 +20,8 @@ Do **not** clone the whole machine. Do **not** copy `memories/` or dev secrets t
 | Profile | Folder | Sprint |
 |---------|--------|--------|
 | qa-orchestrator | `qa-orchestrator/` | HF-2.6 ✅ · HF-3 deploy |
-| qa-journey-planner | `qa-journey-planner/` | HF-3 |
-| qa-test-gen | `qa-test-gen/` | HF-3 |
+| qa-journey-planner | `qa-journey-planner/` | HF-3.1b ✅ · deploy |
+| qa-test-gen | `qa-test-gen/` | HF-3.1c ✅ · deploy |
 | qa-dispatcher | `qa-dispatcher/` | HF-3 |
 | qa-reporter | `qa-reporter/` | HF-3 draft · HF-6 webapp |
 | qa-change-detector | `qa-change-detector/` | HF-4 |
@@ -32,6 +32,24 @@ Do **not** clone the whole machine. Do **not** copy `memories/` or dev secrets t
 ## qa-orchestrator (HF-2.6) — deploy first
 
 [qa-orchestrator/README.md](qa-orchestrator/README.md) · [SOUL.md](qa-orchestrator/SOUL.md)
+
+## qa-journey-planner (HF-3.1b)
+
+[qa-journey-planner/README.md](qa-journey-planner/README.md) · [SOUL.md](qa-journey-planner/SOUL.md)
+
+## qa-test-gen (HF-3.1c)
+
+[qa-test-gen/README.md](qa-test-gen/README.md) · [SOUL.md](qa-test-gen/SOUL.md)
+
+## HF-3.1d integration smoke
+
+[HF-3.1d_Integration_Smoke.md](HF-3.1d_Integration_Smoke.md) — orchestrator → planner → test-gen acceptance.
+
+```bash
+# Ubuntu (after deploy)
+./scripts/hermes-migrate/smoke-integration-3.1d.sh --planner-only   # fast
+./scripts/hermes-migrate/smoke-integration-3.1d.sh                # full (15–45 min)
+```
 
 ## Shared MCP template (HF-2.7)
 

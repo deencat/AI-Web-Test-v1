@@ -56,6 +56,40 @@ _DELEGATE_CHAINS: dict[str, list[tuple[str, str]]] = {
     ],
 }
 
+# Demo payload_summary per job_type + profile (UI timeline smoke — not HF-3.1d pass)
+_DEMO_DELEGATE_PAYLOADS: dict[tuple[str, str], dict[str, Any]] = {
+    ("drain_backlog", "qa-journey-planner"): {
+        "status": "success",
+        "items_for_test_gen": [
+            {
+                "backlog_id": 42,
+                "journey_slug": "5g-voucher-monthly",
+                "project": "Three-HK",
+            },
+        ],
+    },
+    ("drain_backlog", "qa-test-gen"): {
+        "status": "success",
+        "test_case_id": 1291,
+        "workflow_id": "demo-wf-001",
+        "test_title": "[demo] 5G Voucher — new subscriber",
+    },
+    ("generate_journey", "qa-journey-planner"): {
+        "status": "success",
+        "journey_slug": "diy-dashboard",
+    },
+    ("generate_journey", "qa-test-gen"): {
+        "status": "success",
+        "test_case_id": 1292,
+        "workflow_id": "demo-wf-002",
+    },
+}
+
+_DEMO_JOB_COMPLETE_EXTRA: dict[str, dict[str, Any]] = {
+    "drain_backlog": {"test_case_ids": [1291]},
+    "generate_journey": {"test_case_ids": [1292]},
+}
+
 
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.environ.get(name, "").strip().lower()
@@ -170,6 +204,10 @@ def _simulate_delegates(
             hermes_session_id=session_id,
             message=f"Delegate start: {profile}",
         )
+        payload_summary: dict[str, Any] = {"status": "success", "profile": profile}
+        demo_extra = _DEMO_DELEGATE_PAYLOADS.get((job_type, profile))
+        if demo_extra:
+            payload_summary = {**payload_summary, **demo_extra}
         post_event(
             events_url=events_url,
             secret=secret,
@@ -179,7 +217,7 @@ def _simulate_delegates(
             parent_profile="qa-orchestrator",
             hermes_session_id=session_id,
             message=msg,
-            payload_summary={"status": "success", "profile": profile},
+            payload_summary=payload_summary,
             llm_turns=[
                 {
                     "role": "assistant",
@@ -189,6 +227,10 @@ def _simulate_delegates(
             ],
         )
 
+    job_complete_summary: dict[str, Any] = {"status": "success", "job_type": job_type}
+    job_extra = _DEMO_JOB_COMPLETE_EXTRA.get(job_type)
+    if job_extra:
+        job_complete_summary = {**job_complete_summary, **job_extra}
     post_event(
         events_url=events_url,
         secret=secret,
@@ -197,7 +239,7 @@ def _simulate_delegates(
         profile="qa-orchestrator",
         hermes_session_id=session_id,
         message=f"Bridge completed {job_type}",
-        payload_summary={"status": "success", "job_type": job_type},
+        payload_summary=job_complete_summary,
     )
 
 

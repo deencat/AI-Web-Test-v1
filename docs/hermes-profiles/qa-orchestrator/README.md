@@ -33,3 +33,15 @@ qa-orchestrator
 
 AWT Agent Console → Bridge `POST /run` with `job_type` — orchestrator receives JSON.
 See `docs/hermes-profiles/bridge/README.md`.
+
+## HF-3.1d integration smoke
+
+End-to-end: orchestrator → planner → test-gen → `test_case_id`.
+
+- Runbook: [HF-3.1d_Integration_Smoke.md](../HF-3.1d_Integration_Smoke.md)
+- Ubuntu: `scripts/hermes-migrate/smoke-integration-3.1d.sh`
+- AWT prereq (Windows): `scripts/hermes-migrate/smoke-awt-prereq-3.1d.ps1`
+
+```bash
+qa-orchestrator chat -q 'drain backlog for Three-HK max_items 1'
+```

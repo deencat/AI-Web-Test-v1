@@ -107,8 +107,46 @@ Always return **structured JSON** to Bridge / caller:
   "status": "success | partial | failed",
   "job_type": "...",
   "summary": "plain language for reporter",
+  "test_case_ids": [],
   "delegates": [
-    { "profile": "qa-test-gen", "result": { } }
+    { "profile": "qa-test-gen", "result": { "status": "success", "test_case_id": 1291 } }
+  ],
+  "errors": []
+}
+```
+
+When **qa-test-gen** succeeds, set top-level **`test_case_ids`** (array of integers) so CLI smoke
+(HF-3.1d) can grep/jq the result without parsing nested delegates.
+
+### HF-3.1d — `drain_backlog` acceptance example
+
+Input (chat or job JSON): `drain backlog for Three-HK` with `max_items: 1`.
+
+Successful output:
+
+```json
+{
+  "status": "success",
+  "job_type": "drain_backlog",
+  "summary": "Drained 1 backlog item; generated test_case_id 1291",
+  "test_case_ids": [1291],
+  "delegates": [
+    {
+      "profile": "qa-journey-planner",
+      "result": {
+        "status": "success",
+        "items_for_test_gen": [{ "backlog_id": 42, "journey_slug": "5g-voucher-monthly" }]
+      }
+    },
+    {
+      "profile": "qa-test-gen",
+      "result": {
+        "status": "success",
+        "test_case_id": 1291,
+        "workflow_id": "wf-abc",
+        "test_title": "5G Voucher — new subscriber"
+      }
+    }
   ],
   "errors": []
 }
@@ -125,7 +163,7 @@ Always return **structured JSON** to Bridge / caller:
 
 - `AWT_MCP_SECRET` — MCP Bearer token (must match AI Web Test `backend/.env`)
 - `AWT_MCP_URL` — e.g. `http://awt-host:8001` (see `config.yaml`)
-- `REQIQ_API_KEY`, `REQIQ_API_URL` — planner uses via MCP proxy or curl
+- `REQIQ_PROJECT_ID` — planner MCP proxy (see `qa-journey-planner/SOUL.md`)
 - `HERMES_BRIDGE_SECRET`, `AWT_AGENT_EVENTS_URL` — Bridge event POST (ops)
 
 ## Security
@@ -137,4 +175,5 @@ Always return **structured JSON** to Bridge / caller:
 
 - Design: `docs/Hermes_QA_Autonomous_Workflow_v5.md` §4, §7, §8
 - Deploy: `docs/hermes-profiles/README.md`
+- HF-3.1d smoke: `docs/hermes-profiles/HF-3.1d_Integration_Smoke.md`
 - MCP template: `docs/hermes-profiles/_shared/mcp_servers.yaml.example`

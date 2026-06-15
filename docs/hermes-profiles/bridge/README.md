@@ -72,4 +72,6 @@ sudo systemctl enable --now hermes-factory-bridge
 python hermes_bridge.py post-event --job-id <uuid> --type delegate_complete --profile qa-test-gen
 ```
 
-**Sprint map:** HF-6.2 ingest ✅ · HF-6.6 service ✅ · HF-3.7 chat forward ✅ · HF-6.7 reporter (pending)
+Demo `drain_backlog` events include placeholder `test_case_id` in `payload_summary` for UI timeline smoke — **not** HF-3.1d acceptance (requires real Hermes orchestrator crawl).
+
+See [HF-3.1d_Integration_Smoke.md](../HF-3.1d_Integration_Smoke.md) for full integration acceptance.

@@ -34,4 +34,4 @@ Then set `~/.hermes/.env` from `scripts/hermes-migrate/hermes.env.dev.example` o
 | qa-healer | ✅ (heal, xpath cache) |
 | qa-reporter | Optional (stats) |
 
-ReqIQ is called via **curl** + `REQIQ_API_KEY` in planner SOUL (HF-3.1), not a separate MCP server.
+ReqIQ is reached via **AWT MCP proxy** (`get_coverage_matrix`, `get_reqiq_readiness`) using `REQIQ_PROJECT_ID` in `~/.hermes/.env`.
