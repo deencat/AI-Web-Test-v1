@@ -13,7 +13,7 @@
 
 **Last updated:** 2026-06-08  
 **Branch:** `feat/hermes-qa-factory`  
-**Key commits:** HF-1 `e33a6b3` · HF-2+3 `503244e` · HF-4 `ff6af29` · HF-5 `e0e16cd` · HF-6 `07244fe` · superadmin RBAC `e77d1be` · Bridge ingest `173b4f7` · Bridge service `e45a2dc` · HF-7 migration docs/scripts *(pending commit)*
+**Key commits:** HF-1 `e33a6b3` · HF-2+3 `503244e` · HF-4 `ff6af29` · HF-5 `e0e16cd` · HF-6 `07244fe` · Bridge `e45a2dc` · HF-2.6/2.7 + HF-7 `21ba427`
 
 ### Current focus
 
