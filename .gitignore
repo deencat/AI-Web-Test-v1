@@ -36,7 +36,8 @@ temp/
 *.tmp
 
 # Build outputs
-dist/
+scripts/hermes-migrate/dist/*
+!scripts/hermes-migrate/dist/.gitkeep
 build/
 out/
 

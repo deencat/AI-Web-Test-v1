@@ -1,0 +1,45 @@
+# Shared Hermes MCP configuration (HF-2.7)
+# Copy the block you need into each profile's config.yaml under mcp_servers:
+#
+#   qa-orchestrator, qa-journey-planner, qa-test-gen, qa-change-detector, qa-healer
+#     → use "orchestrator" or "test_gen" timeouts below
+#   qa-dispatcher
+#     → use "dispatcher" (single AWT MCP; worker routes runners internally)
+#   qa-reporter
+#     → optional read-only MCP for execution stats
+#   qa-journey-planner
+#     → orchestrator block + ReqIQ via curl (REQIQ_API_KEY in .env), not separate MCP
+#
+# NEVER commit real secrets. Set in ~/.hermes/.env:
+#   AWT_MCP_URL=http://<awt-host>:8001
+#   AWT_MCP_SECRET=<same as backend/.env>
+
+# --- Profile: orchestrator | planner | change-detector | healer (standard) ---
+mcp_servers:
+  ai-web-test:
+    url: "${AWT_MCP_URL}/mcp"
+    headers:
+      Authorization: "Bearer ${AWT_MCP_SECRET}"
+    timeout: 180
+    connect_timeout: 30
+
+# --- Profile: test_gen (long crawl-and-save jobs) ---
+# mcp_servers:
+#   ai-web-test:
+#     url: "${AWT_MCP_URL}/mcp"
+#     headers:
+#       Authorization: "Bearer ${AWT_MCP_SECRET}"
+#     timeout: 600
+#     connect_timeout: 30
+
+# --- Profile: dispatcher (execution-heavy) ---
+# mcp_servers:
+#   ai-web-test:
+#     url: "${AWT_MCP_URL}/mcp"
+#     headers:
+#       Authorization: "Bearer ${AWT_MCP_SECRET}"
+#     timeout: 300
+#     connect_timeout: 30
+
+# MCP streamable HTTP endpoint path is always /mcp on AWT_MCP_PORT (default 8001).
+# Tools used by factory profiles: see backend/mcp_server.py module docstring.

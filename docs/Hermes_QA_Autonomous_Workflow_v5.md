@@ -17,6 +17,7 @@
 | **Telegram** | Dev-only (`HERMES_TELEGRAM_ENABLED=true`); disabled at launch |
 | **“Not ready yet”** | Means **not implemented** — all Phase 2 capabilities are **technically possible** with existing platform building blocks |
 | **Extensibility** | Add MCP tools + thin API wrappers in AI Web Test; Hermes SOUL.md updated to use them |
+| **Hermes environments** | Dev on Ubuntu mini PC → package profiles → prod Ubuntu (env-only changes). See [Hermes_Environment_Migration_Guide.md](hermes-profiles/Hermes_Environment_Migration_Guide.md) (HF-7) |
 
 ---
 

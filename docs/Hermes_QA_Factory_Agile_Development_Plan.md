@@ -1,7 +1,7 @@
 # Hermes QA Factory — Agile Development Plan
 
-**Version:** 1.4 · **Date:** 2026-06-08  
-**Status:** **Phase A complete** · **Phase B in progress** (Bridge ✅ · Hermes profiles ⬜)  
+**Version:** 1.5 · **Date:** 2026-06-08  
+**Status:** **Phase A complete** · **Phase B in progress** (Bridge ✅ · Hermes profiles ⬜ · **HF-7 migration pack** ✅)  
 **Parent design:** [Hermes_QA_Autonomous_Workflow_v5.md](Hermes_QA_Autonomous_Workflow_v5.md)  
 **Program code:** **HF** (Hermes Factory) — sprints **HF-1 … HF-6**
 
@@ -13,7 +13,7 @@
 
 **Last updated:** 2026-06-08  
 **Branch:** `feat/hermes-qa-factory`  
-**Key commits:** HF-1 `e33a6b3` · HF-2+3 `503244e` · HF-4 `ff6af29` · HF-5 `e0e16cd` · HF-6 `07244fe` · superadmin RBAC `e77d1be` · Bridge ingest `173b4f7` · Bridge service `e45a2dc`
+**Key commits:** HF-1 `e33a6b3` · HF-2+3 `503244e` · HF-4 `ff6af29` · HF-5 `e0e16cd` · HF-6 `07244fe` · superadmin RBAC `e77d1be` · Bridge ingest `173b4f7` · Bridge service `e45a2dc` · HF-7 migration docs/scripts *(pending commit)*
 
 ### Current focus
 
@@ -21,14 +21,15 @@
 |-------|--------|------|
 | **Phase A (AWT)** | ✅ **Complete** | HF-1.6 SSE polish (optional) |
 | **Phase B (Bridge)** | ✅ **HF-6.6 + HF-3.7** (`e45a2dc`) | Local demo: bridge `serve` + `HERMES_BRIDGE_URL` |
-| **Phase B (Hermes)** | ⬜ Not started | HF-2.6 orchestrator SOUL → HF-3.1 deploy |
+| **Phase B (Hermes)** | 🔜 **HF-2.6–2.7 done** | HF-3.1 deploy orchestrator on Ubuntu dev PC |
+| **HF-7 Migration** | ✅ **Guide + script stubs** | Harden scripts after first dev smoke (HF-7.5 prod cutover) |
 
 ### Sprint rollup (AWT-first Phase A)
 
 | Sprint | Phase A status | Hermes (Phase B) | Demo / validation |
 |--------|----------------|------------------|-------------------|
 | **HF-1** | ✅ Done | — | Agent Console + `run_regression` |
-| **HF-2** | ✅ Done (2.1–2.5) | ⬜ 2.6–2.7 | Registry, backlog, MCP tools |
+| **HF-2** | ✅ Done (2.1–2.5) | ✅ 2.6–2.7 | Registry, backlog, MCP tools |
 | **HF-3** | ✅ Done (3.2–3.5) | ⬜ 3.1, 3.6, 3.7 | `drain_backlog`, Loops A & B cron |
 | **HF-4** | ✅ Done (4.1–4.4, 4.6) | ⬜ 4.5 Hermes | `scan_changes`, registry badges |
 | **HF-5** | ✅ Done (5.1–5.5 AWT) | ⬜ 5.3b | Heal API + Loop D |
@@ -52,8 +53,8 @@
 | HF-2.3 | Journey registry API | ✅ | `503244e` |
 | HF-2.4 | Journey backlog API | ✅ | `503244e` |
 | HF-2.5 | Registry & backlog UI | ✅ | `503244e` |
-| HF-2.6 | `qa-orchestrator` SOUL draft | ⚠️ | `hermes-profiles/README.md` only — SOUL.md **not** drafted |
-| HF-2.7 | Shared Hermes MCP config template | ⬜ | Phase B |
+| HF-2.6 | `qa-orchestrator` SOUL draft | ✅ | `docs/hermes-profiles/qa-orchestrator/` |
+| HF-2.7 | Shared Hermes MCP config template | ✅ | `_shared/mcp_servers.yaml.example` |
 | **HF-3** | | | |
 | HF-3.1a–d | Hermes orchestrator / planner / test-gen | ⏸ | Phase B |
 | HF-3.2 | Worker: `drain_backlog`, `generate_journey`, `full_cycle` | ✅ | `503244e` |
@@ -84,6 +85,12 @@
 | HF-6.5 | Launch hardening + runbook | ✅ | `Hermes_QA_Factory_Ops_Runbook.md` |
 | HF-6.6 | Bridge HTTP service + demo delegates | ✅ | `hermes_bridge.py serve` |
 | HF-6.7 | Reporter → webapp notifications | ⬜ | Worker hook already notifies superadmin |
+| **HF-7** | **Hermes dev → prod migration** | | |
+| HF-7.1 | Migration guide + env templates | ✅ | `Hermes_Environment_Migration_Guide.md` |
+| HF-7.2 | `pack-profiles.sh` | 🔜 | `scripts/hermes-migrate/` — harden after dev smoke |
+| HF-7.3 | `deploy-profiles.sh` | 🔜 | `--from-tar` / `--from-git` |
+| HF-7.4 | `smoke-check.sh` | 🔜 | MCP + Bridge health |
+| HF-7.5 | Prod cutover + security sign-off | ⬜ | After mini PC dev checklist §4 |
 
 ### Loops (factory_worker — no Hermes required)
 
@@ -101,11 +108,12 @@
 | HF-6.2 Bridge event ingest | ✅ `173b4f7` |
 | HF-6.6 Bridge service on Node 1 | ✅ demo + orchestrator CLI mode |
 | HF-3.7 Chat → Bridge | ✅ when `HERMES_BRIDGE_URL` set |
-| HF-2.6–2.7 Hermes MCP template | ⬜ |
+| HF-2.6–2.7 Hermes MCP template | ✅ |
 | HF-3.1, 3.6, 4.5, 5.3b profile deploy | ⬜ |
 | HF-6.7 Reporter Hermes wiring | ⬜ |
+| HF-7.5 Prod migration cutover | ⬜ | After dev Ubuntu sign-off |
 
-See §4.1 master checklist for full tick list.
+See §4.3 migration strategy and [Hermes_Environment_Migration_Guide.md](hermes-profiles/Hermes_Environment_Migration_Guide.md).
 
 ---
 
@@ -242,7 +250,8 @@ Hermes profiles are **required for production launch**, not a side quest. Versio
 ```
 docs/hermes-profiles/
   README.md
-  qa-orchestrator/SOUL.md, config.yaml
+  qa-orchestrator/SOUL.md, config.yaml   # HF-2.6 ✅
+  _shared/mcp_servers.yaml.example     # HF-2.7 ✅
   qa-journey-planner/SOUL.md, config.yaml
   qa-change-detector/SOUL.md, config.yaml
   qa-test-gen/SOUL.md, config.yaml
@@ -250,13 +259,30 @@ docs/hermes-profiles/
   qa-dispatcher/SOUL.md, config.yaml
   qa-reporter/SOUL.md, config.yaml
   bridge/README.md              # HF-6: Bridge install + event POST script
+  Hermes_Environment_Migration_Guide.md   # HF-7: dev mini PC → prod PC
 ```
+
+**Migration scripts (HF-7):** `scripts/hermes-migrate/` — `pack-profiles.sh`, `deploy-profiles.sh`, `smoke-check.sh`, env templates.
 
 **Source templates:** [Hermes_QA_MultiAgent_Profiles_v4.md](Hermes_QA_MultiAgent_Profiles_v4.md) — adapt for v5 (no Telegram dependency in orchestrator).
 
+### 4.3 Hermes environment migration (dev mini PC → prod PC)
+
+**Approved approach:** Develop and smoke-test on a **small Ubuntu mini PC**. When sign-off checklist passes, **package profiles** (not the whole OS) and deploy to a **higher-spec production Ubuntu PC**, changing **environment variables only** (AWT URLs, rotated secrets, `HERMES_BRIDGE_URL` on AWT).
+
+| Phase | Host | Work |
+|-------|------|------|
+| **Dev** | Ubuntu mini PC | Install Hermes, tune SOUL/config, smoke tests |
+| **Package** | Dev or CI | `scripts/hermes-migrate/pack-profiles.sh` or git `docs/hermes-profiles/` |
+| **Prod** | Ubuntu prod PC | `deploy-profiles.sh` + prod `~/.hermes/.env` + security sign-off |
+
+**Does not migrate:** agent `memories/`, dev secrets, logs. **AWT** (API/MCP/DB) stays on its own host — update URLs only.
+
+**Full guide:** [hermes-profiles/Hermes_Environment_Migration_Guide.md](hermes-profiles/Hermes_Environment_Migration_Guide.md)
+
 ### Master checklist (tick before HF-6 launch)
 
-- [ ] HF-2.6 — `qa-orchestrator` SOUL.md drafted in repo
+- [x] HF-2.6 — `qa-orchestrator` SOUL.md drafted in repo
 - [ ] HF-3.1 — orchestrator, planner, test-gen deployed on Node 1
 - [ ] HF-3.6 — dispatcher, reporter deployed on Node 1
 - [ ] HF-4.5 — change-detector deployed on Node 1
@@ -265,6 +291,7 @@ docs/hermes-profiles/
 - [x] HF-6.6 — Hermes Bridge `serve` + posts events to AWT (demo or orchestrator CLI)
 - [x] HF-3.7 — Chat path: AWT `agent/chat` → Bridge when `HERMES_BRIDGE_URL` set
 - [ ] HF-6.7 — `qa-reporter` Hermes → webapp (worker hook covers AWT path today)
+- [ ] HF-7.5 — Dev Ubuntu smoke sign-off → package → prod Ubuntu deploy (§4.3)
 - [ ] All profiles: MCP `AWT_MCP_SECRET` + `AWT_BASE_URL` in `config.yaml`
 
 ---
@@ -465,7 +492,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 **Sprint goal:** Hermes can call all backlog/schedule/feedback tools via MCP; journey registry seeded for Three HK UAT.
 
-**Status:** ✅ **Phase A done** (HF-2.1–2.5, commit `503244e`). ⬜ HF-2.6–2.7 deferred to Phase B.
+**Status:** ✅ **Phase A done** (HF-2.1–2.5, commit `503244e`). ✅ HF-2.6–2.7 in repo. HF-3.1 deploy next.
 
 **Total:** 22 points (AWT) + 5 (Hermes deferred)
 
@@ -520,7 +547,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-2.6 — Draft `qa-orchestrator` in repo (3 pts) `[HERMES]` **mandatory** ⚠️
+#### HF-2.6 — Draft `qa-orchestrator` in repo (3 pts) `[HERMES]` **mandatory** ✅
 
 **As** a platform owner, **I want** `qa-orchestrator` SOUL.md version-controlled **so that** Node 1 work is not lost and HF-3 deploy is ready.
 
@@ -538,7 +565,7 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 
 ---
 
-#### HF-2.7 — Shared Hermes MCP config template (2 pts) `[HERMES]` `[OPS]` ⬜
+#### HF-2.7 — Shared Hermes MCP config template (2 pts) `[HERMES]` `[OPS]` ✅
 
 **Tasks:**
 - Add `docs/hermes-profiles/_shared/mcp_servers.yaml.example` (MCP :8001, Bearer auth)
@@ -851,6 +878,18 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 | HF-BL-05 | Customer export whitelist for Agent Console docs | Low |
 | HF-BL-06 | `@healer` hints in single chat (orchestrator forwards) | Low |
 
+### HF-7 — Hermes environment migration (dev → prod)
+
+| ID | Story | Points | Status |
+|----|-------|--------|--------|
+| HF-7.1 | Migration guide + `hermes.env.*.example` templates | 2 | ✅ |
+| HF-7.2 | `pack-profiles.sh` — tarball from `~/.hermes/profiles` | 2 | 🔜 stub |
+| HF-7.3 | `deploy-profiles.sh` — `--from-tar` / `--from-git` | 2 | 🔜 stub |
+| HF-7.4 | `smoke-check.sh` — MCP + Bridge health | 1 | 🔜 stub |
+| HF-7.5 | Prod cutover checklist + security sign-off | 2 | ⬜ |
+
+**Guide:** [hermes-profiles/Hermes_Environment_Migration_Guide.md](hermes-profiles/Hermes_Environment_Migration_Guide.md) · **Scripts:** `scripts/hermes-migrate/`
+
 ---
 
 ## 12. Environment variables checklist
@@ -858,7 +897,10 @@ Complete every `[AWT-BE]`, `[AWT-FE]`, and `[MCP]` story in order:
 | Variable | Sprint | Purpose |
 |----------|--------|---------|
 | `HERMES_TELEGRAM_ENABLED` | HF-1 | `false` in prod |
-| `HERMES_BRIDGE_SECRET` | HF-6 | Bridge → AWT auth |
+| `HERMES_BRIDGE_SECRET` | HF-6 | Bridge ↔ AWT auth (rotate on prod) |
+| `HERMES_BRIDGE_URL` | HF-3.7 / HF-6 | AWT → Bridge `POST /run` (change when moving Hermes host) |
+| `AWT_MCP_URL` | HF-7 | Hermes `~/.hermes/.env` — MCP host (dev vs prod) |
+| `AWT_AGENT_EVENTS_URL` | HF-7 | Bridge → AWT events endpoint |
 | `AWT_MCP_SECRET` | existing | Hermes → MCP |
 | `FACTORY_LOOP_A_CRON` | HF-3 | Backlog drain schedule |
 | `FACTORY_LOOP_B_CRON` | HF-3 | Regression schedule |
@@ -930,6 +972,8 @@ Adjust dates to your team start; maintain 2-week cadence.
 | [Hermes_QA_Factory_Ops_Runbook.md](Hermes_QA_Factory_Ops_Runbook.md) | Production checklist, loops, troubleshooting (HF-6) |
 | [Hermes_QA_MultiAgent_Profiles_v4.md](Hermes_QA_MultiAgent_Profiles_v4.md) | SOUL.md source templates for Hermes profiles |
 | [hermes-profiles/README.md](hermes-profiles/README.md) | Version-controlled profile folder + deploy steps |
+| [hermes-profiles/Hermes_Environment_Migration_Guide.md](hermes-profiles/Hermes_Environment_Migration_Guide.md) | Dev mini PC → prod PC migration (HF-7) |
+| [scripts/hermes-migrate/README.md](../scripts/hermes-migrate/README.md) | Pack / deploy / smoke scripts |
 | [ReqIQ-API-Integration-Guide.md](ReqIQ-API-Integration-Guide.md) | MCP / proxy behaviour |
 | [AI-Web-Test-Developer-Handoff.md](AI-Web-Test-Developer-Handoff.md) | ReqIQ proxy, platform context |
 | `Phase3-project-documents/Phase3-Project-Management-Plan-Complete.md` | Platform sprints (Sprint 10.x) — separate from HF program |
@@ -943,7 +987,7 @@ Adjust dates to your team start; maintain 2-week cadence.
 | Sprint | AWT (this repo) | Hermes Node 1 (mandatory at launch) |
 |--------|-----------------|-------------------------------------|
 | **HF-1** ✅ | Jobs API, worker, Agent Console | — |
-| **HF-2** ✅ | MCP tools, registry, backlog UI | ⬜ **HF-2.6** orchestrator SOUL · **HF-2.7** MCP template |
+| **HF-2** ✅ | MCP tools, registry, backlog UI | ✅ **HF-2.6–2.7** orchestrator SOUL + MCP template · HF-3.1 deploy |
 | **HF-3** ✅ | Loop A/B, `drain_backlog` worker | ⬜ Deploy orchestrator, planner, test-gen, dispatcher, reporter · Bridge stub |
 | **HF-4** ✅ | Snapshot/diff APIs, Loop C, registry badges | ⬜ Deploy **qa-change-detector** |
 | **HF-5** ✅ | Heal API, Heal Review UI, Loop D | ⬜ Deploy **qa-healer** |

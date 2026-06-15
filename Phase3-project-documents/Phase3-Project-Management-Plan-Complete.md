@@ -4859,6 +4859,25 @@ Blockers Requiring CTO Decision:
 - [Phase3-Architecture-Design-Complete.md](Phase3-Architecture-Design-Complete.md) - Technical architecture
 - [Phase3-Implementation-Guide-Complete.md](Phase3-Implementation-Guide-Complete.md) - Implementation details
 - [Phase3-Agent-Performance-Scoring-Framework.md](supporting-documents/Phase3-Agent-Performance-Scoring-Framework.md) - Agent performance metrics and scoring methodology
+- [Hermes_QA_Factory_Agile_Development_Plan.md](../docs/Hermes_QA_Factory_Agile_Development_Plan.md) - **Phase 2 QA Factory** (HF-1…HF-7) on `feat/hermes-qa-factory`
+- [Hermes_Environment_Migration_Guide.md](../docs/hermes-profiles/Hermes_Environment_Migration_Guide.md) - Hermes dev mini PC → prod PC (HF-7)
+- [scripts/hermes-migrate/README.md](../scripts/hermes-migrate/README.md) - Pack / deploy / smoke scripts
+
+---
+
+## Appendix: Phase 2 Extension — Hermes QA Factory (parallel program)
+
+**Not part of Sprint 10.x numbering** — tracked as **HF program** (see `docs/Hermes_QA_Factory_Agile_Development_Plan.md`).
+
+| Track | Status (2026-06-08) | Notes |
+|-------|---------------------|--------|
+| **AWT platform (HF-1–6 Phase A)** | ✅ Complete | Factory loops, Console, heal, Observatory, Bridge |
+| **Hermes Ubuntu (Phase B)** | ⬜ In progress | SOUL profiles + dev mini PC smoke |
+| **Environment migration (HF-7)** | ✅ Documented | Dev mini PC → prod PC; `scripts/hermes-migrate/` |
+
+**Deployment model:** Prove Hermes on **small Ubuntu dev PC** → `pack-profiles.sh` or git → **prod Ubuntu** with rotated secrets and updated AWT/MCP URLs only. AWT (Windows/server) remains a separate host.
+
+**PM reporting:** Use HF agile plan §0 progress tracker for stakeholder updates; Sprint 10.x PMP remains the platform sprint record.
 
 ---
 

@@ -1,6 +1,6 @@
 # Hermes QA Factory — Operations Runbook
 
-**Version:** 1.0 · **Date:** 2026-06-08  
+**Version:** 1.1 · **Date:** 2026-06-08  
 **Branch:** `feat/hermes-qa-factory`  
 **Related:** [Hermes_QA_Factory_Agile_Development_Plan.md](Hermes_QA_Factory_Agile_Development_Plan.md) · [Hermes_QA_Autonomous_Workflow_v5.md](Hermes_QA_Autonomous_Workflow_v5.md)
 
@@ -93,14 +93,30 @@ Or use `docs/hermes-profiles/bridge/hermes_bridge.py post-event`.
 
 Before production launch:
 
-1. Deploy all 7 SOUL.md profiles (`qa-orchestrator`, planner, test-gen, dispatcher, healer, change-detector, reporter).
-2. Configure shared MCP template pointing at AWT MCP port.
+1. Deploy all 7 SOUL.md profiles (`qa-orchestrator` **in repo** — copy to `~/.hermes/profiles/`, then planner, test-gen, dispatcher, healer, change-detector, reporter).
+2. Configure shared MCP template (`_shared/mcp_servers.yaml.example`) — verify [MCP_CONNECTIVITY.md](hermes-profiles/_shared/MCP_CONNECTIVITY.md).
 3. Run Hermes Bridge for chat → orchestrator path.
 4. Smoke: `full_cycle` from webapp → delegate events in job timeline.
 
 ---
 
-## 7. Troubleshooting
+## 7. Hermes migration (dev mini PC → prod PC) — HF-7
+
+**Strategy:** Prove on Ubuntu mini PC → package profiles → deploy to prod Ubuntu with **env-only** changes.
+
+| Step | Command / doc |
+|------|----------------|
+| Guide | [hermes-profiles/Hermes_Environment_Migration_Guide.md](hermes-profiles/Hermes_Environment_Migration_Guide.md) |
+| Pack (dev) | `scripts/hermes-migrate/pack-profiles.sh` |
+| Deploy (prod) | `scripts/hermes-migrate/deploy-profiles.sh --from-git <repo>` |
+| Smoke | `scripts/hermes-migrate/smoke-check.sh --env prod` |
+| AWT side | Update `HERMES_BRIDGE_URL` + `HERMES_BRIDGE_SECRET` in `backend/.env` (see `awt-bridge.env.patch.example`) |
+
+**Dev sign-off checklist:** migration guide §4 (MCP health, Bridge, Agent Console `full_cycle`, Observatory).
+
+---
+
+## 8. Troubleshooting
 
 | Symptom | Check |
 |---------|-------|
@@ -112,7 +128,7 @@ Before production launch:
 
 ---
 
-## 8. Restart procedure
+## 9. Restart procedure
 
 ```powershell
 cd backend

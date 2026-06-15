@@ -27,7 +27,7 @@ Hermes profile config  (~/.hermes/profiles/<profile>/config.yaml):
         connect_timeout: 30
 
     Profiles that need this MCP server:
-      - qa-manager    (health_check, list_test_cases)
+      - qa-orchestrator (health_check, list_journey_backlog, enqueue_journey)
       - qa-test-gen   (crawl_and_save_test, get_workflow_status, get_workflow_results, + all)
       - qa-dispatcher (health_check, execute_test, get_execution_status, list_executions,
                        get_execution_stats) — configure both node2 and node3 entries
