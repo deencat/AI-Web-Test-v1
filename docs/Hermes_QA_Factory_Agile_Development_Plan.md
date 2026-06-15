@@ -22,7 +22,7 @@
 | **Phase A (AWT)** | ✅ **Complete** | HF-1.6 SSE polish (optional) |
 | **Phase B (Bridge)** | ✅ **HF-6.6 + HF-3.7** (`e45a2dc`) | Local demo: bridge `serve` + `HERMES_BRIDGE_URL` |
 | **Phase B (Hermes)** | ✅ **HF-3.1b–d in repo** | Deploy 3 profiles on Ubuntu + run `smoke-integration-3.1d.sh` |
-| **HF-7 Migration** | ✅ **Guide + script stubs** | Harden scripts after first dev smoke (HF-7.5 prod cutover) |
+| **HF-7 Migration** | ✅ **Guide + script stubs** | [UBUNTU_DEV_SETUP.md](hermes-profiles/UBUNTU_DEV_SETUP.md) on mini PC |
 
 ### Sprint rollup (AWT-first Phase A)
 

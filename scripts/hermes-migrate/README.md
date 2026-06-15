@@ -2,7 +2,8 @@
 
 Package Hermes profiles from a **dev Ubuntu mini PC** and deploy to **production Ubuntu** with env-only changes.
 
-**Full guide:** [docs/hermes-profiles/Hermes_Environment_Migration_Guide.md](../../docs/hermes-profiles/Hermes_Environment_Migration_Guide.md)
+**Full guide:** [docs/hermes-profiles/Hermes_Environment_Migration_Guide.md](../../docs/hermes-profiles/Hermes_Environment_Migration_Guide.md)  
+**First-time Ubuntu mini PC:** [UBUNTU_DEV_SETUP.md](../../docs/hermes-profiles/UBUNTU_DEV_SETUP.md)
 
 ## Scripts
 

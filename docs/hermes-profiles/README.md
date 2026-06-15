@@ -5,6 +5,7 @@ Version-controlled SOUL.md and config templates for Node 1 deployment.
 **Parent plan:** [Hermes_QA_Factory_Agile_Development_Plan.md](../Hermes_QA_Factory_Agile_Development_Plan.md) §4.1, §4.3, §18  
 **Design:** [Hermes_QA_Autonomous_Workflow_v5.md](../Hermes_QA_Autonomous_Workflow_v5.md)  
 **Migration (dev → prod):** [Hermes_Environment_Migration_Guide.md](Hermes_Environment_Migration_Guide.md) · [scripts/hermes-migrate/](../../scripts/hermes-migrate/)  
+**Ubuntu mini PC first-time setup:** [UBUNTU_DEV_SETUP.md](UBUNTU_DEV_SETUP.md) ← **start here on Node 1**  
 **v4 templates:** [Hermes_QA_MultiAgent_Profiles_v4.md](../Hermes_QA_MultiAgent_Profiles_v4.md)
 
 ## Environment strategy (HF-7)
