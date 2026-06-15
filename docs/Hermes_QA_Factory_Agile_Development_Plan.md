@@ -13,7 +13,7 @@
 
 **Last updated:** 2026-06-12  
 **Branch:** `feat/hermes-qa-factory`  
-**Key commits:** HF-1 `e33a6b3` · HF-2+3 `503244e` · Bridge `e45a2dc` · HF-2.6/2.7 + HF-7 `f7745a0` · **HF-3.1b–d** (this commit)
+**Key commits:** HF-1 `e33a6b3` · HF-2+3 `503244e` · Bridge `e45a2dc` · HF-2.6/2.7 + HF-7 `f7745a0` · HF-3.1b–d `0de9ef8`
 
 ### Current focus
 
