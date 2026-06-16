@@ -537,8 +537,13 @@ class TestCdpServerAuth:
         agent = _make_agent()
 
         mock_browser = MagicMock()
-        mock_browser.start = AsyncMock()
         mock_browser.navigate_to = AsyncMock()
+        call_order = []
+
+        async def track_start():
+            call_order.append("start")
+
+        mock_browser.start = AsyncMock(side_effect=track_start)
 
         with patch.object(
             agent, "_setup_cdp_server_auth", new_callable=AsyncMock, return_value=True
@@ -559,6 +564,45 @@ class TestCdpServerAuth:
         )
         # Must NOT call set_extra_headers at all
         mock_browser.set_extra_headers.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_prime_browser_session_bypasses_proxy_before_browser_start(
+        self, monkeypatch
+    ):
+        """Loopback hosts must be in NO_PROXY before browser.start() opens local CDP."""
+        agent = _make_agent()
+
+        monkeypatch.setenv("HTTP_PROXY", "http://proxy.example:8080")
+        monkeypatch.delenv("NO_PROXY", raising=False)
+        monkeypatch.delenv("no_proxy", raising=False)
+
+        mock_browser = MagicMock()
+        no_proxy_at_start = {}
+
+        async def track_start():
+            no_proxy_at_start["NO_PROXY"] = os.environ.get("NO_PROXY", "")
+            no_proxy_at_start["no_proxy"] = os.environ.get("no_proxy", "")
+
+        mock_browser.start = AsyncMock(side_effect=track_start)
+        mock_browser.navigate_to = AsyncMock()
+
+        with patch.object(
+            agent, "_setup_cdp_server_auth", new_callable=AsyncMock, return_value=True
+        ):
+            await agent._prime_browser_session_http_auth(
+                mock_browser,
+                url="https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/",
+                http_credentials={"username": "uat_user", "password": "secret"},
+            )
+
+        expected_hosts = {"127.0.0.1", "localhost", "::1"}
+        for key in ("NO_PROXY", "no_proxy"):
+            hosts = {
+                entry.strip()
+                for entry in no_proxy_at_start[key].split(",")
+                if entry.strip()
+            }
+            assert expected_hosts.issubset(hosts)
 
 
 class TestOrchestrationPassThrough:

@@ -59,6 +59,7 @@ from agents.base_agent import (
     TaskContext,
     TaskResult
 )
+from app.utils.proxy_bypass import ensure_loopback_no_proxy
 
 # Set up logger first
 logger = logging.getLogger(__name__)
@@ -568,6 +569,9 @@ class ObservationAgent(BaseAgent):
             logger.info(f"ObservationAgent: Starting multi-page flow crawling with browser-use")
             logger.info(f"  URL: {url}")
             logger.info(f"  User Instruction: {user_instruction}")
+
+            # Bypass HTTP_PROXY for local CDP before any browser-use session starts (ADR-004)
+            ensure_loopback_no_proxy()
 
             browser_profile = self._build_browser_profile(
                 http_credentials=http_credentials,
@@ -1455,6 +1459,7 @@ class ObservationAgent(BaseAgent):
             return False
 
         # Start the browser session (required before _cdp_client_root is available)
+        ensure_loopback_no_proxy()
         start_fn = getattr(browser, "start", None)
         if callable(start_fn):
             start_result = start_fn()
