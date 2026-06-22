@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/layout/Layout';
 import testSuitesService, { TestSuite } from '../services/testSuitesService';
-import CreateSuiteModal from '../components/CreateSuiteModal';
+import SuiteFormModal from '../components/SuiteFormModal';
 
 const TestSuitesPage: React.FC = () => {
   const [suites, setSuites] = useState<TestSuite[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
+  const [editingSuite, setEditingSuite] = useState<TestSuite | null>(null);
+  const [showFormModal, setShowFormModal] = useState(false);
   const [expandedSuites, setExpandedSuites] = useState<Set<number>>(new Set());
 
   useEffect(() => {
@@ -69,6 +71,18 @@ const TestSuitesPage: React.FC = () => {
     }
   };
 
+  const handleEdit = (suite: TestSuite) => {
+    setFormMode('edit');
+    setEditingSuite(suite);
+    setShowFormModal(true);
+  };
+
+  const openCreate = () => {
+    setFormMode('create');
+    setEditingSuite(null);
+    setShowFormModal(true);
+  };
+
   const toggleExpanded = (suiteId: number) => {
     setExpandedSuites(prev => {
       const newSet = new Set(prev);
@@ -112,7 +126,7 @@ const TestSuitesPage: React.FC = () => {
             <p className="text-gray-600 mt-2">Group and run multiple tests together</p>
           </div>
         <button
-          onClick={() => setShowCreateModal(true)}
+          onClick={openCreate}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -138,7 +152,7 @@ const TestSuitesPage: React.FC = () => {
           <h3 className="text-xl font-semibold text-gray-800 mb-2">No Test Suites Yet</h3>
           <p className="text-gray-600 mb-4">Create your first test suite to group and run multiple tests together</p>
           <button
-            onClick={() => setShowCreateModal(true)}
+            onClick={openCreate}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             Create Your First Suite
@@ -203,6 +217,14 @@ const TestSuitesPage: React.FC = () => {
                         Run
                       </button>
                       <button
+                        onClick={() => handleEdit(suite)}
+                        className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                        title="Edit Suite"
+                        aria-label="Edit suite"
+                      >
+                        Edit
+                      </button>
+                      <button
                         onClick={() => handleDelete(suite.id, suite.name)}
                         className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
                         title="Delete Suite"
@@ -248,10 +270,12 @@ const TestSuitesPage: React.FC = () => {
         </div>
       )}
 
-      {/* Create Suite Modal */}
-      <CreateSuiteModal
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
+      {/* Create / Edit Suite Modal */}
+      <SuiteFormModal
+        isOpen={showFormModal}
+        mode={formMode}
+        suite={editingSuite ?? undefined}
+        onClose={() => setShowFormModal(false)}
         onSuccess={loadSuites}
       />
       </div>

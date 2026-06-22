@@ -1,9 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import testsService from '../services/testsService';
-import testSuitesService, { CreateTestSuiteRequest } from '../services/testSuitesService';
+import testSuitesService, {
+  CreateTestSuiteRequest,
+  TestSuite,
+} from '../services/testSuitesService';
 
-interface CreateSuiteModalProps {
+type SuiteFormMode = 'create' | 'edit';
+
+interface SuiteFormModalProps {
   isOpen: boolean;
+  mode: SuiteFormMode;
+  suite?: TestSuite;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -14,7 +21,13 @@ interface TestCase {
   description?: string;
 }
 
-const CreateSuiteModal: React.FC<CreateSuiteModalProps> = ({ isOpen, onClose, onSuccess }) => {
+const SuiteFormModal: React.FC<SuiteFormModalProps> = ({
+  isOpen,
+  mode,
+  suite,
+  onClose,
+  onSuccess,
+}) => {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [tagsInput, setTagsInput] = useState('');
@@ -24,11 +37,14 @@ const CreateSuiteModal: React.FC<CreateSuiteModalProps> = ({ isOpen, onClose, on
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (isOpen) {
-      loadAvailableTests();
-    }
-  }, [isOpen]);
+  const resetForm = () => {
+    setName('');
+    setDescription('');
+    setTagsInput('');
+    setSelectedTestIds([]);
+    setSearchQuery('');
+    setError('');
+  };
 
   const loadAvailableTests = async () => {
     try {
@@ -41,11 +57,30 @@ const CreateSuiteModal: React.FC<CreateSuiteModalProps> = ({ isOpen, onClose, on
     }
   };
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    loadAvailableTests();
+
+    if (mode === 'edit' && suite) {
+      setName(suite.name);
+      setDescription(suite.description ?? '');
+      setTagsInput(suite.tags?.join(', ') ?? '');
+      const orderedIds = [...(suite.items ?? [])]
+        .sort((a, b) => a.execution_order - b.execution_order)
+        .map((item) => item.test_case_id);
+      setSelectedTestIds(orderedIds);
+    } else {
+      resetForm();
+    }
+
+    setSearchQuery('');
+    setError('');
+  }, [isOpen, mode, suite]);
+
   const handleToggleTest = (testId: number) => {
-    setSelectedTestIds(prev => 
-      prev.includes(testId) 
-        ? prev.filter(id => id !== testId)
-        : [...prev, testId]
+    setSelectedTestIds((prev) =>
+      prev.includes(testId) ? prev.filter((id) => id !== testId) : [...prev, testId]
     );
   };
 
@@ -66,12 +101,12 @@ const CreateSuiteModal: React.FC<CreateSuiteModalProps> = ({ isOpen, onClose, on
   };
 
   const handleRemoveTest = (testId: number) => {
-    setSelectedTestIds(prev => prev.filter(id => id !== testId));
+    setSelectedTestIds((prev) => prev.filter((id) => id !== testId));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!name.trim()) {
       setError('Suite name is required');
       return;
@@ -88,43 +123,68 @@ const CreateSuiteModal: React.FC<CreateSuiteModalProps> = ({ isOpen, onClose, on
     try {
       const tags = tagsInput
         .split(',')
-        .map(tag => tag.trim())
-        .filter(tag => tag.length > 0);
+        .map((tag) => tag.trim())
+        .filter((tag) => tag.length > 0);
 
-      const data: CreateTestSuiteRequest = {
+      const payload = {
         name: name.trim(),
         description: description.trim() || undefined,
         tags: tags.length > 0 ? tags : undefined,
-        test_case_ids: selectedTestIds
+        test_case_ids: selectedTestIds,
       };
 
-      await testSuitesService.createSuite(data);
+      if (mode === 'edit' && suite) {
+        await testSuitesService.updateSuite(suite.id, payload);
+      } else {
+        await testSuitesService.createSuite(payload as CreateTestSuiteRequest);
+      }
+
       onSuccess();
       handleClose();
-    } catch (err: any) {
-      console.error('Failed to create suite:', err);
-      setError(err.response?.data?.detail || 'Failed to create test suite');
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { detail?: string } } };
+      console.error(`Failed to ${mode === 'edit' ? 'update' : 'create'} suite:`, err);
+      setError(
+        apiErr.response?.data?.detail ||
+          `Failed to ${mode === 'edit' ? 'update' : 'create'} test suite`
+      );
     } finally {
       setLoading(false);
     }
   };
 
   const handleClose = () => {
-    setName('');
-    setDescription('');
-    setTagsInput('');
-    setSelectedTestIds([]);
-    setSearchQuery('');
-    setError('');
+    resetForm();
     onClose();
   };
 
-  const filteredTests = availableTests.filter(test =>
-    test.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    test.description?.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredTests = availableTests.filter(
+    (test) =>
+      test.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      test.description?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const getTestById = (id: number) => availableTests.find(t => t.id === id);
+  const getTestById = (id: number): TestCase => {
+    const fromAvailable = availableTests.find((t) => t.id === id);
+    if (fromAvailable) return fromAvailable;
+
+    if (mode === 'edit' && suite) {
+      const item = suite.items?.find((i) => i.test_case_id === id);
+      if (item?.test_case) {
+        return {
+          id: item.test_case.id,
+          title: item.test_case.title,
+          description: item.test_case.description,
+        };
+      }
+    }
+
+    return { id, title: `Test #${id}` };
+  };
+
+  const modalTitle = mode === 'edit' ? 'Edit Test Suite' : 'Create Test Suite';
+  const submitLabel = mode === 'edit' ? 'Save Changes' : 'Create Suite';
+  const loadingLabel = mode === 'edit' ? 'Saving...' : 'Creating...';
 
   if (!isOpen) return null;
 
@@ -133,7 +193,7 @@ const CreateSuiteModal: React.FC<CreateSuiteModalProps> = ({ isOpen, onClose, on
       <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b">
-          <h2 className="text-2xl font-bold text-gray-800">Create Test Suite</h2>
+          <h2 className="text-2xl font-bold text-gray-800">{modalTitle}</h2>
           <button
             onClick={handleClose}
             className="text-gray-400 hover:text-gray-600 transition-colors"
@@ -202,7 +262,7 @@ const CreateSuiteModal: React.FC<CreateSuiteModalProps> = ({ isOpen, onClose, on
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Select Test Cases <span className="text-red-500">*</span>
               </label>
-              
+
               {/* Search */}
               <input
                 type="text"
@@ -221,7 +281,7 @@ const CreateSuiteModal: React.FC<CreateSuiteModalProps> = ({ isOpen, onClose, on
                       <p className="text-gray-500 text-center py-8">No tests available</p>
                     ) : (
                       <div className="space-y-2">
-                        {filteredTests.map(test => (
+                        {filteredTests.map((test) => (
                           <label
                             key={test.id}
                             className={`flex items-start p-2 rounded cursor-pointer hover:bg-gray-100 ${
@@ -259,7 +319,6 @@ const CreateSuiteModal: React.FC<CreateSuiteModalProps> = ({ isOpen, onClose, on
                       <div className="space-y-2">
                         {selectedTestIds.map((testId, index) => {
                           const test = getTestById(testId);
-                          if (!test) return null;
                           return (
                             <div
                               key={testId}
@@ -325,7 +384,7 @@ const CreateSuiteModal: React.FC<CreateSuiteModalProps> = ({ isOpen, onClose, on
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={loading || selectedTestIds.length === 0}
             >
-              {loading ? 'Creating...' : 'Create Suite'}
+              {loading ? loadingLabel : submitLabel}
             </button>
           </div>
         </form>
@@ -334,4 +393,4 @@ const CreateSuiteModal: React.FC<CreateSuiteModalProps> = ({ isOpen, onClose, on
   );
 };
 
-export default CreateSuiteModal;
+export default SuiteFormModal;
