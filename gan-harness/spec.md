@@ -1,138 +1,349 @@
-# Implementation Spec: Defer Agent Workflow & Agent Console Nav
+# Implementation Spec: Test Suite Edit + ADR-007
 
-> Generated from brief: *Remove "Agent Workflow" and "Agent Console" tabs from the frontend sidebar navigation because they are not fully ready. Defer to a later phase. Update ADR-004-agent-workflow.md to reflect this deferral.*
+> Generated from brief: *"The Test Suites page shows suite cards with Run and Delete buttons but NO Edit button. Users cannot modify existing suites (name, description, tags, test membership/order). Create an ADR for test suites documenting this feature and the edit capability."*
 
-## Scope
+## Vision
 
-Hide incomplete agent-facing UI from end-user navigation. **Do not delete** backend APIs, feature modules, or Settings configuration — only remove discoverability via sidebar (and optionally gate direct URL access).
-
-## Current State (codebase audit)
-
-| Item | In sidebar? | Route in `App.tsx`? | Notes |
-|------|-------------|---------------------|-------|
-| **Agent Workflow** | Yes — `Sidebar.tsx` line 13 | Yes — `/agent-workflow` → `AgentWorkflowPage` | Only agent nav entry today |
-| **Agent Console** | **No** | **No** | Planned Phase 2 (`docs/Hermes_QA_Autonomous_Workflow_v5.md` §8); nothing to remove yet |
-
-**Out of scope (unless product says otherwise):** Settings → "Agent Workflow Configuration" (`AgentWorkflowSettings.tsx` on `SettingsPage`) — per-agent model overrides; backend `/api/v2` agent workflow APIs remain live.
+Close the last major gap in the Test Suites UX: users can create and delete suites but cannot edit them. The backend `PUT /suites/{id}` endpoint and `testSuitesService.updateSuite()` already exist — this work is **frontend + documentation only**, wiring an Edit affordance that reuses the existing create modal pattern and records the decision in **ADR-007**.
 
 ---
 
-## 1. Files Likely Needing Changes
+## Scope and Current State
+
+| Layer | Component | Status | Notes |
+|-------|-----------|--------|-------|
+| **Frontend page** | `frontend/src/pages/TestSuitesPage.tsx` | Partial | Lists suites; Run + Delete only; expand shows ordered tests |
+| **Frontend modal** | `frontend/src/components/CreateSuiteModal.tsx` | Create-only | Full form: name, description, tags, test pick + reorder |
+| **Frontend service** | `frontend/src/services/testSuitesService.ts` | Complete | `updateSuite(id, UpdateTestSuiteRequest)` → `PUT /suites/{id}` |
+| **Backend API** | `backend/app/api/v1/endpoints/test_suites.py` | Complete | `PUT /{suite_id}` with ownership check |
+| **Backend CRUD** | `backend/app/crud/crud_test_suite.py` | Complete | Replaces items when `test_case_ids` provided |
+| **Backend schema** | `backend/app/schemas/test_suite.py` | Complete | `TestSuiteUpdate` — all fields optional |
+| **Design doc** | `documentation/archive/TEST-SUITES-FEATURE-DESIGN.md` | Reference | Wireframes show `[Run] [Edit]` on cards |
+| **ADR** | `documentation/ADR-007-test-suites.md` | **Missing** | New document required |
+
+**Out of scope:** Backend changes, suite execution changes, drag-and-drop reorder (up/down arrows already exist), parallel run, new API endpoints, E2E test suite unless evaluator adds smoke coverage.
+
+---
+
+## Architectural Decision: `SuiteFormModal` (create + edit) vs `EditSuiteModal`
+
+**Recommendation: Refactor `CreateSuiteModal` → `SuiteFormModal` with `mode: 'create' | 'edit'`.**
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| **SuiteFormModal (chosen)** | Single source of truth for form layout, validation, test picker, reorder; matches `StepLibraryPage` `FormMode` pattern; ~1 file change + import rename | Slightly larger component; must handle pre-populate + reset |
+| **Separate EditSuiteModal** | Smaller initial diff | Duplicates 300+ lines; divergent validation/UX over time |
+
+**Rationale:** `CreateSuiteModal.tsx` is already the complete suite editor UI. Edit differs only in: (1) initial state from `TestSuite`, (2) submit calls `updateSuite` vs `createSuite`, (3) title/button copy. `StepLibraryPage.tsx` (lines 7, 83–97, 113–119) is the established codebase pattern for create/edit in one form.
+
+---
+
+## Files to Change
 
 ### Must change
 
 | File | Change |
 |------|--------|
-| `frontend/src/components/layout/Sidebar.tsx` | Remove `{ path: '/agent-workflow', icon: Bot, label: 'Agent Workflow' }` from `navItems`. Remove unused `Bot` import if no longer referenced. |
-| `documentation/ADR-004-agent-workflow.md` | Add frontend exposure deferral (see §3 below). |
+| `frontend/src/components/CreateSuiteModal.tsx` | **Rename** to `SuiteFormModal.tsx`. Add props: `mode: 'create' \| 'edit'`, optional `suite?: TestSuite`. Pre-populate form when `mode === 'edit' && suite`. Submit: `createSuite` vs `updateSuite(suite.id, ...)`. Dynamic title ("Create Test Suite" / "Edit Test Suite") and submit label ("Create Suite" / "Save Changes"). Reset form on close in both modes. |
+| `frontend/src/pages/TestSuitesPage.tsx` | Add Edit button per card. State: `editingSuite: TestSuite \| null`, `showFormModal: boolean`, `formMode: 'create' \| 'edit'`. Wire `SuiteFormModal` for create (existing) and edit (new). Import rename from `CreateSuiteModal` → `SuiteFormModal`. |
+| `documentation/ADR-007-test-suites.md` | **New file** — full ADR per outline in §ADR below |
 
-### Should change (recommended)
-
-| File | Change |
-|------|--------|
-| `frontend/src/App.tsx` | Replace `/agent-workflow` page route with `<Navigate to="/dashboard" replace />` (or remove route and add catch-all redirect). Keeps `AgentWorkflowPage` import removable or commented for lint cleanliness. |
-
-### Optional / follow-up
+### Optional (nice polish, same PR if time permits)
 
 | File | Change |
 |------|--------|
-| `frontend/README.md` | If it lists Agent Workflow in nav inventory, align with deferred state. |
-| `frontend/src/components/layout/__tests__/Sidebar.test.tsx` | **Does not exist today** — add only if team wants regression guard on nav labels. |
-| `frontend/src/App.tsx` tests | None exist for route list; manual verification sufficient for this scope. |
+| `frontend/src/components/CreateSuiteModal.tsx` | Keep as thin re-export `export { default } from './SuiteFormModal'` for one release to avoid grep churn — **prefer direct rename** and update the single import in `TestSuitesPage.tsx` only. |
 
-### No change required (re-enable later)
+### No change required
 
-- `frontend/src/pages/AgentWorkflowPage.tsx`
-- `frontend/src/features/agent-workflow/**`
-- `frontend/src/services/agentWorkflowService.ts`
-- `frontend/src/components/AgentWorkflowSettings.tsx`
-- Backend `backend/app/api/v2/**`, agents, orchestration
-
-### Agent Console
-
-No frontend files to edit. When Phase 2 adds it, gate behind the same pattern (nav + route) from day one.
+| File | Reason |
+|------|--------|
+| `frontend/src/services/testSuitesService.ts` | `updateSuite` already implemented |
+| `backend/**` | PUT endpoint complete |
+| `documentation/archive/TEST-SUITES-FEATURE-DESIGN.md` | Historical reference; ADR-007 supersedes for architecture |
 
 ---
 
-## 2. Routes: Nav-Only vs Redirect?
+## UI/UX Specification
 
-**Recommendation: remove from nav + redirect direct URLs.**
+### Edit button placement and styling
 
-| Approach | Pros | Cons |
-|----------|------|------|
-| **Nav-only** | Smallest diff; devs can hit `/agent-workflow` | Bookmarks, docs, and shared links expose half-ready UI |
-| **Nav + redirect** | Users cannot stumble into incomplete UX | Devs need to temporarily restore route or use API/Settings for testing |
-
-**Implementation:**
-
-1. Delete Agent Workflow from `navItems` in `Sidebar.tsx`.
-2. In `App.tsx`, change the `/agent-workflow` route to redirect to `/dashboard` (or `/settings` if agent config testing is the main internal entry).
+Per original wireframe (`TEST-SUITES-FEATURE-DESIGN.md` line 103): **`[Run] [Edit] [Delete]`** — Edit sits **between Run and Delete**.
 
 ```tsx
-<Route path="/agent-workflow" element={<Navigate to="/dashboard" replace />} />
+// TestSuitesPage.tsx — suite card action row (~line 197)
+<div className="flex gap-2 ml-4">
+  <button /* Run — keep existing green */ />
+  <button
+    onClick={() => handleEdit(suite)}
+    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+    title="Edit Suite"
+    aria-label="Edit suite"
+  >
+    Edit
+  </button>
+  <button /* Delete — keep existing red */ />
+</div>
 ```
 
-3. Do **not** remove `AgentWorkflowPage`, feature folder, or API v2 — preserves Sprint 10 work for re-enable.
+**Styling rationale:** Match `StepLibraryPage` edit buttons (gray outline, not filled blue). Run = green (primary action), Delete = red (destructive), Edit = neutral secondary — avoids three competing filled colors.
 
-**Alternative (internal-only):** Keep route active but guard with env flag `VITE_ENABLE_AGENT_WORKFLOW_NAV=true` — only if team needs frequent QA without code churn. For this small scope, a redirect is simpler.
+### Modal behavior (edit mode)
+
+1. User clicks **Edit** on a suite card.
+2. `handleEdit(suite)` sets `formMode = 'edit'`, `editingSuite = suite`, `showFormModal = true`.
+3. Modal opens with fields pre-populated:
+
+| Field | Source |
+|-------|--------|
+| Name | `suite.name` |
+| Description | `suite.description ?? ''` |
+| Tags | `suite.tags?.join(', ') ?? ''` |
+| Selected test IDs (ordered) | `suite.items` sorted by `execution_order` → map to `test_case_id` |
+
+4. Available tests list loads as today (`testsService.getAllTests()` on open).
+5. User modifies fields; validation unchanged (name required, ≥1 test).
+6. Submit calls:
+
+```ts
+await testSuitesService.updateSuite(suite.id, {
+  name: name.trim(),
+  description: description.trim() || undefined,
+  tags: tags.length > 0 ? tags : undefined,
+  test_case_ids: selectedTestIds,
+});
+```
+
+7. On success: `onSuccess()` → `loadSuites()` refreshes list; modal closes; form resets.
+8. On error: show API `detail` in existing red banner (same as create).
+
+### Create mode (unchanged behavior)
+
+- Header "New Suite" button and empty-state CTA still set `formMode = 'create'`, `editingSuite = null`.
+- Submit calls `createSuite` as today.
+
+### Edge cases
+
+| Case | Behavior |
+|------|----------|
+| Suite with missing `items` | Treat as `[]`; block submit with "Please select at least one test case" |
+| Test in suite deleted from system | Still show in selected list as `#${id}` fallback if not in `availableTests` (fetch by id from `item.test_case` if present) |
+| User clears all tests | Validation error before submit |
+| Modal closed mid-edit | `handleClose` resets all state; unsaved changes discarded (same as create) |
+| Concurrent edit | Last write wins (acceptable; no optimistic locking in backend) |
+
+### Success feedback
+
+- **Primary:** `loadSuites()` re-fetches and re-renders card with updated name/tags/count.
+- **Optional polish:** No toast required (create flow doesn't use one); expanded state can remain as-is for edited suite id.
 
 ---
 
-## 3. ADR-004 Updates
+## `SuiteFormModal` Implementation Sketch
 
-ADR-004 documents **ObservationAgent auth, browser-use, and `AgentWorkflowTrigger` fields** — not sidebar IA. Deferral is about **end-user UI exposure**, not reversing accepted backend decisions.
+```tsx
+// SuiteFormModal.tsx — new/extended props
+type SuiteFormMode = 'create' | 'edit';
 
-### Sections to update
+interface SuiteFormModalProps {
+  isOpen: boolean;
+  mode: SuiteFormMode;
+  suite?: TestSuite;           // required when mode === 'edit'
+  onClose: () => void;
+  onSuccess: () => void;
+}
 
-| Section | Update |
-|---------|--------|
-| **Header block** (lines 1–8) | Add line: `**Frontend exposure:** Deferred — Agent Workflow page removed from sidebar nav (Phase 3.x / Sprint TBD). Backend and trigger implementation remain accepted.` Bump `Last Amended` date. |
-| **New subsection after Context** (or before Status) | **`## Frontend Exposure Deferral`** — 3–5 sentences: dedicated Agent Workflow nav and page are hidden until Agent Console + factory job monitor ship; API v2 and Settings agent config remain for power users/integrations; re-enable checklist points to `Sidebar.tsx` + `App.tsx`. |
-| **`## Status`** (lines 375–401) | Change closing line from "ready for production" to clarify **API/backend production-ready**; **product UI nav deferred**. Add bullet under "What Was Fixed / Added" is not needed — deferral is separate from technical fixes. |
-| **Related Files** (lines 9–26) | Add `frontend/src/components/layout/Sidebar.tsx` and `frontend/src/App.tsx` with note "(nav gating)". |
+// Pre-populate on open (useEffect when isOpen + mode + suite)
+useEffect(() => {
+  if (!isOpen) return;
+  loadAvailableTests();
+  if (mode === 'edit' && suite) {
+    setName(suite.name);
+    setDescription(suite.description ?? '');
+    setTagsInput(suite.tags?.join(', ') ?? '');
+    const orderedIds = [...(suite.items ?? [])]
+      .sort((a, b) => a.execution_order - b.execution_order)
+      .map(item => item.test_case_id);
+    setSelectedTestIds(orderedIds);
+  } else {
+    // reset to empty (create)
+  }
+  setSearchQuery('');
+  setError('');
+}, [isOpen, mode, suite]);
+```
 
-### Do not change
+```tsx
+// TestSuitesPage.tsx — handler + modal wiring
+const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
+const [editingSuite, setEditingSuite] = useState<TestSuite | null>(null);
+const [showFormModal, setShowFormModal] = useState(false);
 
-- ADR decision sections (ADR-004-1 through ADR-004-8) — still valid.
-- Test coverage tables — tests remain green; deferral does not remove code.
-- Implementation detail for CDP auth, file upload, etc.
+const handleEdit = (suite: TestSuite) => {
+  setFormMode('edit');
+  setEditingSuite(suite);
+  setShowFormModal(true);
+};
+
+const openCreate = () => {
+  setFormMode('create');
+  setEditingSuite(null);
+  setShowFormModal(true);
+};
+
+<SuiteFormModal
+  isOpen={showFormModal}
+  mode={formMode}
+  suite={editingSuite ?? undefined}
+  onClose={() => setShowFormModal(false)}
+  onSuccess={loadSuites}
+/>
+```
+
+Update header and empty-state buttons: `onClick={openCreate}` instead of `setShowCreateModal(true)`.
 
 ---
 
-## 4. Verification Checklist
+## ADR-007 Content Outline
 
-- [ ] Log in → sidebar shows: Dashboard, Tests, Step Library, Crawl & Save, Test Suites, Executions, Knowledge Base, Settings — **no** Agent Workflow or Agent Console.
-- [ ] Navigate manually to `/agent-workflow` → redirects to dashboard (if redirect implemented) or confirm intentional dev-only behavior.
-- [ ] Settings page still loads; "Agent Workflow Configuration" section still present (expected unless product opts to hide).
-- [ ] `npm run build` (or `tsc`) in `frontend/` — no unused-import errors after removing `Bot` from Sidebar.
-- [ ] Existing tests pass: `AgentWorkflowPage.test.tsx`, `AgentWorkflowTrigger.test.tsx` (page still exists in codebase).
-- [ ] ADR-004 header and Status section reflect deferral without contradicting accepted technical ADRs.
+**File:** `documentation/ADR-007-test-suites.md`
+
+Follow [ADR-005](documentation/ADR-005-kb.md) structure:
+
+```markdown
+# Architecture Decision Records — Test Suites
+
+**Document ID:** ADR-007
+**Component:** Test Suites — Grouping, Execution, and Edit
+**Status:** Accepted
+**Date:** [implementation date]
+**Author:** [implementer]
+**Related Files:**
+- `frontend/src/pages/TestSuitesPage.tsx`
+- `frontend/src/components/SuiteFormModal.tsx`
+- `frontend/src/services/testSuitesService.ts`
+- `backend/app/api/v1/endpoints/test_suites.py`
+- `backend/app/crud/crud_test_suite.py`
+- `backend/app/schemas/test_suite.py`
+- `backend/app/models/test_suite.py`
+- `documentation/archive/TEST-SUITES-FEATURE-DESIGN.md` (historical)
 
 ---
 
-## 5. Risks & Re-Enable Follow-Ups
+## Context
 
-| Risk | Mitigation |
-|------|------------|
-| Users with bookmarked `/agent-workflow` | Redirect to dashboard with optional one-time toast: "Agent Workflow coming in a future release." |
-| Docs/PM plans still list nav item | Update Phase3 PM plan or nav diagrams in a separate docs pass (not blocking this change). |
-| Settings exposes agent config while page is hidden | Acceptable for power users; or hide Settings section in same PR if product wants zero agent UI. |
-| Agent Console never existed in nav | No code change; spec future work: page + `/agent-console` route + nav entry together. |
+- Test suites group ordered test cases for batch/sequential execution.
+- Backend CRUD and `PUT /api/v1/suites/{id}` shipped in Sprint 3; frontend create/delete/run shipped; **edit UI was never wired** despite service method existing.
+- Original design doc wireframes included Edit on suite cards.
+- Users need to fix typos, retag suites, and reorder/add/remove tests without delete-and-recreate.
 
-### Re-enable checklist (later phase)
+## Decision
 
-1. Restore `navItems` entry in `Sidebar.tsx` (and add Agent Console entry when built).
-2. Restore `App.tsx` route to `AgentWorkflowPage` (and `AgentConsolePage`).
-3. Remove deferral note from ADR-004 Status; set `Frontend exposure: Active`.
-4. Run E2E: trigger workflow from UI, SSE progress, job monitor (per Hermes v5 Phase 2).
-5. Consider feature flag instead of hard remove if staggered rollout to beta users.
+1. **Document test suites** as a first-class feature in ADR-007 (no prior ADR).
+2. **Expose edit in UI** via shared `SuiteFormModal` with create/edit modes.
+3. **Use existing PUT endpoint** — full replacement of `test_case_ids` on membership change (matches CRUD behavior).
+4. **Button order:** Run → Edit → Delete; Edit uses neutral outline styling.
+
+## Changes Made
+
+| Layer | File | Change |
+|-------|------|--------|
+| Frontend component | `CreateSuiteModal.tsx` → `SuiteFormModal.tsx` | Dual mode; pre-populate; `updateSuite` on edit |
+| Frontend page | `TestSuitesPage.tsx` | Edit button; modal mode state |
+| Documentation | `documentation/ADR-007-test-suites.md` | This ADR |
+
+## Consequences
+
+**Positive**
+- Parity with create flow; no backend deploy needed.
+- Single modal reduces maintenance vs duplicate component.
+- Aligns UI with archived design spec.
+
+**Negative**
+- Full test list replacement on every membership edit (acceptable at current scale).
+- No audit trail of suite edits (only `updated_at` timestamp).
+- Orphan test references if a test case is deleted server-side while modal is open — handled by validation on submit.
+
+**Alternatives Considered**
+- **Separate EditSuiteModal:** Rejected — duplicates form logic.
+- **Inline card editing:** Rejected — complex for test ordering UI.
+- **PATCH partial updates only:** Rejected — PUT with full `test_case_ids` already implemented and simpler for membership changes.
+
+## Test Coverage
+
+| Area | Coverage |
+|------|----------|
+| Backend PUT | Manual / existing integration (no dedicated unit tests in repo today) |
+| Frontend | Manual verification checklist below; optional future `SuiteFormModal.test.tsx` |
+| ADR | Peer review that Related Files and Decision match implementation |
+```
+
+---
+
+## Verification Checklist
+
+### Functional
+
+- [ ] Navigate to `http://localhost:5173/test-suites` with ≥1 suite
+- [ ] Each suite card shows **Run**, **Edit**, **Delete** in that order
+- [ ] Click **Edit** → modal title "Edit Test Suite"; fields match suite (name, description, tags, ordered tests)
+- [ ] Change name only → Save → card reflects new name after refresh
+- [ ] Reorder tests (up/down) → Save → expanded list shows new order
+- [ ] Add/remove tests → Save → test count updates
+- [ ] **Create** flow still works via "New Suite" (modal title "Create Test Suite")
+- [ ] Cancel closes modal without API call; reopening edit shows original data
+- [ ] Empty validation: blank name or zero tests shows error banner
+- [ ] API error (e.g. network) shows error message in modal
+
+### Non-regression
+
+- [ ] **Run** and **Delete** unchanged
+- [ ] Expand/collapse test list still works
+- [ ] `npm run build` in `frontend/` passes (no broken imports after rename)
+
+### Documentation
+
+- [ ] `documentation/ADR-007-test-suites.md` exists with all ADR-005 sections
+- [ ] ADR Related Files list matches actual paths post-rename
+- [ ] ADR Status = Accepted after merge
 
 ---
 
 ## Effort Estimate
 
-**Small** — ~30–60 minutes: 2 frontend files, 1 ADR edit, manual smoke test. No backend changes.
+| Task | Estimate |
+|------|----------|
+| Refactor modal to `SuiteFormModal` | 45–60 min |
+| Wire Edit in `TestSuitesPage` | 15–20 min |
+| Write ADR-007 | 20–30 min |
+| Manual verification | 15 min |
+| **Total** | **~1.5–2 hours** (single PR) |
 
 ## Sprint Assignment
 
-**Sprint 1 equivalent (single PR):** Nav removal + route redirect + ADR amendment.
+**Sprint 1 (single PR, frontend + docs):**
+
+| # | Deliverable |
+|---|-------------|
+| 1 | `SuiteFormModal` with create + edit modes |
+| 2 | Edit button on `TestSuitesPage` |
+| 3 | `documentation/ADR-007-test-suites.md` |
+
+**Definition of done:** All verification checklist items pass; ADR merged; no backend changes unless PUT gap discovered during QA.
+
+---
+
+## Design Direction (modal consistency)
+
+Keep existing modal visual language — no redesign:
+
+- **Colors:** White modal on `bg-black/50` overlay; primary submit `#2563eb` (blue-600); error `#fef2f2` banner
+- **Typography:** `text-2xl font-bold` modal title; form labels `text-sm font-medium text-gray-700`
+- **Layout:** `max-w-5xl` two-column test picker (unchanged)
+- **Anti-patterns:** Do not add new gradient headers, icon-only Edit without label, or move Edit to overflow menu
+
+---
+
+## Evaluation Criteria (summary)
+
+See `gan-harness/eval-rubric.md` for weighted scorer sheet. Pass requires: Edit button functional, modal pre-populates correctly, PUT called on save, ADR-007 complete, create flow unbroken.
