@@ -13,7 +13,7 @@
         "__pycache__", ".pytest_cache", "backend\\artifacts",
         "backend\\tests\\integration",
         "stagehand-typescript-test", "documentation\\archive",
-        "scripts"
+        "scripts", "gan-harness"
     ],
 
     "excludeFiles": [
