@@ -12,7 +12,6 @@ import { ExecutionProgressPage } from './pages/ExecutionProgressPage';
 import { ExecutionHistoryPage } from './pages/ExecutionHistoryPage';
 import { FeedbackListPage } from './pages/FeedbackListPage';
 import { DebugSessionPage } from './pages/DebugSessionPage';
-import { AgentWorkflowPage } from './pages/AgentWorkflowPage';
 import { StepLibraryPage } from './pages/StepLibraryPage';
 import { CrawlAndSavePage } from './pages/CrawlAndSavePage';
 import './index.css';
@@ -140,11 +139,7 @@ function App() {
         />
         <Route
           path="/agent-workflow"
-          element={
-            <ProtectedRoute>
-              <AgentWorkflowPage />
-            </ProtectedRoute>
-          }
+          element={<Navigate to="/dashboard" replace />}
         />
         <Route
           path="/feedback"

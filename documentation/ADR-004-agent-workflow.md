@@ -2,9 +2,10 @@
 
 **Document ID:** ADR-004  
 **Component:** ObservationAgent / browser-use Integration / AgentWorkflowTrigger  
-**Status:** Accepted  
+**Status:** Accepted (backend/API); Frontend exposure deferred to a later phase  
+**Frontend exposure:** Deferred — Agent Workflow and Agent Console nav entries hidden until UI is production-ready  
 **Date:** March 13, 2026  
-**Last Amended:** March 27, 2026 (Sprint 10.8 — hybrid file upload, `available_file_paths` absolute path, advanced trigger fields)  
+**Last Amended:** June 22, 2026 (frontend nav deferral — Agent Workflow sidebar removed; `/agent-workflow` redirects to dashboard)  
 **Author:** Developer B  
 **Related Files:**
 - `backend/agents/observation_agent.py`
@@ -24,6 +25,30 @@
 - `frontend/src/services/agentWorkflowService.ts`
 - `frontend/src/types/agentWorkflow.types.ts`
 - `frontend/src/features/agent-workflow/__tests__/AgentWorkflowTrigger.test.tsx`
+- `frontend/src/components/layout/Sidebar.tsx`
+- `frontend/src/App.tsx`
+
+---
+
+## Frontend Exposure Deferral
+
+**Decision (June 2026):** The Agent Workflow dedicated page and Agent Console are **not exposed in the product sidebar** until a later phase. The backend API (`/api/v2`), `AgentWorkflowTrigger` components, and Settings → Agent Workflow Configuration remain implemented and testable; only end-user navigation to the standalone workflow page is withheld.
+
+| Surface | Current state | Later phase |
+|---|---|---|
+| Sidebar — Agent Workflow | Removed from `navItems` | Re-add `{ path: '/agent-workflow', ... }` in `Sidebar.tsx` |
+| Sidebar — Agent Console | Not yet implemented | Add when Agent Console shell page exists |
+| Route `/agent-workflow` | Redirects to `/dashboard` | Restore `AgentWorkflowPage` route in `App.tsx` |
+| Settings → Agent Workflow Configuration | **Active** — per-agent model overrides | Unchanged |
+| Backend `/api/v2/generate-tests` and related | **Active** | Unchanged |
+
+**Rationale:** The 4-agent pipeline backend and trigger form are functional, but the full product experience (progress UI, results review, Agent Console chat) is not ready for general users. Hiding nav avoids half-finished flows while preserving API and Settings access for operators.
+
+**Re-enable checklist (later phase):**
+1. Restore Agent Workflow in `Sidebar.tsx` (`Bot` icon, label `Agent Workflow`).
+2. Replace `/agent-workflow` redirect with `ProtectedRoute` + `AgentWorkflowPage` in `App.tsx`.
+3. Implement Agent Console page and add its sidebar entry when the shell is ready.
+4. Update this ADR Status section to mark frontend exposure as active.
 
 ---
 
@@ -374,7 +399,9 @@ Each field is guarded before inclusion in the request object:
 
 ## Status
 
-**Accepted** — implemented and tested. Last updated March 27, 2026.
+**Accepted (backend/API)** — technical decisions ADR-004-1 through ADR-004-8 are implemented and tested. Last updated June 22, 2026.
+
+**Frontend exposure deferred** — Agent Workflow is removed from the sidebar; `/agent-workflow` redirects to the dashboard. Agent Console has no nav entry yet. Re-enable in a later phase per [Frontend Exposure Deferral](#frontend-exposure-deferral) above.
 
 ### What Was Fixed / Added
 
@@ -398,4 +425,4 @@ Each field is guarded before inclusion in the request object:
 - `test_workflow_file_upload.py` — Upload endpoint: happy path (JPEG/PNG/PDF, absolute path, unique dirs) + rejection (auth, extension, size, path traversal)
 - `AgentWorkflowTrigger.test.tsx` — Hybrid upload/path UI, all six advanced fields, omission guards
 
-**All tests green; ready for production.**
+**All tests green.** Backend and API paths are production-ready; standalone Agent Workflow page and Agent Console remain deferred from product navigation until a later phase.
