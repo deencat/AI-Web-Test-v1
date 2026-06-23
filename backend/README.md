@@ -49,8 +49,8 @@ playwright install chromium
 
 4. Configure environment:
 ```bash
-copy .env.example .env  # Windows
-# cp .env.example .env  # Mac/Linux
+copy env.example .env  # Windows
+# cp env.example .env  # Mac/Linux
 
 # Edit .env with your OpenRouter API key
 notepad .env  # Windows
@@ -168,7 +168,7 @@ backend/
 │   └── main.py                  # FastAPI app entry point
 ├── tests/                       # Tests
 ├── .env                         # Environment variables
-├── .env.example                 # Example environment variables
+├── env.example                  # Example environment variables
 ├── Dockerfile                   # Docker configuration
 ├── requirements.txt             # Python dependencies
 └── README.md                    # This file

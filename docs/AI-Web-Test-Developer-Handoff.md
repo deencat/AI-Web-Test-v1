@@ -696,7 +696,7 @@ Authorization: Bearer <accessToken>
 
 1. **OpenAPI or markdown** listing all **new/updated** proxy routes (extends integration guide §12) — include **`GET/POST …/wiki`**, readiness fields, **DELETE source**.
 2. **Demo or screenshots:** workspace → upload → (index) → **Test context / readiness** → requirement → IQ → test run.
-3. **`.env.example`** entries for `REQIQ_URL`, `REQIQ_SERVICE_*`, optional `REQIQ_WEB_URL`.
+3. **`env.example`** entries for `REQIQ_URL`, `REQIQ_SERVICE_*`, optional `REQIQ_WEB_URL`.
 4. **Short note:** what is proxied vs what still requires ReqIQ `/app`.
 5. **Troubleshooting note:** how you detect ReqIQ down vs ReqIQ 4xx (avoid masking as generic 502).
 

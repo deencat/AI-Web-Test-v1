@@ -64,7 +64,6 @@
 
     "scanExcludeFiles": [
         "env.example",
-        ".env.example",
         "API-KEY-EXPLAINED.md"
     ],
 

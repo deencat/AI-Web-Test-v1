@@ -52,7 +52,7 @@ python -m venv venv
 pip install -r requirements.txt
 playwright install chromium
 
-copy .env.example .env
+copy env.example .env
 # Edit .env with your API keys (OpenRouter, Google AI Studio, Cerebras, etc.)
 
 python start_server.py
