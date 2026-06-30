@@ -1243,6 +1243,29 @@ class Tier2HybridExecutor:
             return False
         return "moneyback" in (instruction or "").lower()
 
+    def _extract_three_hk_section_qualifier(self, instruction: str) -> Optional[str]:
+        """Extract a quoted parent section label from instructions like under "Exclusion Promotion"."""
+        match = re.search(
+            r"\bunder\s+[\"']([^\"']+)[\"']",
+            instruction or "",
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            return None
+
+        section_label = re.sub(r"\s+", " ", match.group(1)).strip()
+        return section_label or None
+
+    def _xpath_literal(self, value: str) -> str:
+        """Escape a Python string for safe embedding in an XPath literal."""
+        if "'" not in value:
+            return f"'{value}'"
+        if '"' not in value:
+            return f'"{value}"'
+
+        parts = value.split("'")
+        return "concat(" + ", \"'\", ".join(f"'{part}'" for part in parts) + ")"
+
     async def _read_three_hk_footer_cart_text(self, page: Page) -> str:
         """Read footer cart summary text from the Three HK plan-selection SPA."""
         try:
@@ -1405,32 +1428,141 @@ class Tier2HybridExecutor:
 
         label_candidates = ["Moneyback point", "Moneyback"]
         instruction_lower = (instruction or "").lower()
+        section_label = self._extract_three_hk_section_qualifier(instruction)
         if "moneyback point" in instruction_lower:
             label_candidates = ["Moneyback point", "Moneyback"]
         else:
             label_candidates = ["Moneyback", "Moneyback point"]
 
+        if section_label:
+            logger.info(
+                "[Tier 2] 🔎 Moneyback direct lookup extracted section qualifier=%r",
+                section_label,
+            )
+            section_literal = self._xpath_literal(section_label)
+            section_xpath_candidates = [
+                (
+                    "(//*[self::section or self::article or self::div or self::li]"
+                    f"[contains(normalize-space(.), {section_literal})"
+                    f" and .//*[contains(normalize-space(.), {self._xpath_literal(label)})]][1])"
+                )
+                for label in label_candidates
+            ]
+            section_xpath_candidates.append(
+                "(//*[self::section or self::article or self::div or self::li]"
+                f"[contains(normalize-space(.), {section_literal})][1])"
+            )
+
+            section_container = None
+            for xpath_candidate in section_xpath_candidates:
+                try:
+                    section_container = page.locator(f"xpath={xpath_candidate}").first
+                    await section_container.wait_for(
+                        state="visible",
+                        timeout=min(self.timeout_ms, 5000),
+                    )
+                    break
+                except Exception:
+                    section_container = None
+
+            if section_container is None:
+                logger.warning(
+                    "[Tier 2] ⚠️ Moneyback section qualifier=%r not found; refusing global fallback",
+                    section_label,
+                )
+                return None, None, "section-scoped", section_label, None
+
+            container_snippet = None
+            try:
+                container_snippet = re.sub(
+                    r"\s+",
+                    " ",
+                    (await section_container.inner_text()) or "",
+                ).strip()[:160]
+            except Exception:
+                container_snippet = None
+
+            for label in label_candidates:
+                locator = section_container.get_by_text(label, exact=False).first
+                try:
+                    await locator.wait_for(state="visible", timeout=min(self.timeout_ms, 5000))
+                    return locator, label, "section-scoped", section_label, container_snippet
+                except Exception:
+                    continue
+
+            logger.warning(
+                "[Tier 2] ⚠️ Moneyback section qualifier=%r found but no scoped label matched; refusing global fallback",
+                section_label,
+            )
+            return None, None, "section-scoped", section_label, container_snippet
+
         for label in label_candidates:
             locator = page.get_by_text(label, exact=False).first
             try:
                 await locator.wait_for(state="visible", timeout=min(self.timeout_ms, 8000))
-                return locator, label
+                return locator, label, "global", None, None
             except Exception:
                 continue
 
-        return None, None
+        return None, None, "global", section_label, None
 
-    async def _verify_three_hk_moneyback_panel_selected(self, page: Page) -> bool:
-        """Verify Moneyback selection updated the cart or removed the empty-promotion blocker."""
-        footer_text = await self._read_three_hk_footer_cart_text(page)
-        if not self._three_hk_footer_shows_empty_cart(footer_text):
+    async def _verify_three_hk_moneyback_panel_selected(
+        self,
+        page: Page,
+        panel_locator=None,
+        section_label: Optional[str] = None,
+    ) -> bool:
+        """Verify Moneyback selection with local-state checks before broader page signals."""
+        local_selected = False
+        local_snippet = None
+        if panel_locator is not None:
+            try:
+                local_state = await panel_locator.evaluate(
+                    """(el) => {
+                        const container =
+                          el.closest('[role="button"], button, label, div, section, article, li') || el;
+                        const nodes = [el, container].filter(Boolean);
+                        const selected = nodes.some((node) => {
+                          const className = String(node.className || '').toLowerCase();
+                          return node.getAttribute('aria-selected') === 'true'
+                            || node.getAttribute('aria-checked') === 'true'
+                            || node.getAttribute('aria-pressed') === 'true'
+                            || node.getAttribute('data-selected') === 'true'
+                            || /(active|selected|checked|current)/.test(className);
+                        });
+                        const snippet = String(container.innerText || el.innerText || '')
+                          .replace(/\\s+/g, ' ')
+                          .trim()
+                          .slice(0, 160);
+                        return { selected, snippet };
+                    }"""
+                )
+                if isinstance(local_state, dict):
+                    local_selected = bool(local_state.get("selected"))
+                    local_snippet = local_state.get("snippet") or None
+            except Exception:
+                local_selected = False
+                local_snippet = None
+
+        logger.info(
+            "[Tier 2] 🔎 Moneyback verification section=%r local_selected=%s snippet=%r",
+            section_label,
+            local_selected,
+            local_snippet,
+        )
+        if local_selected:
             return True
+        if section_label:
+            return False
+
+        footer_text = await self._read_three_hk_footer_cart_text(page)
+        footer_non_empty = not self._three_hk_footer_shows_empty_cart(footer_text)
 
         promotion_error = page.get_by_text("Please select a promotion", exact=False)
         try:
             if await promotion_error.count() == 0:
-                return True
-            return not await promotion_error.first.is_visible()
+                return footer_non_empty
+            return footer_non_empty and not await promotion_error.first.is_visible()
         except Exception:
             return False
 
@@ -1442,17 +1574,29 @@ class Tier2HybridExecutor:
     ) -> Optional[Dict[str, Any]]:
         """Click the Three HK Moneyback reward panel via Playwright locators."""
         direct_click_start = time.time()
-        locator, label = await self._find_three_hk_moneyback_panel_locator(page, instruction)
+        locator, label, strategy, section_label, container_snippet = (
+            await self._find_three_hk_moneyback_panel_locator(page, instruction)
+        )
         if locator is None:
             logger.warning(
-                "[Tier 2] ⚠️ Could not find a direct Three HK Moneyback panel for step: %s",
+                "[Tier 2] ⚠️ Could not find a direct Three HK Moneyback panel for step: %s "
+                "(section=%r strategy=%s snippet=%r)",
                 instruction,
+                section_label,
+                strategy,
+                container_snippet,
             )
             return None
 
         current_url = page.url
         await locator.click(timeout=self.timeout_ms)
-        logger.info("[Tier 2] 🎯 Clicked Three HK Moneyback panel using text '%s'", label)
+        logger.info(
+            "[Tier 2] 🎯 Clicked Three HK Moneyback panel strategy=%s section=%r label=%r snippet=%r",
+            strategy,
+            section_label,
+            label,
+            container_snippet,
+        )
 
         await wait_for_post_click_readiness(
             page=page,
@@ -1465,21 +1609,36 @@ class Tier2HybridExecutor:
         )
         await self._wait_for_spa_spinner_settle(page)
 
-        if not await self._verify_three_hk_moneyback_panel_selected(page):
+        verification_locator = locator
+        if not await self._verify_three_hk_moneyback_panel_selected(
+            page,
+            panel_locator=verification_locator,
+            section_label=section_label,
+        ):
             await auto_dismiss_blocking_modals(page, logger)
-            retry_locator, retry_label = await self._find_three_hk_moneyback_panel_locator(
-                page,
-                instruction,
+            retry_locator, retry_label, retry_strategy, retry_section_label, retry_snippet = (
+                await self._find_three_hk_moneyback_panel_locator(
+                    page,
+                    instruction,
+                )
             )
             if retry_locator is not None:
                 await retry_locator.click(timeout=self.timeout_ms)
                 logger.info(
-                    "[Tier 2] 🔁 Retried Three HK Moneyback panel using text '%s'",
+                    "[Tier 2] 🔁 Retried Three HK Moneyback panel strategy=%s section=%r label=%r snippet=%r",
+                    retry_strategy,
+                    retry_section_label,
                     retry_label,
+                    retry_snippet,
                 )
+                verification_locator = retry_locator
                 await self._wait_for_spa_spinner_settle(page)
 
-        if not await self._verify_three_hk_moneyback_panel_selected(page):
+        if not await self._verify_three_hk_moneyback_panel_selected(
+            page,
+            panel_locator=verification_locator,
+            section_label=section_label,
+        ):
             raise ValueError("Three HK Moneyback panel click did not update the cart")
 
         execution_time_ms = (time.time() - direct_click_start) * 1000

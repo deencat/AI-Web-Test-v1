@@ -1030,6 +1030,126 @@ class TestThreeHkPromotionCardDirectClick:
         assert result["success"] is True
         self.executor._try_three_hk_moneyback_panel_click.assert_awaited_once()
 
+
+class TestThreeHkMoneybackSectionScopedSelection:
+    def setup_method(self):
+        self.executor = Tier2HybridExecutor(
+            db=MagicMock(),
+            xpath_extractor=MagicMock(),
+            timeout_ms=30000,
+        )
+
+    def test_extract_three_hk_section_qualifier(self):
+        assert (
+            self.executor._extract_three_hk_section_qualifier(
+                'Click "Moneyback point" panel under "Exclusion Promotion"'
+            )
+            == "Exclusion Promotion"
+        )
+
+    @pytest.mark.asyncio
+    async def test_find_moneyback_locator_scopes_lookup_to_section(self):
+        page = MagicMock()
+
+        section_container = AsyncMock()
+        section_container.wait_for = AsyncMock(return_value=None)
+        section_container.inner_text = AsyncMock(
+            return_value="Exclusion Promotion Moneyback point"
+        )
+
+        scoped_locator = AsyncMock()
+        scoped_locator.wait_for = AsyncMock(return_value=None)
+
+        scoped_text_match = MagicMock()
+        scoped_text_match.first = scoped_locator
+        section_container.get_by_text = MagicMock(return_value=scoped_text_match)
+
+        section_match = MagicMock()
+        section_match.first = section_container
+        page.locator = MagicMock(return_value=section_match)
+        page.get_by_text = MagicMock(
+            side_effect=AssertionError("global lookup should not run")
+        )
+
+        self.executor._wait_for_spa_spinner_settle = AsyncMock(return_value=None)
+
+        locator, label, strategy, section_label, container_snippet = (
+            await self.executor._find_three_hk_moneyback_panel_locator(
+                page,
+                'Click "Moneyback point" panel under "Exclusion Promotion"',
+            )
+        )
+
+        assert locator is scoped_locator
+        assert label == "Moneyback point"
+        assert strategy == "section-scoped"
+        assert section_label == "Exclusion Promotion"
+        assert container_snippet == "Exclusion Promotion Moneyback point"
+        section_container.get_by_text.assert_called_with("Moneyback point", exact=False)
+        page.get_by_text.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_find_moneyback_locator_refuses_global_fallback_when_scoped_lookup_fails(self):
+        page = MagicMock()
+
+        section_container = AsyncMock()
+        section_container.wait_for = AsyncMock(return_value=None)
+        section_container.inner_text = AsyncMock(return_value="Exclusion Promotion")
+
+        missing_locator = AsyncMock()
+        missing_locator.wait_for = AsyncMock(side_effect=RuntimeError("not visible"))
+
+        scoped_text_match = MagicMock()
+        scoped_text_match.first = missing_locator
+        section_container.get_by_text = MagicMock(return_value=scoped_text_match)
+
+        section_match = MagicMock()
+        section_match.first = section_container
+        page.locator = MagicMock(return_value=section_match)
+        page.get_by_text = MagicMock(
+            side_effect=AssertionError("global fallback should not run")
+        )
+
+        self.executor._wait_for_spa_spinner_settle = AsyncMock(return_value=None)
+
+        locator, label, strategy, section_label, container_snippet = (
+            await self.executor._find_three_hk_moneyback_panel_locator(
+                page,
+                'Click "Moneyback point" panel under "Exclusion Promotion"',
+            )
+        )
+
+        assert locator is None
+        assert label is None
+        assert strategy == "section-scoped"
+        assert section_label == "Exclusion Promotion"
+        assert container_snippet == "Exclusion Promotion"
+        page.get_by_text.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_verify_moneyback_section_selection_requires_local_selected_state(self):
+        page = MagicMock()
+
+        panel_locator = AsyncMock()
+        panel_locator.evaluate = AsyncMock(
+            return_value={
+                "selected": False,
+                "snippet": "Exclusion Promotion Moneyback point",
+            }
+        )
+
+        promotion_error = MagicMock()
+        promotion_error.count = AsyncMock(return_value=0)
+        page.get_by_text = MagicMock(return_value=promotion_error)
+
+        self.executor._read_three_hk_footer_cart_text = AsyncMock(return_value="$ 238")
+
+        assert not await self.executor._verify_three_hk_moneyback_panel_selected(
+            page,
+            panel_locator=panel_locator,
+            section_label="Exclusion Promotion",
+        )
+
     @pytest.mark.asyncio
     async def test_execute_step_blocks_checkout_when_cart_still_empty(self):
         page = MagicMock()
