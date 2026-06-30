@@ -35,6 +35,7 @@ AI Web Test is an AI-powered web testing platform: FastAPI backend, React/Vite f
 | [execution-engine.md](./execution-engine.md) | Three-tier execution flow, tiers, supporting services |
 | [database.md](./database.md) | SQLAlchemy models and persistence |
 | [integrations.md](./integrations.md) | ReqIQ, Hermes, Stagehand, LLM providers |
+| [cursor-rules.md](./cursor-rules.md) | `.cursor/rules/*.mdc` index, deprecated rules, where to add new rules |
 
 ## Entry Points
 
