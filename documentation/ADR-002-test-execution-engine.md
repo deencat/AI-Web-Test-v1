@@ -22,6 +22,7 @@
 - `frontend/src/utils/urlUtils.ts`
 - `backend/tests/test_execution_service_uat_auto_creds.py`
 - `frontend/src/components/__tests__/RunTestButton.test.tsx`
+- `backend/tests/test_tier2_plan_selection.py`
 - `backend/tests/test_tier2_payment_helpers.py`
 - `backend/tests/test_tier3_payment_verification.py`
 - `backend/tests/test_post_click_readiness.py`
@@ -124,6 +125,7 @@
 50. [ADR-002-50: Three HK HPPRM Promotion Card Direct Click — Bypass observe() When Accessibility Tree Omits Plan Cards](#adr-002-50-three-hk-hpprm-promotion-card-direct-click--bypass-observe-when-accessibility-tree-omits-plan-cards)
 51. [ADR-002-51: Three HK Promotion-Page Identity Uses DOM Markers, Not Exact Host Alone](#adr-002-51-three-hk-promotion-page-identity-uses-dom-markers-not-exact-host-alone)
 52. [ADR-002-52: Three HK Moneyback Section-Scoped Direct Click — Honor `under "…"` Qualifiers Without Global Fallback](#adr-002-52-three-hk-moneyback-section-scoped-direct-click--honor-under--qualifiers-without-global-fallback)
+53. [ADR-002-53: Three HK Wi-Fi 6/7 Promotion Card Family Targeting — Reject Shared Parents and Page-Wide False Passes](#adr-002-53-three-hk-wi-fi-67-promotion-card-family-targeting--reject-shared-parents-and-page-wide-false-passes)
 
 ---
 
@@ -3886,9 +3888,9 @@ This is the same class of problem ADR-002-37 solved for plan-tab clicks: `observ
 
 Add `_try_three_hk_promotion_card_click()` and `_try_three_hk_moneyback_panel_click()` in `tier2_hybrid.py`, wired in `execute_step()` **before** XPath cache lookup — mirroring `_try_three_hk_plan_tab_click()`.
 
-Detection (see also ADR-002-51 for page-identity gating):
+Detection (see also ADR-002-51 for page-identity gating; Wi-Fi family targeting refined in ADR-002-53):
 
-- Promotion card: `action == "click"`, `_looks_like_three_hk_promotion_page()` or `is_three_hk_uat_url()`, instruction contains `HPPRM\d+`
+- Promotion card: `action == "click"`, `_looks_like_three_hk_promotion_page()` or `is_three_hk_uat_url()`, instruction contains `HPPRM\d+` **or** a Wi-Fi generation label (`wifi6` / `wifi7`) with a plan price (e.g. `$198/30`, `$238/30`)
 - Moneyback panel: `action == "click"`, same page-identity gate, instruction contains `"moneyback"` (section scoping per ADR-002-52)
 
 Locators use HPPRM text + optional price-aware XPath ancestors, then verify post-click state (Moneyback panel visible or cart no longer `$ 0`). Moneyback uses page-wide `get_by_text("Moneyback…")` only when the instruction has **no** `under "…"` qualifier; qualified steps are handled in ADR-002-52.
@@ -3916,6 +3918,7 @@ In `tier3_stagehand.py`, after `page.act()` for `click` actions, raise when the 
 - HPPRM XPath/heuristic locators may need tuning if card DOM structure changes.
 - Checkout guard may fail early on flows that legitimately show `$ 0` before a later step — acceptable for current Three HK broadband UAT scripts.
 - Detection and Moneyback locator behavior were refined in ADR-002-51 (page identity) and ADR-002-52 (section-scoped Moneyback).
+- Wi-Fi 6/7 promotion-card family targeting (shared-parent locators, page-wide verification false passes) was refined in ADR-002-53.
 
 **Tests added:**
 - `backend/tests/test_tier2_plan_selection.py::TestThreeHkPromotionCardDirectClick`
@@ -4058,3 +4061,79 @@ Update `_verify_three_hk_moneyback_panel_selected()`:
   - section-qualified verification rejects pass when cart is non-empty but panel lacks local selected state
 
 **Related executions:** #974
+
+---
+
+## ADR-002-53: Three HK Wi-Fi 6/7 Promotion Card Family Targeting — Reject Shared Parents and Page-Wide False Passes
+
+**Date:** June 30, 2026
+
+### Context
+
+Execution **#983** on the Three HK promotion catalog showed the direct promotion-card handler (ADR-002-50) was active, but Tier 2 clicked the **wrong Wi-Fi generation**:
+
+```text
+Click "wifi6" with $198/30 month plan
+```
+
+Runtime evidence:
+
+- The catalog renders **both** Wi-Fi 6 ($198/30) and Wi-Fi 7 ($238/30) cards in adjacent sections. A broad parent XPath (`div` / `section` / `article` / `li` with `contains(.)`) matched a **shared container** holding both plans; the first match pointed at Wi-Fi 7.
+- `_verify_three_hk_promotion_card_selected()` accepted page-wide progress signals — Moneyback panel visible, footer cart ≠ `$0` — without proving the **requested Wi-Fi family** was selected.
+- `_retry_three_hk_plan_click()` could fall back to the first page-wide `Select` button, which was not scoped to the requested card.
+- `_validate_cached_xpath_for_step()` checked DOM attachment only; a cached XPath resolving to a Wi-Fi 7 element was not rejected for a Wi-Fi 6 instruction.
+
+This is the same class of false pass ADR-002-52 fixed for section-qualified Moneyback clicks: stale or page-wide signals must not satisfy verification when the step names a specific promotion variant.
+
+### Decision
+
+#### ADR-002-53-A: Wi-Fi family extraction and contradictory-token guards
+
+Add helpers in `tier2_hybrid.py`:
+
+- `_extract_three_hk_wifi_family(instruction)` → `'6'` or `'7'` from `wifi6` / `wifi 6` / `wi-fi 6` (and Wi-Fi 7 equivalents)
+- `_contradictory_wifi_family_tokens(wifi_family)` and `_snippet_has_contradictory_wifi_family(instruction, snippet)` — reject snippets naming the opposite generation
+- `_three_hk_wifi_family_xpath_exclusion(instruction, normalized_text_expr)` — XPath `AND` clauses excluding opposite-generation tokens from locator candidates
+
+#### ADR-002-53-B: Smallest valid promotion card locator with snippet validation
+
+Add card-scoped helpers:
+
+- `_read_three_hk_promotion_card_snippet(locator)` — compact `innerText` from the nearest card container
+- `_is_valid_three_hk_promotion_card_candidate(locator, instruction)` — snippet must match instruction via `_instruction_matches_three_hk_promotion_snippet()` (HPPRM code, Wi-Fi variant, and optional price)
+- `_pick_smallest_valid_promotion_card_locator(page, xpath_candidate, instruction)` — among visible XPath matches (up to 12), pick the **smallest** snippet that passes validation; rejects shared parents that contain both Wi-Fi 6 and Wi-Fi 7
+- `_prefer_actionable_promotion_click_target(card_locator)` — prefer `button` / `[role='button']` inside the validated card
+
+Update `_find_three_hk_promotion_card_locator()` to use Wi-Fi exclusion clauses on text-variant XPath candidates and route all candidates through `_pick_smallest_valid_promotion_card_locator()` before `get_by_text` fallbacks (which also require snippet validation).
+
+#### ADR-002-53-C: Tighten verification, retry, and cache validation per Wi-Fi family
+
+- `_verify_three_hk_promotion_card_selected()` — when footer was empty (`$0`), page-wide Moneyback / non-empty footer progress requires a **matching local snippet** or footer text that matches the instruction; when switching plans on a non-empty cart, require **local selected state** plus matching snippet (no stale cart-only pass).
+- `_retry_three_hk_plan_click()` — scope `Select` button retries to Wi-Fi-family card XPath with exclusion clauses; **omit** the generic `(//button[normalize-space()='Select'])[1]` fallback when a Wi-Fi family is present.
+- `_validate_cached_xpath_for_step()` — for promotion-card clicks, reject cached elements whose text contradicts the requested Wi-Fi family via `_snippet_has_contradictory_wifi_family()`.
+
+#### ADR-002-53-D: Extend direct-handler detection to Wi-Fi + price steps
+
+Update `_is_three_hk_promotion_card_click()` to return true when the instruction contains a Wi-Fi generation label **and** a plan price (not only `HPPRM\d+`). This routes `Click "wifi6" with $198/30 month plan` through `_try_three_hk_promotion_card_click()` before XPath cache / `observe()`.
+
+### Consequences
+
+**Positive**
+- Wi-Fi 6 and Wi-Fi 7 promotion cards on the same catalog page are disambiguated by generation, price, and smallest matching snippet — not by first broad XPath ancestor.
+- Verification no longer false-passes when Moneyback is visible or the cart is non-empty from a prior or wrong-plan selection.
+- Cached XPath entries pointing at the opposite Wi-Fi generation are invalidated before click.
+- `Select`-button retries stay scoped to the requested card when a Wi-Fi family is named.
+
+**Negative**
+- Wi-Fi family detection depends on instruction text patterns (`wifi6`, `wi-fi 7`, etc.); alternate marketing labels may need new variants in `_extract_three_hk_promotion_text_variants()`.
+- Smallest-snippet heuristics assume card text is localized within a reasonably bounded container; deeply nested or refactored DOM may require XPath tuning.
+- Stricter verification may fail if Three HK stops exposing selected-state attributes and snippet text no longer includes generation labels.
+
+**Tests added:**
+- `backend/tests/test_tier2_plan_selection.py::TestThreeHkPromotionCardDirectClick` — 14 Wi-Fi-family-specific tests (76 total in file), including:
+  - `test_find_promotion_card_locator_rejects_shared_parent_with_wifi7_for_wifi6`
+  - `test_verify_promotion_card_rejects_wifi7_snippet_for_wifi6_with_empty_cart_signals`
+  - `test_validate_cached_xpath_rejects_wifi7_element_for_wifi6_instruction`
+  - `test_execute_step_uses_direct_promotion_helper_for_wifi6_price_step`
+
+**Related executions:** #983
