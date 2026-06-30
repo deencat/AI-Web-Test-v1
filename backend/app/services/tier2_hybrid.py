@@ -273,6 +273,30 @@ class Tier2HybridExecutor:
             if action == "upload_file":
                 value = file_path or value
 
+            instruction_lower = (instruction or "").lower()
+            three_hk_guard_relevant = action == "click" and (
+                self._extract_hpprm_code(instruction) is not None
+                or "moneyback" in instruction_lower
+                or "checkout" in instruction_lower
+                or "featured monthly plan" in instruction_lower
+                or ("plan" in instruction_lower and ("$" in instruction or "month" in instruction_lower))
+            )
+            looks_like_three_hk_promotion_page = False
+            if three_hk_guard_relevant:
+                looks_like_three_hk_promotion_page = await self._looks_like_three_hk_promotion_page(
+                    page,
+                    instruction=instruction,
+                )
+                logger.info(
+                    "[Tier 2] 🔎 Three HK direct-handler guard: host_match=%s page_match=%s hpprm=%s moneyback=%s checkout=%s url=%s",
+                    is_three_hk_uat_url(page_url),
+                    looks_like_three_hk_promotion_page,
+                    self._extract_hpprm_code(instruction) is not None,
+                    "moneyback" in instruction_lower,
+                    "checkout" in instruction_lower,
+                    page_url,
+                )
+
             if self._is_three_hk_plan_tab_click(page_url, instruction, action):
                 tab_click_result = await self._try_three_hk_plan_tab_click(
                     page,
@@ -282,7 +306,48 @@ class Tier2HybridExecutor:
                 if tab_click_result:
                     return tab_click_result
                 raise ValueError(f"Could not verify Three HK plan tab click for step: {instruction}")
-            
+
+            if self._is_three_hk_promotion_card_click(
+                page_url,
+                instruction,
+                action,
+                looks_like_three_hk_promotion_page=looks_like_three_hk_promotion_page,
+            ):
+                promotion_click_result = await self._try_three_hk_promotion_card_click(
+                    page,
+                    instruction,
+                    extraction_time_ms,
+                )
+                if promotion_click_result:
+                    return promotion_click_result
+                raise ValueError(f"Could not click Three HK promotion card for step: {instruction}")
+
+            if self._is_three_hk_moneyback_panel_click(
+                page_url,
+                instruction,
+                action,
+                looks_like_three_hk_promotion_page=looks_like_three_hk_promotion_page,
+            ):
+                moneyback_click_result = await self._try_three_hk_moneyback_panel_click(
+                    page,
+                    instruction,
+                    extraction_time_ms,
+                )
+                if moneyback_click_result:
+                    return moneyback_click_result
+                raise ValueError(f"Could not click Three HK Moneyback panel for step: {instruction}")
+
+            if (
+                action == "click"
+                and looks_like_three_hk_promotion_page
+                and "checkout" in instruction_lower
+            ):
+                footer_text = await self._read_three_hk_footer_cart_text(page)
+                if self._three_hk_footer_shows_empty_cart(footer_text):
+                    raise ValueError(
+                        "Three HK checkout blocked: cart is still $0 — promotion was not selected"
+                    )
+
             # Payment direct handler runs before cache for payment steps (ADR-002-48).
             # Stale cached XPaths to main-page inputs were winning over gw-proxy iframes.
             if self._is_payment_instruction(instruction, action) and self.payment_direct_enabled:
@@ -389,7 +454,18 @@ class Tier2HybridExecutor:
                 # Step 2: Extract XPath using Stagehand observe()
                 logger.info(f"[Tier 2] ðŸ“¡ Cache miss, extracting XPath via observe()...")
                 extraction_start = time.time()
-                
+
+                if self._should_wait_for_three_hk_observe_readiness(
+                    page_url,
+                    instruction,
+                    action,
+                    looks_like_three_hk_promotion_page=looks_like_three_hk_promotion_page,
+                ):
+                    logger.info(
+                        "[Tier 2] ⏳ Three HK promotion catalog step — waiting for catalog readiness before observe()..."
+                    )
+                    await self._wait_for_page_interactable_for_observe(page, instruction=instruction)
+
                 extraction_result = await self.xpath_extractor.extract_xpath_with_page(
                     page=page,
                     instruction=instruction
@@ -402,7 +478,7 @@ class Tier2HybridExecutor:
                     instruction=instruction,
                 ):
                     logger.info("[Tier 2] ðŸ”„ observe() returned no results. Waiting for page to become interactable, then retrying once...")
-                    await self._wait_for_page_interactable_for_observe(page)
+                    await self._wait_for_page_interactable_for_observe(page, instruction=instruction)
                     extraction_result = await self.xpath_extractor.extract_xpath_with_page(
                         page=page,
                         instruction=instruction
@@ -951,7 +1027,141 @@ class Tier2HybridExecutor:
             logger.warning("[Tier 2] âš ï¸ In-frame click attempt failed via %s: %s", log_label, exc)
             return False
 
-    async def _wait_for_page_interactable_for_observe(self, page: Page) -> None:
+    THREE_HK_PROMOTION_LOADING_TEXT = "Loading promotions"
+
+    def _extract_hpprm_code(self, instruction: str) -> Optional[str]:
+        """Extract a Three HK promotion id such as HPPRM0000002896 from the step text."""
+        match = re.search(r"(HPPRM\d+)", instruction or "", re.IGNORECASE)
+        return match.group(1).upper() if match else None
+
+    async def _looks_like_three_hk_promotion_page(
+        self,
+        page: Page,
+        instruction: str = "",
+    ) -> bool:
+        """Detect the Three HK promotion-selection SPA from stable DOM markers, not host alone."""
+        page_url = getattr(page, "url", "") or ""
+        if is_three_hk_uat_url(page_url):
+            return True
+
+        try:
+            if await page.locator("app-new-card-footer").count() > 0:
+                return True
+        except Exception:
+            pass
+
+        marker_locators = [
+            page.get_by_text("Featured Monthly Plans", exact=False),
+            page.locator("text=/HPPRM\\d+/i"),
+            page.get_by_text("Moneyback", exact=False),
+        ]
+        for marker in marker_locators:
+            try:
+                if await marker.count() > 0:
+                    return True
+            except Exception:
+                continue
+
+        instruction_lower = (instruction or "").lower()
+        if (
+            self._extract_hpprm_code(instruction) is not None
+            or "moneyback" in instruction_lower
+            or "checkout" in instruction_lower
+            or "featured monthly plan" in instruction_lower
+        ):
+            try:
+                title = await page.title()
+                if "sales portal" in (title or "").lower():
+                    return True
+            except Exception:
+                pass
+
+        return False
+
+    def _should_wait_for_three_hk_observe_readiness(
+        self,
+        page_url: str,
+        instruction: str,
+        action: str,
+        looks_like_three_hk_promotion_page: bool = False,
+    ) -> bool:
+        """True when observe() should wait for the Three HK promotion catalog to hydrate."""
+        if (
+            action != "click"
+            or not (looks_like_three_hk_promotion_page or is_three_hk_uat_url(page_url))
+        ):
+            return False
+
+        instruction_lower = (instruction or "").lower()
+        if self._extract_hpprm_code(instruction):
+            return True
+        if "moneyback" in instruction_lower:
+            return True
+        if "featured monthly plan" in instruction_lower:
+            return True
+        if "plan" in instruction_lower and ("$" in instruction or "month" in instruction_lower):
+            return True
+        return self._is_three_hk_plan_selection_click(page_url, instruction, action)
+
+    async def _wait_for_three_hk_promotion_catalog_ready(
+        self,
+        page: Page,
+        instruction: str = "",
+    ) -> None:
+        """Wait for Three HK plan cards to finish loading before observe() reads the a11y tree."""
+        if not await self._looks_like_three_hk_promotion_page(page, instruction):
+            return
+
+        timeout_ms = min(self.timeout_ms, 15000)
+        hpprm_code = self._extract_hpprm_code(instruction)
+
+        loading_locator = page.get_by_text(self.THREE_HK_PROMOTION_LOADING_TEXT, exact=False)
+        try:
+            if await loading_locator.count() > 0 and await loading_locator.first.is_visible():
+                logger.info(
+                    "[Tier 2] ⏳ Waiting for Three HK promotion catalog loader to hide..."
+                )
+                await loading_locator.first.wait_for(state="hidden", timeout=timeout_ms)
+        except Exception:
+            logger.debug("[Tier 2] Promotion loading indicator wait timed out or was not present")
+
+        if hpprm_code:
+            try:
+                await page.get_by_text(hpprm_code, exact=False).first.wait_for(
+                    state="visible",
+                    timeout=timeout_ms,
+                )
+                logger.info("[Tier 2] ✅ Three HK promotion catalog ready: found %s", hpprm_code)
+                await asyncio.sleep(0.3)
+                return
+            except Exception:
+                logger.warning(
+                    "[Tier 2] ⚠️ Timed out waiting for promotion %s to appear in DOM before observe()",
+                    hpprm_code,
+                )
+
+        catalog_markers = [
+            page.get_by_text("Featured Monthly Plans", exact=False).first,
+            page.locator("text=/HPPRM\\d+/i").first,
+        ]
+        for marker in catalog_markers:
+            try:
+                await marker.wait_for(state="visible", timeout=min(timeout_ms, 8000))
+                logger.info("[Tier 2] ✅ Three HK promotion catalog marker visible before observe()")
+                await asyncio.sleep(0.3)
+                return
+            except Exception:
+                continue
+
+        logger.warning(
+            "[Tier 2] ⚠️ Three HK promotion catalog readiness markers not found; proceeding to observe() anyway"
+        )
+
+    async def _wait_for_page_interactable_for_observe(
+        self,
+        page: Page,
+        instruction: str = "",
+    ) -> None:
         """Wait for common loading/skeleton blockers to clear before running observe()."""
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=5000)
@@ -962,6 +1172,18 @@ class Tier2HybridExecutor:
             await page.wait_for_load_state("load", timeout=5000)
         except Exception:
             logger.debug("[Tier 2] Load-state wait timed out before observe retry")
+
+        looks_like_three_hk_promotion_page = await self._looks_like_three_hk_promotion_page(
+            page,
+            instruction,
+        )
+        if self._should_wait_for_three_hk_observe_readiness(
+            page.url,
+            instruction,
+            "click",
+            looks_like_three_hk_promotion_page=looks_like_three_hk_promotion_page,
+        ):
+            await self._wait_for_three_hk_promotion_catalog_ready(page, instruction)
 
         loading_selectors = [
             "[class*='loading']",
@@ -990,6 +1212,287 @@ class Tier2HybridExecutor:
                 continue
 
         await asyncio.sleep(0.4)
+
+    def _is_three_hk_promotion_card_click(
+        self,
+        page_url: str,
+        instruction: str,
+        action: str,
+        looks_like_three_hk_promotion_page: bool = False,
+    ) -> bool:
+        """True for Three HK UAT promotion-card clicks identified by HPPRM code in the step."""
+        if (
+            action != "click"
+            or not (looks_like_three_hk_promotion_page or is_three_hk_uat_url(page_url))
+        ):
+            return False
+        return self._extract_hpprm_code(instruction) is not None
+
+    def _is_three_hk_moneyback_panel_click(
+        self,
+        page_url: str,
+        instruction: str,
+        action: str,
+        looks_like_three_hk_promotion_page: bool = False,
+    ) -> bool:
+        """True for Three HK UAT Moneyback reward panel clicks after a promotion card is chosen."""
+        if (
+            action != "click"
+            or not (looks_like_three_hk_promotion_page or is_three_hk_uat_url(page_url))
+        ):
+            return False
+        return "moneyback" in (instruction or "").lower()
+
+    async def _read_three_hk_footer_cart_text(self, page: Page) -> str:
+        """Read footer cart summary text from the Three HK plan-selection SPA."""
+        try:
+            footer = page.locator("app-new-card-footer").first
+            if await footer.count() == 0:
+                return (await page.locator("body").inner_text())[:500]
+            return (await footer.inner_text()) or ""
+        except Exception:
+            return ""
+
+    def _three_hk_footer_shows_empty_cart(self, footer_text: str) -> bool:
+        """Return True when the sticky footer still shows an empty cart ($0)."""
+        normalized = re.sub(r"\s+", "", footer_text or "").lower()
+        return normalized == "$0" or normalized.endswith("$0")
+
+    async def _find_three_hk_promotion_card_locator(self, page: Page, instruction: str):
+        """Locate a visible Three HK promotion card using HPPRM id and optional price."""
+        hpprm_code = self._extract_hpprm_code(instruction)
+        if not hpprm_code:
+            return None, None
+
+        await self._wait_for_three_hk_promotion_catalog_ready(page, instruction)
+        await self._wait_for_spa_spinner_settle(page)
+
+        price = self._extract_plan_price(instruction)
+        xpath_candidates = []
+        if price:
+            xpath_candidates.append(
+                "(//*[contains(normalize-space(.), '{hpprm}')]"
+                "/ancestor::*[self::div or self::section or self::article]"
+                "[contains(., '${price}') or contains(., '{price}')][1])[1]".format(
+                    hpprm=hpprm_code,
+                    price=price,
+                )
+            )
+        xpath_candidates.extend([
+            f"(//*[contains(normalize-space(.), '{hpprm_code}')])[1]",
+            (
+                f"(//*[contains(., '{hpprm_code}')]"
+                f"/ancestor-or-self::*[self::div or self::section or self::article][1])[1]"
+            ),
+        ])
+
+        for xpath_candidate in xpath_candidates:
+            try:
+                locator = page.locator(f"xpath={xpath_candidate}").first
+                await locator.wait_for(state="visible", timeout=min(self.timeout_ms, 5000))
+                return locator, xpath_candidate
+            except Exception:
+                continue
+
+        try:
+            locator = page.get_by_text(hpprm_code, exact=False).first
+            await locator.wait_for(state="visible", timeout=min(self.timeout_ms, 5000))
+            return locator, f"text={hpprm_code}"
+        except Exception:
+            return None, None
+
+    async def _verify_three_hk_promotion_card_selected(self, page: Page, instruction: str) -> bool:
+        """Verify a promotion-card click exposed reward options or left the card interactable."""
+        hpprm_code = self._extract_hpprm_code(instruction)
+        if not hpprm_code:
+            return False
+
+        moneyback = page.get_by_text("Moneyback", exact=False)
+        try:
+            if await moneyback.count() > 0 and await moneyback.first.is_visible():
+                return True
+        except Exception:
+            pass
+
+        try:
+            hpprm_locator = page.get_by_text(hpprm_code, exact=False).first
+            if await hpprm_locator.is_visible():
+                return True
+        except Exception:
+            pass
+
+        footer_text = await self._read_three_hk_footer_cart_text(page)
+        return not self._three_hk_footer_shows_empty_cart(footer_text)
+
+    async def _try_three_hk_promotion_card_click(
+        self,
+        page: Page,
+        instruction: str,
+        extraction_time_ms: float = 0,
+    ) -> Optional[Dict[str, Any]]:
+        """Click Three HK promotion cards via Playwright locators instead of observe()."""
+        direct_click_start = time.time()
+        hpprm_code = self._extract_hpprm_code(instruction)
+        if not hpprm_code:
+            return None
+
+        locator, strategy = await self._find_three_hk_promotion_card_locator(page, instruction)
+        if locator is None:
+            logger.warning(
+                "[Tier 2] ⚠️ Could not find a direct Three HK promotion card for step: %s",
+                instruction,
+            )
+            return None
+
+        current_url = page.url
+        await locator.click(timeout=self.timeout_ms)
+        logger.info(
+            "[Tier 2] 🎯 Clicked Three HK promotion card %s using %s",
+            hpprm_code,
+            strategy,
+        )
+
+        await wait_for_post_click_readiness(
+            page=page,
+            clicked_element=locator,
+            instruction=instruction,
+            element_text=hpprm_code,
+            current_url=current_url,
+            timeout_ms=self.timeout_ms,
+            logger=logger,
+        )
+        await self._wait_for_spa_spinner_settle(page)
+
+        if not await self._verify_three_hk_promotion_card_selected(page, instruction):
+            logger.warning(
+                "[Tier 2] ⚠️ Three HK promotion card click did not expose reward options. "
+                "Dismissing modal and retrying once..."
+            )
+            await auto_dismiss_blocking_modals(page, logger)
+            retry_locator, retry_strategy = await self._find_three_hk_promotion_card_locator(
+                page,
+                instruction,
+            )
+            if retry_locator is not None:
+                await retry_locator.click(timeout=self.timeout_ms)
+                logger.info(
+                    "[Tier 2] 🔁 Retried Three HK promotion card %s using %s",
+                    hpprm_code,
+                    retry_strategy,
+                )
+                await self._wait_for_spa_spinner_settle(page)
+
+        if not await self._verify_three_hk_promotion_card_selected(page, instruction):
+            raise ValueError(
+                f"Three HK promotion card '{hpprm_code}' did not appear selected after click"
+            )
+
+        execution_time_ms = (time.time() - direct_click_start) * 1000
+        return {
+            "success": True,
+            "tier": 2,
+            "execution_time_ms": execution_time_ms,
+            "extraction_time_ms": extraction_time_ms,
+            "playwright_time_ms": execution_time_ms,
+            "cache_hit": False,
+            "xpath": None,
+            "error": None,
+        }
+
+    async def _find_three_hk_moneyback_panel_locator(self, page: Page, instruction: str):
+        """Locate the Moneyback reward panel/card on the Three HK plan page."""
+        await self._wait_for_spa_spinner_settle(page)
+
+        label_candidates = ["Moneyback point", "Moneyback"]
+        instruction_lower = (instruction or "").lower()
+        if "moneyback point" in instruction_lower:
+            label_candidates = ["Moneyback point", "Moneyback"]
+        else:
+            label_candidates = ["Moneyback", "Moneyback point"]
+
+        for label in label_candidates:
+            locator = page.get_by_text(label, exact=False).first
+            try:
+                await locator.wait_for(state="visible", timeout=min(self.timeout_ms, 8000))
+                return locator, label
+            except Exception:
+                continue
+
+        return None, None
+
+    async def _verify_three_hk_moneyback_panel_selected(self, page: Page) -> bool:
+        """Verify Moneyback selection updated the cart or removed the empty-promotion blocker."""
+        footer_text = await self._read_three_hk_footer_cart_text(page)
+        if not self._three_hk_footer_shows_empty_cart(footer_text):
+            return True
+
+        promotion_error = page.get_by_text("Please select a promotion", exact=False)
+        try:
+            if await promotion_error.count() == 0:
+                return True
+            return not await promotion_error.first.is_visible()
+        except Exception:
+            return False
+
+    async def _try_three_hk_moneyback_panel_click(
+        self,
+        page: Page,
+        instruction: str,
+        extraction_time_ms: float = 0,
+    ) -> Optional[Dict[str, Any]]:
+        """Click the Three HK Moneyback reward panel via Playwright locators."""
+        direct_click_start = time.time()
+        locator, label = await self._find_three_hk_moneyback_panel_locator(page, instruction)
+        if locator is None:
+            logger.warning(
+                "[Tier 2] ⚠️ Could not find a direct Three HK Moneyback panel for step: %s",
+                instruction,
+            )
+            return None
+
+        current_url = page.url
+        await locator.click(timeout=self.timeout_ms)
+        logger.info("[Tier 2] 🎯 Clicked Three HK Moneyback panel using text '%s'", label)
+
+        await wait_for_post_click_readiness(
+            page=page,
+            clicked_element=locator,
+            instruction=instruction,
+            element_text=label,
+            current_url=current_url,
+            timeout_ms=self.timeout_ms,
+            logger=logger,
+        )
+        await self._wait_for_spa_spinner_settle(page)
+
+        if not await self._verify_three_hk_moneyback_panel_selected(page):
+            await auto_dismiss_blocking_modals(page, logger)
+            retry_locator, retry_label = await self._find_three_hk_moneyback_panel_locator(
+                page,
+                instruction,
+            )
+            if retry_locator is not None:
+                await retry_locator.click(timeout=self.timeout_ms)
+                logger.info(
+                    "[Tier 2] 🔁 Retried Three HK Moneyback panel using text '%s'",
+                    retry_label,
+                )
+                await self._wait_for_spa_spinner_settle(page)
+
+        if not await self._verify_three_hk_moneyback_panel_selected(page):
+            raise ValueError("Three HK Moneyback panel click did not update the cart")
+
+        execution_time_ms = (time.time() - direct_click_start) * 1000
+        return {
+            "success": True,
+            "tier": 2,
+            "execution_time_ms": execution_time_ms,
+            "extraction_time_ms": extraction_time_ms,
+            "playwright_time_ms": execution_time_ms,
+            "cache_hit": False,
+            "xpath": None,
+            "error": None,
+        }
 
     async def _try_click_inside_iframe(
         self,

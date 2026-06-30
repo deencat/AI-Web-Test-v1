@@ -1,21 +1,27 @@
-# Generator State — Iteration 001
+# Generator State — Iteration 002 (Three HK HPPRM observe fix)
 
-## What Was Built
-- Refactored `CreateSuiteModal.tsx` → `SuiteFormModal.tsx` with create/edit modes
-- Pre-populate form fields when editing (name, description, tags, ordered test_case_ids)
-- Submit calls `createSuite` or `updateSuite` based on mode
-- Dynamic modal title and submit button labels
-- Edit button on Test Suites page (Run → Edit → Delete, gray outline styling)
-- `documentation/ADR-007-test-suites.md` per ADR-005 format
+## Root cause (exec #967, #971)
+- Catalog DOM readiness waits were insufficient: `observe()` accessibility tree omitted plan cards even when Playwright DOM had `HPPRM…` visible.
+- Tier 3 treated empty `act()` responses as success.
+- Cached checkout XPath proceeded with cart `$ 0`.
 
-## What Changed This Iteration
-- Initial implementation of test suite edit feature + ADR-007
+## What Was Built (ADR-002-50)
+- `_try_three_hk_promotion_card_click()` — direct Playwright HPPRM card click before cache/observe
+- `_try_three_hk_moneyback_panel_click()` — direct Moneyback panel click
+- Checkout guard when footer cart is still `$ 0` on Three HK UAT
+- Tier 3 fails `click` when `act()` returns empty elements
+- ADR-002-50 documented in `documentation/ADR-002-test-execution-engine.md`
 
-## Known Issues
-- `npm run build` fails due to pre-existing TypeScript errors across the repo (not introduced by this change)
-- `npx vite build` succeeds; no errors in `SuiteFormModal.tsx` or new imports
+## Files changed
+- `backend/app/services/tier2_hybrid.py`
+- `backend/app/services/tier3_stagehand.py`
+- `backend/tests/test_tier2_plan_selection.py`
+- `documentation/ADR-002-test-execution-engine.md`
 
-## Dev Server
-- URL: http://localhost:5173
-- Status: running (backend via start_server.py)
-- Command: npm run dev (frontend)
+## Verification
+- `python -m pytest tests/test_tier2_plan_selection.py -q` — 48 passed
+
+## Required for live re-test
+- **Restart backend** (`python start_server.py`) so Tier 2 code loads
+- Re-run the failing test case (same flow as exec #971)
+- Expect logs: `Clicked Three HK promotion card HPPRM0000002896` (Tier 2, no observe for that step)

@@ -176,10 +176,12 @@ class XPathExtractor:
             if not self.stagehand:
                 await self.initialize()
             
-            # Navigate Stagehand to same URL if needed
+            # Navigate Stagehand to same URL if needed.
+            # observe() snapshots the accessibility tree fresh on each call — there is no tree cache to refresh.
+            # On SPA pages with the same URL, never goto() here; that would reset client-side state.
             if self.stagehand.page and self.stagehand.page.url != page_url:
-                await self.stagehand.page.goto(page_url)
-            
+                await self.stagehand.page.goto(page_url, wait_until="domcontentloaded")
+
             result = await self.stagehand.page.observe(instruction)
             
             if not result or (isinstance(result, list) and len(result) == 0):

@@ -64,6 +64,18 @@ class Tier3StagehandExecutor:
         self.stagehand = stagehand
         self.timeout_ms = timeout_ms
 
+    def _stagehand_act_returned_no_elements(self, result) -> bool:
+        """True when Stagehand act()/observe-style responses contain no actionable elements."""
+        if result is None:
+            return True
+        if isinstance(result, list):
+            return len(result) == 0
+        if isinstance(result, dict):
+            elements = result.get("elements")
+            if elements is not None:
+                return len(elements) == 0
+        return False
+
     def _is_payment_field_instruction(self, instruction: str, action: str) -> bool:
         if not instruction or action not in ("fill", "type", "input", "select"):
             return False
@@ -272,6 +284,11 @@ class Tier3StagehandExecutor:
             else:
                 # Use act() for all other actions
                 result = await self.stagehand.page.act(instruction)
+
+                if action == "click" and self._stagehand_act_returned_no_elements(result):
+                    raise ValueError(
+                        f"Stagehand act() returned no elements for: {instruction}"
+                    )
                 
                 # Wait for page to stabilize after navigation actions
                 if is_navigation_action:

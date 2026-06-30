@@ -121,6 +121,8 @@
 47. [ADR-002-47: Three HK Preprod API OTP via HTTP (Non-Browser)](#adr-002-47-three-hk-preprod-api-otp-via-http-non-browser)
 48. [ADR-002-48: Mastercard gw-proxy Hosted Checkout — Role-Based Iframe Fill and Tier 3 Verification](#adr-002-48-mastercard-gw-proxy-hosted-checkout--role-based-iframe-fill-and-tier-3-verification)
 49. [ADR-002-49: gw-proxy Fast Path — Embedded Checkout Performance and Session-Scoped Readiness](#adr-002-49-gw-proxy-fast-path--embedded-checkout-performance-and-session-scoped-readiness)
+50. [ADR-002-50: Three HK HPPRM Promotion Card Direct Click — Bypass observe() When Accessibility Tree Omits Plan Cards](#adr-002-50-three-hk-hpprm-promotion-card-direct-click--bypass-observe-when-accessibility-tree-omits-plan-cards)
+51. [ADR-002-51: Three HK Promotion-Page Identity Uses DOM Markers, Not Exact Host Alone](#adr-002-51-three-hk-promotion-page-identity-uses-dom-markers-not-exact-host-alone)
 
 ---
 
@@ -3856,3 +3858,130 @@ When `payment_gateway_ready` is `True` and gw-proxy checkout is active, per-sele
 - `1e1453c` — payment direct before cache; stale cache invalidation
 - `aabe642` — ADR-002-49 gw-proxy fast path and session-scoped readiness
 
+---
+
+## ADR-002-50: Three HK HPPRM Promotion Card Direct Click — Bypass observe() When Accessibility Tree Omits Plan Cards
+
+**Date:** June 30, 2026
+
+### Context
+
+Executions **#967** and **#971** on Three HK UAT failed Tier 2 `observe()` for steps such as:
+
+```text
+Click "HPPRM0000002896" with $238/30 month plan
+Click "Moneyback point" panel
+```
+
+Even after ADR-002-5 catalog readiness waits (`Loading promotions…` hidden, `HPPRM…` visible in Playwright DOM), Stagehand `observe()` still returned `{"elements":[]}`. JSONL prompt previews showed only header chrome in the accessibility tree (language toggles, OGP-PPD) — **not** the promotion cards that were visibly rendered in screenshots.
+
+Tier 3 then reported success while `act()` also returned empty elements, allowing cached checkout XPaths to proceed with cart `$ 0` and toast **"Please select a promotion"**.
+
+This is the same class of problem ADR-002-37 solved for plan-tab clicks: `observe()` is unreliable when SPA cards are visually present but poorly represented in the accessibility snapshot.
+
+### Decision
+
+#### ADR-002-50-A: Direct Playwright handlers before cache/observe for HPPRM and Moneyback steps
+
+Add `_try_three_hk_promotion_card_click()` and `_try_three_hk_moneyback_panel_click()` in `tier2_hybrid.py`, wired in `execute_step()` **before** XPath cache lookup — mirroring `_try_three_hk_plan_tab_click()`.
+
+Detection:
+
+- Promotion card: `action == "click"`, `is_three_hk_uat_url()`, instruction contains `HPPRM\d+`
+- Moneyback panel: `action == "click"`, `is_three_hk_uat_url()`, instruction contains `"moneyback"`
+
+Locators use HPPRM text + optional price-aware XPath ancestors, then verify post-click state (Moneyback panel visible or cart no longer `$ 0`).
+
+#### ADR-002-50-B: Block cached checkout when cart is still empty
+
+Before using cached checkout XPath on Three HK UAT, raise when footer cart text normalizes to `$0`. Prevents false-positive progression after failed promotion selection.
+
+#### ADR-002-50-C: Tier 3 must fail click steps when act() returns no elements
+
+In `tier3_stagehand.py`, after `page.act()` for `click` actions, raise when the response contains an empty `elements` array. Prevents Tier 3 from masking observe() failures.
+
+#### ADR-002-50-D: Retain ADR-002-5 catalog readiness waits as pre-observe fallback
+
+`_wait_for_three_hk_promotion_catalog_ready()` remains for non-HPPRM steps that still use `observe()`. It does **not** replace direct click for HPPRM/Moneyback — DOM readiness alone does not fix sparse accessibility trees.
+
+### Consequences
+
+**Positive**
+- HPPRM/Moneyback steps no longer depend on LLM parsing plan cards from incomplete accessibility trees.
+- Checkout cannot proceed on `$ 0` cart after a failed promotion path.
+- Tier 3 empty `act()` responses become explicit failures instead of silent passes.
+
+**Negative**
+- HPPRM XPath/heuristic locators may need tuning if card DOM structure changes.
+- Checkout guard may fail early on flows that legitimately show `$ 0` before a later step — acceptable for current Three HK broadband UAT scripts.
+
+**Tests added:**
+- `backend/tests/test_tier2_plan_selection.py::TestThreeHkPromotionCardDirectClick`
+- `backend/tests/test_tier2_plan_selection.py::TestThreeHkObserveReadiness` (catalog wait regression)
+
+**Related executions:** #967, #971
+
+---
+
+## ADR-002-51: Three HK Promotion-Page Identity Uses DOM Markers, Not Exact Host Alone
+
+**Date:** June 30, 2026
+
+### Context
+
+Execution **#972** showed that ADR-002-50 direct handlers for:
+
+```text
+Click "HPPRM0000002896" with $238/30 month plan
+Click "Moneyback point" panel
+```
+
+still fell through to Tier 2 `stagehand_observe`. Runtime JSONL logs confirmed the pre-cache branches in `Tier2HybridExecutor.execute_step()` were not taken.
+
+The direct-handler predicates, checkout `$0` guard, and observe-readiness gate all depended on `is_three_hk_uat_url(page.url)`. That is brittle when the promotion SPA is rendered inside a flow whose top-level host differs from `wwwuat.three.com.hk` even though the DOM still contains the same Three HK promotion-page structure.
+
+### Decision
+
+#### ADR-002-51-A: Add host-agnostic Three HK promotion-page identity helper
+
+Add `_looks_like_three_hk_promotion_page(page, instruction="")` in `tier2_hybrid.py`.
+
+Detection stays bounded and favors stable page markers:
+
+- `is_three_hk_uat_url(page.url)` remains the cheap fast path
+- `app-new-card-footer`
+- text `Featured Monthly Plans`
+- `HPPRM\d+` text
+- `Moneyback` text
+- `Sales Portal` title as a weak fallback only for promotion-related instructions
+
+#### ADR-002-51-B: Use page identity for direct handlers and checkout guard
+
+In `execute_step()`, compute the broader page-identity signal before the Three HK promotion-card / Moneyback / checkout branches and log:
+
+- URL host match
+- page-identity match
+- whether the step looks like HPPRM / Moneyback / checkout
+
+This preserves existing same-host behavior while allowing the direct handlers to run when the DOM clearly indicates the Three HK promotion SPA.
+
+#### ADR-002-51-C: Relax observe-readiness gating with the same identity signal
+
+`_should_wait_for_three_hk_observe_readiness()` and `_wait_for_three_hk_promotion_catalog_ready()` now accept the broader page identity rather than exact host match alone. This keeps the catalog-hydration wait aligned with the direct-handler activation conditions.
+
+### Consequences
+
+**Positive**
+- Direct HPPRM and Moneyback handlers no longer silently miss on embedded or proxied flows where the DOM is still the Three HK promotion SPA.
+- The `$0` checkout guard stays effective in the same off-host scenarios.
+- New diagnostic logs make future misses explainable from JSONL without guessing whether the host or DOM predicate failed.
+
+**Negative**
+- DOM-marker detection is heuristic and may need adjustment if Three HK renames key labels or removes `app-new-card-footer`.
+- `Sales Portal` title is intentionally weak and only used with promotion-specific instructions to avoid overmatching unrelated pages.
+
+**Tests added:**
+- `backend/tests/test_tier2_plan_selection.py::TestThreeHkObserveReadiness` (DOM-marker identity + relaxed readiness gate)
+- `backend/tests/test_tier2_plan_selection.py::TestThreeHkPromotionCardDirectClick` (off-host direct HPPRM, Moneyback, and checkout guard routing)
+
+**Related executions:** #972

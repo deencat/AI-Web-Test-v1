@@ -768,3 +768,300 @@ class TestCheckboxStateVerification:
             element=element,
             instruction="Click the Next button to continue",
         )
+
+
+class TestThreeHkObserveReadiness:
+    def setup_method(self):
+        self.executor = Tier2HybridExecutor(
+            db=MagicMock(),
+            xpath_extractor=MagicMock(),
+            timeout_ms=30000,
+        )
+
+    def test_extract_hpprm_code_from_plan_instruction(self):
+        assert self.executor._extract_hpprm_code(
+            'Click "HPPRM0000002896" with $238/30 month plan'
+        ) == "HPPRM0000002896"
+
+    def test_should_wait_for_three_hk_observe_readiness_for_hpprm_click(self):
+        assert self.executor._should_wait_for_three_hk_observe_readiness(
+            page_url="https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en",
+            instruction='Click "HPPRM0000002896" with $238/30 month plan',
+            action="click",
+        ) is True
+
+    def test_should_wait_for_three_hk_observe_readiness_for_moneyback_panel(self):
+        assert self.executor._should_wait_for_three_hk_observe_readiness(
+            page_url="https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en",
+            instruction='Click "Moneyback point" panel',
+            action="click",
+        ) is True
+
+    def test_should_not_wait_for_three_hk_observe_readiness_on_non_uat_url(self):
+        assert self.executor._should_wait_for_three_hk_observe_readiness(
+            page_url="https://example.com/plans",
+            instruction='Click "HPPRM0000002896" with $238/30 month plan',
+            action="click",
+        ) is False
+
+    def test_should_wait_for_three_hk_observe_readiness_when_page_identity_matches(self):
+        assert self.executor._should_wait_for_three_hk_observe_readiness(
+            page_url="https://example.com/plans",
+            instruction='Click "HPPRM0000002896" with $238/30 month plan',
+            action="click",
+            looks_like_three_hk_promotion_page=True,
+        ) is True
+
+    @pytest.mark.asyncio
+    async def test_looks_like_three_hk_promotion_page_true_for_footer_marker_on_non_uat_host(self):
+        page = MagicMock()
+        page.url = "https://example.com/embedded-checkout"
+        page.title = AsyncMock(return_value="Embedded Checkout")
+
+        footer_locator = MagicMock()
+        footer_locator.count = AsyncMock(return_value=1)
+
+        hpprm_locator = MagicMock()
+        hpprm_locator.count = AsyncMock(return_value=0)
+
+        empty_text_locator = MagicMock()
+        empty_text_locator.count = AsyncMock(return_value=0)
+
+        def locator_side_effect(selector):
+            if selector == "app-new-card-footer":
+                return footer_locator
+            if selector == "text=/HPPRM\\d+/i":
+                return hpprm_locator
+            raise AssertionError(f"Unexpected locator selector: {selector}")
+
+        page.locator = MagicMock(side_effect=locator_side_effect)
+        page.get_by_text = MagicMock(return_value=empty_text_locator)
+
+        assert await self.executor._looks_like_three_hk_promotion_page(
+            page,
+            instruction='Click "HPPRM0000002896" with $238/30 month plan',
+        ) is True
+
+    @pytest.mark.asyncio
+    async def test_wait_for_three_hk_promotion_catalog_ready_waits_for_hpprm(self):
+        page = MagicMock()
+        page.url = "https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en"
+
+        loading_locator = MagicMock()
+        loading_locator.count = AsyncMock(return_value=0)
+
+        hpprm_locator = MagicMock()
+        hpprm_locator.first = MagicMock()
+        hpprm_locator.first.wait_for = AsyncMock()
+
+        def get_by_text_side_effect(text, exact=False):
+            if "Loading promotions" in text:
+                return loading_locator
+            if text == "HPPRM0000002896":
+                return hpprm_locator
+            return MagicMock()
+
+        page.get_by_text = MagicMock(side_effect=get_by_text_side_effect)
+
+        await self.executor._wait_for_three_hk_promotion_catalog_ready(
+            page,
+            'Click "HPPRM0000002896" with $238/30 month plan',
+        )
+
+        hpprm_locator.first.wait_for.assert_awaited_once_with(
+            state="visible",
+            timeout=15000,
+        )
+
+    @pytest.mark.asyncio
+    async def test_wait_for_page_interactable_for_observe_calls_catalog_wait(self):
+        page = MagicMock()
+        page.url = "https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en"
+        page.wait_for_load_state = AsyncMock()
+
+        self.executor._wait_for_three_hk_promotion_catalog_ready = AsyncMock()
+
+        await self.executor._wait_for_page_interactable_for_observe(
+            page,
+            instruction='Click "HPPRM0000002896" with $238/30 month plan',
+        )
+
+        self.executor._wait_for_three_hk_promotion_catalog_ready.assert_awaited_once_with(
+            page,
+            'Click "HPPRM0000002896" with $238/30 month plan',
+        )
+
+    @pytest.mark.asyncio
+    async def test_wait_for_page_interactable_for_observe_calls_catalog_wait_when_dom_identified(self):
+        page = MagicMock()
+        page.url = "https://example.com/embedded-checkout"
+        page.wait_for_load_state = AsyncMock()
+
+        self.executor._looks_like_three_hk_promotion_page = AsyncMock(return_value=True)
+        self.executor._wait_for_three_hk_promotion_catalog_ready = AsyncMock()
+
+        await self.executor._wait_for_page_interactable_for_observe(
+            page,
+            instruction='Click "Moneyback point" panel',
+        )
+
+        self.executor._wait_for_three_hk_promotion_catalog_ready.assert_awaited_once_with(
+            page,
+            'Click "Moneyback point" panel',
+        )
+
+
+class TestThreeHkPromotionCardDirectClick:
+    def setup_method(self):
+        self.executor = Tier2HybridExecutor(
+            db=MagicMock(),
+            xpath_extractor=MagicMock(),
+            timeout_ms=30000,
+        )
+
+    def test_is_three_hk_promotion_card_click_true_for_hpprm_step(self):
+        assert self.executor._is_three_hk_promotion_card_click(
+            page_url="https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en",
+            instruction='Click "HPPRM0000002896" with $238/30 month plan',
+            action="click",
+        ) is True
+
+    def test_three_hk_footer_shows_empty_cart(self):
+        assert self.executor._three_hk_footer_shows_empty_cart("$ 0") is True
+        assert self.executor._three_hk_footer_shows_empty_cart("$0") is True
+        assert self.executor._three_hk_footer_shows_empty_cart("$ 238") is False
+
+    @pytest.mark.asyncio
+    async def test_execute_step_uses_direct_promotion_helper_before_xpath_cache(self):
+        page = MagicMock()
+        page.url = "https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en"
+
+        self.executor._try_three_hk_promotion_card_click = AsyncMock(
+            return_value={
+                "success": True,
+                "tier": 2,
+                "execution_time_ms": 150.0,
+                "extraction_time_ms": 0,
+                "cache_hit": False,
+                "xpath": None,
+                "error": None,
+            }
+        )
+        self.executor.cache_service.get_cached_xpath = MagicMock(
+            side_effect=AssertionError("cache should be bypassed")
+        )
+
+        result = await self.executor.execute_step(
+            page=page,
+            step={
+                "action": "click",
+                "instruction": 'Click "HPPRM0000002896" with $238/30 month plan',
+            },
+        )
+
+        assert result["success"] is True
+        self.executor._try_three_hk_promotion_card_click.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_step_uses_direct_promotion_helper_on_dom_identified_non_uat_host(self):
+        page = MagicMock()
+        page.url = "https://example.com/embedded-checkout"
+
+        self.executor._looks_like_three_hk_promotion_page = AsyncMock(return_value=True)
+        self.executor._try_three_hk_promotion_card_click = AsyncMock(
+            return_value={
+                "success": True,
+                "tier": 2,
+                "execution_time_ms": 150.0,
+                "extraction_time_ms": 0,
+                "cache_hit": False,
+                "xpath": None,
+                "error": None,
+            }
+        )
+        self.executor.cache_service.get_cached_xpath = MagicMock(
+            side_effect=AssertionError("cache should be bypassed")
+        )
+
+        result = await self.executor.execute_step(
+            page=page,
+            step={
+                "action": "click",
+                "instruction": 'Click "HPPRM0000002896" with $238/30 month plan',
+            },
+        )
+
+        assert result["success"] is True
+        self.executor._looks_like_three_hk_promotion_page.assert_awaited_once_with(
+            page,
+            instruction='Click "HPPRM0000002896" with $238/30 month plan',
+        )
+        self.executor._try_three_hk_promotion_card_click.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_step_uses_direct_moneyback_helper_on_dom_identified_non_uat_host(self):
+        page = MagicMock()
+        page.url = "https://example.com/embedded-checkout"
+
+        self.executor._looks_like_three_hk_promotion_page = AsyncMock(return_value=True)
+        self.executor._try_three_hk_moneyback_panel_click = AsyncMock(
+            return_value={
+                "success": True,
+                "tier": 2,
+                "execution_time_ms": 120.0,
+                "extraction_time_ms": 0,
+                "cache_hit": False,
+                "xpath": None,
+                "error": None,
+            }
+        )
+        self.executor.cache_service.get_cached_xpath = MagicMock(
+            side_effect=AssertionError("cache should be bypassed")
+        )
+
+        result = await self.executor.execute_step(
+            page=page,
+            step={
+                "action": "click",
+                "instruction": 'Click "Moneyback point" panel',
+            },
+        )
+
+        assert result["success"] is True
+        self.executor._try_three_hk_moneyback_panel_click.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_step_blocks_checkout_when_cart_still_empty(self):
+        page = MagicMock()
+        page.url = "https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en"
+        self.executor._read_three_hk_footer_cart_text = AsyncMock(return_value="$ 0")
+
+        result = await self.executor.execute_step(
+            page=page,
+            step={
+                "action": "click",
+                "instruction": "Click 'checkout' button",
+            },
+        )
+
+        assert result["success"] is False
+        assert "cart is still $0" in (result.get("error") or "")
+
+    @pytest.mark.asyncio
+    async def test_execute_step_blocks_checkout_when_cart_still_empty_on_dom_identified_non_uat_host(self):
+        page = MagicMock()
+        page.url = "https://example.com/embedded-checkout"
+
+        self.executor._looks_like_three_hk_promotion_page = AsyncMock(return_value=True)
+        self.executor._read_three_hk_footer_cart_text = AsyncMock(return_value="$ 0")
+
+        result = await self.executor.execute_step(
+            page=page,
+            step={
+                "action": "click",
+                "instruction": "Click 'checkout' button",
+            },
+        )
+
+        assert result["success"] is False
+        assert "cart is still $0" in (result.get("error") or "")
