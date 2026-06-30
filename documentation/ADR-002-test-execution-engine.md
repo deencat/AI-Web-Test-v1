@@ -123,6 +123,7 @@
 49. [ADR-002-49: gw-proxy Fast Path — Embedded Checkout Performance and Session-Scoped Readiness](#adr-002-49-gw-proxy-fast-path--embedded-checkout-performance-and-session-scoped-readiness)
 50. [ADR-002-50: Three HK HPPRM Promotion Card Direct Click — Bypass observe() When Accessibility Tree Omits Plan Cards](#adr-002-50-three-hk-hpprm-promotion-card-direct-click--bypass-observe-when-accessibility-tree-omits-plan-cards)
 51. [ADR-002-51: Three HK Promotion-Page Identity Uses DOM Markers, Not Exact Host Alone](#adr-002-51-three-hk-promotion-page-identity-uses-dom-markers-not-exact-host-alone)
+52. [ADR-002-52: Three HK Moneyback Section-Scoped Direct Click — Honor `under "…"` Qualifiers Without Global Fallback](#adr-002-52-three-hk-moneyback-section-scoped-direct-click--honor-under--qualifiers-without-global-fallback)
 
 ---
 
@@ -3885,16 +3886,16 @@ This is the same class of problem ADR-002-37 solved for plan-tab clicks: `observ
 
 Add `_try_three_hk_promotion_card_click()` and `_try_three_hk_moneyback_panel_click()` in `tier2_hybrid.py`, wired in `execute_step()` **before** XPath cache lookup — mirroring `_try_three_hk_plan_tab_click()`.
 
-Detection:
+Detection (see also ADR-002-51 for page-identity gating):
 
-- Promotion card: `action == "click"`, `is_three_hk_uat_url()`, instruction contains `HPPRM\d+`
-- Moneyback panel: `action == "click"`, `is_three_hk_uat_url()`, instruction contains `"moneyback"`
+- Promotion card: `action == "click"`, `_looks_like_three_hk_promotion_page()` or `is_three_hk_uat_url()`, instruction contains `HPPRM\d+`
+- Moneyback panel: `action == "click"`, same page-identity gate, instruction contains `"moneyback"` (section scoping per ADR-002-52)
 
-Locators use HPPRM text + optional price-aware XPath ancestors, then verify post-click state (Moneyback panel visible or cart no longer `$ 0`).
+Locators use HPPRM text + optional price-aware XPath ancestors, then verify post-click state (Moneyback panel visible or cart no longer `$ 0`). Moneyback uses page-wide `get_by_text("Moneyback…")` only when the instruction has **no** `under "…"` qualifier; qualified steps are handled in ADR-002-52.
 
 #### ADR-002-50-B: Block cached checkout when cart is still empty
 
-Before using cached checkout XPath on Three HK UAT, raise when footer cart text normalizes to `$0`. Prevents false-positive progression after failed promotion selection.
+Before using cached checkout XPath when `_looks_like_three_hk_promotion_page()` is true, raise when footer cart text normalizes to `$0`. Prevents false-positive progression after failed promotion selection.
 
 #### ADR-002-50-C: Tier 3 must fail click steps when act() returns no elements
 
@@ -3914,6 +3915,7 @@ In `tier3_stagehand.py`, after `page.act()` for `click` actions, raise when the 
 **Negative**
 - HPPRM XPath/heuristic locators may need tuning if card DOM structure changes.
 - Checkout guard may fail early on flows that legitimately show `$ 0` before a later step — acceptable for current Three HK broadband UAT scripts.
+- Detection and Moneyback locator behavior were refined in ADR-002-51 (page identity) and ADR-002-52 (section-scoped Moneyback).
 
 **Tests added:**
 - `backend/tests/test_tier2_plan_selection.py::TestThreeHkPromotionCardDirectClick`
@@ -3979,9 +3981,80 @@ This preserves existing same-host behavior while allowing the direct handlers to
 **Negative**
 - DOM-marker detection is heuristic and may need adjustment if Three HK renames key labels or removes `app-new-card-footer`.
 - `Sales Portal` title is intentionally weak and only used with promotion-specific instructions to avoid overmatching unrelated pages.
+- Page-wide Moneyback direct click (ADR-002-50-A) still false-passed on section-qualified steps until ADR-002-52.
 
 **Tests added:**
 - `backend/tests/test_tier2_plan_selection.py::TestThreeHkObserveReadiness` (DOM-marker identity + relaxed readiness gate)
 - `backend/tests/test_tier2_plan_selection.py::TestThreeHkPromotionCardDirectClick` (off-host direct HPPRM, Moneyback, and checkout guard routing)
 
-**Related executions:** #972
+**Related executions:** #972 (handlers still missed until page-identity fix), #974 (HPPRM direct click confirmed working)
+
+---
+
+## ADR-002-52: Three HK Moneyback Section-Scoped Direct Click — Honor `under "…"` Qualifiers Without Global Fallback
+
+**Date:** June 30, 2026
+
+### Context
+
+Execution **#974** showed ADR-002-50/51 direct handlers were active for the Sales Portal flow, but the Moneyback step still produced a **false pass**:
+
+```text
+Click "Moneyback point" panel under "Exclusion Promotion"
+```
+
+Runtime evidence:
+
+- Tier 2 returned success with `cache_hit: False`, `xpath: None`, `extraction_time_ms: 0` — the direct Moneyback handler ran (no `stagehand_observe`).
+- The handler ignored the `under "Exclusion Promotion"` qualifier and clicked the **first page-wide** `Moneyback` text match.
+- Verification was too loose: a non-empty footer cart from the prior HPPRM step (`$ 238`) satisfied `_verify_three_hk_moneyback_panel_selected()` even though the Exclusion Promotion panel was never selected.
+- Screenshots for steps 11 and 12 were byte-identical — no visible Moneyback selection change.
+
+The Three HK promotion SPA renders **multiple** Moneyback panels (e.g. under Featured Monthly Plans vs Exclusion Promotion). Page-wide text lookup is incorrect when the step text names a parent section.
+
+### Decision
+
+#### ADR-002-52-A: Parse `under "…"` section qualifiers from step instructions
+
+Add `_extract_three_hk_section_qualifier(instruction)` in `tier2_hybrid.py`. It matches `under "Exclusion Promotion"` / `under '…'` (case-insensitive) and returns the normalized section label.
+
+#### ADR-002-52-B: Section-scoped Moneyback locator with no global fallback when qualified
+
+Update `_find_three_hk_moneyback_panel_locator()`:
+
+- When a section qualifier is present, locate a container via XPath (`section`, `article`, `div`, or `li`) whose normalized text contains the section label **and** a Moneyback label candidate (`Moneyback point`, then `Moneyback`).
+- Search for the clickable label **inside** that container only (`section_container.get_by_text(...)`).
+- If the section container or scoped label is not found, return `None` and log — **do not** fall back to page-wide `get_by_text("Moneyback")`.
+- When no qualifier is present, retain the original global lookup for unqualified Moneyback steps.
+
+Diagnostic logs include: `section qualifier`, `strategy` (`section-scoped` vs `global`), and a truncated `container_snippet`.
+
+#### ADR-002-52-C: Tighten Moneyback post-click verification for section-qualified clicks
+
+Update `_verify_three_hk_moneyback_panel_selected()`:
+
+- Evaluate **local selected state** on the clicked panel via DOM hints: `aria-selected`, `aria-checked`, `aria-pressed`, `data-selected`, and class tokens such as `active`, `selected`, `checked`, `current`.
+- When `section_label` is set, require `local_selected == True`. Do **not** treat a non-empty footer cart alone as success — the cart may already reflect a prior HPPRM selection.
+- When no section qualifier is set, retain broader checks: non-empty footer cart and absence of visible **"Please select a promotion"** toast.
+
+`_try_three_hk_moneyback_panel_click()` passes `section_label` through verification and retry; raises `ValueError("Three HK Moneyback panel click did not update the cart")` when scoped verification fails after one modal-dismiss retry.
+
+### Consequences
+
+**Positive**
+- Steps such as `Click "Moneyback point" panel under "Exclusion Promotion"` click the correct reward panel, not an arbitrary Moneyback match elsewhere on the page.
+- Section-qualified false passes from stale cart totals are eliminated.
+- JSONL logs (`strategy=section-scoped`, `section='Exclusion Promotion'`, `local_selected=…`) make wrong-panel clicks diagnosable without re-running the full flow.
+
+**Negative**
+- Section container XPath depends on visible section headings; renamed or restructured promotion groupings may require qualifier-pattern or XPath tuning.
+- Strict local-state verification may fail if Three HK stops exposing selected-state attributes on reward cards — would need DOM-specific fallback within the scoped container only.
+
+**Tests added:**
+- `backend/tests/test_tier2_plan_selection.py::TestThreeHkMoneybackSectionScopedSelection`
+  - `_extract_three_hk_section_qualifier` parses `under "Exclusion Promotion"`
+  - scoped locator uses section container, never global `page.get_by_text`
+  - scoped lookup failure refuses global fallback
+  - section-qualified verification rejects pass when cart is non-empty but panel lacks local selected state
+
+**Related executions:** #974
