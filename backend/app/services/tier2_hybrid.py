@@ -1034,6 +1034,173 @@ class Tier2HybridExecutor:
         match = re.search(r"(HPPRM\d+)", instruction or "", re.IGNORECASE)
         return match.group(1).upper() if match else None
 
+    def _extract_three_hk_wifi_family(self, instruction: str) -> Optional[str]:
+        """Return '6' or '7' when the instruction targets a Wi-Fi generation plan."""
+        instruction_lower = (instruction or "").lower()
+        if re.search(r"\b(?:wifi|wi\s*-?\s*fi)\s*-?\s*6\b", instruction_lower):
+            return "6"
+        if re.search(r"\b(?:wifi|wi\s*-?\s*fi)\s*-?\s*7\b", instruction_lower):
+            return "7"
+        return None
+
+    def _contradictory_wifi_family_tokens(self, wifi_family: str) -> tuple[str, ...]:
+        """Tokens that indicate the opposite Wi-Fi generation from the requested family."""
+        if wifi_family == "6":
+            return ("wifi7", "wifi 7", "wi-fi 7", "wi fi 7")
+        if wifi_family == "7":
+            return ("wifi6", "wifi 6", "wi-fi 6", "wi fi 6")
+        return ()
+
+    def _snippet_has_contradictory_wifi_family(
+        self,
+        instruction: str,
+        snippet: Optional[str],
+    ) -> bool:
+        """Return True when snippet text names the opposite Wi-Fi generation."""
+        wifi_family = self._extract_three_hk_wifi_family(instruction)
+        if not wifi_family or not snippet:
+            return False
+        snippet_lower = snippet.lower()
+        return any(
+            token in snippet_lower
+            for token in self._contradictory_wifi_family_tokens(wifi_family)
+        )
+
+    def _extract_three_hk_promotion_text_variants(self, instruction: str) -> tuple[str, ...]:
+        """Extract narrow text variants for plan-name promotion steps like 'wifi7 plan'."""
+        instruction_lower = (instruction or "").lower()
+        variants = []
+
+        if re.search(r"\b(?:wifi|wi\s*-?\s*fi)\s*-?\s*6\b", instruction_lower):
+            variants.extend(["wifi6", "wifi 6", "wi-fi 6"])
+
+        if re.search(r"\b(?:wifi|wi\s*-?\s*fi)\s*-?\s*7\b", instruction_lower):
+            variants.extend(["wifi7", "wifi 7", "wi-fi 7"])
+
+        return tuple(dict.fromkeys(variants))
+
+    def _three_hk_wifi_family_xpath_exclusion(
+        self,
+        instruction: str,
+        normalized_text_expr: str,
+    ) -> str:
+        """Build XPath AND-clauses that exclude the opposite Wi-Fi generation."""
+        wifi_family = self._extract_three_hk_wifi_family(instruction)
+        if not wifi_family:
+            return ""
+        exclusions = [
+            f"not(contains({normalized_text_expr}, '{token}'))"
+            for token in self._contradictory_wifi_family_tokens(wifi_family)
+        ]
+        return " and " + " and ".join(exclusions)
+
+    def _instruction_matches_three_hk_promotion_snippet(
+        self,
+        instruction: str,
+        snippet: Optional[str],
+    ) -> bool:
+        """Return True when a local card snippet still matches the requested promotion."""
+        if not snippet:
+            return False
+        if self._snippet_has_contradictory_wifi_family(instruction, snippet):
+            return False
+
+        snippet_lower = snippet.lower()
+        hpprm_code = self._extract_hpprm_code(instruction)
+        if hpprm_code:
+            return hpprm_code.lower() in snippet_lower
+
+        text_variants = self._extract_three_hk_promotion_text_variants(instruction)
+        if not text_variants:
+            return False
+
+        if not any(variant in snippet_lower for variant in text_variants):
+            return False
+
+        price = self._extract_plan_price(instruction)
+        if price and f"${price}" not in snippet_lower and price not in snippet_lower:
+            return False
+
+        return True
+
+    async def _read_three_hk_promotion_card_snippet(self, locator) -> Optional[str]:
+        """Read a compact text snippet from a promotion card locator."""
+        try:
+            snippet = await locator.evaluate(
+                """(el) => {
+                    const container =
+                      el.closest('[role="button"], button, label, div, section, article, li') || el;
+                    return String(container.innerText || el.innerText || '')
+                      .replace(/\\s+/g, ' ')
+                      .trim()
+                      .slice(0, 240);
+                }"""
+            )
+            return snippet if snippet else None
+        except Exception:
+            return None
+
+    async def _is_valid_three_hk_promotion_card_candidate(
+        self,
+        locator,
+        instruction: str,
+    ) -> bool:
+        """Return True when a locator points at the requested promotion card."""
+        snippet = await self._read_three_hk_promotion_card_snippet(locator)
+        return self._instruction_matches_three_hk_promotion_snippet(instruction, snippet)
+
+    async def _pick_smallest_valid_promotion_card_locator(
+        self,
+        page: Page,
+        xpath_candidate: str,
+        instruction: str,
+    ):
+        """Pick the smallest visible card whose snippet matches the instruction."""
+        try:
+            matches = page.locator(f"xpath={xpath_candidate}")
+            count = await matches.count()
+            if count == 0:
+                return None
+
+            best_locator = None
+            best_len = None
+            for index in range(min(count, 12)):
+                candidate = matches.nth(index)
+                try:
+                    await candidate.wait_for(
+                        state="visible",
+                        timeout=min(self.timeout_ms, 2000),
+                    )
+                except Exception:
+                    continue
+                if not await self._is_valid_three_hk_promotion_card_candidate(
+                    candidate,
+                    instruction,
+                ):
+                    continue
+                snippet = await self._read_three_hk_promotion_card_snippet(candidate)
+                snippet_len = len(snippet or "")
+                if best_len is None or snippet_len < best_len:
+                    best_locator = candidate
+                    best_len = snippet_len
+            return best_locator
+        except Exception:
+            return None
+
+    async def _prefer_actionable_promotion_click_target(self, card_locator):
+        """Prefer a button/role=button inside the scoped promotion card."""
+        try:
+            button = card_locator.locator("button, [role='button']").first
+            if await button.count() > 0:
+                await button.wait_for(
+                    state="visible",
+                    timeout=min(self.timeout_ms, 3000),
+                )
+                return button
+        except Exception:
+            pass
+        return card_locator
+
     async def _looks_like_three_hk_promotion_page(
         self,
         page: Page,
@@ -1226,7 +1393,15 @@ class Tier2HybridExecutor:
             or not (looks_like_three_hk_promotion_page or is_three_hk_uat_url(page_url))
         ):
             return False
-        return self._extract_hpprm_code(instruction) is not None
+        if self._extract_hpprm_code(instruction) is not None:
+            return True
+
+        instruction_lower = (instruction or "").lower()
+        return (
+            "plan" in instruction_lower
+            and self._extract_plan_price(instruction) is not None
+            and bool(self._extract_three_hk_promotion_text_variants(instruction))
+        )
 
     def _is_three_hk_moneyback_panel_click(
         self,
@@ -1284,68 +1459,197 @@ class Tier2HybridExecutor:
     async def _find_three_hk_promotion_card_locator(self, page: Page, instruction: str):
         """Locate a visible Three HK promotion card using HPPRM id and optional price."""
         hpprm_code = self._extract_hpprm_code(instruction)
-        if not hpprm_code:
+        text_variants = self._extract_three_hk_promotion_text_variants(instruction)
+        if not hpprm_code and not text_variants:
             return None, None
 
         await self._wait_for_three_hk_promotion_catalog_ready(page, instruction)
         await self._wait_for_spa_spinner_settle(page)
 
         price = self._extract_plan_price(instruction)
+        normalized_text = (
+            "translate(normalize-space(.), "
+            "'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')"
+        )
+        wifi_exclusion = self._three_hk_wifi_family_xpath_exclusion(
+            instruction,
+            normalized_text,
+        )
         xpath_candidates = []
-        if price:
-            xpath_candidates.append(
-                "(//*[contains(normalize-space(.), '{hpprm}')]"
-                "/ancestor::*[self::div or self::section or self::article]"
-                "[contains(., '${price}') or contains(., '{price}')][1])[1]".format(
-                    hpprm=hpprm_code,
-                    price=price,
+        if hpprm_code:
+            if price:
+                xpath_candidates.append(
+                    "(//*[contains(normalize-space(.), '{hpprm}')]"
+                    "/ancestor::*[self::div or self::section or self::article]"
+                    "[contains(., '${price}') or contains(., '{price}')][1])[1]".format(
+                        hpprm=hpprm_code,
+                        price=price,
+                    )
                 )
+            xpath_candidates.extend([
+                f"(//*[contains(normalize-space(.), '{hpprm_code}')])[1]",
+                (
+                    f"(//*[contains(., '{hpprm_code}')]"
+                    f"/ancestor-or-self::*[self::div or self::section or self::article][1])[1]"
+                ),
+            ])
+
+        if text_variants:
+            text_predicate = " or ".join(
+                f"contains({normalized_text}, '{variant}')"
+                for variant in text_variants
             )
-        xpath_candidates.extend([
-            f"(//*[contains(normalize-space(.), '{hpprm_code}')])[1]",
-            (
-                f"(//*[contains(., '{hpprm_code}')]"
-                f"/ancestor-or-self::*[self::div or self::section or self::article][1])[1]"
-            ),
-        ])
+            if price:
+                xpath_candidates.append(
+                    "(//*[self::div or self::section or self::article or self::li]"
+                    f"[({text_predicate}){wifi_exclusion}"
+                    f" and (contains(., '${price}') or contains(., '{price}'))])[1]"
+                )
+            xpath_candidates.append(
+                "(//*[self::div or self::section or self::article or self::li]"
+                f"[({text_predicate}){wifi_exclusion}])[1]"
+            )
 
         for xpath_candidate in xpath_candidates:
+            locator = await self._pick_smallest_valid_promotion_card_locator(
+                page,
+                xpath_candidate,
+                instruction,
+            )
+            if locator is not None:
+                click_target = await self._prefer_actionable_promotion_click_target(locator)
+                return click_target, xpath_candidate
+
+        text_fallbacks = [hpprm_code] if hpprm_code else []
+        text_fallbacks.extend(text_variants)
+        for text_value in text_fallbacks:
             try:
-                locator = page.locator(f"xpath={xpath_candidate}").first
+                locator = page.get_by_text(text_value, exact=False).first
                 await locator.wait_for(state="visible", timeout=min(self.timeout_ms, 5000))
-                return locator, xpath_candidate
+                if await self._is_valid_three_hk_promotion_card_candidate(
+                    locator,
+                    instruction,
+                ):
+                    click_target = await self._prefer_actionable_promotion_click_target(locator)
+                    return click_target, f"text={text_value}"
             except Exception:
                 continue
 
-        try:
-            locator = page.get_by_text(hpprm_code, exact=False).first
-            await locator.wait_for(state="visible", timeout=min(self.timeout_ms, 5000))
-            return locator, f"text={hpprm_code}"
-        except Exception:
-            return None, None
+        return None, None
 
-    async def _verify_three_hk_promotion_card_selected(self, page: Page, instruction: str) -> bool:
-        """Verify a promotion-card click exposed reward options or left the card interactable."""
+    async def _verify_three_hk_promotion_card_selected(
+        self,
+        page: Page,
+        instruction: str,
+        card_locator=None,
+        before_footer_text: str = "",
+    ) -> bool:
+        """Verify the requested promotion card became active, not just that *some* plan is selected."""
         hpprm_code = self._extract_hpprm_code(instruction)
-        if not hpprm_code:
+        text_variants = self._extract_three_hk_promotion_text_variants(instruction)
+        if not hpprm_code and not text_variants:
             return False
 
+        local_selected = False
+        local_snippet = None
+        if card_locator is not None:
+            try:
+                local_state = await card_locator.evaluate(
+                    """(el) => {
+                        const container =
+                          el.closest('[role="button"], button, label, div, section, article, li') || el;
+                        const nodes = [
+                          container,
+                          ...container.querySelectorAll('*'),
+                        ].slice(0, 80);
+                        const selected = nodes.some((node) => {
+                          const className = String(node.className || '').toLowerCase();
+                          return node.getAttribute('aria-selected') === 'true'
+                            || node.getAttribute('aria-checked') === 'true'
+                            || node.getAttribute('aria-pressed') === 'true'
+                            || node.getAttribute('data-selected') === 'true'
+                            || /(active|selected|checked|current)/.test(className);
+                        });
+                        const snippet = String(container.innerText || el.innerText || '')
+                          .replace(/\\s+/g, ' ')
+                          .trim()
+                          .slice(0, 160);
+                        return { selected, snippet };
+                    }"""
+                )
+                if isinstance(local_state, dict):
+                    local_selected = bool(local_state.get("selected"))
+                    local_snippet = local_state.get("snippet") or None
+            except Exception:
+                local_selected = False
+                local_snippet = None
+
+        target_matches_local_snippet = self._instruction_matches_three_hk_promotion_snippet(
+            instruction,
+            local_snippet,
+        )
+
+        logger.info(
+            "[Tier 2] 🔎 Promotion verification hpprm=%s text_variants=%s local_selected=%s target_matches=%s snippet=%r",
+            hpprm_code,
+            text_variants,
+            local_selected,
+            target_matches_local_snippet,
+            local_snippet,
+        )
+        if local_selected and (local_snippet is None or target_matches_local_snippet):
+            return True
+
         moneyback = page.get_by_text("Moneyback", exact=False)
+        reward_options_visible = False
         try:
             if await moneyback.count() > 0 and await moneyback.first.is_visible():
-                return True
-        except Exception:
-            pass
-
-        try:
-            hpprm_locator = page.get_by_text(hpprm_code, exact=False).first
-            if await hpprm_locator.is_visible():
-                return True
+                reward_options_visible = True
         except Exception:
             pass
 
         footer_text = await self._read_three_hk_footer_cart_text(page)
-        return not self._three_hk_footer_shows_empty_cart(footer_text)
+        footer_non_empty = not self._three_hk_footer_shows_empty_cart(footer_text)
+        footer_changed = re.sub(r"\s+", "", footer_text or "") != re.sub(
+            r"\s+", "", before_footer_text or ""
+        )
+
+        promotion_error = page.get_by_text("Please select a promotion", exact=False)
+        promotion_error_visible = False
+        try:
+            if await promotion_error.count() > 0:
+                promotion_error_visible = await promotion_error.first.is_visible()
+        except Exception:
+            promotion_error_visible = False
+
+        logger.info(
+            "[Tier 2] 🔎 Promotion verification hpprm=%s before_footer=%r after_footer=%r changed=%s rewards_visible=%s promotion_error_visible=%s",
+            hpprm_code,
+            before_footer_text,
+            footer_text,
+            footer_changed,
+            reward_options_visible,
+            promotion_error_visible,
+        )
+
+        # First plan selection can legitimately prove progress by opening rewards or
+        # changing the cart away from $0. When a plan is already selected, those
+        # broader page signals are stale; require a target-card state change instead.
+        if self._three_hk_footer_shows_empty_cart(before_footer_text):
+            progress = reward_options_visible or (
+                footer_non_empty and not promotion_error_visible
+            )
+            if not progress:
+                return False
+            if target_matches_local_snippet:
+                return True
+            footer_matches = self._instruction_matches_three_hk_promotion_snippet(
+                instruction,
+                footer_text,
+            )
+            return footer_matches
+
+        return local_selected and target_matches_local_snippet
 
     async def _try_three_hk_promotion_card_click(
         self,
@@ -1356,8 +1660,10 @@ class Tier2HybridExecutor:
         """Click Three HK promotion cards via Playwright locators instead of observe()."""
         direct_click_start = time.time()
         hpprm_code = self._extract_hpprm_code(instruction)
-        if not hpprm_code:
+        text_variants = self._extract_three_hk_promotion_text_variants(instruction)
+        if not hpprm_code and not text_variants:
             return None
+        target_label = hpprm_code or text_variants[0]
 
         locator, strategy = await self._find_three_hk_promotion_card_locator(page, instruction)
         if locator is None:
@@ -1367,11 +1673,12 @@ class Tier2HybridExecutor:
             )
             return None
 
+        before_footer_text = await self._read_three_hk_footer_cart_text(page)
         current_url = page.url
         await locator.click(timeout=self.timeout_ms)
         logger.info(
             "[Tier 2] 🎯 Clicked Three HK promotion card %s using %s",
-            hpprm_code,
+            target_label,
             strategy,
         )
 
@@ -1379,14 +1686,21 @@ class Tier2HybridExecutor:
             page=page,
             clicked_element=locator,
             instruction=instruction,
-            element_text=hpprm_code,
+            element_text=target_label,
             current_url=current_url,
             timeout_ms=self.timeout_ms,
             logger=logger,
         )
         await self._wait_for_spa_spinner_settle(page)
 
-        if not await self._verify_three_hk_promotion_card_selected(page, instruction):
+        verified = await self._verify_three_hk_promotion_card_selected(
+            page,
+            instruction,
+            card_locator=locator,
+            before_footer_text=before_footer_text,
+        )
+        selected_locator = locator
+        if not verified:
             logger.warning(
                 "[Tier 2] ⚠️ Three HK promotion card click did not expose reward options. "
                 "Dismissing modal and retrying once..."
@@ -1400,14 +1714,22 @@ class Tier2HybridExecutor:
                 await retry_locator.click(timeout=self.timeout_ms)
                 logger.info(
                     "[Tier 2] 🔁 Retried Three HK promotion card %s using %s",
-                    hpprm_code,
+                    target_label,
                     retry_strategy,
                 )
                 await self._wait_for_spa_spinner_settle(page)
+                selected_locator = retry_locator
 
-        if not await self._verify_three_hk_promotion_card_selected(page, instruction):
+            verified = await self._verify_three_hk_promotion_card_selected(
+                page,
+                instruction,
+                card_locator=selected_locator,
+                before_footer_text=before_footer_text,
+            )
+
+        if not verified:
             raise ValueError(
-                f"Three HK promotion card '{hpprm_code}' did not appear selected after click"
+                f"Three HK promotion card '{target_label}' did not appear selected after click"
             )
 
         execution_time_ms = (time.time() - direct_click_start) * 1000
@@ -2135,16 +2457,63 @@ class Tier2HybridExecutor:
     async def _retry_three_hk_plan_click(self, page: Page, instruction: str) -> bool:
         """Retry the plan click using a price-aware locator instead of the generic cached XPath."""
         price = self._extract_plan_price(instruction)
+        text_variants = self._extract_three_hk_promotion_text_variants(instruction)
+        wifi_family = self._extract_three_hk_wifi_family(instruction)
         xpath_candidates = []
+
+        normalized_text = (
+            "translate(normalize-space(.), "
+            "'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')"
+        )
+        wifi_exclusion = self._three_hk_wifi_family_xpath_exclusion(
+            instruction,
+            normalized_text,
+        )
+
+        if text_variants:
+            text_predicate = " or ".join(
+                f"contains({normalized_text}, '{variant}')"
+                for variant in text_variants
+            )
+            card_scope = (
+                f"//*[self::div or self::section or self::article or self::li]"
+                f"[({text_predicate}){wifi_exclusion}"
+            )
+            if price:
+                price_text = f"${price}"
+                xpath_candidates.extend([
+                    (
+                        f"({card_scope} and (contains(., '{price_text}') "
+                        f"or contains(., '{price}'))]"
+                        f"//button[normalize-space()='Select'])[1]"
+                    ),
+                    (
+                        f"({card_scope} and (contains(., '{price_text}') "
+                        f"or contains(., '{price}'))]"
+                        f"/following::button[normalize-space()='Select'][1])[1]"
+                    ),
+                ])
+            else:
+                xpath_candidates.append(
+                    f"({card_scope}]//button[normalize-space()='Select'])[1]"
+                )
 
         if price:
             price_text = f"${price}"
             xpath_candidates.extend([
-                f"(//*[self::div or self::section or self::article or self::li][contains(., '{price_text}') or contains(., '{price}')]//button[normalize-space()='Select'])[1]",
-                f"(//*[contains(., '{price_text}') or contains(., '{price}')]/following::button[normalize-space()='Select'][1])[1]",
+                (
+                    f"(//*[self::div or self::section or self::article or self::li]"
+                    f"[(contains(., '{price_text}') or contains(., '{price}'))"
+                    f"{wifi_exclusion}]//button[normalize-space()='Select'])[1]"
+                ),
+                (
+                    f"(//*[contains(., '{price_text}') or contains(., '{price}')]"
+                    f"/following::button[normalize-space()='Select'][1])[1]"
+                ),
             ])
 
-        xpath_candidates.append("(//button[normalize-space()='Select'])[1]")
+        if not wifi_family:
+            xpath_candidates.append("(//button[normalize-space()='Select'])[1]")
 
         for xpath_candidate in xpath_candidates:
             try:
@@ -2395,6 +2764,29 @@ class Tier2HybridExecutor:
         """Validate cache entry against both DOM presence and step semantics."""
         locator = page.locator(f"xpath={xpath}").first
         await locator.wait_for(state="attached", timeout=2000)
+
+        if action == "click" and self._is_three_hk_promotion_card_click(
+            page.url,
+            instruction,
+            action,
+        ):
+            try:
+                element_text = (await locator.inner_text()) or ""
+            except Exception:
+                element_text = ""
+            if not self._instruction_matches_three_hk_promotion_snippet(
+                instruction,
+                element_text,
+            ):
+                logger.info(
+                    "[Tier 2] Cached promotion card semantic mismatch for instruction"
+                )
+                return False
+            if self._snippet_has_contradictory_wifi_family(instruction, element_text):
+                logger.info(
+                    "[Tier 2] Cached promotion card contradicts requested Wi-Fi family"
+                )
+                return False
 
         if action not in ["fill", "type", "input"]:
             return True

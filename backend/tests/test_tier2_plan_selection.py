@@ -926,10 +926,157 @@ class TestThreeHkPromotionCardDirectClick:
             action="click",
         ) is True
 
+    def test_is_three_hk_promotion_card_click_true_for_wifi7_price_step(self):
+        assert self.executor._is_three_hk_promotion_card_click(
+            page_url="https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en",
+            instruction="Click wifi7 plan $238/30 month plan",
+            action="click",
+        ) is True
+
+    def test_is_three_hk_promotion_card_click_true_for_wifi6_price_step(self):
+        assert self.executor._is_three_hk_promotion_card_click(
+            page_url="https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en",
+            instruction="Click wi-fi6 plan $198/30 month plan",
+            action="click",
+        ) is True
+
     def test_three_hk_footer_shows_empty_cart(self):
         assert self.executor._three_hk_footer_shows_empty_cart("$ 0") is True
         assert self.executor._three_hk_footer_shows_empty_cart("$0") is True
         assert self.executor._three_hk_footer_shows_empty_cart("$ 238") is False
+
+    @pytest.mark.asyncio
+    async def test_verify_promotion_card_rejects_stale_pagewide_success_on_plan_switch(self):
+        page = MagicMock()
+        card_locator = AsyncMock()
+        card_locator.evaluate = AsyncMock(
+            return_value={
+                "selected": False,
+                "snippet": "HPPRM0000002896 5G Broadband Wi-Fi 7 Service Plan",
+            }
+        )
+
+        moneyback_locator = MagicMock()
+        moneyback_locator.count = AsyncMock(return_value=1)
+        moneyback_locator.first = AsyncMock()
+        moneyback_locator.first.is_visible = AsyncMock(return_value=True)
+
+        promotion_error = MagicMock()
+        promotion_error.count = AsyncMock(return_value=0)
+
+        def get_by_text_side_effect(text, exact=False):
+            if text == "Moneyback":
+                return moneyback_locator
+            if text == "Please select a promotion":
+                return promotion_error
+            raise AssertionError(f"Unexpected text lookup: {text}")
+
+        page.get_by_text = MagicMock(side_effect=get_by_text_side_effect)
+        self.executor._read_three_hk_footer_cart_text = AsyncMock(return_value="$ 238")
+
+        assert not await self.executor._verify_three_hk_promotion_card_selected(
+            page,
+            'Click "HPPRM0000002896" with $238/30 month plan',
+            card_locator=card_locator,
+            before_footer_text="$ 238",
+        )
+
+    @pytest.mark.asyncio
+    async def test_verify_promotion_card_accepts_local_selected_state_for_same_price_switch(self):
+        page = MagicMock()
+        card_locator = AsyncMock()
+        card_locator.evaluate = AsyncMock(
+            return_value={
+                "selected": True,
+                "snippet": "HPPRM0000002896 5G Broadband Wi-Fi 7 Service Plan active",
+            }
+        )
+
+        page.get_by_text = MagicMock(side_effect=AssertionError("page-wide fallback should not run"))
+        self.executor._read_three_hk_footer_cart_text = AsyncMock(return_value="$ 238")
+
+        assert await self.executor._verify_three_hk_promotion_card_selected(
+            page,
+            'Click "HPPRM0000002896" with $238/30 month plan',
+            card_locator=card_locator,
+            before_footer_text="$ 238",
+        )
+
+    @pytest.mark.asyncio
+    async def test_verify_promotion_card_accepts_wifi7_local_selected_state_without_hpprm(self):
+        page = MagicMock()
+        card_locator = AsyncMock()
+        card_locator.evaluate = AsyncMock(
+            return_value={
+                "selected": True,
+                "snippet": "5G Broadband Wi-Fi 7 Service Plan active $238/30 month",
+            }
+        )
+
+        page.get_by_text = MagicMock(side_effect=AssertionError("page-wide fallback should not run"))
+        self.executor._read_three_hk_footer_cart_text = AsyncMock(return_value="$ 238")
+
+        assert await self.executor._verify_three_hk_promotion_card_selected(
+            page,
+            "Click wifi7 plan $238/30 month plan",
+            card_locator=card_locator,
+            before_footer_text="$ 238",
+        )
+
+    @pytest.mark.asyncio
+    async def test_verify_promotion_card_accepts_wifi6_local_selected_state_without_hpprm(self):
+        page = MagicMock()
+        card_locator = AsyncMock()
+        card_locator.evaluate = AsyncMock(
+            return_value={
+                "selected": True,
+                "snippet": "5G Broadband Wi-Fi 6 Service Plan active $198/30 month",
+            }
+        )
+
+        page.get_by_text = MagicMock(side_effect=AssertionError("page-wide fallback should not run"))
+        self.executor._read_three_hk_footer_cart_text = AsyncMock(return_value="$ 198")
+
+        assert await self.executor._verify_three_hk_promotion_card_selected(
+            page,
+            "Click wi-fi6 plan $198/30 month plan",
+            card_locator=card_locator,
+            before_footer_text="$ 198",
+        )
+
+    @pytest.mark.asyncio
+    async def test_verify_promotion_card_accepts_first_selection_when_cart_changes_from_empty(self):
+        page = MagicMock()
+        card_locator = AsyncMock()
+        card_locator.evaluate = AsyncMock(
+            return_value={
+                "selected": False,
+                "snippet": "HPPRM0000002896 5G Broadband Wi-Fi 7 Service Plan",
+            }
+        )
+
+        moneyback_locator = MagicMock()
+        moneyback_locator.count = AsyncMock(return_value=0)
+
+        promotion_error = MagicMock()
+        promotion_error.count = AsyncMock(return_value=0)
+
+        def get_by_text_side_effect(text, exact=False):
+            if text == "Moneyback":
+                return moneyback_locator
+            if text == "Please select a promotion":
+                return promotion_error
+            raise AssertionError(f"Unexpected text lookup: {text}")
+
+        page.get_by_text = MagicMock(side_effect=get_by_text_side_effect)
+        self.executor._read_three_hk_footer_cart_text = AsyncMock(return_value="$ 238")
+
+        assert await self.executor._verify_three_hk_promotion_card_selected(
+            page,
+            'Click "HPPRM0000002896" with $238/30 month plan',
+            card_locator=card_locator,
+            before_footer_text="$ 0",
+        )
 
     @pytest.mark.asyncio
     async def test_execute_step_uses_direct_promotion_helper_before_xpath_cache(self):
@@ -961,6 +1108,262 @@ class TestThreeHkPromotionCardDirectClick:
 
         assert result["success"] is True
         self.executor._try_three_hk_promotion_card_click.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_try_promotion_card_click_returns_success_when_first_verification_passes(self):
+        page = MagicMock()
+        page.url = "https://example.com/embedded-checkout"
+
+        locator = AsyncMock()
+        locator.click = AsyncMock(return_value=None)
+
+        self.executor._find_three_hk_promotion_card_locator = AsyncMock(
+            return_value=(locator, "text=HPPRM0000002896")
+        )
+        self.executor._read_three_hk_footer_cart_text = AsyncMock(return_value="$ 238")
+        self.executor._wait_for_spa_spinner_settle = AsyncMock(return_value=None)
+        self.executor._verify_three_hk_promotion_card_selected = AsyncMock(return_value=True)
+
+        with patch(
+            "app.services.tier2_hybrid.wait_for_post_click_readiness",
+            AsyncMock(return_value={}),
+        ), patch(
+            "app.services.tier2_hybrid.auto_dismiss_blocking_modals",
+            AsyncMock(return_value=False),
+        ) as dismiss_mock:
+            result = await self.executor._try_three_hk_promotion_card_click(
+                page,
+                'Click "HPPRM0000002896" with $238/30 month plan',
+            )
+
+        assert result["success"] is True
+        locator.click.assert_awaited_once()
+        dismiss_mock.assert_not_awaited()
+        self.executor._verify_three_hk_promotion_card_selected.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_find_promotion_card_locator_matches_wifi7_price_without_hpprm(self):
+        page = MagicMock()
+
+        wifi7_locator = AsyncMock()
+        wifi7_locator.wait_for = AsyncMock(return_value=None)
+        wifi7_locator.evaluate = AsyncMock(
+            return_value="5G Broadband Wi-Fi 7 Service Plan $238/30 month"
+        )
+        wifi7_locator.locator = MagicMock(
+            return_value=MagicMock(first=MagicMock(count=AsyncMock(return_value=0)))
+        )
+
+        matches = MagicMock()
+        matches.count = AsyncMock(return_value=1)
+        matches.nth = MagicMock(return_value=wifi7_locator)
+
+        empty_locator = AsyncMock()
+        empty_locator.wait_for = AsyncMock(side_effect=TimeoutError("not visible"))
+
+        def locator_side_effect(selector):
+            if "wi-fi 7" in selector and "$238" in selector:
+                return matches
+            match = MagicMock()
+            match.first = empty_locator
+            return match
+
+        page.locator = MagicMock(side_effect=locator_side_effect)
+        page.get_by_text = MagicMock(side_effect=AssertionError("xpath lookup should succeed first"))
+
+        self.executor._wait_for_three_hk_promotion_catalog_ready = AsyncMock(return_value=None)
+        self.executor._wait_for_spa_spinner_settle = AsyncMock(return_value=None)
+
+        locator, strategy = await self.executor._find_three_hk_promotion_card_locator(
+            page,
+            "Click wifi7 plan $238/30 month plan",
+        )
+
+        assert locator is wifi7_locator
+        assert "wi-fi 7" in strategy
+        assert "$238" in strategy
+
+    @pytest.mark.asyncio
+    async def test_find_promotion_card_locator_matches_wifi6_price_without_hpprm(self):
+        page = MagicMock()
+
+        wifi6_locator = AsyncMock()
+        wifi6_locator.wait_for = AsyncMock(return_value=None)
+        wifi6_locator.evaluate = AsyncMock(
+            return_value="5G Broadband Wi-Fi 6 Service Plan $198/30 month"
+        )
+        wifi6_locator.locator = MagicMock(
+            return_value=MagicMock(first=MagicMock(count=AsyncMock(return_value=0)))
+        )
+
+        matches = MagicMock()
+        matches.count = AsyncMock(return_value=1)
+        matches.nth = MagicMock(return_value=wifi6_locator)
+
+        empty_locator = AsyncMock()
+        empty_locator.wait_for = AsyncMock(side_effect=TimeoutError("not visible"))
+
+        def locator_side_effect(selector):
+            if "wi-fi 6" in selector and "$198" in selector:
+                return matches
+            match = MagicMock()
+            match.first = empty_locator
+            return match
+
+        page.locator = MagicMock(side_effect=locator_side_effect)
+        page.get_by_text = MagicMock(side_effect=AssertionError("xpath lookup should succeed first"))
+
+        self.executor._wait_for_three_hk_promotion_catalog_ready = AsyncMock(return_value=None)
+        self.executor._wait_for_spa_spinner_settle = AsyncMock(return_value=None)
+
+        locator, strategy = await self.executor._find_three_hk_promotion_card_locator(
+            page,
+            "Click wi-fi6 plan $198/30 month plan",
+        )
+
+        assert locator is wifi6_locator
+        assert "wi-fi 6" in strategy
+        assert "$198" in strategy
+
+    @pytest.mark.asyncio
+    async def test_find_promotion_card_locator_rejects_shared_parent_with_wifi7_for_wifi6(self):
+        page = MagicMock()
+
+        shared_parent_locator = AsyncMock()
+        shared_parent_locator.wait_for = AsyncMock(return_value=None)
+        shared_parent_locator.evaluate = AsyncMock(
+            return_value=(
+                "Featured Monthly Plans Wi-Fi 6 $198/30 month "
+                "Wi-Fi 7 $238/30 month"
+            )
+        )
+        shared_parent_locator.locator = MagicMock(
+            return_value=MagicMock(first=MagicMock(count=AsyncMock(return_value=0)))
+        )
+
+        wifi6_card_locator = AsyncMock()
+        wifi6_card_locator.wait_for = AsyncMock(return_value=None)
+        wifi6_card_locator.evaluate = AsyncMock(
+            return_value="5G Broadband Wi-Fi 6 Service Plan $198/30 month"
+        )
+        wifi6_card_locator.locator = MagicMock(
+            return_value=MagicMock(first=MagicMock(count=AsyncMock(return_value=0)))
+        )
+
+        matches = MagicMock()
+        matches.count = AsyncMock(return_value=2)
+        matches.nth = MagicMock(side_effect=[shared_parent_locator, wifi6_card_locator])
+
+        def locator_side_effect(selector):
+            if "wi-fi 6" in selector and "$198" in selector:
+                return matches
+            return MagicMock(first=AsyncMock(wait_for=AsyncMock(side_effect=TimeoutError())))
+
+        page.locator = MagicMock(side_effect=locator_side_effect)
+        page.get_by_text = MagicMock(side_effect=AssertionError("xpath lookup should succeed first"))
+
+        self.executor._wait_for_three_hk_promotion_catalog_ready = AsyncMock(return_value=None)
+        self.executor._wait_for_spa_spinner_settle = AsyncMock(return_value=None)
+
+        locator, strategy = await self.executor._find_three_hk_promotion_card_locator(
+            page,
+            "Click wi-fi6 plan $198/30 month plan",
+        )
+
+        assert locator is wifi6_card_locator
+        assert "wi-fi 6" in strategy
+
+    @pytest.mark.asyncio
+    async def test_verify_promotion_card_rejects_wifi7_snippet_for_wifi6_with_empty_cart_signals(self):
+        page = MagicMock()
+        card_locator = AsyncMock()
+        card_locator.evaluate = AsyncMock(
+            return_value={
+                "selected": False,
+                "snippet": "5G Broadband Wi-Fi 7 Service Plan $238/30 month",
+            }
+        )
+
+        moneyback_locator = MagicMock()
+        moneyback_locator.count = AsyncMock(return_value=1)
+        moneyback_locator.first = AsyncMock()
+        moneyback_locator.first.is_visible = AsyncMock(return_value=True)
+
+        promotion_error = MagicMock()
+        promotion_error.count = AsyncMock(return_value=0)
+
+        def get_by_text_side_effect(text, exact=False):
+            if text == "Moneyback":
+                return moneyback_locator
+            if text == "Please select a promotion":
+                return promotion_error
+            raise AssertionError(f"Unexpected text lookup: {text}")
+
+        page.get_by_text = MagicMock(side_effect=get_by_text_side_effect)
+        self.executor._read_three_hk_footer_cart_text = AsyncMock(return_value="$ 238")
+
+        assert not await self.executor._verify_three_hk_promotion_card_selected(
+            page,
+            "Click wi-fi6 plan $198/30 month plan",
+            card_locator=card_locator,
+            before_footer_text="$ 0",
+        )
+
+    def test_instruction_matches_rejects_snippet_with_both_wifi_families_for_wifi6(self):
+        assert not self.executor._instruction_matches_three_hk_promotion_snippet(
+            "Click wi-fi6 plan $198/30 month plan",
+            "Featured Plans Wi-Fi 6 $198 Wi-Fi 7 $238",
+        )
+
+    def test_snippet_has_contradictory_wifi_family_detects_wifi7_for_wifi6_step(self):
+        assert self.executor._snippet_has_contradictory_wifi_family(
+            "Click wi-fi6 plan $198/30 month plan",
+            "5G Broadband Wi-Fi 7 Service Plan",
+        )
+
+    @pytest.mark.asyncio
+    async def test_validate_cached_xpath_rejects_wifi7_element_for_wifi6_instruction(self):
+        page = MagicMock()
+        page.url = "https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en"
+
+        locator = AsyncMock()
+        locator.wait_for = AsyncMock(return_value=None)
+        locator.inner_text = AsyncMock(
+            return_value="5G Broadband Wi-Fi 7 Service Plan $238/30 month"
+        )
+        page.locator = MagicMock(return_value=MagicMock(first=locator))
+
+        is_valid = await self.executor._validate_cached_xpath_for_step(
+            page=page,
+            xpath="//div[contains(., 'Wi-Fi 7')]",
+            action="click",
+            instruction="Click wi-fi6 plan $198/30 month plan",
+            value=None,
+        )
+
+        assert is_valid is False
+
+    @pytest.mark.asyncio
+    async def test_validate_cached_xpath_accepts_wifi6_element_for_wifi6_instruction(self):
+        page = MagicMock()
+        page.url = "https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en"
+
+        locator = AsyncMock()
+        locator.wait_for = AsyncMock(return_value=None)
+        locator.inner_text = AsyncMock(
+            return_value="5G Broadband Wi-Fi 6 Service Plan $198/30 month"
+        )
+        page.locator = MagicMock(return_value=MagicMock(first=locator))
+
+        is_valid = await self.executor._validate_cached_xpath_for_step(
+            page=page,
+            xpath="//div[contains(., 'Wi-Fi 6')]",
+            action="click",
+            instruction="Click wi-fi6 plan $198/30 month plan",
+            value=None,
+        )
+
+        assert is_valid is True
 
     @pytest.mark.asyncio
     async def test_execute_step_uses_direct_promotion_helper_on_dom_identified_non_uat_host(self):
@@ -996,6 +1399,71 @@ class TestThreeHkPromotionCardDirectClick:
             page,
             instruction='Click "HPPRM0000002896" with $238/30 month plan',
         )
+        self.executor._try_three_hk_promotion_card_click.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_step_uses_direct_promotion_helper_for_wifi7_price_step(self):
+        page = MagicMock()
+        page.url = "https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en"
+
+        self.executor._try_three_hk_promotion_card_click = AsyncMock(
+            return_value={
+                "success": True,
+                "tier": 2,
+                "execution_time_ms": 150.0,
+                "extraction_time_ms": 0,
+                "cache_hit": False,
+                "xpath": None,
+                "error": None,
+            }
+        )
+        self.executor.cache_service.get_cached_xpath = MagicMock(
+            side_effect=AssertionError("cache should be bypassed")
+        )
+
+        result = await self.executor.execute_step(
+            page=page,
+            step={
+                "action": "click",
+                "instruction": "Click wifi7 plan $238/30 month plan",
+            },
+        )
+
+        assert result["success"] is True
+        self.executor._try_three_hk_promotion_card_click.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_step_uses_direct_promotion_helper_for_wifi6_price_step(self):
+        page = MagicMock()
+        page.url = "https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en"
+
+        self.executor._try_three_hk_promotion_card_click = AsyncMock(
+            return_value={
+                "success": True,
+                "tier": 2,
+                "execution_time_ms": 150.0,
+                "extraction_time_ms": 0,
+                "cache_hit": False,
+                "xpath": None,
+                "error": None,
+            }
+        )
+        self.executor.cache_service.get_cached_xpath = MagicMock(
+            side_effect=AssertionError("cache should be bypassed")
+        )
+        self.executor.xpath_extractor.extract_xpath_with_page = AsyncMock(
+            side_effect=AssertionError("generic xpath extraction should be bypassed")
+        )
+
+        result = await self.executor.execute_step(
+            page=page,
+            step={
+                "action": "click",
+                "instruction": "Click wi-fi6 plan $198/30 month plan",
+            },
+        )
+
+        assert result["success"] is True
         self.executor._try_three_hk_promotion_card_click.assert_awaited_once()
 
     @pytest.mark.asyncio

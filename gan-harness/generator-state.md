@@ -1,27 +1,24 @@
-# Generator State — Iteration 002 (Three HK HPPRM observe fix)
+# Generator State — Iteration 002
 
-## Root cause (exec #967, #971)
-- Catalog DOM readiness waits were insufficient: `observe()` accessibility tree omitted plan cards even when Playwright DOM had `HPPRM…` visible.
-- Tier 3 treated empty `act()` responses as success.
-- Cached checkout XPath proceeded with cart `$ 0`.
+## What Was Built
+- Wi-Fi 6/7 family targeting for Three HK promotion card clicks in `tier2_hybrid.py`
+- Smallest-card locator selection with contradictory-family rejection
+- Tightened post-click verification for empty-cart vs plan-switch cases
+- Wi-Fi-aware plan-click retry and cached XPath semantic validation
+- Six new unit tests in `test_tier2_plan_selection.py`
 
-## What Was Built (ADR-002-50)
-- `_try_three_hk_promotion_card_click()` — direct Playwright HPPRM card click before cache/observe
-- `_try_three_hk_moneyback_panel_click()` — direct Moneyback panel click
-- Checkout guard when footer cart is still `$ 0` on Three HK UAT
-- Tier 3 fails `click` when `act()` returns empty elements
-- ADR-002-50 documented in `documentation/ADR-002-test-execution-engine.md`
+## What Changed This Iteration
+- Fixed: wifi6 step clicking wifi7 due to broad parent XPath and page-wide verification
+- Added: `_extract_three_hk_wifi_family`, snippet validation helpers, smallest-card picker
+- Tightened: empty-cart progress signals require matching snippet or footer text
+- Tightened: plan switches require local selected state matching instruction
+- Retry: wifi6/wifi7 XPath predicates; blind first Select only when no wifi family
 
-## Files changed
-- `backend/app/services/tier2_hybrid.py`
-- `backend/app/services/tier3_stagehand.py`
-- `backend/tests/test_tier2_plan_selection.py`
-- `documentation/ADR-002-test-execution-engine.md`
+## Known Issues
+- HPPRM-only locator paths unchanged (not part of wifi6/wifi7 bug)
+- No live UAT E2E run in this iteration
 
-## Verification
-- `python -m pytest tests/test_tier2_plan_selection.py -q` — 48 passed
-
-## Required for live re-test
-- **Restart backend** (`python start_server.py`) so Tier 2 code loads
-- Re-run the failing test case (same flow as exec #971)
-- Expect logs: `Clicked Three HK promotion card HPPRM0000002896` (Tier 2, no observe for that step)
+## Dev Server
+- URL: http://127.0.0.1:8000 (backend) / http://localhost:5173 (frontend)
+- Status: not started this iteration
+- Command: `cd backend && python start_server.py`
