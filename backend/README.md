@@ -1,13 +1,16 @@
 # AI Web Test - Backend API
 
-FastAPI backend for the AI Web Test application with browser automation, queue system, and AI-powered test generation.
+FastAPI backend with three-tier test execution (Playwright → Hybrid → Stagehand), queue system, and AI-powered test generation.
 
-## 🎯 Current Status
+**Last Updated:** 2026-06-30  
+**Codemap:** [`docs/CODEMAPS/backend.md`](../docs/CODEMAPS/backend.md)  
+**Execution engine ADR:** [`documentation/ADR-002-test-execution-engine.md`](../documentation/ADR-002-test-execution-engine.md)
 
-**Version:** 0.3.0 (Sprint 3 Complete)  
-**API Endpoints:** 47  
-**Test Coverage:** 100%  
-**Last Updated:** November 25, 2025
+## Current Status
+
+**API:** `/api/v1` (CRUD, execution, KB, settings) + `/api/v2` (agent workflow)  
+**Execution:** Three-tier engine via `ThreeTierExecutionService` (fallback strategies A/B/C)  
+**Database:** SQLite (dev) or PostgreSQL (production)
 
 ## ✨ Features
 
@@ -15,7 +18,7 @@ FastAPI backend for the AI Web Test application with browser automation, queue s
 - ✅ **Test Management** - CRUD operations for test cases
 - ✅ **AI Test Generation** - Natural language to automated tests
 - ✅ **Knowledge Base** - Document upload and categorization
-- ✅ **Browser Automation** - Real browser execution with Stagehand + Playwright
+- ✅ **Browser Automation** - Three-tier execution: Playwright (T1), observe+Playwright (T2), Stagehand act (T3)
 - ✅ **Queue System** - Concurrent execution management (max 5)
 - ✅ **Screenshot Capture** - Every test step documented
 - ✅ **Real-time Monitoring** - Live execution progress

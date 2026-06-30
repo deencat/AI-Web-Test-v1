@@ -1,51 +1,121 @@
-# Agent / developer notes
+# Agent / developer notes — AI Web Test v1
+
+**Last Updated:** 2026-06-30
 
 ## Product context
 
-ReqIQ is a self-hosted web app for QA requirements, **local RAG** (no cloud LLM by default), **RQ‑IQ** outputs, and **Markdown/PDF** export. Canonical requirements: `docs/ReqIQ_Software_Requirements_Specification.md`.
+**AI Web Test** is a self-hosted AI-powered web testing platform: natural-language test generation, browser execution (Playwright + Stagehand), knowledge base, test suites, and multi-agent workflows. It integrates with **ReqIQ** (requirements hub) and **Hermes** (external multi-agent orchestration).
 
-## Hermes / agentic QA (integration narrative)
+**Canonical execution architecture:** [`documentation/ADR-002-test-execution-engine.md`](../documentation/ADR-002-test-execution-engine.md) (Accepted, March 2026) — three-tier engine with 52 sub-decisions.
 
-External **Hermes** multi-agent setups treat ReqIQ as the **requirements and retrieval hub** (ingest, lifecycle, RAG, suggested tests), while specialist profiles call this repo’s **HTTP API** and humans may use Telegram and separate test runners. See:
-
-- `docs/architecture.html` — system layers, flows, and roles (reference UI; some labels describe an earlier stack sketch).
-- `docs/Hermes_QA_MultiAgent_Profiles_v3.md` — profile names, prompts, and MCP HTTP tool URLs (aligned with OpenAPI).
-
-**Ground truth for shipped contracts** is **`docs/openapi/reqiq-api-v1.yaml`** plus the SRS. Hermes tools should use: `rag/query` (response field **`content`**), **`GET …/readiness`** (compiled wiki when available per **`docs/Wiki-Compile-Strategy.md`**), requirements (with **`latestCompositeScore`**, **`isWikiSuggest`**), `sources/upload`, `embedding/reindex` (optional Hermes webhook), **`POST …/suggested-tests/generate`**, **`POST …/suggested-tests/import`**, **`POST …/requirements/suggest-from-wiki`** (wiki → DRAFT scenarios; **`feedbackApplied`** when profile exists). Wiki review learning (ReqIQ `/app` only): **`POST …/wiki-feedback`**, **`GET/PATCH/DELETE …/wiki-suggest-feedback`**, **`GET …/wiki-suggest-profile`**. Service accounts: `POST /api/v1/login` → Bearer JWT (no API keys). See **`docs/AI-Web-Test-Developer-Handoff.md`** v1.8.
-
-**Sprint tracking:** **`docs/ReqIQ_Project_Management_and_Sprint_Plan.md`** v2.32 — **Sprint 8 complete** (`dd2e90e`); handoff **v2.1** (§5.1a full API proxy table for AI Web Test); next: **Sprint 9** hardening.
-
-**Wiki / readiness (PO locked):** hybrid **Phase 1** (integrate now with readiness) + **Phase 2** (compile-once per project, Sprint 7.5). See **`docs/Wiki-Compile-Strategy.md`**. Early **`POST /compile`** sketch in **`docs/architecture.html`** is non-normative until OpenAPI adds it.
-
-### AI Web Test (companion webapp)
-
-Integration reference: **`docs/ReqIQ-API-Integration-Guide.md`** (AI Web Test’s FastAPI-style API: crawl-and-save, workflows, execution, feedback). **AI Web Test developer handoff:** **`docs/AI-Web-Test-Developer-Handoff.md`** (standard vs power-user API, proxy checklist).
-
-**Current dev (same laptop as ReqIQ):** backend **`http://127.0.0.1:8000`**, frontend **`http://localhost:5173/`**. For **LAN / Hermes**, run Uvicorn with **`--host 0.0.0.0`** (not `127.0.0.1` only) and allow **TCP 8000** in Windows Firewall.
-
-**Hermes on another PC (same Wi‑Fi):** reach this laptop by **LAN IP**, not loopback — e.g. AI Web Test API **`http://192.168.68.52:8000`** (confirm Windows firewall allows inbound **8000** from the LAN). ReqIQ from **Docker Compose** on this machine is typically **`http://192.168.68.52:3001`** (API) and **`http://192.168.68.52:8080`** (static web via nginx); if you run `npm run dev` instead, use whatever host/port Vite/Fastify print. **DHCP can change `.52`** — use a router reservation or DNS when you hard-code Hermes env.
-
-**Production plan:** run **ReqIQ on a separate PC** from AI Web Test. When you split hosts:
-
-- Use **hostnames or LAN IPs** in Hermes MCP tools and server-to-server calls — **`127.0.0.1` / `localhost` always means that machine only**, so ReqIQ on PC B cannot reach AI Web Test on PC A if URLs still say `127.0.0.1:8000`.
-- Update **CORS** on AI Web Test (`BACKEND_CORS_ORIGINS` per the integration guide) to allow the **ReqIQ API and SPA origins** (and any Telegram webhook origins if applicable), not only local Vite.
-- Any future **ReqIQ → AI Web Test** outbound integration should read the webapp base URL from **configuration** (env / tenant integration), not hard-coded localhost.
-
-## Traceability
-
-When implementing features, **tag PRs and commits** with `SRS:FR-…` or `SRS:NFR-…` per `CONTRIBUTING.md`. Sprint scaffolding may use `SRS:S0` or “infrastructure only”.
+**Codemaps (generated from codebase):** [`docs/CODEMAPS/INDEX.md`](CODEMAPS/INDEX.md)
 
 ## Repo layout
 
 | Path | Role |
 | --- | --- |
-| `apps/api` | Fastify HTTP API, `/live` `/ready`, structured logs |
-| `apps/web` | React + Vite SPA |
-| `docker-compose.yml` | Postgres, Qdrant, API, web |
-| `docs/` | SRS, **`ReqIQ_Project_Management_and_Sprint_Plan.md`** (sprint status), **`AI-Web-Test-Developer-Handoff.md`**, **`Wiki-Compile-Strategy.md`**, Hermes profiles, **`ReqIQ-API-Integration-Guide.md`** |
-| `docs/openapi/reqiq-api-v1.yaml` | **OpenAPI 3** contract for `/api/v1` + root health (import into Postman, codegen, agentic QA tools) |
-| `docs/openapi/README.md` | **Integration guide** for external developers (auth, multipart, RAG, rate limits) |
+| `backend/` | FastAPI API (`/api/v1`, `/api/v2`), three-tier execution engine, agents |
+| `frontend/` | React 18 + Vite SPA (`:5173`) |
+| `stagehand-service/` | Optional TypeScript Stagehand microservice |
+| `backend/agents/` | Requirements, observation, analysis, evolution agents |
+| `documentation/` | ADRs, architecture, PM plans (active — not `archive/`) |
+| `docs/` | Developer handoff, Hermes profiles, ReqIQ OpenAPI, **CODEMAPS** |
+| `tests/e2e/` | Playwright E2E tests |
+
+## Quick start
+
+```bash
+# Backend
+cd backend && python -m venv venv
+.\venv\Scripts\activate          # Windows
+pip install -r requirements.txt && playwright install chromium
+python start_server.py           # http://127.0.0.1:8000
+
+# Frontend (separate terminal)
+cd frontend && npm install && npm run dev   # http://localhost:5173
+```
+
+- **API docs:** `http://127.0.0.1:8000/api/v1/docs`
+- **OpenAPI JSON:** `http://127.0.0.1:8000/api/v1/openapi.json` (static export: `backend/openapi_spec.json`)
+- **Default login:** `admin@aiwebtest.com` / `admin123`
+
+For LAN/Hermes access, run Uvicorn with `--host 0.0.0.0` and allow TCP **8000** in firewall.
+
+## Three-tier test execution (ADR-002)
+
+| Tier | Engine | Cost | When |
+| --- | --- | --- | --- |
+| **1** | Playwright direct (CSS/XPath) | Zero LLM | First attempt (~85–90%) |
+| **2** | Stagehand `observe()` + Playwright | Low LLM | Tier 1 failure (Hybrid) |
+| **3** | Stagehand `act()` full AI | High LLM | Tier 1+2 failure |
+
+Fallback strategies (user-configurable): **A** T1→T2, **B** T1→T3, **C** T1→T2→T3.
+
+Key modules: `backend/app/services/execution_service.py` → `three_tier_execution_service.py` → `tier1_playwright.py` / `tier2_hybrid.py` / `tier3_stagehand.py`.
+
+See [`docs/CODEMAPS/execution-engine.md`](CODEMAPS/execution-engine.md) for full flow.
+
+## API surfaces
+
+| Version | Prefix | Purpose |
+| --- | --- | --- |
+| v1 | `/api/v1` | CRUD, execution, KB, settings, ReqIQ proxy, debug |
+| v2 | `/api/v2` | Agent workflow, crawl-and-save, SSE progress |
+
+Router entry: `backend/app/api/v1/api.py`, `backend/app/api/v2/api.py`.
+
+## ReqIQ integration (companion system)
+
+ReqIQ is a **separate** requirements/RAG product. AI Web Test proxies ReqIQ for standard users so they never need the ReqIQ UI directly.
+
+| Document | Purpose |
+| --- | --- |
+| [`docs/AI-Web-Test-Developer-Handoff.md`](AI-Web-Test-Developer-Handoff.md) | **Primary** ReqIQ ↔ AI Web Test integration handoff |
+| [`docs/ReqIQ-API-Integration-Guide.md`](ReqIQ-API-Integration-Guide.md) | AI Web Test API for external integrators (Hermes) |
+| [`docs/openapi/reqiq-api-v1.yaml`](openapi/reqiq-api-v1.yaml) | ReqIQ OpenAPI contract (import to Postman) |
+| [`docs/openapi/README.md`](openapi/README.md) | OpenAPI folder guide |
+
+**Server config (backend `.env`):** `REQIQ_URL`, `REQIQ_SERVICE_EMAIL`, `REQIQ_SERVICE_PASSWORD`.
+
+**Production split:** Use LAN IP/hostname in Hermes MCP tools — `127.0.0.1` is local to each machine only. Update `BACKEND_CORS_ORIGINS` when ReqIQ runs on a different host.
+
+> **Note:** Some older docs reference ReqIQ files not present in this repo (`ReqIQ_Software_Requirements_Specification.md`, `Wiki-Compile-Strategy.md`, `apps/api`). Those live in the ReqIQ repository.
+
+## Hermes / agentic QA
+
+External Hermes setups call AI Web Test HTTP APIs for crawl, execute, and report. See:
+
+- [`docs/Hermes_QA_MultiAgent_Profiles_v3.md`](Hermes_QA_MultiAgent_Profiles_v3.md)
+- [`docs/Hermes_QA_Autonomous_Workflow_v5.md`](Hermes_QA_Autonomous_Workflow_v5.md)
+
+Typical flow: ReqIQ RAG → `POST /api/v2/crawl-and-save-test` → `POST /api/v1/executions/tests/{id}/execute` → `GET /api/v1/executions/{id}/step-results`.
+
+## Other ADRs
+
+| ADR | Topic |
+| --- | --- |
+| [ADR-002](../documentation/ADR-002-test-execution-engine.md) | Three-tier execution engine |
+| [ADR-003](../documentation/ADR-003-test-generation.md) | Test generation |
+| [ADR-004](../documentation/ADR-004-agent-workflow.md) | Agent workflow |
+| [ADR-005](../documentation/ADR-005-kb.md) | Knowledge base |
+| [ADR-006](../documentation/ADR-006-crawl-and-save.md) | Crawl-and-save |
+| [ADR-007](../documentation/ADR-007-test-suites.md) | Test suites |
+
+## Traceability
+
+Tag PRs/commits with requirement IDs when applicable. See project SRS in `documentation/AI-Web-Test-v1-SRS.md`.
 
 ## Commands
 
-See root **README.md** for `npm install`, per-app `dev`, and `docker compose up`.
+```bash
+# Backend tests (activate venv first)
+cd backend && python -m pytest tests/unit/ -q
+
+# Frontend tests
+cd frontend && npm run test
+
+# E2E
+npx playwright test tests/e2e/
+```
+
+See root [`README.md`](../README.md) for full setup and Phase 3 agent testing.

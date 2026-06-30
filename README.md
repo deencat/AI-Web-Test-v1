@@ -144,6 +144,15 @@ npm run dev
 
 ## 📚 Documentation
 
+### Codemaps (current architecture)
+- **[Codemap Index](docs/CODEMAPS/INDEX.md)** — Module maps generated from codebase
+- **[Execution Engine](docs/CODEMAPS/execution-engine.md)** — Three-tier flow (ADR-002)
+- **[Backend](docs/CODEMAPS/backend.md)** · **[Frontend](docs/CODEMAPS/frontend.md)** · **[Database](docs/CODEMAPS/database.md)**
+
+### Architecture decisions
+- **[ADR-002: Test Execution Engine](documentation/ADR-002-test-execution-engine.md)** — Accepted, March 2026 (52 sub-decisions)
+- **[ADR-004: Agent Workflow](documentation/ADR-004-agent-workflow.md)**
+
 ### For New Developers
 - **[NEW-PC-SETUP.md](NEW-PC-SETUP.md)** - Complete setup guide for new PC
 - **[API-CHANGELOG.md](API-CHANGELOG.md)** - API version history

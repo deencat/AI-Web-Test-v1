@@ -3,7 +3,9 @@
 **Version** 1.1 · **Date** 2026-05-14  
 **Base URL** `http://<host>:8000`  
 **OpenAPI spec** → `backend/openapi_spec.json` (import into Postman / Insomnia)  
-**Interactive docs** → `http://localhost:8000/docs` (Swagger UI, live server only)
+**Interactive docs** → `http://localhost:8000/api/v1/docs` (Swagger UI, live server only)  
+**Live OpenAPI JSON** → `http://localhost:8000/api/v1/openapi.json`  
+**Execution architecture** → [`documentation/ADR-002-test-execution-engine.md`](../documentation/ADR-002-test-execution-engine.md) (three-tier engine, Accepted March 2026)
 
 ---
 

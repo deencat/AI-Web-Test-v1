@@ -61,6 +61,8 @@
 
 Hermes / MCP (separate track): [`Hermes_QA_MultiAgent_Profiles_v3.md`](Hermes_QA_MultiAgent_Profiles_v3.md).
 
+**Test execution engine:** Three-tier Playwright → Hybrid → Stagehand architecture is documented in [`documentation/ADR-002-test-execution-engine.md`](../documentation/ADR-002-test-execution-engine.md) (Accepted, March 2026). Codemap: [`docs/CODEMAPS/execution-engine.md`](CODEMAPS/execution-engine.md).
+
 ---
 
 ## 3. Architecture

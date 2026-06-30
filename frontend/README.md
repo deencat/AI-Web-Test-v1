@@ -1,18 +1,13 @@
-# AI Web Test v1.0 - Frontend
+# AI Web Test — Frontend
 
-🤖 **Intelligent Test Automation Platform - Frontend Application**
+React 18 + TypeScript + Vite SPA for the AI Web Test platform.
 
-## 📋 Project Overview
+**Last Updated:** 2026-06-30  
+**Backend:** FastAPI at `http://127.0.0.1:8000`  
+**Codemap:** [`docs/CODEMAPS/frontend.md`](../docs/CODEMAPS/frontend.md)  
+**Execution UI context:** [`documentation/ADR-002-test-execution-engine.md`](../documentation/ADR-002-test-execution-engine.md)
 
-This is the frontend application for AI Web Test v1.0, a React-based web application that connects to a FastAPI backend for intelligent test automation.
-
-**Status:** ✅ Backend Integration Complete  
-**Mode:** 🔗 Connected to Backend API (configurable)  
-**Framework:** React 18 + TypeScript + Vite  
-
----
-
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 - Node.js 18+ installed
@@ -91,7 +86,7 @@ python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Backend will be available at: http://127.0.0.1:8000  
-API Documentation: http://127.0.0.1:8000/docs
+API Documentation: http://127.0.0.1:8000/api/v1/docs
 
 **Important:** For AI test generation features to work, the backend needs an OpenRouter API key configured in `backend/.env`:
 ```env
@@ -146,44 +141,35 @@ Get your free API key from: https://openrouter.ai/keys
 
 ---
 
-## 📁 Project Structure
+## Project Structure (current)
 
 ```
-frontend/
-├── src/
-│   ├── components/
-│   │   ├── common/           # Reusable UI components
-│   │   │   ├── Button.tsx    # Primary, Secondary, Danger variants
-│   │   │   ├── Card.tsx      # Container with shadow
-│   │   │   └── Input.tsx     # Form input with validation
-│   │   └── layout/           # Layout components
-│   │       ├── Header.tsx    # Top navigation bar
-│   │       ├── Sidebar.tsx   # Left sidebar navigation
-│   │       └── Layout.tsx    # Main layout wrapper
-│   ├── pages/                # Page components
-│   │   ├── LoginPage.tsx          # Authentication page
-│   │   ├── DashboardPage.tsx      # Main dashboard
-│   │   ├── TestsPage.tsx          # Test management
-│   │   ├── KnowledgeBasePage.tsx  # KB document management
-│   │   └── SettingsPage.tsx       # User settings
-│   ├── mock/                 # Mock data (Design Mode)
-│   │   ├── users.ts          # Mock user data
-│   │   └── tests.ts          # Mock test data
-│   ├── types/                # TypeScript type definitions
-│   │   └── user.ts           # User and auth types
-│   ├── App.tsx               # Main app with routing
-│   ├── main.tsx              # Entry point
-│   └── index.css             # Global styles (Tailwind)
-├── public/                   # Static assets
-├── index.html                # HTML template
-├── package.json              # Dependencies
-├── tsconfig.json             # TypeScript configuration
-├── tailwind.config.js        # Tailwind CSS configuration
-├── vite.config.ts            # Vite build configuration
-└── README.md                 # This file
+frontend/src/
+├── App.tsx                 # Routes (see codemap for full list)
+├── pages/                  # Login, Dashboard, Tests, Executions, Settings, …
+├── components/             # RunTestButton, ExecutionSettings, XPathCache, …
+├── features/
+│   ├── agent-workflow/     # Multi-agent pipeline UI (SSE progress)
+│   └── settings/           # Email OTP credentials
+├── services/               # API clients → /api/v1 and /api/v2
+├── context/                # EphemeralCredentialContext (UAT creds)
+└── types/                  # TypeScript definitions
 ```
+
+Full route and service map: [`docs/CODEMAPS/frontend.md`](../docs/CODEMAPS/frontend.md).
+
+## Key Features
+
+- **Test management** — CRUD, versioning, step editor, step library modules
+- **Three-tier execution** — Run tests with configurable fallback (Settings → Execution)
+- **Execution progress** — Live step status, screenshots, tier analytics, RCA panel
+- **Agent workflow** — Trigger crawl-and-save and multi-agent pipelines (API v2)
+- **ReqIQ proxy** — Requirements/readiness via `requirementsService`
+- **Debug mode** — Interactive step-range debugging
 
 ---
+
+## 📁 Project Structure (Sprint 1 snapshot — legacy)
 
 ## 🎨 Design System
 
