@@ -1,54 +1,49 @@
-# Evaluation Rubric: Test Suite Edit + ADR-007
+# Evaluation Rubric: Exec #990 Registration Form Execution Fixes
 
-**App:** AI Web Test — Test Suites page  
+**Target:** Three Hong Kong OGP-PPD registration test (Execution #990 or equivalent)  
 **Weight total: 1.0**  
 **Pass threshold:** ≥ 0.85 weighted score  
-**Automatic fail:** Edit button missing, edit save does not call PUT/updateSuite, or create flow regresses
+**Automatic fail:** Any of the three reported issues reproduces on re-run; or post-fix run marks failing steps PASS
 
 ---
 
-## Functionality (0.35)
+## Functionality (0.40)
 
 | ID | Criterion | Pass condition | Weight |
 |----|-----------|----------------|--------|
-| F1 | Edit button visible | Every suite card on `/test-suites` has Edit between Run and Delete | 0.08 |
-| F2 | Modal pre-population | Edit opens modal with correct name, description, tags, and test IDs in `execution_order` | 0.10 |
-| F3 | Save updates suite | Submit in edit mode calls `testSuitesService.updateSuite(id, …)`; list refreshes with changes | 0.10 |
-| F4 | Create flow intact | "New Suite" still opens create mode; calls `createSuite`; validation unchanged | 0.04 |
-| F5 | Membership edit | User can add, remove, and reorder tests; saved order matches expanded card view | 0.03 |
+| F1 | Eye button click | Step "Click eye button next to 'Collect Personal Info'" activates ID capture / does **not** open hamburger sidebar | 0.12 |
+| F2 | Birth date persistence | After birth-date step **and** after 3 subsequent steps, field displays `2000/01/01` (or normalized equivalent); no red "Required" on Birth Date | 0.14 |
+| F3 | Area dropdown selection | Billing Address Area field shows **Hong Kong** (not "Select an Area"); dropdown closed; no "Required" under Area | 0.14 |
 
 ---
 
-## Scope Discipline (0.20)
+## Execution Engine Quality (0.30)
 
 | ID | Criterion | Pass condition | Weight |
 |----|-----------|----------------|--------|
-| S1 | No unnecessary backend | No backend file changes unless a real PUT gap is found and documented | 0.08 |
-| S2 | Minimal file footprint | Changes limited to modal component, TestSuitesPage, ADR-007 (≤4 meaningful files) | 0.06 |
-| S3 | Service reuse | Uses existing `updateSuite` in `testSuitesService.ts` — no duplicate API client | 0.06 |
+| E1 | Step parsing | `"select area 'Hong Kong'"` parsed as `action=select`, `value=Hong Kong` | 0.06 |
+| E2 | Tier 2 handles widgets | Birth date and Area steps complete at Tier 2 (no Tier 3 fallback required for these steps) | 0.08 |
+| E3 | Post-action verification | Engine fails step if fill/select value does not stick (not silent PASS) | 0.08 |
+| E4 | Cache safety | Wrong hamburger xpath invalidated; re-observe finds eye icon on retry | 0.08 |
 
 ---
 
-## Documentation (0.25)
+## Craft / Tests (0.20)
 
 | ID | Criterion | Pass condition | Weight |
 |----|-----------|----------------|--------|
-| D1 | ADR-007 exists | `documentation/ADR-007-test-suites.md` present | 0.05 |
-| D2 | ADR structure | Header (ID, Component, Status, Date, Author, Related Files) + Context, Decision, Changes Made, Consequences, Test Coverage | 0.10 |
-| D3 | Decision accuracy | ADR documents SuiteFormModal dual-mode, PUT endpoint, Run-Edit-Delete order | 0.05 |
-| D4 | Related files | ADR Related Files match implemented paths (including `SuiteFormModal.tsx` if renamed) | 0.05 |
+| C1 | Unit tests added | New tests in `test_execution_service_value_extraction.py` and `test_tier2_registration_widgets.py` (or equivalent) | 0.08 |
+| C2 | No regressions | `pytest tests/test_tier2_plan_selection.py tests/test_tier2_payment_helpers.py tests/test_execution_service_value_extraction.py -q` all pass | 0.07 |
+| C3 | Surgical diff | Changes confined to `execution_service.py`, `tier2_hybrid.py`, tests, optional ADR — no unrelated refactors | 0.05 |
 
 ---
 
-## Craft / UX (0.20)
+## Evidence (0.10)
 
 | ID | Criterion | Pass condition | Weight |
 |----|-----------|----------------|--------|
-| C1 | Edit button styling | Gray outline (`border-gray-300`), not competing with green Run / red Delete | 0.05 |
-| C2 | Modal copy | Title and submit button differ between create ("Create Test Suite" / "Create Suite") and edit ("Edit Test Suite" / "Save Changes") | 0.05 |
-| C3 | Form reset | Closing modal clears state; reopening edit shows fresh data from suite | 0.05 |
-| C4 | Error handling | API errors surface in modal error banner; loading disables submit | 0.03 |
-| C5 | Build clean | `npm run build` in `frontend/` succeeds; no stale `CreateSuiteModal` imports | 0.02 |
+| V1 | Screenshots | `exec_*_step_14_pass.png`: no sidebar overlay; step_24+: birth date filled; step_36: Area=Hong Kong | 0.05 |
+| V2 | LLM log | Observe for eye step describes element near "Collect Personal Info", not "top controls" | 0.05 |
 
 ---
 
@@ -62,29 +57,32 @@ score = Σ (criterion_weight × pass?1:0)
 |------|-------|---------|
 | Pass | ≥ 0.85 | Ready to merge |
 | Revise | 0.70 – 0.84 | Fix failing criteria |
-| Fail | < 0.70 or any automatic fail | Reject |
+| Fail | < 0.70 or automatic fail | Reject |
 
 ---
 
-## Evaluator Test Script (Playwright / manual)
+## Evaluator Test Script
 
-1. Log in; go to `/test-suites`.
-2. If no suites, create one via "New Suite" (proves F4).
-3. Click **Edit** on first suite — assert modal fields match card.
-4. Append ` (edited)` to name; save — assert card shows new name.
-5. Remove one test, add another, move order — save — expand card; assert order.
-6. Open create modal — assert empty form and "Create" labels.
-7. Confirm `documentation/ADR-007-test-suites.md` exists and mentions edit capability.
-8. Run `npm run build` in `frontend/`.
+### Automated (unit)
+```bash
+cd backend && .\venv\Scripts\activate
+python -m pytest tests/test_execution_service_value_extraction.py tests/test_tier2_registration_widgets.py -q
+python -m pytest tests/test_tier2_plan_selection.py tests/test_tier2_payment_helpers.py -q
+```
 
----
+### Live E2E (Three HK registration)
+1. Start backend: `cd backend && python start_server.py`
+2. Re-run the same test case as Execution #990 (Three HK OGP-PPD registration flow)
+3. At step 13–14: confirm eye/ID capture UI; sidebar menu **closed**
+4. At birth-date step + 3 steps later: field = `2000/01/01`
+5. At area step + 2 steps later: Area = `Hong Kong`, no Required error
+6. Compare screenshots to baseline `exec_990_step_{14,24,36}_pass.png`
+7. Check `backend/logs/llm/exec_<id>.jsonl` for improved observe descriptions
 
-## Anti-patterns (deduct or fail)
+### Per-issue verification matrix
 
-| Anti-pattern | Action |
-|--------------|--------|
-| Duplicate `EditSuiteModal.tsx` copying entire create form | Fail S2 unless strongly justified in PR |
-| Edit button only in expanded section | Fail F1 |
-| Edit uses `POST` or new endpoint instead of PUT | Fail F3 |
-| ADR missing or only stub | Fail D1 |
-| Broken create after refactor | Automatic fail |
+| Issue | Step index | PASS signal | FAIL signal |
+|-------|------------|-------------|-------------|
+| Eye click | ~13–14 | ID document dashed box / camera visible; main form in view | Left sidebar with "Direct Input Order" visible |
+| Birth date | ~22–24 | Input shows 2000/01/01 after step 24 | Empty field + "Required" |
+| Area | ~34–36 | Field text "Hong Kong", menu closed | "Select an Area" or open menu with highlight only |

@@ -1,349 +1,207 @@
-# Implementation Spec: Test Suite Edit + ADR-007
+# Product Specification: Exec #990 Registration Form Execution Fixes
 
-> Generated from brief: *"The Test Suites page shows suite cards with Run and Delete buttons but NO Edit button. Users cannot modify existing suites (name, description, tags, test membership/order). Create an ADR for test suites documenting this feature and the edit capability."*
+> Generated from brief: "Three misbehaviors in Execution #990 on Three Hong Kong telecom registration page — wrong eye-button click, birth date disappears, area dropdown not selected."
 
 ## Vision
 
-Close the last major gap in the Test Suites UX: users can create and delete suites but cannot edit them. The backend `PUT /suites/{id}` endpoint and `testSuitesService.updateSuite()` already exist — this work is **frontend + documentation only**, wiring an Edit affordance that reuses the existing create modal pattern and records the decision in **ADR-007**.
+Harden the three-tier execution engine so Three HK OGP-PPD registration steps reliably target the correct UI controls, persist reactive form values (date pickers, custom dropdowns), and verify post-action state before marking steps PASS. These are **execution engine bugs**, not bad test intent — the step text is reasonable; the engine lacks semantic validation and specialized handlers for this SPA's widget patterns.
 
 ---
 
-## Scope and Current State
+## Evidence Summary (Execution #990)
 
-| Layer | Component | Status | Notes |
-|-------|-----------|--------|-------|
-| **Frontend page** | `frontend/src/pages/TestSuitesPage.tsx` | Partial | Lists suites; Run + Delete only; expand shows ordered tests |
-| **Frontend modal** | `frontend/src/components/CreateSuiteModal.tsx` | Create-only | Full form: name, description, tags, test pick + reorder |
-| **Frontend service** | `frontend/src/services/testSuitesService.ts` | Complete | `updateSuite(id, UpdateTestSuiteRequest)` → `PUT /suites/{id}` |
-| **Backend API** | `backend/app/api/v1/endpoints/test_suites.py` | Complete | `PUT /{suite_id}` with ownership check |
-| **Backend CRUD** | `backend/app/crud/crud_test_suite.py` | Complete | Replaces items when `test_case_ids` provided |
-| **Backend schema** | `backend/app/schemas/test_suite.py` | Complete | `TestSuiteUpdate` — all fields optional |
-| **Design doc** | `documentation/archive/TEST-SUITES-FEATURE-DESIGN.md` | Reference | Wireframes show `[Run] [Edit]` on cards |
-| **ADR** | `documentation/ADR-007-test-suites.md` | **Missing** | New document required |
-
-**Out of scope:** Backend changes, suite execution changes, drag-and-drop reorder (up/down arrows already exist), parallel run, new API endpoints, E2E test suite unless evaluator adds smoke coverage.
+| Issue | Step(s) | Tier | Log / Screenshot Evidence |
+|-------|---------|------|---------------------------|
+| Eye → hamburger | 13–14 | Tier 2 observe | `exec_990.jsonl` L4: observe returns element_id **67** — *"Eye icon button near the **top controls**"*; `exec_990_step_14_pass.png` shows **sidebar nav opened** (hamburger), not ID capture |
+| Birth date lost | ~22–24 | Tier 1/2 (no LLM log) | `exec_990_step_23_pass.png`: field shows `2000/01/01` but calendar shows **June 2026**; `exec_990_step_24_pass.png`: field **empty** + red "Required" |
+| Area not selected | 34–36 | Tier 2 observe | `exec_990.jsonl` L5: observe returns **dropdown trigger click**, not option; `exec_990_step_35_pass.png`: Hong Kong highlighted, field still "Select an Area"; `exec_990_step_36_pass.png`: "Required" under Area |
 
 ---
 
-## Architectural Decision: `SuiteFormModal` (create + edit) vs `EditSuiteModal`
+## Root Cause Analysis
 
-**Recommendation: Refactor `CreateSuiteModal` → `SuiteFormModal` with `mode: 'create' | 'edit'`.**
+### Issue 1: Wrong click target (eye → hamburger)
 
-| Approach | Pros | Cons |
-|----------|------|------|
-| **SuiteFormModal (chosen)** | Single source of truth for form layout, validation, test picker, reorder; matches `StepLibraryPage` `FormMode` pattern; ~1 file change + import rename | Slightly larger component; must handle pre-populate + reset |
-| **Separate EditSuiteModal** | Smaller initial diff | Duplicates 300+ lines; divergent validation/UX over time |
+**Hypothesis:** Observe() mis-resolved the eye icon to a header control (element_id 67 in the global header a11y subtree). Tier 2 accepted the first observe result with **no click-target semantic validation** beyond Three HK promotion-card guards.
 
-**Rationale:** `CreateSuiteModal.tsx` is already the complete suite editor UI. Edit differs only in: (1) initial state from `TestSuite`, (2) submit calls `updateSuite` vs `createSuite`, (3) title/button copy. `StepLibraryPage.tsx` (lines 7, 83–97, 113–119) is the established codebase pattern for create/edit in one form.
+**Code evidence:**
+- `xpath_extractor.py` L88–90: always takes **first** observe result.
+- `tier2_hybrid.py` `_validate_cached_xpath_for_step()` L2791–2792: returns `True` for all non-fill clicks except Three HK promotion cards — **no proximity/anchor checks**.
+- `exec_990_step_13_pass.png`: correct eye icon is centered next to "Collect Personal Info:"; hamburger is far top-right.
 
----
+**Classification:** **Element resolution bug** (observe ranking + missing post-observe validation). Minor **test step integrity** opportunity: anchor phrase helps but should not be required.
 
-## Files to Change
-
-### Must change
-
-| File | Change |
-|------|--------|
-| `frontend/src/components/CreateSuiteModal.tsx` | **Rename** to `SuiteFormModal.tsx`. Add props: `mode: 'create' \| 'edit'`, optional `suite?: TestSuite`. Pre-populate form when `mode === 'edit' && suite`. Submit: `createSuite` vs `updateSuite(suite.id, ...)`. Dynamic title ("Create Test Suite" / "Edit Test Suite") and submit label ("Create Suite" / "Save Changes"). Reset form on close in both modes. |
-| `frontend/src/pages/TestSuitesPage.tsx` | Add Edit button per card. State: `editingSuite: TestSuite \| null`, `showFormModal: boolean`, `formMode: 'create' \| 'edit'`. Wire `SuiteFormModal` for create (existing) and edit (new). Import rename from `CreateSuiteModal` → `SuiteFormModal`. |
-| `documentation/ADR-007-test-suites.md` | **New file** — full ADR per outline in §ADR below |
-
-### Optional (nice polish, same PR if time permits)
-
-| File | Change |
-|------|--------|
-| `frontend/src/components/CreateSuiteModal.tsx` | Keep as thin re-export `export { default } from './SuiteFormModal'` for one release to avoid grep churn — **prefer direct rename** and update the single import in `TestSuitesPage.tsx` only. |
-
-### No change required
-
-| File | Reason |
-|------|--------|
-| `frontend/src/services/testSuitesService.ts` | `updateSuite` already implemented |
-| `backend/**` | PUT endpoint complete |
-| `documentation/archive/TEST-SUITES-FEATURE-DESIGN.md` | Historical reference; ADR-007 supersedes for architecture |
+**Fix layer:** Element resolution → action execution validation
 
 ---
 
-## UI/UX Specification
+### Issue 2: Birth date disappears
 
-### Edit button placement and styling
+**Hypothesis:** Tier 2 used generic `element.fill("2000/01/01")` on a **custom date-picker widget**. Value briefly appeared in the text input but was cleared on blur/navigation because the calendar widget state (defaulting to **June 2026**, matching system date 2026-06-30) was never synchronized. No post-fill verification exists for non-payment fields.
 
-Per original wireframe (`TEST-SUITES-FEATURE-DESIGN.md` line 103): **`[Run] [Edit] [Delete]`** — Edit sits **between Run and Delete**.
+**Code evidence:**
+- `tier2_hybrid.py` `_execute_action_with_xpath()` L2641–2644: `await element.fill(value)` + `sleep(0.3)` only — no stickiness check.
+- `_verify_filled_value()` L714–725: used for **payment fields only**.
+- Screenshots: step 23 shows value + wrong calendar month; step 24 shows empty field after next step.
 
-```tsx
-// TestSuitesPage.tsx — suite card action row (~line 197)
-<div className="flex gap-2 ml-4">
-  <button /* Run — keep existing green */ />
-  <button
-    onClick={() => handleEdit(suite)}
-    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-    title="Edit Suite"
-    aria-label="Edit suite"
-  >
-    Edit
-  </button>
-  <button /* Delete — keep existing red */ />
-</div>
-```
+**Classification:** **Action execution bug** (missing date-picker handler) + **wait/validation bug** (no post-fill assert).
 
-**Styling rationale:** Match `StepLibraryPage` edit buttons (gray outline, not filled blue). Run = green (primary action), Delete = red (destructive), Edit = neutral secondary — avoids three competing filled colors.
-
-### Modal behavior (edit mode)
-
-1. User clicks **Edit** on a suite card.
-2. `handleEdit(suite)` sets `formMode = 'edit'`, `editingSuite = suite`, `showFormModal = true`.
-3. Modal opens with fields pre-populated:
-
-| Field | Source |
-|-------|--------|
-| Name | `suite.name` |
-| Description | `suite.description ?? ''` |
-| Tags | `suite.tags?.join(', ') ?? ''` |
-| Selected test IDs (ordered) | `suite.items` sorted by `execution_order` → map to `test_case_id` |
-
-4. Available tests list loads as today (`testsService.getAllTests()` on open).
-5. User modifies fields; validation unchanged (name required, ≥1 test).
-6. Submit calls:
-
-```ts
-await testSuitesService.updateSuite(suite.id, {
-  name: name.trim(),
-  description: description.trim() || undefined,
-  tags: tags.length > 0 ? tags : undefined,
-  test_case_ids: selectedTestIds,
-});
-```
-
-7. On success: `onSuccess()` → `loadSuites()` refreshes list; modal closes; form resets.
-8. On error: show API `detail` in existing red banner (same as create).
-
-### Create mode (unchanged behavior)
-
-- Header "New Suite" button and empty-state CTA still set `formMode = 'create'`, `editingSuite = null`.
-- Submit calls `createSuite` as today.
-
-### Edge cases
-
-| Case | Behavior |
-|------|----------|
-| Suite with missing `items` | Treat as `[]`; block submit with "Please select at least one test case" |
-| Test in suite deleted from system | Still show in selected list as `#${id}` fallback if not in `availableTests` (fetch by id from `item.test_case` if present) |
-| User clears all tests | Validation error before submit |
-| Modal closed mid-edit | `handleClose` resets all state; unsaved changes discarded (same as create) |
-| Concurrent edit | Last write wins (acceptable; no optimistic locking in backend) |
-
-### Success feedback
-
-- **Primary:** `loadSuites()` re-fetches and re-renders card with updated name/tags/count.
-- **Optional polish:** No toast required (create flow doesn't use one); expanded state can remain as-is for edited suite id.
+**Fix layer:** Action execution → wait/validation
 
 ---
 
-## `SuiteFormModal` Implementation Sketch
+### Issue 3: Area dropdown not selected
 
-```tsx
-// SuiteFormModal.tsx — new/extended props
-type SuiteFormMode = 'create' | 'edit';
+**Hypothesis (dual):**
 
-interface SuiteFormModalProps {
-  isOpen: boolean;
-  mode: SuiteFormMode;
-  suite?: TestSuite;           // required when mode === 'edit'
-  onClose: () => void;
-  onSuccess: () => void;
-}
+1. **Step parsing:** `"select area 'Hong Kong'"` is **not** recognized as a dropdown step by `_is_dropdown_instruction()` because it lacks "dropdown", "from", or "menu" keywords (`execution_service.py` L1943–1961). Action is classified as **`click`**, not `select`.
+2. **Action execution:** Even when Tier 2 runs, observe returns a **trigger click** to open the Area list (`exec_990.jsonl` L5). Native `select_option()` (`tier2_hybrid.py` L2653–2656) does not apply to this **custom div-based dropdown** (Billing Address Area). Engine opens menu, may hover-highlight "Hong Kong", but never commits selection or verifies field text.
 
-// Pre-populate on open (useEffect when isOpen + mode + suite)
-useEffect(() => {
-  if (!isOpen) return;
-  loadAvailableTests();
-  if (mode === 'edit' && suite) {
-    setName(suite.name);
-    setDescription(suite.description ?? '');
-    setTagsInput(suite.tags?.join(', ') ?? '');
-    const orderedIds = [...(suite.items ?? [])]
-      .sort((a, b) => a.execution_order - b.execution_order)
-      .map(item => item.test_case_id);
-    setSelectedTestIds(orderedIds);
-  } else {
-    // reset to empty (create)
-  }
-  setSearchQuery('');
-  setError('');
-}, [isOpen, mode, suite]);
-```
+**Code evidence:**
+- `test_execution_service_value_extraction.py`: dropdown tests use `"from the Region dropdown"` phrasing — `"select area 'Hong Kong'"` pattern untested.
+- `exec_990_step_35_pass.png`: open menu, highlighted option, placeholder unchanged.
+- `exec_990_step_36_pass.png`: closed menu, still "Select an Area", Required error.
 
-```tsx
-// TestSuitesPage.tsx — handler + modal wiring
-const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
-const [editingSuite, setEditingSuite] = useState<TestSuite | null>(null);
-const [showFormModal, setShowFormModal] = useState(false);
+**Classification:** **Step parsing bug** + **action execution bug** (missing custom dropdown handler). Test step could add "dropdown" for clarity but engine should handle terse phrasing.
 
-const handleEdit = (suite: TestSuite) => {
-  setFormMode('edit');
-  setEditingSuite(suite);
-  setShowFormModal(true);
-};
-
-const openCreate = () => {
-  setFormMode('create');
-  setEditingSuite(null);
-  setShowFormModal(true);
-};
-
-<SuiteFormModal
-  isOpen={showFormModal}
-  mode={formMode}
-  suite={editingSuite ?? undefined}
-  onClose={() => setShowFormModal(false)}
-  onSuccess={loadSuites}
-/>
-```
-
-Update header and empty-state buttons: `onClick={openCreate}` instead of `setShowCreateModal(true)`.
+**Fix layer:** Step parsing → element resolution (two-phase) → action execution → validation
 
 ---
 
-## ADR-007 Content Outline
+## Design Direction (Engineering)
 
-**File:** `documentation/ADR-007-test-suites.md`
-
-Follow [ADR-005](documentation/ADR-005-kb.md) structure:
-
-```markdown
-# Architecture Decision Records — Test Suites
-
-**Document ID:** ADR-007
-**Component:** Test Suites — Grouping, Execution, and Edit
-**Status:** Accepted
-**Date:** [implementation date]
-**Author:** [implementer]
-**Related Files:**
-- `frontend/src/pages/TestSuitesPage.tsx`
-- `frontend/src/components/SuiteFormModal.tsx`
-- `frontend/src/services/testSuitesService.ts`
-- `backend/app/api/v1/endpoints/test_suites.py`
-- `backend/app/crud/crud_test_suite.py`
-- `backend/app/schemas/test_suite.py`
-- `backend/app/models/test_suite.py`
-- `documentation/archive/TEST-SUITES-FEATURE-DESIGN.md` (historical)
+- **Surgical handlers** in `tier2_hybrid.py` following existing patterns: payment gw-proxy, Three HK promotion cards, option XPath normalization (ADR-002-6).
+- **No Tier 3 dependency** for these widget types — fix at Tier 2 where observe already succeeds.
+- **Post-action verification** before PASS: field value, dropdown label, sidebar-not-open guard.
+- **Invalidate poisoned XPath cache** entries when semantic validation fails.
 
 ---
 
-## Context
+## Features (Prioritized)
 
-- Test suites group ordered test cases for batch/sequential execution.
-- Backend CRUD and `PUT /api/v1/suites/{id}` shipped in Sprint 3; frontend create/delete/run shipped; **edit UI was never wired** despite service method existing.
-- Original design doc wireframes included Edit on suite cards.
-- Users need to fix typos, retag suites, and reorder/add/remove tests without delete-and-recreate.
+### Must-Have (Sprint 1)
 
-## Decision
+#### F1: Dropdown instruction detection for terse phrasing
+- **Description:** Extend `_is_dropdown_instruction()` to match `select <field> '<value>'` / `select <field> <value>` without requiring "dropdown" or "from".
+- **Acceptance criteria:**
+  - `"select area 'Hong Kong'"` → `action=select`, `value=Hong Kong`
+  - `"Select the $288/month plan"` still → `action=click` (no regression)
+  - Unit tests in `test_execution_service_value_extraction.py`
 
-1. **Document test suites** as a first-class feature in ADR-007 (no prior ADR).
-2. **Expose edit in UI** via shared `SuiteFormModal` with create/edit modes.
-3. **Use existing PUT endpoint** — full replacement of `test_case_ids` on membership change (matches CRUD behavior).
-4. **Button order:** Run → Edit → Delete; Edit uses neutral outline styling.
+#### F2: Custom dropdown two-phase handler
+- **Description:** `_try_custom_dropdown_select(page, instruction, value, xpath)` in `tier2_hybrid.py`:
+  1. Click trigger (from observe xpath or label-scoped locator)
+  2. Wait for listbox/menu visible
+  3. Click option matching `value` (exact/normalized text)
+  4. Wait for menu closed
+  5. Verify trigger/display shows selected value
+- **Acceptance criteria:**
+  - Area field shows "Hong Kong" (not "Select an Area") after step
+  - Works for Billing Address Area options: Hong Kong, Kowloon, New Territories
+  - Falls back to native `select_option` when element is `<select>`
 
-## Changes Made
+#### F3: Date picker fill handler with verification
+- **Description:** `_fill_date_picker_field(locator, value, page)` for `yyyy/mm/dd` and `yyyy-mm-dd`:
+  1. Parse target year/month/day from value
+  2. Open picker if needed
+  3. Navigate calendar to target month/year (not default June 2026)
+  4. Click day cell OR type + Enter with format normalization
+  5. Blur field; `_verify_filled_value` asserts persisted value
+- **Acceptance criteria:**
+  - After birth-date step: input contains `2000/01/01`
+  - After next 3 steps: value still present (step 24+ screenshots)
+  - Reject PASS if calendar month ≠ target month after fill
 
-| Layer | File | Change |
-|-------|------|--------|
-| Frontend component | `CreateSuiteModal.tsx` → `SuiteFormModal.tsx` | Dual mode; pre-populate; `updateSuite` on edit |
-| Frontend page | `TestSuitesPage.tsx` | Edit button; modal mode state |
-| Documentation | `documentation/ADR-007-test-suites.md` | This ADR |
+#### F4: Click anchor proximity validation
+- **Description:** `_validate_click_target_for_instruction(page, locator, instruction)`:
+  - Extract anchor phrases from instruction: `next to '...'`, `near '...'`, `under '...'`
+  - Require anchor text visible on page and click target within same section (DOM distance / common ancestor heuristic)
+  - Reject header/nav controls when anchor is in main content
+  - On failure: invalidate cache, retry observe with augmented prompt including anchor
+- **Acceptance criteria:**
+  - Eye-button step clicks element adjacent to "Collect Personal Info", not hamburger (element_id 67 pattern rejected)
+  - Sidebar does not open (`exec_990_step_14` regression fixed)
 
-## Consequences
+### Should-Have (Sprint 2)
 
-**Positive**
-- Parity with create flow; no backend deploy needed.
-- Single modal reduces maintenance vs duplicate component.
-- Aligns UI with archived design spec.
+#### F5: Observe result ranking (multi-candidate)
+- When observe returns multiple elements, rank by: anchor proximity > description keyword match > vertical position in form (not header) > area size for cards.
+- Prefer option element over trigger for select steps when value is known.
 
-**Negative**
-- Full test list replacement on every membership edit (acceptable at current scale).
-- No audit trail of suite edits (only `updated_at` timestamp).
-- Orphan test references if a test case is deleted server-side while modal is open — handled by validation on submit.
+#### F6: Generic post-fill/post-select verification
+- Extend `_verify_filled_value` to all fill/select steps (configurable, default on for registration forms).
+- Step fails Tier 2 → escalate to Tier 3 only after verification failure logged.
 
-**Alternatives Considered**
-- **Separate EditSuiteModal:** Rejected — duplicates form logic.
-- **Inline card editing:** Rejected — complex for test ordering UI.
-- **PATCH partial updates only:** Rejected — PUT with full `test_case_ids` already implemented and simpler for membership changes.
+#### F7: XPath cache semantic invalidation
+- Store `element_description` from observe; re-validate on cache hit.
+- Auto-invalidate entries where description contains "top controls" but instruction references main-content anchor.
 
-## Test Coverage
+### Nice-to-Have (Sprint 3+)
 
-| Area | Coverage |
-|------|----------|
-| Backend PUT | Manual / existing integration (no dedicated unit tests in repo today) |
-| Frontend | Manual verification checklist below; optional future `SuiteFormModal.test.tsx` |
-| ADR | Peer review that Related Files and Decision match implementation |
-```
+#### F8: Test step wording improvements (test definition layer)
+- Optional clearer steps for brittle targets:
+  - `"Click the eye icon to the right of 'Collect Personal Info:' in Registration Personal Information"`
+  - `"Select 'Hong Kong' from the Billing Address Area dropdown"`
+- Not required if F1–F4 land.
 
----
-
-## Verification Checklist
-
-### Functional
-
-- [ ] Navigate to `http://localhost:5173/test-suites` with ≥1 suite
-- [ ] Each suite card shows **Run**, **Edit**, **Delete** in that order
-- [ ] Click **Edit** → modal title "Edit Test Suite"; fields match suite (name, description, tags, ordered tests)
-- [ ] Change name only → Save → card reflects new name after refresh
-- [ ] Reorder tests (up/down) → Save → expanded list shows new order
-- [ ] Add/remove tests → Save → test count updates
-- [ ] **Create** flow still works via "New Suite" (modal title "Create Test Suite")
-- [ ] Cancel closes modal without API call; reopening edit shows original data
-- [ ] Empty validation: blank name or zero tests shows error banner
-- [ ] API error (e.g. network) shows error message in modal
-
-### Non-regression
-
-- [ ] **Run** and **Delete** unchanged
-- [ ] Expand/collapse test list still works
-- [ ] `npm run build` in `frontend/` passes (no broken imports after rename)
-
-### Documentation
-
-- [ ] `documentation/ADR-007-test-suites.md` exists with all ADR-005 sections
-- [ ] ADR Related Files list matches actual paths post-rename
-- [ ] ADR Status = Accepted after merge
+#### F9: ADR-002-53 sub-decision doc
+- Document Three HK registration widget handlers (date picker, custom dropdown, anchored clicks).
 
 ---
 
-## Effort Estimate
+## Technical Stack
 
-| Task | Estimate |
-|------|----------|
-| Refactor modal to `SuiteFormModal` | 45–60 min |
-| Wire Edit in `TestSuitesPage` | 15–20 min |
-| Write ADR-007 | 20–30 min |
-| Manual verification | 15 min |
-| **Total** | **~1.5–2 hours** (single PR) |
+| Layer | Module | Changes |
+|-------|--------|---------|
+| Step parsing | `execution_service.py` | `_is_dropdown_instruction`, value extraction patterns |
+| Element resolution | `xpath_extractor.py`, `tier2_hybrid.py` | Multi-candidate ranking, anchor validation |
+| Action execution | `tier2_hybrid.py` | `_fill_date_picker_field`, `_try_custom_dropdown_select` |
+| Validation | `tier2_hybrid.py` | `_verify_filled_value` generalization, click context guard |
+| Tests | `tests/test_execution_service_value_extraction.py`, `tests/test_tier2_registration_widgets.py` (new) | TDD for all handlers |
+| Docs | `documentation/ADR-002-test-execution-engine.md` | ADR-002-53 entry |
 
-## Sprint Assignment
-
-**Sprint 1 (single PR, frontend + docs):**
-
-| # | Deliverable |
-|---|-------------|
-| 1 | `SuiteFormModal` with create + edit modes |
-| 2 | Edit button on `TestSuitesPage` |
-| 3 | `documentation/ADR-007-test-suites.md` |
-
-**Definition of done:** All verification checklist items pass; ADR merged; no backend changes unless PUT gap discovered during QA.
+**No frontend changes. No Tier 3 / Stagehand prompt changes required for MVP.**
 
 ---
 
-## Design Direction (modal consistency)
+## Sprint Plan
 
-Keep existing modal visual language — no redesign:
+### Sprint 1: Registration widget handlers (P0)
+- **Goals:** Fix all three Exec #990 failures
+- **Features:** F1, F2, F3, F4
+- **Definition of done:**
+  - New unit tests pass (`pytest tests/test_execution_service_value_extraction.py tests/test_tier2_registration_widgets.py -q`)
+  - Manual or harness re-run of registration test: steps 13–14, birth date, area pass with correct screenshots
+  - No regression in `tests/test_tier2_plan_selection.py`, `tests/test_tier2_payment_helpers.py`
 
-- **Colors:** White modal on `bg-black/50` overlay; primary submit `#2563eb` (blue-600); error `#fef2f2` banner
-- **Typography:** `text-2xl font-bold` modal title; form labels `text-sm font-medium text-gray-700`
-- **Layout:** `max-w-5xl` two-column test picker (unchanged)
-- **Anti-patterns:** Do not add new gradient headers, icon-only Edit without label, or move Edit to overflow menu
+### Sprint 2: Hardening (P1)
+- **Goals:** Prevent recurrence on similar widgets
+- **Features:** F5, F6, F7
+- **Definition of done:** Cache invalidation tests; post-fill verification on generic fill steps
+
+### Sprint 3: Documentation & step hygiene (P2)
+- **Features:** F8, F9
+- **Definition of done:** ADR updated; optional test case text improvements
 
 ---
 
-## Evaluation Criteria (summary)
+## Generator Task List (Ordered)
 
-See `gan-harness/eval-rubric.md` for weighted scorer sheet. Pass requires: Edit button functional, modal pre-populates correctly, PUT called on save, ADR-007 complete, create flow unbroken.
+1. **TDD:** Add failing tests for `_is_dropdown_instruction("select area 'Hong Kong'")` → True
+2. **TDD:** Add failing tests for custom dropdown handler (mock page / Playwright fixture)
+3. **TDD:** Add failing tests for date picker fill + persistence verification
+4. **TDD:** Add failing test for click anchor rejection (header button when anchor is main-content)
+5. Implement F1 in `execution_service.py`
+6. Implement F2 `_try_custom_dropdown_select` — wire into `execute_step` before generic select
+7. Implement F3 `_fill_date_picker_field` — wire into `_execute_action_with_xpath` for date-like instructions
+8. Implement F4 anchor validation — wire before click in `_execute_action_with_xpath` and on cache hit
+9. Run full backend unit test suite for tier2/execution_service
+10. Update `gan-harness/generator-state.md` with iteration notes
+
+---
+
+## Out of Scope
+
+- Fixing OTP modal / email verification flow (orthogonal; test continues past with mobile OTP)
+- Three HK promotion card / Wi-Fi plan selection (addressed in prior iteration)
+- Tier 1 pre-defined selector support (no selectors in current test steps)
