@@ -36,14 +36,33 @@ def parse_chat_to_job(
     context: Dict[str, Any],
     *,
     allow_open_chat: bool = False,
+    prefer_open_chat: bool = False,
 ) -> Tuple[FactoryJobCreate, str]:
     """Map user message to a structured factory job. HF-1/3: keyword rules; superadmin may use open chat."""
     text = (message or "").strip()
     if not text:
         raise ValueError("Message cannot be empty")
 
+    # Superadmin escape hatch:
+    # - Prefix with "!" to force structured command parsing (e.g. "!drain backlog")
+    # - Otherwise remain in open-chat mode when prefer_open_chat is enabled.
+    force_command = False
+    if allow_open_chat and text.startswith("!"):
+        force_command = True
+        text = text[1:].strip()
+        if not text:
+            raise ValueError("Command cannot be empty after '!'.")
+
     project = context.get("project") or "Three-HK"
     lower = text.lower()
+
+    if allow_open_chat and prefer_open_chat and not force_command:
+        job = FactoryJobCreate(
+            job_type="orchestrator_chat",
+            project=project,
+            params={"message": text},
+        )
+        return job, "Sent to QA Orchestrator (open chat)."
 
     if _HEAL_PATTERN.search(text) or "heal failures" in lower:
         job = FactoryJobCreate(

@@ -169,7 +169,7 @@ export const AgentConsolePage: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-900">Agent Console</h1>
           <p className="text-gray-600 mt-1">
             {openChat
-              ? 'Open chat with the QA Orchestrator — any message is forwarded to the factory node.'
+              ? 'Open chat with the QA Orchestrator — any message is forwarded to the factory node. Prefix with ! to run a structured command (e.g. !drain backlog).'
               : 'Structured factory commands only. Try: Run regression, Drain backlog, Scan changes, Heal failures, or Full cycle.'}
           </p>
         </div>
@@ -184,7 +184,7 @@ export const AgentConsolePage: React.FC = () => {
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder={
                   openChat
-                    ? 'Ask the QA Orchestrator anything…'
+                    ? 'Ask anything… or run command with ! (e.g. !drain backlog)'
                     : 'e.g. Run regression, Drain backlog, Scan changes'
                 }
                 disabled={loading}

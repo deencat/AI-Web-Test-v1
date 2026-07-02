@@ -21,8 +21,40 @@ class TestAgentChatService:
         assert job.params["message"] == "What journeys are in the backlog?"
         assert "open chat" in reply.lower()
 
-    def test_keyword_still_wins_over_open_chat(self):
-        job, _ = parse_chat_to_job("please run regression now", {}, allow_open_chat=True)
+    def test_open_chat_preferred_for_superadmin(self):
+        job, _ = parse_chat_to_job(
+            "please run regression now",
+            {},
+            allow_open_chat=True,
+            prefer_open_chat=True,
+        )
+        assert job.job_type == "orchestrator_chat"
+
+    def test_superadmin_can_force_structured_command_with_bang_prefix(self):
+        job, _ = parse_chat_to_job(
+            "!drain backlog",
+            {},
+            allow_open_chat=True,
+            prefer_open_chat=True,
+        )
+        assert job.job_type == "drain_backlog"
+
+    def test_bang_prefix_requires_nonempty_command(self):
+        with pytest.raises(ValueError):
+            parse_chat_to_job(
+                "!",
+                {},
+                allow_open_chat=True,
+                prefer_open_chat=True,
+            )
+
+    def test_keywords_still_work_when_prefer_open_chat_false(self):
+        job, _ = parse_chat_to_job(
+            "please run regression now",
+            {},
+            allow_open_chat=True,
+            prefer_open_chat=False,
+        )
         assert job.job_type == "run_regression"
 
     def test_parse_drain_backlog_keyword(self):

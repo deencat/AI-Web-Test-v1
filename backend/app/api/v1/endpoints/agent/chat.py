@@ -29,6 +29,7 @@ def agent_chat(
             body.message,
             body.context,
             allow_open_chat=allow_open_chat,
+            prefer_open_chat=allow_open_chat,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
