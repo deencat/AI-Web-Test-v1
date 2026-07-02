@@ -1,0 +1,35 @@
+## Project Overview
+AI Web Test v1 is a multi-agent web testing platform with:
+- FastAPI backend APIs and orchestration
+- React + Vite frontend for test and run management
+- Playwright/Stagehand-based browser automation
+- PostgreSQL and Redis infrastructure services
+
+## Tech Stack Versions
+- Python: `3.11` (from backend Docker base image)
+- Backend framework: `FastAPI >=0.115.0`
+- ASGI server: `uvicorn[standard] >=0.30.0`
+- ORM: `SQLAlchemy ==2.0.23`
+- Migrations: `Alembic ==1.12.1`
+- Database: `PostgreSQL 15` (`postgres:15-alpine`)
+- Cache/queue support: `Redis 7` (`redis:7-alpine`)
+- Frontend runtime: `React ^19.2.0`
+- Frontend build tool: `Vite ^7.1.7`
+- Frontend language: `TypeScript ~5.9.3`
+- E2E test runner (root): `@playwright/test ^1.57.0`
+- Python Playwright binding: `playwright ==1.56.0`
+- Stagehand: `stagehand ==0.5.6`
+
+## Global Hard Constraints
+- Keep `.cursorrules` as a concise project map: project overview, stack versions, and global constraints only.
+- Keep all version references aligned with source-of-truth files (`package.json`, `frontend/package.json`, `backend/requirements.txt`, `docker-compose.yml`, `backend/Dockerfile`).
+- Use Python 3.11 compatible dependencies and syntax in backend changes.
+- Use SQLAlchemy 2.0 style APIs for all backend database access.
+- Keep PostgreSQL as the primary relational database and Redis as cache/in-memory service unless explicitly changed by maintainers.
+- Do not put large task-specific guides in `.cursorrules`; move detailed guidance to topic docs and keep this file high signal.
+
+## Document Map
+- `Phase3-project-documents/` — Phase 3 planning, architecture, implementation guides, and execution status notes.
+- `gan-harness/` — GAN harness spec, rubric, generator state, and evaluation reports.
+- `documentation/` — Core product docs, ADRs, API/testing references, and historical archive materials.
+- `docs/` — Codemaps, handoff guides, integration docs, and OpenAPI-related references.
