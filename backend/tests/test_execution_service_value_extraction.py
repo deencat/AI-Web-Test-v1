@@ -40,6 +40,10 @@ class TestExecutionServiceValueExtraction:
             # Unquoted variants
             ("Select expiry month 01 from the dropdown", "01"),
             ("Select expiry year 2027 from the dropdown", "2027"),
+            # Terse phrasing: select FIELD 'VALUE' without dropdown keyword
+            ("select area 'Hong Kong'", "Hong Kong"),
+            ("Select area 'Kowloon'", "Kowloon"),
+            ("select area Hong Kong", "Hong Kong"),
         ],
     )
     def test_dropdown_value_extraction(self, description, expected):
@@ -52,6 +56,8 @@ class TestExecutionServiceValueExtraction:
             ("Select 'HONG KONG' from the Region dropdown.", True),
             ("Set Region dropdown value to HONG KONG", True),
             ("Choose option EASTERN in the District select", True),
+            ("select area 'Hong Kong'", True),
+            ("Select area 'New Territories'", True),
             ("Select the $288/month plan", False),
             ("Click the dropdown arrow", False),
         ],

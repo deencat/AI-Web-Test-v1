@@ -617,7 +617,7 @@ class TestTier2PaymentHelpers:
 
         assert loading_element.wait_for.await_count > 0
         assert any(
-            call.kwargs == {"state": "hidden", "timeout": 8000}
+            call.kwargs == {"state": "hidden", "timeout": 20000}
             for call in loading_element.wait_for.await_args_list
         )
 

@@ -1,10 +1,10 @@
 {
-    "sourceRoot": "C:\\Users\\andrechw\\OneDrive - hutchison3hk\\Documents\\AI-Web-Test-v1-2",
-    "destRoot": "C:\\Users\\andrechw\\OneDrive - hutchison3hk\\Documents\\Agentic_QA_v1",
-    "overlayDir": "C:\\Users\\andrechw\\OneDrive - hutchison3hk\\Documents\\AI-Web-Test-v1-2\\scripts\\customer-export\\overlay",
+    "sourceRoot": "C:\\old_Ddrive\\Copilot_project\\AI-Web-Test-v1",
+    "destRoot": "C:\\old_Ddrive\\Copilot_project\\Agentic_QA_v1",
+    "overlayDir": "C:\\old_Ddrive\\Copilot_project\\AI-Web-Test-v1\\scripts\\customer-export\\overlay",
     "customerRepoUrl": "https://github.com/andrewchw/Agentic_QA_v1.git",
-    "gitUserName": "andrewchw",
-    "gitUserEmail": "andrewchw@users.noreply.github.com",
+    "gitUserName": "alexsiu398",
+    "gitUserEmail": "142296350+alexsiu398@users.noreply.github.com",
 
     "excludeDirs": [
         ".git", ".cursor", ".github", ".git-workflow", ".vscode",

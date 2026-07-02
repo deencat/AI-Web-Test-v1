@@ -1908,6 +1908,9 @@ class ExecutionService:
             rf'(?:select|choose|pick|set)\s+option\s+[{quote_chars}]([^"\'“”‘’]+)[{quote_chars}]',
             rf'(?:select|choose|pick|set)\s+option\s+([\w\s-]+?)\s+(?:from|in)\s+',
             rf'(?:set|select|choose|pick)\s+(?:the\s+)?(?:[\w\s-]+\s+)?(?:dropdown|select|menu|list|field)\s+(?:value\s+)?(?:to|as)\s+[{quote_chars}]?([^"\'“”‘’]+)[{quote_chars}]?',
+            # Terse phrasing: select FIELD 'VALUE' (no dropdown keyword)
+            rf'(?:select|choose|pick|set)\s+\w+\s+[{quote_chars}]([^"\'“”‘’]+)[{quote_chars}]',
+            rf'(?:select|choose|pick|set)\s+\w+\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*$',
             
             # HKID patterns - Extract specific values mentioned in the description
             r'(?:input|enter|fill|type)\s+(?:hkid|id)\s+(?:number\s+)?([A-Z]\d{6})\s+',
@@ -1950,6 +1953,7 @@ class ExecutionService:
         desc_lower = step_description.lower()
         verbs = ["select", "choose", "pick", "set"]
         dropdown_keywords = ["dropdown", "select box", "select field", "menu", "list", "option"]
+        quote_chars = "\"'"
 
         if not any(verb in desc_lower for verb in verbs):
             return False
@@ -1958,7 +1962,28 @@ class ExecutionService:
             return True
 
         pattern = r"(?:select|choose|pick|set).+(?:from|in).+(?:dropdown|select|menu|list|field|option)"
-        return bool(re.search(pattern, desc_lower))
+        if re.search(pattern, desc_lower):
+            return True
+
+        # Exclude plan/price selection clicks (e.g. "Select the $288/month plan")
+        if re.search(r"\$\d+|/\s*month|\bthe\s+\$|\bavailable\s+plans\b", desc_lower):
+            return False
+
+        # Terse phrasing: select <field> '<value>'
+        terse_quoted = (
+            rf"(?:select|choose|pick|set)\s+(?!the\s+\$)\w+\s+"
+            rf"[{quote_chars}][^{quote_chars}]+[{quote_chars}]"
+        )
+        if re.search(terse_quoted, desc_lower):
+            return True
+
+        # Terse unquoted: select area Hong Kong (Title Case multi-word values)
+        return bool(
+            re.search(
+                r"(?:select|choose|pick|set)\s+(?!the\s+\$)\w+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s*$",
+                step_description,
+            )
+        )
     
     def _apply_test_data_generation(
         self, 

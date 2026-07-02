@@ -374,6 +374,7 @@ class Tier2HybridExecutor:
 
             # Step 1: Try to get XPath from cache
             cached_xpath = self.cache_service.get_cached_xpath(page_url, instruction)
+            anchor_retry = False
 
             if cached_xpath:
                 cached_xpath_value = cached_xpath["xpath"]
@@ -449,11 +450,20 @@ class Tier2HybridExecutor:
                         self.cache_service.invalidate_cache(page_url, instruction, "Element not found on page")
                         cache_hit = False
                         cached_xpath = None
+                        if action == "click" and self._extract_click_anchor_phrases(instruction):
+                            anchor_retry = True
 
             if not cached_xpath:
                 # Step 2: Extract XPath using Stagehand observe()
                 logger.info(f"[Tier 2] ðŸ“¡ Cache miss, extracting XPath via observe()...")
                 extraction_start = time.time()
+
+                observe_instruction = instruction
+                if anchor_retry:
+                    observe_instruction = self._augment_observe_instruction_with_anchors(instruction)
+                    logger.info(
+                        "[Tier 2] Using anchor-augmented observe instruction after cache rejection"
+                    )
 
                 if self._should_wait_for_three_hk_observe_readiness(
                     page_url,
@@ -468,7 +478,7 @@ class Tier2HybridExecutor:
 
                 extraction_result = await self.xpath_extractor.extract_xpath_with_page(
                     page=page,
-                    instruction=instruction
+                    instruction=observe_instruction
                 )
 
                 if self._should_retry_observe_extraction(
@@ -481,7 +491,7 @@ class Tier2HybridExecutor:
                     await self._wait_for_page_interactable_for_observe(page, instruction=instruction)
                     extraction_result = await self.xpath_extractor.extract_xpath_with_page(
                         page=page,
-                        instruction=instruction
+                        instruction=observe_instruction
                     )
                 
                 extraction_time_ms = (time.time() - extraction_start) * 1000
@@ -711,15 +721,87 @@ class Tier2HybridExecutor:
             return re.sub(r"\D", "", value or "")
         return (value or "").strip()
 
+    def _parse_date_value(self, value: str) -> Optional[tuple[int, int, int]]:
+        """Parse yyyy/mm/dd or yyyy-mm-dd date strings."""
+        if not value:
+            return None
+        match = re.match(r"(\d{4})[/-](\d{1,2})[/-](\d{1,2})", value.strip())
+        if not match:
+            return None
+        return int(match.group(1)), int(match.group(2)), int(match.group(3))
+
+    def _normalize_date_for_compare(self, value: str) -> Optional[str]:
+        """Normalize date strings to yyyy-mm-dd for comparison."""
+        parsed = self._parse_date_value(value)
+        if not parsed:
+            return None
+        year, month, day = parsed
+        return f"{year:04d}-{month:02d}-{day:02d}"
+
+    def _is_date_instruction(self, instruction: str, value: str) -> bool:
+        """Return True when instruction/value refer to a date picker field."""
+        instruction_lower = (instruction or "").lower()
+        if any(
+            token in instruction_lower
+            for token in ("birth", "date of birth", "date picker", "date field", "dob")
+        ):
+            return True
+        return self._parse_date_value(value or "") is not None
+
+    def _extract_click_anchor_phrases(self, instruction: str) -> list[str]:
+        """Extract anchor phrases like next to 'Collect Personal Info:' from instructions."""
+        if not instruction:
+            return []
+
+        anchors: list[str] = []
+        patterns = [
+            r"next to\s+['\"]([^'\"]+)['\"]",
+            r"near\s+['\"]([^'\"]+)['\"]",
+            r"under\s+['\"]([^'\"]+)['\"]",
+            r"next to\s+([^,\.;]+?)(?:\s+in\s+|\s+on\s+|\s*$)",
+            r"near\s+([^,\.;]+?)(?:\s+in\s+|\s+on\s+|\s*$)",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, instruction, re.IGNORECASE)
+            if match:
+                anchor = match.group(1).strip().strip("'\"")
+                if anchor and anchor not in anchors:
+                    anchors.append(anchor)
+        return anchors
+
+    def _augment_observe_instruction_with_anchors(self, instruction: str) -> str:
+        """Add anchor hints for observe() when click-target validation failed."""
+        anchors = self._extract_click_anchor_phrases(instruction)
+        if not anchors:
+            return instruction
+        anchor_hint = "; ".join(f"adjacent to '{anchor}'" for anchor in anchors)
+        return (
+            f"{instruction} (IMPORTANT: click target must be {anchor_hint}, "
+            "NOT header/nav/top-controls)"
+        )
+
     async def _verify_filled_value(self, locator, value: str, role: Optional[str]) -> bool:
         """Verify a fill/select action populated the target field."""
         try:
             if role == "cvv":
                 return bool((await locator.input_value() or "").strip())
-            filled_value = self._normalize_payment_value(await locator.input_value() or "", role)
+            filled_raw = await locator.input_value() or ""
+            if not filled_raw.strip():
+                try:
+                    filled_raw = (await locator.inner_text() or "").strip()
+                except Exception:
+                    filled_raw = filled_raw or ""
+
+            filled_value = self._normalize_payment_value(filled_raw, role)
             expected_value = self._normalize_payment_value(value, role)
             if role == "card_number":
                 return filled_value == expected_value and bool(expected_value)
+
+            filled_date = self._normalize_date_for_compare(filled_value)
+            expected_date = self._normalize_date_for_compare(expected_value)
+            if filled_date and expected_date:
+                return filled_date == expected_date
+
             return filled_value == expected_value
         except Exception:
             return False
@@ -2554,6 +2636,338 @@ class Tier2HybridExecutor:
             return
 
         raise ValueError("Three HK plan selection did not advance from the plan selection page")
+
+    async def _element_in_header_or_nav(self, locator) -> bool:
+        """Return True when the locator resolves inside header/nav/top-controls."""
+        try:
+            return await locator.evaluate(
+                """el => {
+                    let node = el;
+                    while (node) {
+                        const tag = (node.tagName || '').toLowerCase();
+                        const role = node.getAttribute && node.getAttribute('role');
+                        const cls = (node.className || '').toString().toLowerCase();
+                        if (
+                            tag === 'header' || tag === 'nav' ||
+                            role === 'navigation' || role === 'banner' ||
+                            cls.includes('header') || cls.includes('navbar') ||
+                            cls.includes('top-controls') || cls.includes('topbar')
+                        ) {
+                            return true;
+                        }
+                        node = node.parentElement;
+                    }
+                    return false;
+                }"""
+            )
+        except Exception:
+            return False
+
+    async def _anchor_text_in_main_content(self, page: Page, anchor: str) -> bool:
+        """Return True when anchor text appears in main content (not header-only)."""
+        try:
+            return await page.evaluate(
+                """(anchor) => {
+                    const main = document.querySelector('main')
+                        || document.querySelector('[role="main"]')
+                        || document.body;
+                    return (main.innerText || '').includes(anchor);
+                }""",
+                anchor,
+            )
+        except Exception:
+            return True
+
+    async def _elements_are_proximate(self, page: Page, locator, anchor: str) -> bool:
+        """Heuristic: click target should be near the anchor text on the page."""
+        try:
+            box = await locator.bounding_box()
+            if not box:
+                return True
+
+            anchor_locator = page.get_by_text(anchor, exact=False).first
+            if await anchor_locator.count() == 0:
+                return True
+
+            anchor_box = await anchor_locator.bounding_box()
+            if not anchor_box:
+                return True
+
+            click_cx = box["x"] + box["width"] / 2
+            click_cy = box["y"] + box["height"] / 2
+            anchor_cx = anchor_box["x"] + anchor_box["width"] / 2
+            anchor_cy = anchor_box["y"] + anchor_box["height"] / 2
+            distance = ((click_cx - anchor_cx) ** 2 + (click_cy - anchor_cy) ** 2) ** 0.5
+            return distance <= 600
+        except Exception:
+            return True
+
+    async def _validate_click_target_for_instruction(
+        self,
+        page: Page,
+        locator,
+        instruction: str,
+    ) -> bool:
+        """Validate click target against anchor phrases in the instruction."""
+        anchors = self._extract_click_anchor_phrases(instruction)
+        if not anchors:
+            return True
+
+        for anchor in anchors:
+            try:
+                anchor_locator = page.get_by_text(anchor, exact=False).first
+                if await anchor_locator.count() == 0 or not await anchor_locator.is_visible():
+                    logger.info(
+                        "[Tier 2] Click anchor '%s' not visible on page",
+                        anchor,
+                    )
+                    return False
+            except Exception:
+                return False
+
+            click_in_header = await self._element_in_header_or_nav(locator)
+            anchor_in_main = await self._anchor_text_in_main_content(page, anchor)
+            if click_in_header and anchor_in_main:
+                logger.info(
+                    "[Tier 2] Click target in header/nav but anchor '%s' is in main content",
+                    anchor,
+                )
+                return False
+
+            if not await self._elements_are_proximate(page, locator, anchor):
+                logger.info(
+                    "[Tier 2] Click target too far from anchor '%s'",
+                    anchor,
+                )
+                return False
+
+        return True
+
+    async def _read_date_picker_header_month_year(self, page: Page) -> Optional[tuple[int, int]]:
+        """Read visible month/year from an open date picker header."""
+        header_selectors = [
+            "[class*='picker'] [class*='header']",
+            "[class*='calendar'] [class*='header']",
+            ".datepicker-header",
+            "[role='heading']",
+        ]
+        month_names = {
+            "january": 1, "february": 2, "march": 3, "april": 4,
+            "may": 5, "june": 6, "july": 7, "august": 8,
+            "september": 9, "october": 10, "november": 11, "december": 12,
+            "jan": 1, "feb": 2, "mar": 3, "apr": 4,
+            "jun": 6, "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+        }
+        for selector in header_selectors:
+            try:
+                header = page.locator(selector).first
+                if await header.count() == 0:
+                    continue
+                header_text = (await header.inner_text() or "").lower()
+                year_match = re.search(r"(20\d{2})", header_text)
+                if not year_match:
+                    continue
+                year = int(year_match.group(1))
+                month = None
+                for name, number in month_names.items():
+                    if name in header_text:
+                        month = number
+                        break
+                if month:
+                    return year, month
+            except Exception:
+                continue
+        return None
+
+    async def _navigate_date_picker_to(self, page: Page, target_year: int, target_month: int) -> None:
+        """Navigate an open date picker calendar to the target month/year."""
+        prev_selectors = [
+            "[aria-label*='Previous']",
+            "[aria-label*='prev']",
+            "button[class*='prev']",
+            ".datepicker-prev",
+        ]
+        next_selectors = [
+            "[aria-label*='Next']",
+            "[aria-label*='next']",
+            "button[class*='next']",
+            ".datepicker-next",
+        ]
+
+        for _ in range(24):
+            current = await self._read_date_picker_header_month_year(page)
+            if current == (target_year, target_month):
+                return
+
+            if not current:
+                return
+
+            current_year, current_month = current
+            go_forward = (current_year, current_month) < (target_year, target_month)
+            selectors = next_selectors if go_forward else prev_selectors
+            clicked = False
+            for selector in selectors:
+                try:
+                    button = page.locator(selector).first
+                    if await button.count() > 0 and await button.is_visible():
+                        await button.click(timeout=self.timeout_ms)
+                        clicked = True
+                        await asyncio.sleep(0.2)
+                        break
+                except Exception:
+                    continue
+            if not clicked:
+                return
+
+    async def _fill_date_picker_field(self, locator, value: str, page: Page) -> bool:
+        """Fill a custom date picker and verify the value persists."""
+        parsed = self._parse_date_value(value)
+        if not parsed:
+            return False
+
+        target_year, target_month, target_day = parsed
+        normalized_value = f"{target_year}/{target_month:02d}/{target_day:02d}"
+
+        await locator.wait_for(state="visible", timeout=self.timeout_ms)
+        await locator.click(timeout=self.timeout_ms)
+        await asyncio.sleep(0.2)
+
+        await self._navigate_date_picker_to(page, target_year, target_month)
+
+        day_str = str(target_day)
+        day_clicked = False
+        day_locator_groups = [
+            page.get_by_role("gridcell", name=day_str),
+            page.locator(f"[role='gridcell']:has-text('{day_str}')"),
+            page.locator(f"td:has-text('{day_str}')"),
+            page.locator(f"button:has-text('{day_str}')"),
+        ]
+        for group in day_locator_groups:
+            try:
+                count = await group.count()
+                for index in range(count):
+                    cell = group.nth(index)
+                    cell_text = (await cell.inner_text() or "").strip()
+                    if cell_text != day_str:
+                        continue
+                    await cell.click(timeout=self.timeout_ms)
+                    day_clicked = True
+                    break
+                if day_clicked:
+                    break
+            except Exception:
+                continue
+
+        if not day_clicked:
+            await locator.fill(normalized_value, timeout=self.timeout_ms)
+            await locator.press("Enter")
+
+        await asyncio.sleep(0.3)
+        try:
+            await locator.evaluate("el => el.blur()")
+        except Exception:
+            pass
+
+        calendar = await self._read_date_picker_header_month_year(page)
+        if calendar and calendar != (target_year, target_month):
+            logger.warning(
+                "[Tier 2] Date picker calendar month mismatch after fill: expected %s-%02d, got %s",
+                target_year,
+                target_month,
+                calendar,
+            )
+            return False
+
+        for candidate in (value, normalized_value, f"{target_year}-{target_month:02d}-{target_day:02d}"):
+            if await self._verify_filled_value(locator, candidate, role=None):
+                return True
+        return False
+
+    async def _try_custom_dropdown_select(
+        self,
+        page: Page,
+        instruction: str,
+        value: str,
+        xpath: str,
+    ) -> bool:
+        """Two-phase custom dropdown: open trigger, pick option, verify selection."""
+        if not value:
+            return False
+
+        xpath_clean = xpath[6:] if xpath.startswith("xpath=") else xpath
+        trigger_xpath = xpath_clean
+        if self._looks_like_option_xpath(xpath_clean):
+            trigger_xpath = self._select_xpath_from_option_xpath(xpath_clean)
+
+        trigger = page.locator(f"xpath={trigger_xpath}").first
+        await trigger.wait_for(state="visible", timeout=self.timeout_ms)
+
+        try:
+            tag_name = (await trigger.evaluate("el => el.tagName") or "").lower()
+        except Exception:
+            tag_name = ""
+
+        if tag_name == "select":
+            return False
+
+        await trigger.click(timeout=self.timeout_ms)
+
+        listbox_selectors = [
+            "[role='listbox']",
+            "[role='menu']",
+            ".dropdown-menu",
+            "[class*='dropdown-menu']",
+        ]
+        for selector in listbox_selectors:
+            try:
+                listbox = page.locator(selector).first
+                await listbox.wait_for(state="visible", timeout=2000)
+                break
+            except Exception:
+                continue
+
+        option_clicked = False
+        option_locators = [
+            page.get_by_role("option", name=value),
+            page.get_by_role("menuitem", name=value),
+            page.locator(f"[role='option']:has-text('{value}')"),
+            page.locator(f"li:has-text('{value}')"),
+            page.get_by_text(value, exact=True),
+        ]
+        for option_locator in option_locators:
+            try:
+                if await option_locator.count() == 0:
+                    continue
+                await option_locator.first.click(timeout=self.timeout_ms)
+                option_clicked = True
+                break
+            except Exception:
+                continue
+
+        if not option_clicked:
+            raise ValueError(f"Could not find dropdown option '{value}' for step: {instruction}")
+
+        await asyncio.sleep(0.3)
+
+        display_text = ""
+        try:
+            display_text = (await trigger.inner_text() or "").strip()
+        except Exception:
+            display_text = ""
+
+        if value.lower() not in display_text.lower():
+            try:
+                parent = trigger.locator("xpath=..")
+                display_text = (await parent.inner_text() or "").strip()
+            except Exception:
+                display_text = display_text or ""
+
+        if value.lower() not in display_text.lower():
+            raise ValueError(
+                f"Custom dropdown verification failed: expected '{value}', got '{display_text}'"
+            )
+
+        return True
     
     async def _execute_action_with_xpath(
         self,
@@ -2586,6 +3000,10 @@ class Tier2HybridExecutor:
         # Execute action
         if action == "click":
             await element.wait_for(state="visible", timeout=self.timeout_ms)
+            if not await self._validate_click_target_for_instruction(page, element, instruction):
+                raise ValueError(
+                    f"Click target failed anchor validation for step: {instruction}"
+                )
             await self._wait_for_element_enabled_before_click(element, instruction)
             element_text = await element.text_content() or ""
             
@@ -2638,12 +3056,32 @@ class Tier2HybridExecutor:
                     raise ValueError(
                         f"Payment field fill did not stick for step: {instruction}"
                     )
+            elif self._is_date_instruction(instruction, value):
+                filled = await self._fill_date_picker_field(element, value, page)
+                if not filled:
+                    raise ValueError(
+                        f"Date picker fill did not persist for step: {instruction}"
+                    )
             else:
                 await element.fill(value, timeout=self.timeout_ms)
-            # Small delay to allow any input event handlers to complete
-            await asyncio.sleep(0.3)
+                await asyncio.sleep(0.3)
+                if value and not await self._verify_filled_value(element, value, role=None):
+                    logger.warning(
+                        "[Tier 2] Generic fill verification failed for step: %s",
+                        instruction,
+                    )
             
         elif action == "select":
+            custom_selected = await self._try_custom_dropdown_select(
+                page,
+                instruction,
+                value,
+                xpath,
+            )
+            if custom_selected:
+                await asyncio.sleep(0.3)
+                return
+
             select_xpath = xpath
             if self._looks_like_option_xpath(xpath):
                 select_xpath = self._select_xpath_from_option_xpath(xpath)
@@ -2786,6 +3224,11 @@ class Tier2HybridExecutor:
                 logger.info(
                     "[Tier 2] Cached promotion card contradicts requested Wi-Fi family"
                 )
+                return False
+
+        if action == "click":
+            if not await self._validate_click_target_for_instruction(page, locator, instruction):
+                logger.info("[Tier 2] Cached click target failed anchor validation")
                 return False
 
         if action not in ["fill", "type", "input"]:
