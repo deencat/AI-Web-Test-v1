@@ -7,6 +7,7 @@ import { FeedbackDataSync } from '../components/FeedbackDataSync';
 import { ExecutionSettingsPanel } from '../components/ExecutionSettingsPanel';
 import { TierAnalyticsPanel } from '../components/TierAnalyticsPanel';
 import { AgentWorkflowSettings } from '../components/AgentWorkflowSettings';
+import { QaFactoryConnectionSettings } from '../components/QaFactoryConnectionSettings';
 import { EmailCredentialsSection } from '../features/settings/EmailCredentialsSection';
 import { XPathCachePanel } from '../components/XPathCachePanel';
 import settingsService from '../services/settingsService';
@@ -17,6 +18,7 @@ import {
   getModelOptionsForProvider,
   isCustomModelSelection,
 } from '../utils/modelSelectUtils';
+import { isFactoryOperator, isSuperadmin } from '../utils/roles';
 import type { AvailableProvider, CustomModelEntry, ExecutionSettingsUpdate } from '../types/api';
 
 export const SettingsPage: React.FC = () => {
@@ -760,6 +762,13 @@ export const SettingsPage: React.FC = () => {
             onRemove={handleRemoveCustomModel}
           />
         </Card>
+
+        {/* QA Factory: orchestrator node URL (Agent Console routing) */}
+        {isFactoryOperator() && (
+          <Card>
+            <QaFactoryConnectionSettings canEdit={isSuperadmin()} />
+          </Card>
+        )}
 
         {/* Sprint 10.6: Agent Workflow Configuration */}
         <Card>

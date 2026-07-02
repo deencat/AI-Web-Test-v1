@@ -114,7 +114,7 @@ class TestBridgeClient:
 
         from app.services import factory_bridge_client as bridge
 
-        with patch.object(bridge.settings, "HERMES_BRIDGE_URL", None):
+        with patch.object(bridge, "get_effective_bridge_url", return_value=None):
             assert bridge.bridge_routing_enabled() is False
             assert bridge.submit_job_to_bridge_async("job-1") is False
 
@@ -123,5 +123,5 @@ class TestBridgeClient:
 
         from app.services import factory_bridge_client as bridge
 
-        with patch.object(bridge.settings, "HERMES_BRIDGE_URL", "http://localhost:8790"):
+        with patch.object(bridge, "get_effective_bridge_url", return_value="http://localhost:8790"):
             assert bridge.bridge_routing_enabled() is True

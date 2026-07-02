@@ -6,6 +6,7 @@ export interface FactoryJobEvent {
   profile?: string | null;
   message?: string | null;
   payload_summary?: Record<string, unknown> | null;
+  llm_turns?: Record<string, unknown>[] | null;
   created_at: string;
 }
 
@@ -16,6 +17,7 @@ export interface FactoryJob {
   params?: Record<string, unknown> | null;
   status: string;
   error_message?: string | null;
+  orchestrator_reply?: string | null;
   created_at: string;
   started_at?: string | null;
   completed_at?: string | null;
@@ -47,6 +49,7 @@ export async function createFactoryJob(body: {
 }
 
 /** Poll job events (JWT-friendly; SSE can be added in HF-6 with cookie auth). */
+export const FACTORY_JOB_POLL_INTERVAL_MS = 3000;
 export interface HealReviewItem {
   id: number;
   execution_id: number;
@@ -108,12 +111,14 @@ export async function pollFactoryJob(
   onEvent: (event: FactoryJobEvent) => void,
   onComplete: (status: string) => void,
   signal?: AbortSignal,
+  onJobUpdate?: (job: FactoryJob) => void,
 ): Promise<void> {
   let afterId = 0;
   const terminal = new Set(['completed', 'failed', 'cancelled']);
 
   while (!signal?.aborted) {
     const job = await getFactoryJob(jobId);
+    onJobUpdate?.(job);
     for (const ev of job.events) {
       if (ev.id > afterId) {
         onEvent(ev);
@@ -124,6 +129,6 @@ export async function pollFactoryJob(
       onComplete(job.status);
       return;
     }
-    await new Promise((r) => setTimeout(r, 1500));
+    await new Promise((r) => setTimeout(r, FACTORY_JOB_POLL_INTERVAL_MS));
   }
 }

@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { Home, FileText, Database, Settings, PlayCircle, FolderOpen, Bot, Library, Globe, MessageSquare, Map, ListOrdered, Stethoscope } from 'lucide-react';
-import { isSuperadmin } from '../../utils/roles';
+import { isFactoryOperator } from '../../utils/roles';
 
 const navItems = [
   { path: '/dashboard', icon: Home, label: 'Dashboard' },
@@ -19,12 +19,12 @@ const navItems = [
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];
 
-const SUPERADMIN_ONLY_PATHS = new Set(['/agent-console']);
+const FACTORY_OPERATOR_PATHS = new Set(['/agent-console']);
 
 export const Sidebar: React.FC = () => {
-  const superadmin = isSuperadmin();
+  const factoryOperator = isFactoryOperator();
   const visibleItems = navItems.filter(
-    (item) => superadmin || !SUPERADMIN_ONLY_PATHS.has(item.path),
+    (item) => factoryOperator || !FACTORY_OPERATOR_PATHS.has(item.path),
   );
 
   return (

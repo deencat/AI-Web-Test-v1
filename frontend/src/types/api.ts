@@ -340,6 +340,25 @@ export interface UserSettings {
   updated_at: string | null;
 }
 
+export interface QaFactorySettings {
+  orchestrator_bridge_url_override?: string | null;
+  env_bridge_url?: string | null;
+  effective_bridge_url?: string | null;
+  routing_enabled: boolean;
+  profile_display_names: Record<string, string>;
+}
+
+export interface QaFactorySettingsUpdate {
+  orchestrator_bridge_url?: string | null;
+}
+
+export interface QaFactoryHealth {
+  status: string;
+  effective_bridge_url?: string | null;
+  message?: string | null;
+  latency_ms?: number | null;
+}
+
 export interface UpdateUserSettingsRequest {
   generation_provider?: string;
   generation_model?: string;

@@ -146,16 +146,28 @@ def _demo_mode() -> bool:
 
 def _run_orchestrator_cli(job_type: str, project: str | None, params: dict) -> None:
     cmd_base = os.environ.get("HERMES_ORCHESTRATOR_CMD", "qa-orchestrator").strip()
-    payload = json.dumps(
-        {"job_type": job_type, "project": project, "params": params},
-    )
-    result = subprocess.run(
-        [cmd_base, "job", "run", "--json", payload],
-        capture_output=True,
-        text=True,
-        timeout=int(os.environ.get("HERMES_ORCHESTRATOR_TIMEOUT", "3600")),
-        check=False,
-    )
+    if job_type == "orchestrator_chat":
+        message = str((params or {}).get("message", "")).strip()
+        if not message:
+            raise RuntimeError("orchestrator_chat requires params.message")
+        result = subprocess.run(
+            [cmd_base, "chat", "-q", message],
+            capture_output=True,
+            text=True,
+            timeout=int(os.environ.get("HERMES_ORCHESTRATOR_TIMEOUT", "3600")),
+            check=False,
+        )
+    else:
+        payload = json.dumps(
+            {"job_type": job_type, "project": project, "params": params},
+        )
+        result = subprocess.run(
+            [cmd_base, "job", "run", "--json", payload],
+            capture_output=True,
+            text=True,
+            timeout=int(os.environ.get("HERMES_ORCHESTRATOR_TIMEOUT", "3600")),
+            check=False,
+        )
     if result.returncode != 0:
         raise RuntimeError(
             f"orchestrator exit {result.returncode}: {result.stderr or result.stdout}",
@@ -243,6 +255,23 @@ def _simulate_delegates(
     )
 
 
+def _demo_open_chat_reply(user_message: str) -> str:
+    text = user_message.strip()
+    lower = text.lower()
+    if lower in {"hi", "hello", "hey", "hiya"}:
+        return (
+            "Hello! I'm the QA Orchestrator. I can drain the backlog, run regression, "
+            "generate journeys, scan for site changes, and heal failures. What should we do next?"
+        )
+    if not text:
+        return "I'm ready — tell me what you'd like the QA factory to work on."
+    return (
+        f"I received your message. In demo mode I can't run a full LLM reply yet, "
+        f"but I understood: “{text[:240]}”. "
+        "Set HERMES_ORCHESTRATOR_CMD=qa-orchestrator on the factory node for live answers."
+    )
+
+
 def execute_job(job_id: str, job_type: str, project: str | None, params: dict) -> None:
     events_url = os.environ.get("AWT_AGENT_EVENTS_URL", "")
     secret = os.environ.get("HERMES_BRIDGE_SECRET", "")
@@ -250,6 +279,54 @@ def execute_job(job_id: str, job_type: str, project: str | None, params: dict) -
         raise RuntimeError("Set AWT_AGENT_EVENTS_URL and HERMES_BRIDGE_SECRET")
 
     params = params or {}
+    if job_type == "orchestrator_chat":
+        logger.info("Job %s — open chat (demo)", job_id)
+        session_id = f"sess_{job_id.replace('-', '')[:12]}"
+        user_message = str(params.get("message", "")).strip()
+        assistant_reply = _demo_open_chat_reply(user_message)
+        post_event(
+            events_url=events_url,
+            secret=secret,
+            job_id=job_id,
+            event_type="job_started",
+            profile="qa-orchestrator",
+            hermes_session_id=session_id,
+            message="QA Orchestrator open chat",
+            payload_summary={"mode": "demo", "message": user_message},
+        )
+        post_event(
+            events_url=events_url,
+            secret=secret,
+            job_id=job_id,
+            event_type="delegate_complete",
+            profile="qa-orchestrator",
+            hermes_session_id=session_id,
+            message=assistant_reply,
+            payload_summary={"status": "success", "mode": "demo_open_chat"},
+            llm_turns=[
+                {
+                    "role": "user",
+                    "content": user_message,
+                },
+                {
+                    "role": "assistant",
+                    "content": assistant_reply,
+                    "tokens": 64,
+                },
+            ],
+        )
+        post_event(
+            events_url=events_url,
+            secret=secret,
+            job_id=job_id,
+            event_type="job_complete",
+            profile="qa-orchestrator",
+            hermes_session_id=session_id,
+            message="Open chat completed",
+            payload_summary={"status": "success", "job_type": job_type},
+        )
+        return
+
     if _demo_mode():
         logger.info("Job %s (%s) — demo delegate simulation", job_id, job_type)
         _simulate_delegates(

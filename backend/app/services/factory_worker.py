@@ -33,6 +33,7 @@ SUPPORTED_JOB_TYPES = {
     "full_cycle",
     "scan_changes",
     "heal_failures",
+    "orchestrator_chat",
 }
 
 
@@ -95,6 +96,7 @@ def run_factory_job(job_id: str) -> None:
             "full_cycle": _full_cycle,
             "scan_changes": _scan_changes,
             "heal_failures": _heal_failures,
+            "orchestrator_chat": _orchestrator_chat,
         }
         handler = handlers.get(job.job_type)
         if not handler:
@@ -362,6 +364,24 @@ def _heal_failures(db: Session, job: FactoryJob) -> None:
             since = since.replace(tzinfo=None)
 
     scan_and_heal_failures(db, job, since=since)
+
+
+def _orchestrator_chat(db: Session, job: FactoryJob) -> None:
+    """Open chat fallback when no QA Orchestrator node is configured."""
+    user_message = str((job.params or {}).get("message", "")).strip()
+    preview = user_message[:240] + ("…" if len(user_message) > 240 else "")
+    append_job_event(
+        db,
+        job.id,
+        event_type="delegate_start",
+        profile="qa-orchestrator",
+        message=f"Open chat: {preview}" if preview else "Open chat",
+        payload_summary={"message": user_message},
+    )
+    raise RuntimeError(
+        "Open chat is delivered via the QA Orchestrator node. "
+        "Configure Settings → QA Factory Connection (or HERMES_BRIDGE_URL in .env)."
+    )
 
 
 def _scan_changes(db: Session, job: FactoryJob) -> None:

@@ -31,8 +31,13 @@ _HEAL_PATTERN = re.compile(
 )
 
 
-def parse_chat_to_job(message: str, context: Dict[str, Any]) -> Tuple[FactoryJobCreate, str]:
-    """Map user message to a structured factory job. HF-1/3: keyword rules only."""
+def parse_chat_to_job(
+    message: str,
+    context: Dict[str, Any],
+    *,
+    allow_open_chat: bool = False,
+) -> Tuple[FactoryJobCreate, str]:
+    """Map user message to a structured factory job. HF-1/3: keyword rules; superadmin may use open chat."""
     text = (message or "").strip()
     if not text:
         raise ValueError("Message cannot be empty")
@@ -104,6 +109,14 @@ def parse_chat_to_job(message: str, context: Dict[str, Any]) -> Tuple[FactoryJob
             params={"tags": tags},
         )
         return job, f"Queued run_regression for tags: {', '.join(tags)}."
+
+    if allow_open_chat:
+        job = FactoryJobCreate(
+            job_type="orchestrator_chat",
+            project=project,
+            params={"message": text},
+        )
+        return job, "Sent to QA Orchestrator (open chat)."
 
     raise ValueError(
         "Could not interpret request. Try: 'Run regression', 'Drain backlog', "

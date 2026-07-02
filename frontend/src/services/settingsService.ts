@@ -1,5 +1,13 @@
 import api, { apiHelpers } from './api';
-import { Settings, UpdateSettingsRequest, UserSettings, UpdateUserSettingsRequest } from '../types/api';
+import {
+  Settings,
+  UpdateSettingsRequest,
+  UserSettings,
+  UpdateUserSettingsRequest,
+  QaFactorySettings,
+  QaFactorySettingsUpdate,
+  QaFactoryHealth,
+} from '../types/api';
 
 /**
  * Settings Service
@@ -410,6 +418,36 @@ class SettingsService {
       throw new Error(apiHelpers.getErrorMessage(error));
     }
   }
+
+  /** QA Factory orchestrator node connection (overrides server .env when set). */
+  async getQaFactorySettings(): Promise<QaFactorySettings> {
+    try {
+      const response = await api.get<QaFactorySettings>('/settings/qa-factory');
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  async updateQaFactorySettings(data: QaFactorySettingsUpdate): Promise<QaFactorySettings> {
+    try {
+      const response = await api.put<QaFactorySettings>('/settings/qa-factory', data);
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  async checkQaFactoryHealth(): Promise<QaFactoryHealth> {
+    try {
+      const response = await api.get<QaFactoryHealth>('/settings/qa-factory/health');
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
 }
+
+export type { QaFactorySettings, QaFactorySettingsUpdate, QaFactoryHealth };
 
 export default new SettingsService();

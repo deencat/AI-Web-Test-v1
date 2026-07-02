@@ -17,6 +17,7 @@ class FactoryJobEventResponse(BaseModel):
     profile: Optional[str] = None
     message: Optional[str] = None
     payload_summary: Optional[Dict[str, Any]] = None
+    llm_turns: Optional[List[Dict[str, Any]]] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -29,6 +30,7 @@ class FactoryJobResponse(BaseModel):
     params: Optional[Dict[str, Any]] = None
     status: str
     error_message: Optional[str] = None
+    orchestrator_reply: Optional[str] = None
     created_at: datetime
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None

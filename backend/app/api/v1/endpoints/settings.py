@@ -3,7 +3,17 @@ from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, get_current_user
+from app.api.deps import get_db, get_current_user, require_factory_operator, require_superadmin
+from app.schemas.factory_settings import (
+    QaFactoryHealthResponse,
+    QaFactorySettingsResponse,
+    QaFactorySettingsUpdate,
+)
+from app.services.factory_settings_service import (
+    build_qa_factory_settings_response,
+    check_orchestrator_bridge_health,
+    update_orchestrator_bridge_override,
+)
 from app.models.user import User
 from app.models.execution_settings import XPathCache as XPathCacheModel
 from app.schemas.user_settings import (
@@ -595,6 +605,58 @@ async def delete_xpath_cache_entry(
         )
     db.delete(entry)
     db.commit()
+
+
+@router.get("/qa-factory", response_model=QaFactorySettingsResponse)
+async def get_qa_factory_settings(
+    current_user: User = Depends(require_factory_operator),
+    db: Session = Depends(get_db),
+):
+    """
+    QA Factory connection settings for Agent Console.
+
+    Settings UI override takes precedence over HERMES_BRIDGE_URL in server .env.
+    """
+    try:
+        return build_qa_factory_settings_response(db)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get QA Factory settings: {str(e)}",
+        )
+
+
+@router.put("/qa-factory", response_model=QaFactorySettingsResponse)
+async def update_qa_factory_settings(
+    body: QaFactorySettingsUpdate,
+    current_user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    """Set orchestrator node URL override (superadmin). Empty clears override → .env default."""
+    try:
+        return update_orchestrator_bridge_override(db, body.orchestrator_bridge_url)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update QA Factory settings: {str(e)}",
+        )
+
+
+@router.get("/qa-factory/health", response_model=QaFactoryHealthResponse)
+async def get_qa_factory_health(
+    current_user: User = Depends(require_factory_operator),
+    db: Session = Depends(get_db),
+):
+    """Ping the effective orchestrator node GET /health endpoint."""
+    try:
+        return check_orchestrator_bridge_health(db)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to check QA Factory health: {str(e)}",
+        )
 
 
 @router.delete("/xpath-cache", response_model=XPathCacheClearResponse)

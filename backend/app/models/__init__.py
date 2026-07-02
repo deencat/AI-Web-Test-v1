@@ -23,6 +23,7 @@ from app.models.journey_factory import (
     BacklogStatus,
 )
 from app.models.url_snapshot import UrlSnapshot
+from app.models.system_settings import SystemSettings
 
 __all__ = [
     "User",
@@ -44,5 +45,6 @@ __all__ = [
     "FactoryJob", "FactoryJobEvent", "FactoryJobStatus",
     "JourneyBacklogItem", "JourneyRegistryEntry", "JourneyRegistryProject", "BacklogStatus",
     "UrlSnapshot",
+    "SystemSettings",
 ]
 

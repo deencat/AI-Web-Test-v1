@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import {
+  FactoryJob,
   FactoryJobEvent,
   getFactoryJob,
   getHermesTrace,
@@ -9,27 +10,118 @@ import {
   pollFactoryJob,
   postAgentChat,
 } from '../services/agentFactoryService';
-import { isSuperadmin } from '../utils/roles';
+import { factoryProfileDisplayName } from '../constants/factoryProfiles';
+import { isFactoryOperator, isSuperadmin } from '../utils/roles';
+
+const TERMINAL_JOB_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
 export const AgentConsolePage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const jobFromUrl = searchParams.get('job');
-  const [message, setMessage] = useState('Run regression');
+  const jobId = searchParams.get('job');
+  const [message, setMessage] = useState(() => (isSuperadmin() ? '' : 'Run regression'));
   const [reply, setReply] = useState<string | null>(null);
-  const [jobId, setJobId] = useState<string | null>(jobFromUrl);
+  const [orchestratorReply, setOrchestratorReply] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<string | null>(null);
   const [events, setEvents] = useState<FactoryJobEvent[]>([]);
   const [trace, setTrace] = useState<HermesTrace | null>(null);
   const [traceError, setTraceError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const pollAbortRef = useRef<AbortController | null>(null);
 
-  const allowed = isSuperadmin();
+  const allowed = isFactoryOperator();
+  const openChat = isSuperadmin();
+
+  const loadHermesTrace = useCallback(async (id: string) => {
+    try {
+      const t = await getHermesTrace(id);
+      setTrace(t);
+      setTraceError(null);
+    } catch (err: unknown) {
+      setTrace(null);
+      setTraceError(err instanceof Error ? err.message : 'Observatory unavailable');
+    }
+  }, []);
+
+  const applyJobUpdate = useCallback((job: FactoryJob) => {
+    setJobStatus(job.status);
+    if (job.orchestrator_reply) {
+      setOrchestratorReply(job.orchestrator_reply);
+      setError(null);
+    } else if (job.status === 'failed' && job.error_message) {
+      setError(job.error_message);
+    }
+  }, []);
+
+  const refreshJob = useCallback(async () => {
+    if (!jobId) return;
+    const job = await getFactoryJob(jobId);
+    setEvents(job.events);
+    applyJobUpdate(job);
+    await loadHermesTrace(jobId);
+  }, [jobId, loadHermesTrace, applyJobUpdate]);
+
+  useEffect(() => {
+    pollAbortRef.current?.abort();
+    if (!jobId || !allowed) {
+      return undefined;
+    }
+
+    const ac = new AbortController();
+    pollAbortRef.current = ac;
+    setEvents([]);
+    setTrace(null);
+    setTraceError(null);
+    setJobStatus(null);
+    setOrchestratorReply(null);
+
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        const initial = await getFactoryJob(jobId);
+        if (cancelled) return;
+        setEvents(initial.events);
+        applyJobUpdate(initial);
+
+        if (TERMINAL_JOB_STATUSES.has(initial.status)) {
+          await loadHermesTrace(jobId);
+          return;
+        }
+
+        await pollFactoryJob(
+          jobId,
+          (ev) => setEvents((prev) => [...prev, ev]),
+          (status) => {
+            setJobStatus(status);
+            if (TERMINAL_JOB_STATUSES.has(status)) {
+              getFactoryJob(jobId)
+                .then((job) => applyJobUpdate(job))
+                .catch(() => undefined);
+              loadHermesTrace(jobId).catch(() => undefined);
+            }
+          },
+          ac.signal,
+          (job) => applyJobUpdate(job),
+        );
+      } catch {
+        if (!cancelled) {
+          setJobStatus('unknown');
+        }
+      }
+    };
+
+    run().catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+      ac.abort();
+    };
+  }, [jobId, allowed, loadHermesTrace, applyJobUpdate]);
 
   useEffect(() => {
     return () => {
-      abortRef.current?.abort();
+      pollAbortRef.current?.abort();
     };
   }, []);
 
@@ -38,31 +130,13 @@ export const AgentConsolePage: React.FC = () => {
     if (!message.trim()) return;
     setLoading(true);
     setError(null);
-    setEvents([]);
-    setJobStatus(null);
-    abortRef.current?.abort();
-    abortRef.current = new AbortController();
+    setReply(null);
+    setOrchestratorReply(null);
 
     try {
       const res = await postAgentChat(message.trim(), { project: 'Three-HK' });
       setReply(res.reply);
-      setJobId(res.job_id);
-      setJobStatus('queued');
-
-      await pollFactoryJob(
-        res.job_id,
-        (ev) => setEvents((prev) => [...prev, ev]),
-        async (status) => {
-          setJobStatus(status);
-          try {
-            const t = await getHermesTrace(res.job_id);
-            setTrace(t);
-          } catch {
-            setTrace(null);
-          }
-        },
-        abortRef.current.signal,
-      );
+      setSearchParams({ job: res.job_id }, { replace: true });
     } catch (err: unknown) {
       const msg =
         err && typeof err === 'object' && 'response' in err
@@ -74,52 +148,14 @@ export const AgentConsolePage: React.FC = () => {
     }
   };
 
-  const refreshJob = async () => {
-    if (!jobId) return;
-    const job = await getFactoryJob(jobId);
-    setJobStatus(job.status);
-    setEvents(job.events);
-    try {
-      const t = await getHermesTrace(jobId);
-      setTrace(t);
-      setTraceError(null);
-    } catch (err: unknown) {
-      setTrace(null);
-      setTraceError(err instanceof Error ? err.message : 'Observatory unavailable');
-    }
-  };
-
-  // Sync job id when opening a notification link (?job=uuid) while already on this page
-  useEffect(() => {
-    if (jobFromUrl && jobFromUrl !== jobId) {
-      setJobId(jobFromUrl);
-      setEvents([]);
-      setTrace(null);
-      setJobStatus(null);
-    }
-  }, [jobFromUrl, jobId]);
-
-  useEffect(() => {
-    if (jobId && allowed) {
-      refreshJob().catch(() => undefined);
-    }
-  }, [jobId, allowed]);
-
-  // Keep URL in sync when a new job starts from chat
-  useEffect(() => {
-    if (jobId && jobFromUrl !== jobId) {
-      setSearchParams({ job: jobId }, { replace: true });
-    }
-  }, [jobId, jobFromUrl, setSearchParams]);
-
   if (!allowed) {
     return (
       <Layout>
         <div className="max-w-3xl mx-auto bg-white rounded-lg shadow p-8">
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Agent Console</h1>
           <p className="text-gray-600">
-            Access requires the <code className="bg-gray-100 px-1 rounded">superadmin</code> role.
-            Log in as <code className="bg-gray-100 px-1 rounded">superadmin</code> (not <code className="bg-gray-100 px-1 rounded">admin</code>).
+            Access requires the <code className="bg-gray-100 px-1 rounded">agent_operator</code> role or
+            higher (admin, superadmin).
           </p>
         </div>
       </Layout>
@@ -132,11 +168,13 @@ export const AgentConsolePage: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Agent Console</h1>
           <p className="text-gray-600 mt-1">
-            Chat with the QA factory orchestrator. One window routes to all specialist agents.
+            {openChat
+              ? 'Open chat with the QA Orchestrator — any message is forwarded to the factory node.'
+              : 'Structured factory commands only. Try: Run regression, Drain backlog, Scan changes, Heal failures, or Full cycle.'}
           </p>
         </div>
 
-        <div className={`grid grid-cols-1 gap-6 ${jobId ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}>
+        <div className={`grid grid-cols-1 gap-6 ${jobId && openChat ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}>
           <section className="bg-white rounded-lg shadow p-6">
             <h2 className="text-lg font-semibold mb-4">Agent Chat</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -144,7 +182,11 @@ export const AgentConsolePage: React.FC = () => {
                 className="w-full border border-gray-300 rounded-lg p-3 min-h-[120px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                placeholder="e.g. Run regression for tag regression"
+                placeholder={
+                  openChat
+                    ? 'Ask the QA Orchestrator anything…'
+                    : 'e.g. Run regression, Drain backlog, Scan changes'
+                }
                 disabled={loading}
               />
               <button
@@ -152,14 +194,25 @@ export const AgentConsolePage: React.FC = () => {
                 disabled={loading}
                 className="px-4 py-2 bg-blue-700 text-white rounded-lg hover:bg-blue-800 disabled:opacity-50"
               >
-                {loading ? 'Running…' : 'Send'}
+                {loading ? 'Sending…' : 'Send'}
               </button>
             </form>
+            {orchestratorReply && (
+              <div className="mt-4 text-sm bg-purple-50 border border-purple-200 rounded-lg p-4">
+                <p className="text-xs font-semibold text-purple-800 uppercase tracking-wide mb-2">
+                  QA Orchestrator
+                </p>
+                <p className="text-gray-800 whitespace-pre-wrap">{orchestratorReply}</p>
+              </div>
+            )}
             {reply && (
-              <p className="mt-4 text-sm text-gray-700 bg-blue-50 border border-blue-100 rounded p-3">{reply}</p>
+              <p className="mt-4 text-xs text-gray-500">{reply}</p>
             )}
             {error && (
               <p className="mt-4 text-sm text-red-700 bg-red-50 border border-red-100 rounded p-3">{error}</p>
+            )}
+            {jobStatus === 'running' && !orchestratorReply && !error && (
+              <p className="mt-4 text-sm text-gray-500 italic">Waiting for QA Orchestrator…</p>
             )}
             {jobId && (
               <p className="mt-2 text-xs text-gray-500">
@@ -175,7 +228,7 @@ export const AgentConsolePage: React.FC = () => {
               {jobId && (
                 <button
                   type="button"
-                  onClick={refreshJob}
+                  onClick={() => refreshJob().catch(() => undefined)}
                   className="text-sm text-blue-700 hover:underline"
                 >
                   Refresh
@@ -192,7 +245,7 @@ export const AgentConsolePage: React.FC = () => {
                   <li key={ev.id} className="border-l-4 border-blue-400 pl-3 py-1">
                     <span className="text-gray-400">{new Date(ev.created_at).toLocaleTimeString()}</span>
                     {' '}
-                    <span className="text-purple-700">{ev.profile || 'system'}</span>
+                    <span className="text-purple-700">{factoryProfileDisplayName(ev.profile)}</span>
                     {' '}
                     <span className="text-gray-800">{ev.message || ev.event_type}</span>
                   </li>
@@ -201,7 +254,7 @@ export const AgentConsolePage: React.FC = () => {
             )}
           </section>
 
-          {jobId && (
+          {jobId && openChat && (
             <section className="bg-white rounded-lg shadow p-6 border border-amber-200">
               <h2 className="text-lg font-semibold mb-1">Agent Observatory</h2>
               <p className="text-xs text-amber-700 mb-4">Superadmin only — delegate payloads &amp; LLM turns</p>
@@ -209,7 +262,7 @@ export const AgentConsolePage: React.FC = () => {
                 <p className="text-sm text-red-600 mb-2">{traceError}</p>
               )}
               {!trace ? (
-                <p className="text-gray-500 text-sm">Load trace via Refresh on Job Monitor.</p>
+                <p className="text-gray-500 text-sm">Trace loads when the job finishes, or use Refresh.</p>
               ) : (
                 <div className="space-y-3 max-h-[420px] overflow-y-auto text-xs">
                   {trace.hermes_session_ids.length > 0 && (
@@ -220,7 +273,7 @@ export const AgentConsolePage: React.FC = () => {
                   {trace.events.map((ev) => (
                     <details key={ev.id} className="border border-gray-200 rounded p-2">
                       <summary className="cursor-pointer font-mono">
-                        {ev.profile || 'system'} · {ev.event_type}
+                        {factoryProfileDisplayName(ev.profile)} · {ev.event_type}
                       </summary>
                       {ev.message && <p className="mt-1 text-gray-700">{ev.message}</p>}
                       {ev.payload_full && (

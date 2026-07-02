@@ -52,6 +52,55 @@ Write these down **before** editing any `.env` file.
 | `HTTP_AUTH_PASSWORD` | `________________` | |
 | Git repo path on Ubuntu | `/home/___/AI-Web-Test-v1-2` | After clone |
 
+### Worksheet field reference (lines 47–53)
+
+#### `REQIQ_PROJECT_ID`
+
+| | |
+|--|--|
+| **What it is** | ReqIQ project identifier (a CUID string like `cmp0zdx4g0004alp8z77ess7a`). |
+| **Who uses it** | `qa-journey-planner` — passed to MCP tools `get_coverage_matrix`, `get_reqiq_readiness`, `suggest_scenarios_from_wiki`. |
+| **Where to get it** | **Easiest:** open `backend/config/uat-journey-registry.yaml` on Windows — top line `reqiq_project_id:`. **Or:** ReqIQ UI → your project → Settings/URL (id in API paths). **Or:** `GET http://<reqiq-host>:3001/api/v1/projects` with Bearer token — copy the project `id`. |
+| **Goes in** | Ubuntu `~/.hermes/.env` only (not Windows `backend/.env` unless you also use ReqIQ from AWT scripts). |
+
+#### `OPENROUTER_API_KEY`
+
+| | |
+|--|--|
+| **What it is** | API key so Hermes profiles can call cloud LLMs (Claude, GPT-4o, etc.) during `qa-orchestrator chat` and delegate tasks. |
+| **Who uses it** | All three Hermes profiles when you pick **OpenRouter** in `qa-orchestrator model` (and planner/test-gen). |
+| **Where to get it** | [https://openrouter.ai](https://openrouter.ai) → sign in → **Keys** → Create key (`sk-or-v1-...`). |
+| **Alternative** | Skip OpenRouter — install **Ollama** on Ubuntu (`ollama pull qwen2.5:7b`) and choose Ollama in each `* model` wizard instead. |
+| **Goes in** | Ubuntu `~/.hermes/.env`. Never commit this key to git. |
+
+#### `TEST_LOGIN_USERNAME` / `TEST_LOGIN_PASSWORD`
+
+| | |
+|--|--|
+| **What they are** | Credentials for logging into the **Three HK UAT web app** (My3 / shop) while the browser agent crawls a journey. |
+| **Who uses them** | `qa-test-gen` — reads from `~/.hermes/.env` and passes them to MCP `crawl_and_save_test` as `login_email` / `login_password` (unless the journey uses a Step Library `login_module` only). |
+| **Where to get them** | Your team's **UAT test subscriber account** (same as you use manually on `wwwuat.three.com.hk`). Example in repo script `crawl_and_save_5g_voucher_plan_v2.ps1` uses a `pmo.andrewchan+...@gmail.com` style account — use **your** approved UAT user, not a random value. |
+| **Goes in** | Ubuntu `~/.hermes/.env`. These are secrets — do not commit. |
+
+#### `HTTP_AUTH_USERNAME` / `HTTP_AUTH_PASSWORD`
+
+| | |
+|--|--|
+| **What they are** | **HTTP Basic Auth** for the UAT site **gate** in front of the browser (browser popup before the page loads). Not the same as My3 login. |
+| **Who uses them** | `qa-test-gen` → MCP `crawl_and_save_test` → `http_auth_username` / `http_auth_password`. |
+| **Where to get them** | For **Three HK UAT** (`wwwuat.three.com.hk`), AWT already knows defaults in code: username `user`, password `3.comUXuat` (`backend/app/utils/http_auth_credentials.py`). Set these same values in Hermes `.env` so the agent passes them explicitly. For other hosts, ask your UAT/DevOps team. |
+| **If empty** | Crawl to `wwwuat.three.com.hk` may still work when AWT injects UAT gate creds server-side, but HF-3.1d Hermes path expects them in `~/.hermes/.env` per `qa-test-gen/SOUL.md`. |
+| **Goes in** | Ubuntu `~/.hermes/.env`. |
+
+#### Git repo path on Ubuntu
+
+| | |
+|--|--|
+| **What it is** | Absolute path where you cloned AI Web Test on the mini PC. |
+| **Who uses it** | You — for `deploy-profiles.sh --from-git <path>`, smoke scripts, and Bridge (`docs/hermes-profiles/bridge/`). |
+| **Where to get it** | After `git clone ... ~/AI-Web-Test-v1-2`, run `pwd` inside that folder. Typical: `/home/<your-linux-username>/AI-Web-Test-v1-2`. |
+| **Not a secret** | Just a folder path on the mini PC. |
+
 ---
 
 ## Part 0 — Prepare Windows (AWT host) first

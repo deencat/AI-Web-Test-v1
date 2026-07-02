@@ -77,7 +77,8 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.server import TransportSecuritySettings
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
+from starlette.routing import Route
 
 # ---------------------------------------------------------------------------
 # Bootstrap: ensure the backend package is importable when run standalone.
@@ -916,11 +917,33 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
 
 
 # ---------------------------------------------------------------------------
+# HTTP health probe (curl / smoke-check — not the health_check MCP tool)
+# ---------------------------------------------------------------------------
+
+async def _mcp_http_health(_request: Request) -> JSONResponse:
+    """Lightweight liveness for port AWT_MCP_PORT; auth skipped in BearerAuthMiddleware."""
+    return JSONResponse(
+        {
+            "status": "ok",
+            "service": "ai-web-test-mcp",
+            "mcp_endpoint": "/mcp",
+            "awt_base": AWT_BASE,
+        }
+    )
+
+
+def _register_mcp_http_health(app: Any) -> None:
+    for path in ("/health", "/healthz"):
+        app.routes.insert(0, Route(path, endpoint=_mcp_http_health, methods=["GET"]))
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     app = mcp.streamable_http_app()
+    _register_mcp_http_health(app)
     app.add_middleware(BearerAuthMiddleware)
     # Wrap with raw ASGI normaliser so clients sending Accept: */* or no
     # Accept header (e.g. Hermes Agent) are accepted instead of getting 406.
