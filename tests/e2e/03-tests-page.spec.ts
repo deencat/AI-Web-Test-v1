@@ -266,6 +266,39 @@ test.describe('Saved Tests Page — Sprint 1', () => {
     await expect(page.locator(`[data-testid="${testId}"]`)).toHaveText(baseTitle, { timeout: 15000 });
   });
 
+  test('should navigate to saved tests after deleting from test detail', async ({ page, request }) => {
+    const title = `E2E Delete Nav ${Date.now()}`;
+    const { createDisposableTest } = await import('./helpers/auth');
+    const testId = await createDisposableTest(request, title);
+
+    await page.reload();
+    await waitForSavedTestsList(page);
+
+    const testRow = page.locator('div').filter({ hasText: `ID: #${testId}` });
+    await testRow.getByTitle('View Details').click();
+    await page.waitForURL(new RegExp(`/tests/${testId}$`));
+    await expect(page).toHaveURL(new RegExp(`/tests/${testId}$`));
+
+    let dialogCount = 0;
+    page.on('dialog', async (dialog) => {
+      dialogCount++;
+      if (dialogCount === 1) {
+        expect(dialog.message()).toContain('Are you sure you want to delete');
+        await dialog.accept();
+      } else if (dialogCount === 2) {
+        expect(dialog.message()).toContain('deleted successfully');
+        await dialog.accept();
+      }
+    });
+
+    await page.getByRole('button', { name: /delete test/i }).click();
+
+    await page.waitForURL('**/tests/saved');
+    await expect(page).toHaveURL(/\/tests\/saved$/);
+    await expect(page.getByRole('heading', { name: /saved tests/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /generate tests/i })).not.toBeVisible();
+  });
+
   test('should open edit drawer via ?edit= query param on saved tab', async ({ page }) => {
     const testId = await page
       .locator('[data-testid^="inline-title-button-"]')

@@ -53,6 +53,35 @@ export async function seedSavedTest(request: APIRequestContext): Promise<number>
   return created.id as number;
 }
 
+export async function createDisposableTest(
+  request: APIRequestContext,
+  title?: string
+): Promise<number> {
+  const token = await getApiToken(request);
+  const headers = { Authorization: `Bearer ${token}` };
+
+  const createResponse = await request.post(`${API_BASE}/tests`, {
+    headers,
+    data: {
+      title: title ?? `E2E Disposable Test ${Date.now()}`,
+      description: 'Disposable test for E2E delete navigation coverage',
+      test_type: 'e2e',
+      priority: 'medium',
+      steps: ['Navigate to login page', 'Enter valid credentials'],
+      expected_result: 'User is logged in successfully',
+    },
+  });
+
+  if (!createResponse.ok()) {
+    throw new Error(
+      `Failed to create disposable test: ${createResponse.status()} ${await createResponse.text()}`
+    );
+  }
+
+  const created = await createResponse.json();
+  return created.id as number;
+}
+
 export async function loginAsAdmin(page: Page, request?: APIRequestContext): Promise<void> {
   if (request) {
     const token = await getApiToken(request);

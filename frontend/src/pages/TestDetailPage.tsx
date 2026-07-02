@@ -392,7 +392,7 @@ export const TestDetailPage: React.FC = () => {
                   try {
                     await testsService.deleteTest(test.id.toString());
                     alert('Test deleted successfully!');
-                    navigate('/tests');
+                    navigate('/tests/saved');
                   } catch (error) {
                     alert(error instanceof Error ? error.message : 'Failed to delete test');
                   }
