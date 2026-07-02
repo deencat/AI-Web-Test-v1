@@ -3,7 +3,7 @@
 
 **Status:** 🔄 Phase 3 In Progress - Multi-Agent System (Sprint 7-9)  
 **Version:** 1.1.0  
-**Last Updated:** January 27, 2026
+**Last Updated:** July 2, 2026
 
 ---
 
@@ -162,6 +162,14 @@ npm run dev
 - **[Product Requirements](project-documents/AI-Web-Test-v1-PRD.md)** - Full PRD
 - **[Software Requirements](project-documents/AI-Web-Test-v1-SRS.md)** - Technical specs
 - **[UI Design Document](project-documents/ai-web-test-ui-design-document.md)** - UI/UX specifications
+
+### Codemaps (Refreshed)
+- **[Codemap Index](docs/CODEMAPS/INDEX.md)** - High-level architecture map directory
+- **[Backend Codemap](docs/CODEMAPS/backend.md)** - API and service architecture
+- **[Frontend Codemap](docs/CODEMAPS/frontend.md)** - Routes and UI module map
+- **[Database Codemap](docs/CODEMAPS/database.md)** - ORM entities and relationships
+- **[Integrations Codemap](docs/CODEMAPS/integrations.md)** - External service/provider dependencies
+- **[Workers Codemap](docs/CODEMAPS/workers.md)** - Background processing model
 
 ---
 
@@ -492,7 +500,7 @@ playwright install chromium --with-deps
 
 ---
 
-**Last Updated:** January 27, 2026  
+**Last Updated:** July 2, 2026  
 **Status:** Phase 3 Sprint 9 - AnalysisAgent & EvolutionAgent Planning  
 **Current Branch:** feature/phase3-agent-foundation  
 **Next Sprint:** Sprint 9 Implementation (AnalysisAgent + EvolutionAgent)
