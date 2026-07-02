@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
+import { TestStepEditor } from '../components/TestStepEditor';
+import { InlineTitleEditor } from '../components/tests/InlineTitleEditor';
 import testsService from '../services/testsService';
 import executionService from '../services/executionService';
 import schedulesService, { type TestSchedule, type CreateSchedulePayload } from '../services/schedulesService';
+import { GeneratedTestCase } from '../types/api';
 import { Loader2, Plus, Search, Trash2, Play, Eye, Edit, Clock } from 'lucide-react';
 
 interface SavedTest {
@@ -21,6 +24,7 @@ interface SavedTest {
 
 export const SavedTestsPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [tests, setTests] = useState<SavedTest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +36,19 @@ export const SavedTestsPage: React.FC = () => {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [batchDeleting, setBatchDeleting] = useState(false);
 
-  // -- Scheduling state ---------------------------------------------------
+  const [editingTest, setEditingTest] = useState<GeneratedTestCase | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    title: '',
+    description: '',
+    steps: [] as string[],
+    expected_result: '',
+    priority: 'medium' as 'high' | 'medium' | 'low',
+    requires_runtime_credentials: false,
+  });
+
   const [scheduleTarget, setScheduleTarget] = useState<{ id: number; title: string } | null>(null);
   const [existingSchedules, setExistingSchedules] = useState<TestSchedule[]>([]);
   const [loadingSchedules, setLoadingSchedules] = useState(false);
@@ -43,7 +59,6 @@ export const SavedTestsPage: React.FC = () => {
   const [scheduleEnvironment, setScheduleEnvironment] = useState('dev');
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [togglingScheduleId, setTogglingScheduleId] = useState<number | null>(null);
-  // Map of testCaseId → count of enabled schedules (for badge display)
   const [scheduledTestIds, setScheduledTestIds] = useState<Record<number, number>>({});
 
   useEffect(() => {
@@ -51,11 +66,18 @@ export const SavedTestsPage: React.FC = () => {
     loadAllScheduleBadges();
   }, []);
 
+  useEffect(() => {
+    const editId = searchParams.get('edit');
+    if (editId) {
+      void loadAndEditTest(editId);
+    }
+  }, [searchParams]);
+
   const loadAllScheduleBadges = async () => {
     try {
       const all = await schedulesService.listAll();
       const counts: Record<number, number> = {};
-      all.forEach(s => {
+      all.forEach((s) => {
         if (s.enabled) counts[s.test_case_id] = (counts[s.test_case_id] ?? 0) + 1;
       });
       setScheduledTestIds(counts);
@@ -70,14 +92,107 @@ export const SavedTestsPage: React.FC = () => {
 
     try {
       const response = await testsService.getAllTests();
-      // getAllTests returns Test[], so we can use it directly
-      setTests(response as any);
+      setTests(response as unknown as SavedTest[]);
     } catch (err) {
       console.error('Failed to load tests:', err);
       setError(err instanceof Error ? err.message : 'Failed to load tests');
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadAndEditTest = async (testId: string) => {
+    try {
+      setEditLoading(true);
+      setEditError(null);
+      const test = await testsService.getTestById(testId);
+
+      const testCase: GeneratedTestCase = {
+        id: test.id?.toString() || testId,
+        title: (test as { title?: string; name?: string }).title || (test as { name?: string }).name || '',
+        description: test.description || '',
+        steps: Array.isArray((test as { steps?: unknown[] }).steps)
+          ? (test as { steps: unknown[] }).steps.map((step) =>
+              typeof step === 'string' ? step : (step as { description?: string }).description || ''
+            )
+          : [],
+        expected_result: (test as { expected_result?: string }).expected_result || '',
+        priority: test.priority as 'high' | 'medium' | 'low',
+      };
+
+      setEditingTest(testCase);
+      setEditForm({
+        title: testCase.title,
+        description: testCase.description,
+        steps: [...testCase.steps],
+        expected_result: testCase.expected_result,
+        priority: testCase.priority,
+        requires_runtime_credentials:
+          (test as { requires_runtime_credentials?: boolean }).requires_runtime_credentials ?? false,
+      });
+    } catch (err) {
+      console.error('Failed to load test:', err);
+      setEditError(err instanceof Error ? err.message : 'Failed to load test');
+      alert('Failed to load test for editing.');
+      setSearchParams({}, { replace: true });
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingTest) return;
+
+    if (!editForm.title.trim()) {
+      setEditError('Title is required');
+      return;
+    }
+
+    try {
+      setEditSaving(true);
+      setEditError(null);
+
+      await testsService.updateTest(editingTest.id!, {
+        title: editForm.title,
+        description: editForm.description,
+        priority: editForm.priority,
+        steps: editForm.steps,
+        expected_result: editForm.expected_result,
+        requires_runtime_credentials: editForm.requires_runtime_credentials,
+      });
+
+      setTests((prev) =>
+        prev.map((t) =>
+          t.id.toString() === editingTest.id
+            ? {
+                ...t,
+                title: editForm.title,
+                description: editForm.description,
+                priority: editForm.priority,
+              }
+            : t
+        )
+      );
+
+      closeEditDrawer();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update test';
+      setEditError(errorMessage);
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const closeEditDrawer = () => {
+    setEditingTest(null);
+    setEditError(null);
+    setSearchParams({}, { replace: true });
+  };
+
+  const handleTitleChange = (testId: number, newTitle: string) => {
+    setTests((prev) =>
+      prev.map((t) => (t.id === testId ? { ...t, title: newTitle } : t))
+    );
   };
 
   const handleDeleteTest = async (testId: number) => {
@@ -133,12 +248,10 @@ export const SavedTestsPage: React.FC = () => {
 
   const handleRunTest = async (testId: number) => {
     try {
-      // Note: base_url will be extracted from test case steps automatically
-      // For tests with explicit URLs in steps, this can be a placeholder
       const execution = await executionService.startExecution(testId, {
         browser: 'chromium',
         environment: 'dev',
-        base_url: 'https://web.three.com.hk', // Base domain (actual URL comes from test steps)
+        base_url: 'https://web.three.com.hk',
       });
       navigate(`/executions/${execution.id}`);
     } catch (err) {
@@ -146,7 +259,6 @@ export const SavedTestsPage: React.FC = () => {
     }
   };
 
-  // -- Schedule handlers --------------------------------------------------
   const openScheduleModal = async (test: SavedTest) => {
     setScheduleTarget({ id: test.id, title: test.title });
     setLoadingSchedules(true);
@@ -179,10 +291,12 @@ export const SavedTestsPage: React.FC = () => {
         environment: scheduleEnvironment,
       };
       const created = await schedulesService.create(payload);
-      setExistingSchedules(prev => [...prev, created]);
-      // update badge counts
+      setExistingSchedules((prev) => [...prev, created]);
       if (created.enabled) {
-        setScheduledTestIds(prev => ({ ...prev, [created.test_case_id]: (prev[created.test_case_id] ?? 0) + 1 }));
+        setScheduledTestIds((prev) => ({
+          ...prev,
+          [created.test_case_id]: (prev[created.test_case_id] ?? 0) + 1,
+        }));
       }
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to create schedule');
@@ -195,9 +309,8 @@ export const SavedTestsPage: React.FC = () => {
     setTogglingScheduleId(scheduleId);
     try {
       const updated = await schedulesService.toggle(scheduleId);
-      setExistingSchedules(prev => prev.map(s => s.id === scheduleId ? updated : s));
-      // rebuild badge counts from current existingSchedules after toggle
-      setScheduledTestIds(prev => {
+      setExistingSchedules((prev) => prev.map((s) => (s.id === scheduleId ? updated : s)));
+      setScheduledTestIds((prev) => {
         const newCounts = { ...prev };
         const delta = updated.enabled ? 1 : -1;
         newCounts[updated.test_case_id] = Math.max(0, (newCounts[updated.test_case_id] ?? 0) + delta);
@@ -213,11 +326,11 @@ export const SavedTestsPage: React.FC = () => {
   const handleDeleteSchedule = async (scheduleId: number) => {
     if (!confirm('Delete this schedule?')) return;
     try {
-      const target = existingSchedules.find(s => s.id === scheduleId);
+      const target = existingSchedules.find((s) => s.id === scheduleId);
       await schedulesService.remove(scheduleId);
-      setExistingSchedules(prev => prev.filter(s => s.id !== scheduleId));
+      setExistingSchedules((prev) => prev.filter((s) => s.id !== scheduleId));
       if (target?.enabled && target.test_case_id) {
-        setScheduledTestIds(prev => ({
+        setScheduledTestIds((prev) => ({
           ...prev,
           [target.test_case_id]: Math.max(0, (prev[target.test_case_id] ?? 1) - 1),
         }));
@@ -253,7 +366,6 @@ export const SavedTestsPage: React.FC = () => {
     }
   };
 
-  // Filter tests — declared before handler functions that reference filteredTests
   const filteredTests = tests.filter((test) => {
     const matchesSearch =
       test.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -281,10 +393,9 @@ export const SavedTestsPage: React.FC = () => {
   return (
     <Layout>
       <div className="space-y-6">
-        {/* Header */}
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Saved Test Cases</h1>
+            <h1 className="text-3xl font-bold text-gray-900">Saved Tests</h1>
             <p className="text-gray-600 mt-1">Manage and execute your saved test cases</p>
           </div>
           <Button variant="primary" onClick={() => navigate('/tests')}>
@@ -293,10 +404,8 @@ export const SavedTestsPage: React.FC = () => {
           </Button>
         </div>
 
-        {/* Filters */}
         <Card>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* Search */}
             <div className="md:col-span-1">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Search Tests
@@ -313,7 +422,6 @@ export const SavedTestsPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Type Filter */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Test Type
@@ -330,7 +438,6 @@ export const SavedTestsPage: React.FC = () => {
               </select>
             </div>
 
-            {/* Priority Filter */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Priority
@@ -347,7 +454,6 @@ export const SavedTestsPage: React.FC = () => {
               </select>
             </div>
 
-            {/* Scheduled Filter */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Schedule
@@ -365,7 +471,6 @@ export const SavedTestsPage: React.FC = () => {
           </div>
         </Card>
 
-        {/* Batch Delete Toolbar — shown only when tests exist */}
         {!error && tests.length > 0 && (
           <div className="flex items-center gap-4 py-2">
             <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-600">
@@ -390,7 +495,6 @@ export const SavedTestsPage: React.FC = () => {
           </div>
         )}
 
-        {/* Error Display */}
         {error && (
           <Card>
             <div className="text-center py-8">
@@ -402,7 +506,6 @@ export const SavedTestsPage: React.FC = () => {
           </Card>
         )}
 
-        {/* Tests List */}
         {!error && filteredTests.length === 0 && (
           <Card>
             <div className="text-center py-12">
@@ -426,7 +529,6 @@ export const SavedTestsPage: React.FC = () => {
             {filteredTests.map((test) => (
               <Card key={test.id}>
                 <div className="flex justify-between items-start">
-                  {/* Row checkbox */}
                   <div className="flex items-start pt-1 pr-3">
                     <input
                       type="checkbox"
@@ -437,9 +539,14 @@ export const SavedTestsPage: React.FC = () => {
                       className="w-4 h-4 cursor-pointer"
                     />
                   </div>
-                  <div className="flex-1">
-                    <div className="flex items-start gap-3 mb-2">
-                      <h3 className="text-lg font-semibold text-gray-900">{test.title}</h3>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start gap-3 mb-2 flex-wrap">
+                      <InlineTitleEditor
+                        testId={test.id}
+                        title={test.title}
+                        onTitleChange={(newTitle) => handleTitleChange(test.id, newTitle)}
+                        disabled={batchDeleting}
+                      />
                       {scheduledTestIds[test.id] > 0 && (
                         <span
                           className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700 cursor-pointer hover:bg-indigo-200"
@@ -481,7 +588,7 @@ export const SavedTestsPage: React.FC = () => {
                       <Eye className="w-5 h-5" />
                     </button>
                     <button
-                      onClick={() => navigate(`/tests?edit=${test.id}`)}
+                      onClick={() => navigate(`/tests/saved?edit=${test.id}`)}
                       className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                       title="Edit Test"
                     >
@@ -515,7 +622,6 @@ export const SavedTestsPage: React.FC = () => {
           </div>
         )}
 
-        {/* Summary */}
         {!error && tests.length > 0 && (
           <div className="text-sm text-gray-600 text-center">
             Showing {filteredTests.length} of {tests.length} test{tests.length !== 1 ? 's' : ''}
@@ -523,7 +629,173 @@ export const SavedTestsPage: React.FC = () => {
         )}
       </div>
 
-      {/* Schedule Modal */}
+      {(editingTest || editLoading) && (
+        <div className="fixed inset-0 z-50 flex">
+          <div
+            className="flex-1 bg-black bg-opacity-50"
+            onClick={closeEditDrawer}
+            aria-hidden="true"
+          />
+          <div className="w-full max-w-2xl bg-white shadow-xl overflow-y-auto flex flex-col">
+            <div className="p-6 space-y-4 flex-1">
+              <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold text-gray-900">Edit Test Case</h2>
+                <button
+                  onClick={closeEditDrawer}
+                  className="text-gray-500 hover:text-gray-700 text-xl"
+                  aria-label="Close edit drawer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {editLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <label htmlFor="saved-edit-title" className="block text-sm font-semibold text-gray-900 mb-2">
+                      Title
+                    </label>
+                    <input
+                      id="saved-edit-title"
+                      type="text"
+                      value={editForm.title}
+                      onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                      className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-blue-700 bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="saved-edit-description" className="block text-sm font-semibold text-gray-900 mb-2">
+                      Description
+                    </label>
+                    <textarea
+                      id="saved-edit-description"
+                      value={editForm.description}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, description: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-blue-700 min-h-[80px] bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="saved-edit-priority" className="block text-sm font-semibold text-gray-900 mb-2">
+                      Priority
+                    </label>
+                    <select
+                      id="saved-edit-priority"
+                      value={editForm.priority}
+                      onChange={(e) =>
+                        setEditForm({
+                          ...editForm,
+                          priority: e.target.value as 'high' | 'medium' | 'low',
+                        })
+                      }
+                      className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-blue-700 bg-white"
+                    >
+                      <option value="high">High</option>
+                      <option value="medium">Medium</option>
+                      <option value="low">Low</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 border-2 border-amber-200 rounded-lg bg-amber-50">
+                    <div>
+                      <label
+                        htmlFor="saved-edit-requires-creds"
+                        className="block text-sm font-semibold text-gray-900"
+                      >
+                        🔐 Requires CRM Login
+                      </label>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Show credential prompt before each run (never stored)
+                      </p>
+                    </div>
+                    <input
+                      id="saved-edit-requires-creds"
+                      type="checkbox"
+                      checked={editForm.requires_runtime_credentials}
+                      onChange={(e) =>
+                        setEditForm({
+                          ...editForm,
+                          requires_runtime_credentials: e.target.checked,
+                        })
+                      }
+                      className="w-5 h-5 accent-amber-500 cursor-pointer"
+                      data-testid="requires-runtime-credentials-toggle"
+                    />
+                  </div>
+
+                  {editingTest && (
+                    <TestStepEditor
+                      testId={Number(editingTest.id)}
+                      initialSteps={editForm.steps.join('\n')}
+                      initialVersion={
+                        (editingTest as GeneratedTestCase & { current_version?: number }).current_version || 1
+                      }
+                      onSave={(versionNumber) => {
+                        console.log('Version saved:', versionNumber);
+                      }}
+                    />
+                  )}
+
+                  <div>
+                    <label htmlFor="saved-edit-expected-result" className="block text-sm font-semibold text-gray-900 mb-2">
+                      Expected Result
+                    </label>
+                    <textarea
+                      id="saved-edit-expected-result"
+                      value={editForm.expected_result}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, expected_result: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-blue-700 min-h-[80px] bg-white"
+                    />
+                  </div>
+
+                  {editError && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+                      {editError}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {!editLoading && editingTest && (
+              <div className="border-t p-6 flex gap-3">
+                <Button
+                  variant="secondary"
+                  onClick={closeEditDrawer}
+                  disabled={editSaving}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={handleSaveEdit}
+                  disabled={editSaving}
+                  className="flex-1"
+                >
+                  {editSaving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Changes'
+                  )}
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {scheduleTarget && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl p-6 max-w-lg w-full mx-4 space-y-5 max-h-[90vh] overflow-y-auto">
@@ -536,7 +808,6 @@ export const SavedTestsPage: React.FC = () => {
             </div>
             <p className="text-sm text-gray-500 truncate">{scheduleTarget.title}</p>
 
-            {/* Existing schedules */}
             {loadingSchedules ? (
               <div className="flex items-center gap-2 text-sm text-gray-500">
                 <Loader2 className="w-4 h-4 animate-spin" /> Loading schedules…
@@ -544,7 +815,7 @@ export const SavedTestsPage: React.FC = () => {
             ) : existingSchedules.length > 0 && (
               <div className="space-y-2">
                 <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Active Schedules</p>
-                {existingSchedules.map(s => (
+                {existingSchedules.map((s) => (
                   <div key={s.id} className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm">
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-gray-800 truncate">{s.schedule_description}</p>
@@ -570,7 +841,6 @@ export const SavedTestsPage: React.FC = () => {
               </div>
             )}
 
-            {/* New schedule form */}
             <div className="border-t pt-4 space-y-4">
               <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Add New Schedule</p>
 
@@ -578,7 +848,7 @@ export const SavedTestsPage: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Schedule Type</label>
                 <select
                   value={scheduleType}
-                  onChange={e => setScheduleType(e.target.value as 'interval' | 'cron')}
+                  onChange={(e) => setScheduleType(e.target.value as 'interval' | 'cron')}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
                   <option value="interval">Interval (every N minutes)</option>
@@ -593,7 +863,7 @@ export const SavedTestsPage: React.FC = () => {
                     type="number"
                     min={1}
                     value={intervalMinutes}
-                    onChange={e => setIntervalMinutes(e.target.value)}
+                    onChange={(e) => setIntervalMinutes(e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     placeholder="60"
                   />
@@ -605,7 +875,7 @@ export const SavedTestsPage: React.FC = () => {
                   <input
                     type="text"
                     value={cronExpression}
-                    onChange={e => setCronExpression(e.target.value)}
+                    onChange={(e) => setCronExpression(e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     placeholder="0 9 * * *"
                   />
@@ -620,7 +890,7 @@ export const SavedTestsPage: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Browser</label>
                   <select
                     value={scheduleBrowser}
-                    onChange={e => setScheduleBrowser(e.target.value)}
+                    onChange={(e) => setScheduleBrowser(e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
                     <option value="chromium">Chromium</option>
@@ -632,7 +902,7 @@ export const SavedTestsPage: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Environment</label>
                   <select
                     value={scheduleEnvironment}
-                    onChange={e => setScheduleEnvironment(e.target.value)}
+                    onChange={(e) => setScheduleEnvironment(e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
                     <option value="dev">Dev</option>
@@ -663,7 +933,6 @@ export const SavedTestsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Batch Delete Confirmation Modal */}
       {showConfirmModal && (
         <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"

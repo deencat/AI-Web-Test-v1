@@ -13,7 +13,7 @@ test.describe('Sprint 2: Test Generation', () => {
     await page.getByPlaceholder(/password/i).fill('admin123');
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/dashboard');
-    await page.getByRole('link', { name: /^tests$/i }).click();
+    await page.getByRole('link', { name: /generate tests/i }).click();
     await page.waitForURL('**/tests');
   });
 

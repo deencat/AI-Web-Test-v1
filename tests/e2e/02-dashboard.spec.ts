@@ -62,19 +62,17 @@ test.describe('Dashboard Page', () => {
   test('should have functional sidebar navigation', async ({ page }) => {
     // Verify sidebar links
     await expect(page.getByRole('link', { name: /dashboard/i })).toBeVisible();
-    await expect(page.getByRole('link', { name: /tests/i })).toBeVisible();
+    await expect(page.getByRole('link', { name: /generate tests/i })).toBeVisible();
     await expect(page.getByRole('link', { name: /knowledge base/i })).toBeVisible();
     await expect(page.getByRole('link', { name: /settings/i })).toBeVisible();
   });
 
-  test('should navigate to Tests page from sidebar', async ({ page }) => {
-    // Click Tests link in sidebar
-    await page.getByRole('link', { name: /^tests$/i }).click();
-    
-    // Verify navigation
+  test('should navigate to Generate Tests page from sidebar', async ({ page }) => {
+    await page.getByRole('link', { name: /generate tests/i }).click();
+
     await page.waitForURL('**/tests');
-    await expect(page).toHaveURL(/tests/);
-    await expect(page.getByRole('heading', { name: /test cases/i })).toBeVisible();
+    await expect(page).toHaveURL(/tests$/);
+    await expect(page.getByRole('heading', { name: /generate tests/i })).toBeVisible();
   });
 
   test('should navigate to Knowledge Base page from sidebar', async ({ page }) => {

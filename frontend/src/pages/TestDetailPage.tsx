@@ -381,7 +381,7 @@ export const TestDetailPage: React.FC = () => {
           <div className="flex gap-3">
             <Button
               variant="primary"
-              onClick={() => navigate(`/tests?edit=${test.id}`)}
+              onClick={() => navigate(`/tests/saved?edit=${test.id}`)}
             >
               Edit Test
             </Button>
