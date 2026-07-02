@@ -1,54 +1,89 @@
-# Evaluation Rubric: Test Suite Edit + ADR-007
+# Evaluation Rubric: Test Navigator — Split Tabs + User Categories + Title Editing
 
-**App:** AI Web Test — Test Suites page  
+**App:** AI Web Test v1 — Generate Tests + Saved Tests + User Categories + Inline Title Edit  
 **Weight total: 1.0**  
 **Pass threshold:** ≥ 0.85 weighted score  
-**Automatic fail:** Edit button missing, edit save does not call PUT/updateSuite, or create flow regresses
+**Automatic fail:** Single combined Tests tab only (no sidebar split), no test category CRUD, edit saved test forces navigate to Generate tab, **saved test titles remain read-only with no inline rename**, or generate/run/suite flows regress
 
 ---
 
-## Functionality (0.35)
+## Navigation Split (0.18)
 
 | ID | Criterion | Pass condition | Weight |
 |----|-----------|----------------|--------|
-| F1 | Edit button visible | Every suite card on `/test-suites` has Edit between Run and Delete | 0.08 |
-| F2 | Modal pre-population | Edit opens modal with correct name, description, tags, and test IDs in `execution_order` | 0.10 |
-| F3 | Save updates suite | Submit in edit mode calls `testSuitesService.updateSuite(id, …)`; list refreshes with changes | 0.10 |
-| F4 | Create flow intact | "New Suite" still opens create mode; calls `createSuite`; validation unchanged | 0.04 |
-| F5 | Membership edit | User can add, remove, and reorder tests; saved order matches expanded card view | 0.03 |
+| N1 | Sidebar: Generate Tests | Distinct sidebar link to `/tests` labeled "Generate Tests" | 0.05 |
+| N2 | Sidebar: Saved Tests | Distinct sidebar link to `/tests/saved` labeled "Saved Tests" | 0.05 |
+| N3 | Generate page scope | `/tests` shows NL generation only — no saved test library embedded | 0.04 |
+| N4 | Edit on Saved tab | Editing saved test uses `/tests/saved?edit={id}` drawer/panel; does not require Generate tab | 0.03 |
+| N5 | Legacy redirect | `/tests?edit={id}` redirects to `/tests/saved?edit={id}` | 0.01 |
 
 ---
 
-## Scope Discipline (0.20)
+## Title Editing (0.10)
 
 | ID | Criterion | Pass condition | Weight |
 |----|-----------|----------------|--------|
-| S1 | No unnecessary backend | No backend file changes unless a real PUT gap is found and documented | 0.08 |
-| S2 | Minimal file footprint | Changes limited to modal component, TestSuitesPage, ADR-007 (≤4 meaningful files) | 0.06 |
-| S3 | Service reuse | Uses existing `updateSuite` in `testSuitesService.ts` — no duplicate API client | 0.06 |
+| T1 | Inline rename on list | User can click title or pencil on Saved Tests row to edit title **without** opening edit drawer | 0.03 |
+| T2 | Save / cancel semantics | Enter or blur saves valid changed title; Escape cancels and reverts; empty title blocked client-side | 0.03 |
+| T3 | API partial update | Save calls `PUT /tests/{id}` with `{ title }` only via `testsService.updateTest` | 0.02 |
+| T4 | Error + loading handling | Loading state during save; failed save reverts title and shows error feedback | 0.01 |
+| T5 | Drawer title + a11y | Full edit drawer still has editable title field; inline editor has `aria-label` and keyboard support | 0.01 |
 
 ---
 
-## Documentation (0.25)
+## User Categories — Backend (0.18)
 
 | ID | Criterion | Pass condition | Weight |
 |----|-----------|----------------|--------|
-| D1 | ADR-007 exists | `documentation/ADR-007-test-suites.md` present | 0.05 |
-| D2 | ADR structure | Header (ID, Component, Status, Date, Author, Related Files) + Context, Decision, Changes Made, Consequences, Test Coverage | 0.10 |
-| D3 | Decision accuracy | ADR documents SuiteFormModal dual-mode, PUT endpoint, Run-Edit-Delete order | 0.05 |
-| D4 | Related files | ADR Related Files match implemented paths (including `SuiteFormModal.tsx` if renamed) | 0.05 |
+| B1 | `test_categories` table | Migration exists; user-scoped; unique (user_id, name) | 0.05 |
+| B2 | `test_category_id` on tests | Column on `test_cases`; nullable FK; separate from KB `category_id` | 0.05 |
+| B3 | Category CRUD API | `GET/POST/PUT/DELETE /api/v1/test-categories` with ownership checks | 0.04 |
+| B4 | Test filter + batch | `GET /tests?test_category_id=` works; bulk assign endpoint works | 0.04 |
 
 ---
 
-## Craft / UX (0.20)
+## User Categories — Frontend (0.22)
 
 | ID | Criterion | Pass condition | Weight |
 |----|-----------|----------------|--------|
-| C1 | Edit button styling | Gray outline (`border-gray-300`), not competing with green Run / red Delete | 0.05 |
-| C2 | Modal copy | Title and submit button differ between create ("Create Test Suite" / "Create Suite") and edit ("Edit Test Suite" / "Save Changes") | 0.05 |
-| C3 | Form reset | Closing modal clears state; reopening edit shows fresh data from suite | 0.05 |
-| C4 | Error handling | API errors surface in modal error banner; loading disables submit | 0.03 |
-| C5 | Build clean | `npm run build` in `frontend/` succeeds; no stale `CreateSuiteModal` imports | 0.02 |
+| U1 | Manage Categories modal | Create, edit, delete categories from Saved Tests page | 0.06 |
+| U2 | Category filter UI | Sidebar or chips filter saved list; "Uncategorized" supported | 0.06 |
+| U3 | Single assign | User can change one test's category (row or edit drawer) | 0.04 |
+| U4 | Bulk assign | Multi-select → Set Category updates all selected tests | 0.04 |
+| U5 | Delete category behavior | Deleting category uncategorizes tests (not delete tests) | 0.02 |
+
+---
+
+## Architecture & Documentation (0.14)
+
+| ID | Criterion | Pass condition | Weight |
+|----|-----------|----------------|--------|
+| A1 | ADR-008 exists | `documentation/ADR-008-test-categories-navigation.md` present | 0.04 |
+| A2 | KB vs org separation | ADR documents Option B; KB `category_id` retained for generation only | 0.04 |
+| A3 | Service layer | `testCategoriesService.ts` in `frontend/src/services/`; no raw fetch in pages | 0.03 |
+| A4 | Backend layering | Endpoints → CRUD; no business logic in routers | 0.03 |
+
+---
+
+## Craft / UX (0.10)
+
+| ID | Criterion | Pass condition | Weight |
+|----|-----------|----------------|--------|
+| C1 | Label clarity | Generate page KB selector ≠ Saved page "Test Category" (no conflation) | 0.03 |
+| C2 | Visual consistency | Matches existing Tailwind sidebar, cards, blue-600 primary; inline title matches row typography | 0.03 |
+| C3 | Empty states | Zero categories and zero tests have sensible CTAs | 0.02 |
+| C4 | Build clean | `npm run build` in `frontend/` succeeds | 0.02 |
+
+---
+
+## Non-Regression (0.08)
+
+| ID | Criterion | Pass condition | Weight |
+|----|-----------|----------------|--------|
+| R1 | Generate flow | NL generate → review → save still works | 0.03 |
+| R2 | Run / schedule | Run and schedule from Saved Tests unchanged | 0.02 |
+| R3 | Test suites picker | `SuiteFormModal` still lists all saved tests | 0.02 |
+| R4 | E2E updated | `03-tests-page` and `06-navigation` specs pass or updated for new nav | 0.01 |
 
 ---
 
@@ -68,14 +103,22 @@ score = Σ (criterion_weight × pass?1:0)
 
 ## Evaluator Test Script (Playwright / manual)
 
-1. Log in; go to `/test-suites`.
-2. If no suites, create one via "New Suite" (proves F4).
-3. Click **Edit** on first suite — assert modal fields match card.
-4. Append ` (edited)` to name; save — assert card shows new name.
-5. Remove one test, add another, move order — save — expand card; assert order.
-6. Open create modal — assert empty form and "Create" labels.
-7. Confirm `documentation/ADR-007-test-suites.md` exists and mentions edit capability.
-8. Run `npm run build` in `frontend/`.
+1. Log in; confirm sidebar has **Generate Tests** and **Saved Tests** (not single "Tests").
+2. Click **Generate Tests** → `/tests` → enter prompt → generate → save one test.
+3. Click **Saved Tests** → saved test appears.
+4. **Inline title edit:** click test title (or pencil) → type new title → press Enter → title updates in list without drawer opening.
+5. **Inline cancel:** click title again → change text → press Escape → title reverts.
+6. **Inline validation:** click title → clear text → blur → inline error shown; title not saved.
+7. Open **Manage Categories** → create "Billing" (blue) → save.
+8. Select test → **Set Category** → Billing → row shows Billing badge.
+9. Filter sidebar to Billing → only that test shows.
+10. Edit test via **Edit** → drawer opens on Saved tab → change title in drawer → save → remain on `/tests/saved`.
+11. Bulk select 2 tests → Set Category → verify both updated.
+12. Delete "Billing" category → tests show Uncategorized.
+13. Visit `/tests?edit={id}` → lands on `/tests/saved?edit={id}`.
+14. Open Test Suites → create/edit suite → test picker shows saved tests.
+15. Confirm `documentation/ADR-008-test-categories-navigation.md` exists.
+16. Run `npm run build` in `frontend/`; `pytest` for new backend tests if present.
 
 ---
 
@@ -83,8 +126,13 @@ score = Σ (criterion_weight × pass?1:0)
 
 | Anti-pattern | Action |
 |--------------|--------|
-| Duplicate `EditSuiteModal.tsx` copying entire create form | Fail S2 unless strongly justified in PR |
-| Edit button only in expanded section | Fail F1 |
-| Edit uses `POST` or new endpoint instead of PUT | Fail F3 |
-| ADR missing or only stub | Fail D1 |
-| Broken create after refactor | Automatic fail |
+| Reuse `KBCategory` for user test folders without ADR justification | Fail A2 |
+| Saved tests still only reachable via button on Generate page | Fail N2 |
+| `category_id` repurposed to mean org category (breaks KB generation) | Automatic fail |
+| Edit navigates to `/tests?edit=` on Generate page as primary flow | Fail N4 |
+| Title rename requires opening full edit drawer or Generate tab | Fail T1 |
+| Title remains static `<h3>` with no inline edit affordance | Automatic fail |
+| No migration; only frontend labels | Fail B1 |
+| Category CRUD via KB endpoints | Fail B3 |
+| Broken generate or suite picker | Automatic fail |
+| Modal-only title rename (no inline path) | Fail T1 |
