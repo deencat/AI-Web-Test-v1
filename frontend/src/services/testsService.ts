@@ -23,6 +23,8 @@ class TestsService {
     status?: string;
     priority?: string;
     agent?: string;
+    test_category_id?: number;
+    uncategorized?: boolean;
     page?: number;
     per_page?: number;
   }): Promise<Test[]> {
@@ -54,6 +56,8 @@ class TestsService {
         ...(params?.status ? { status: params.status } : {}),
         ...(params?.priority ? { priority: params.priority } : {}),
         ...(params?.agent ? { agent: params.agent } : {}),
+        ...(params?.test_category_id !== undefined ? { test_category_id: params.test_category_id } : {}),
+        ...(params?.uncategorized ? { uncategorized: true } : {}),
       };
 
       const firstResponse = await api.get<any>('/tests', {
@@ -332,6 +336,21 @@ class TestsService {
       const response = await api.delete<{ deleted: number; failed: number[] }>(
         '/tests/batch',
         { data: { ids } }
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  async batchAssignCategory(
+    test_ids: number[],
+    test_category_id: number | null
+  ): Promise<{ updated: number; failed: number[] }> {
+    try {
+      const response = await api.patch<{ updated: number; failed: number[] }>(
+        '/tests/batch/category',
+        { test_ids, test_category_id }
       );
       return response.data;
     } catch (error) {

@@ -97,6 +97,7 @@ export interface CreateTestRequest {
   preconditions?: string;
   test_data?: Record<string, any>;
   category_id?: number;
+  test_category_id?: number | null;
   tags?: string[];
   test_metadata?: Record<string, any>;
 }
@@ -113,6 +114,7 @@ export interface UpdateTestRequest {
   preconditions?: string;
   test_data?: Record<string, any>;
   category_id?: number;
+  test_category_id?: number | null;
   tags?: string[];
   test_metadata?: Record<string, any>;
   /** Sprint 10.14: toggle CRM ephemeral credential prompt */
@@ -154,6 +156,30 @@ export interface GenerateTestsResponse {
   test_cases: GeneratedTestCase[];
   prompt: string;
   generated_at: string;
+}
+
+export interface TestCategory {
+  id: number;
+  name: string;
+  description: string | null;
+  color: string;
+  test_count?: number;
+}
+
+export interface TestCategoryListResponse {
+  items: TestCategory[];
+}
+
+export interface CreateTestCategoryRequest {
+  name: string;
+  description?: string;
+  color?: string;
+}
+
+export interface UpdateTestCategoryRequest {
+  name?: string;
+  description?: string;
+  color?: string;
 }
 
 // Knowledge Base types

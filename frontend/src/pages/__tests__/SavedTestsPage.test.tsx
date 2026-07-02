@@ -21,8 +21,10 @@ import userEvent from '@testing-library/user-event';
 // ---------------------------------------------------------------------------
 
 const mockNavigate = vi.fn();
+const mockSetSearchParams = vi.fn();
 vi.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
+  useSearchParams: () => [new URLSearchParams(), mockSetSearchParams],
 }));
 
 vi.mock('../../components/layout/Layout', () => ({
@@ -59,6 +61,7 @@ const mockTestsService = {
   getAllTests: vi.fn(),
   deleteTest: vi.fn(),
   batchDeleteTests: vi.fn(),
+  batchAssignCategory: vi.fn(),
 };
 
 vi.mock('../../services/testsService', () => ({
@@ -71,6 +74,29 @@ const mockExecutionService = {
 
 vi.mock('../../services/executionService', () => ({
   default: mockExecutionService,
+}));
+
+const mockTestCategoriesService = {
+  getAll: vi.fn(),
+  create: vi.fn(),
+  update: vi.fn(),
+  delete: vi.fn(),
+};
+
+vi.mock('../../services/testCategoriesService', () => ({
+  default: mockTestCategoriesService,
+}));
+
+const mockSchedulesService = {
+  listAll: vi.fn(),
+  listForTest: vi.fn(),
+  create: vi.fn(),
+  toggle: vi.fn(),
+  remove: vi.fn(),
+};
+
+vi.mock('../../services/schedulesService', () => ({
+  default: mockSchedulesService,
 }));
 
 // ---------------------------------------------------------------------------
@@ -89,6 +115,10 @@ const makeSavedTest = (id: number, title = `Test ${id}`) => ({
 });
 
 const THREE_TESTS = [makeSavedTest(1), makeSavedTest(2), makeSavedTest(3)];
+const TEST_CATEGORIES = [
+  { id: 10, name: 'Billing', description: null, color: '#3B82F6', test_count: 2 },
+  { id: 20, name: 'Checkout', description: null, color: '#10B981', test_count: 1 },
+];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -109,6 +139,8 @@ describe('SavedTestsPage — batch delete (Sprint 10.5)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockTestsService.getAllTests.mockResolvedValue(THREE_TESTS);
+    mockTestCategoriesService.getAll.mockResolvedValue(TEST_CATEGORIES);
+    mockSchedulesService.listAll.mockResolvedValue([]);
   });
 
   // ── Checkbox rendering ───────────────────────────────────────────────────
@@ -239,5 +271,24 @@ describe('SavedTestsPage — batch delete (Sprint 10.5)', () => {
     expect(mockTestsService.batchDeleteTests).not.toHaveBeenCalled();
     // Selection should still be intact
     expect(screen.getByTestId('row-checkbox-1')).toBeChecked();
+  });
+
+  it('shows category options in batch set category control', async () => {
+    await renderPage();
+    const setCategory = screen.getByTestId('set-category-button');
+    expect(within(setCategory).getByText('Billing')).toBeInTheDocument();
+    expect(within(setCategory).getByText('Checkout')).toBeInTheDocument();
+  });
+
+  it('calls batchAssignCategory with selected ids and category id', async () => {
+    const user = userEvent.setup();
+    mockTestsService.batchAssignCategory.mockResolvedValue({ updated: 2, failed: [] });
+
+    await renderPage();
+    await user.click(screen.getByTestId('row-checkbox-1'));
+    await user.click(screen.getByTestId('row-checkbox-2'));
+    await user.selectOptions(screen.getByTestId('set-category-button'), '10');
+
+    expect(mockTestsService.batchAssignCategory).toHaveBeenCalledWith([1, 2], 10);
   });
 });

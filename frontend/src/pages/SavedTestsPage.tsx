@@ -6,10 +6,11 @@ import { Button } from '../components/common/Button';
 import { TestStepEditor } from '../components/TestStepEditor';
 import { InlineTitleEditor } from '../components/tests/InlineTitleEditor';
 import testsService from '../services/testsService';
+import testCategoriesService from '../services/testCategoriesService';
 import executionService from '../services/executionService';
 import schedulesService, { type TestSchedule, type CreateSchedulePayload } from '../services/schedulesService';
-import { GeneratedTestCase } from '../types/api';
-import { Loader2, Plus, Search, Trash2, Play, Eye, Edit, Clock } from 'lucide-react';
+import { GeneratedTestCase, TestCategory } from '../types/api';
+import { Loader2, Plus, Search, Trash2, Play, Eye, Edit, Clock, FolderOpen, ChevronDown } from 'lucide-react';
 
 interface SavedTest {
   id: number;
@@ -20,6 +21,12 @@ interface SavedTest {
   status: string;
   created_at: string;
   updated_at: string;
+  test_category_id?: number | null;
+  test_category?: {
+    id: number;
+    name: string;
+    color: string;
+  } | null;
 }
 
 export const SavedTestsPage: React.FC = () => {
@@ -35,6 +42,20 @@ export const SavedTestsPage: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [batchDeleting, setBatchDeleting] = useState(false);
+  const [categories, setCategories] = useState<TestCategory[]>([]);
+  const [activeCategoryFilter, setActiveCategoryFilter] = useState<'all' | 'uncategorized' | number>('all');
+  const [categoryDropdownValue, setCategoryDropdownValue] = useState('all');
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [categoryLoading, setCategoryLoading] = useState(false);
+  const [categoryActionLoading, setCategoryActionLoading] = useState(false);
+  const [bulkCategorySelection, setBulkCategorySelection] = useState('unchanged');
+  const [categoryFormError, setCategoryFormError] = useState<string | null>(null);
+  const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
+  const [categoryForm, setCategoryForm] = useState({
+    name: '',
+    description: '',
+    color: '#3B82F6',
+  });
 
   const [editingTest, setEditingTest] = useState<GeneratedTestCase | null>(null);
   const [editLoading, setEditLoading] = useState(false);
@@ -47,6 +68,7 @@ export const SavedTestsPage: React.FC = () => {
     expected_result: '',
     priority: 'medium' as 'high' | 'medium' | 'low',
     requires_runtime_credentials: false,
+    test_category_id: null as number | null,
   });
 
   const [scheduleTarget, setScheduleTarget] = useState<{ id: number; title: string } | null>(null);
@@ -63,6 +85,7 @@ export const SavedTestsPage: React.FC = () => {
 
   useEffect(() => {
     loadTests();
+    loadCategories();
     loadAllScheduleBadges();
   }, []);
 
@@ -101,6 +124,19 @@ export const SavedTestsPage: React.FC = () => {
     }
   };
 
+  const loadCategories = async () => {
+    try {
+      setCategoryLoading(true);
+      const list = await testCategoriesService.getAll();
+      setCategories(list);
+    } catch {
+      // Keep page usable even if category API fails
+      setCategories([]);
+    } finally {
+      setCategoryLoading(false);
+    }
+  };
+
   const loadAndEditTest = async (testId: string) => {
     try {
       setEditLoading(true);
@@ -129,6 +165,7 @@ export const SavedTestsPage: React.FC = () => {
         priority: testCase.priority,
         requires_runtime_credentials:
           (test as { requires_runtime_credentials?: boolean }).requires_runtime_credentials ?? false,
+        test_category_id: (test as { test_category_id?: number | null }).test_category_id ?? null,
       });
     } catch (err) {
       console.error('Failed to load test:', err);
@@ -159,6 +196,7 @@ export const SavedTestsPage: React.FC = () => {
         steps: editForm.steps,
         expected_result: editForm.expected_result,
         requires_runtime_credentials: editForm.requires_runtime_credentials,
+        test_category_id: editForm.test_category_id,
       });
 
       setTests((prev) =>
@@ -169,6 +207,7 @@ export const SavedTestsPage: React.FC = () => {
                 title: editForm.title,
                 description: editForm.description,
                 priority: editForm.priority,
+                test_category_id: editForm.test_category_id,
               }
             : t
         )
@@ -193,6 +232,99 @@ export const SavedTestsPage: React.FC = () => {
     setTests((prev) =>
       prev.map((t) => (t.id === testId ? { ...t, title: newTitle } : t))
     );
+  };
+
+  const getCategoryName = (value: 'all' | 'uncategorized' | number): string => {
+    if (value === 'all') return 'All';
+    if (value === 'uncategorized') return 'Uncategorized';
+    return categories.find((cat) => cat.id === value)?.name || 'Unknown';
+  };
+
+  const openCreateCategoryModal = () => {
+    setEditingCategoryId(null);
+    setCategoryFormError(null);
+    setCategoryForm({ name: '', description: '', color: '#3B82F6' });
+    setShowCategoryModal(true);
+  };
+
+  const openEditCategoryModal = (category: TestCategory) => {
+    setEditingCategoryId(category.id);
+    setCategoryFormError(null);
+    setCategoryForm({
+      name: category.name,
+      description: category.description || '',
+      color: category.color || '#3B82F6',
+    });
+    setShowCategoryModal(true);
+  };
+
+  const handleSaveCategory = async () => {
+    const trimmedName = categoryForm.name.trim();
+    if (!trimmedName) {
+      setCategoryFormError('Category name is required');
+      return;
+    }
+
+    try {
+      setCategoryActionLoading(true);
+      setCategoryFormError(null);
+
+      if (editingCategoryId) {
+        await testCategoriesService.update(editingCategoryId, {
+          name: trimmedName,
+          description: categoryForm.description.trim() || undefined,
+          color: categoryForm.color,
+        });
+      } else {
+        await testCategoriesService.create({
+          name: trimmedName,
+          description: categoryForm.description.trim() || undefined,
+          color: categoryForm.color,
+        });
+      }
+
+      await loadCategories();
+      setShowCategoryModal(false);
+    } catch (err) {
+      setCategoryFormError(err instanceof Error ? err.message : 'Failed to save category');
+    } finally {
+      setCategoryActionLoading(false);
+    }
+  };
+
+  const handleDeleteCategory = async (category: TestCategory) => {
+    const linkedTests = tests.filter((test) => test.test_category_id === category.id).length;
+    const message =
+      linkedTests > 0
+        ? `${linkedTests} tests use this category. They will become Uncategorized. Delete anyway?`
+        : 'Delete this category?';
+    if (!confirm(message)) return;
+
+    try {
+      await testCategoriesService.delete(category.id);
+      await Promise.all([loadCategories(), loadTests()]);
+      if (activeCategoryFilter === category.id) {
+        setActiveCategoryFilter('all');
+        setCategoryDropdownValue('all');
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete category');
+    }
+  };
+
+  const handleAssignCategory = async (testIds: number[], categoryId: number | null) => {
+    if (testIds.length === 0) return;
+
+    try {
+      const result = await testsService.batchAssignCategory(testIds, categoryId);
+      if (result.failed.length > 0) {
+        alert(`${result.updated} test(s) updated. ${result.failed.length} could not be updated.`);
+      }
+      await Promise.all([loadTests(), loadCategories()]);
+      setSelectedIds(new Set());
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to update category');
+    }
   };
 
   const handleDeleteTest = async (testId: number) => {
@@ -377,8 +509,14 @@ export const SavedTestsPage: React.FC = () => {
       filterScheduled === 'all' ||
       (filterScheduled === 'scheduled' && hasSchedule) ||
       (filterScheduled === 'unscheduled' && !hasSchedule);
-    return matchesSearch && matchesType && matchesPriority && matchesScheduled;
+    const matchesCategory =
+      activeCategoryFilter === 'all' ||
+      (activeCategoryFilter === 'uncategorized' && !test.test_category_id) ||
+      (typeof activeCategoryFilter === 'number' && test.test_category_id === activeCategoryFilter);
+    return matchesSearch && matchesType && matchesPriority && matchesScheduled && matchesCategory;
   });
+
+  const uncategorizedCount = tests.filter((test) => !test.test_category_id).length;
 
   if (loading) {
     return (
@@ -398,14 +536,91 @@ export const SavedTestsPage: React.FC = () => {
             <h1 className="text-3xl font-bold text-gray-900">Saved Tests</h1>
             <p className="text-gray-600 mt-1">Manage and execute your saved test cases</p>
           </div>
-          <Button variant="primary" onClick={() => navigate('/tests')}>
-            <Plus className="w-5 h-5 mr-2" />
-            Generate New Tests
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button variant="secondary" onClick={openCreateCategoryModal}>
+              Manage Categories
+            </Button>
+            <Button variant="primary" onClick={() => navigate('/tests')}>
+              <Plus className="w-5 h-5 mr-2" />
+              Generate New Tests
+            </Button>
+          </div>
         </div>
 
-        <Card>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-[14rem_minmax(0,1fr)] gap-6">
+          <Card>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCategoryFilter('all');
+                  setCategoryDropdownValue('all');
+                }}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm ${
+                  activeCategoryFilter === 'all'
+                    ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600'
+                    : 'hover:bg-gray-50 text-gray-700'
+                }`}
+              >
+                <span>All</span>
+                <span className="text-xs bg-gray-100 rounded-full px-2 py-0.5">{tests.length}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCategoryFilter('uncategorized');
+                  setCategoryDropdownValue('uncategorized');
+                }}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm ${
+                  activeCategoryFilter === 'uncategorized'
+                    ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600'
+                    : 'hover:bg-gray-50 text-gray-700'
+                }`}
+              >
+                <span>Uncategorized</span>
+                <span className="text-xs bg-gray-100 rounded-full px-2 py-0.5">{uncategorizedCount}</span>
+              </button>
+              {categoryLoading ? (
+                <div className="text-sm text-gray-500 px-3 py-2">Loading categories...</div>
+              ) : (
+                categories.map((category) => (
+                  <button
+                    key={category.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveCategoryFilter(category.id);
+                      setCategoryDropdownValue(String(category.id));
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm ${
+                      activeCategoryFilter === category.id
+                        ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600'
+                        : 'hover:bg-gray-50 text-gray-700'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: category.color || '#3B82F6' }}
+                      />
+                      <span className="truncate">{category.name}</span>
+                    </span>
+                    <span className="text-xs bg-gray-100 rounded-full px-2 py-0.5">{category.test_count ?? 0}</span>
+                  </button>
+                ))
+              )}
+              <button
+                type="button"
+                onClick={openCreateCategoryModal}
+                className="w-full px-3 py-2 rounded-lg text-sm text-left border border-dashed border-gray-300 text-gray-600 hover:bg-gray-50"
+              >
+                + Category
+              </button>
+            </div>
+          </Card>
+
+          <div className="space-y-6">
+            <Card>
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div className="md:col-span-1">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Search Tests
@@ -468,10 +683,35 @@ export const SavedTestsPage: React.FC = () => {
                 <option value="unscheduled">Not scheduled</option>
               </select>
             </div>
-          </div>
-        </Card>
 
-        {!error && tests.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Category
+              </label>
+              <select
+                value={categoryDropdownValue}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setCategoryDropdownValue(value);
+                  if (value === 'all') setActiveCategoryFilter('all');
+                  else if (value === 'uncategorized') setActiveCategoryFilter('uncategorized');
+                  else setActiveCategoryFilter(Number(value));
+                }}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Categories</option>
+                <option value="uncategorized">Uncategorized</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={String(category.id)}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+            </Card>
+
+            {!error && tests.length > 0 && (
           <div className="flex items-center gap-4 py-2">
             <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-600">
               <input
@@ -483,6 +723,34 @@ export const SavedTestsPage: React.FC = () => {
               />
               Select All
             </label>
+            <div className="flex items-center gap-2">
+              <FolderOpen className="w-4 h-4 text-gray-500" />
+              <select
+                value={bulkCategorySelection}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setBulkCategorySelection(value);
+                  if (value === 'unchanged') return;
+                  void handleAssignCategory(
+                    [...selectedIds],
+                    value === 'uncategorized' ? null : Number(value)
+                  );
+                  setBulkCategorySelection('unchanged');
+                }}
+                disabled={selectedIds.size === 0 || batchDeleting}
+                data-testid="set-category-button"
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+              >
+                <option value="unchanged">Set Category ({selectedIds.size})</option>
+                <option value="uncategorized">Uncategorized</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-4 h-4 text-gray-400 -ml-7 pointer-events-none" />
+            </div>
             <Button
               variant="danger"
               disabled={selectedIds.size === 0 || batchDeleting}
@@ -493,9 +761,9 @@ export const SavedTestsPage: React.FC = () => {
               Delete Selected ({selectedIds.size})
             </Button>
           </div>
-        )}
+            )}
 
-        {error && (
+            {error && (
           <Card>
             <div className="text-center py-8">
               <p className="text-red-600 mb-4">{error}</p>
@@ -504,15 +772,15 @@ export const SavedTestsPage: React.FC = () => {
               </Button>
             </div>
           </Card>
-        )}
+            )}
 
-        {!error && filteredTests.length === 0 && (
+            {!error && filteredTests.length === 0 && (
           <Card>
             <div className="text-center py-12">
               <p className="text-gray-600 mb-4">
                 {tests.length === 0
                   ? 'No saved tests yet. Generate some tests to get started!'
-                  : 'No tests match your filters.'}
+                  : `No tests match your filters in ${getCategoryName(activeCategoryFilter)}.`}
               </p>
               {tests.length === 0 && (
                 <Button variant="primary" onClick={() => navigate('/tests')}>
@@ -522,9 +790,9 @@ export const SavedTestsPage: React.FC = () => {
               )}
             </div>
           </Card>
-        )}
+            )}
 
-        {!error && filteredTests.length > 0 && (
+            {!error && filteredTests.length > 0 && (
           <div className="grid gap-4">
             {filteredTests.map((test) => (
               <Card key={test.id}>
@@ -570,6 +838,25 @@ export const SavedTestsPage: React.FC = () => {
                       >
                         {test.test_type}
                       </span>
+                      <select
+                        value={test.test_category_id ?? 'uncategorized'}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          void handleAssignCategory(
+                            [test.id],
+                            value === 'uncategorized' ? null : Number(value)
+                          );
+                        }}
+                        className="px-2 py-1 rounded-full text-xs font-medium border border-gray-300 text-gray-700 bg-white"
+                        aria-label={`Category for ${test.title}`}
+                      >
+                        <option value="uncategorized">Uncategorized</option>
+                        {categories.map((category) => (
+                          <option key={category.id} value={category.id}>
+                            {category.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <p className="text-gray-600 mb-3">{test.description}</p>
                     <div className="flex items-center gap-4 text-sm text-gray-500">
@@ -620,13 +907,15 @@ export const SavedTestsPage: React.FC = () => {
               </Card>
             ))}
           </div>
-        )}
+            )}
 
-        {!error && tests.length > 0 && (
+            {!error && tests.length > 0 && (
           <div className="text-sm text-gray-600 text-center">
             Showing {filteredTests.length} of {tests.length} test{tests.length !== 1 ? 's' : ''}
           </div>
-        )}
+            )}
+          </div>
+        </div>
       </div>
 
       {(editingTest || editLoading) && (
@@ -700,6 +989,30 @@ export const SavedTestsPage: React.FC = () => {
                       <option value="high">High</option>
                       <option value="medium">Medium</option>
                       <option value="low">Low</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="saved-edit-category" className="block text-sm font-semibold text-gray-900 mb-2">
+                      Test Category
+                    </label>
+                    <select
+                      id="saved-edit-category"
+                      value={editForm.test_category_id ?? 'uncategorized'}
+                      onChange={(e) =>
+                        setEditForm({
+                          ...editForm,
+                          test_category_id: e.target.value === 'uncategorized' ? null : Number(e.target.value),
+                        })
+                      }
+                      className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-blue-700 bg-white"
+                    >
+                      <option value="uncategorized">Uncategorized</option>
+                      {categories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
+                      ))}
                     </select>
                   </div>
 
@@ -928,6 +1241,109 @@ export const SavedTestsPage: React.FC = () => {
                   Add Schedule
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCategoryModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-xl w-full mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-gray-900">
+                {editingCategoryId ? 'Manage Categories' : 'Create Category'}
+              </h2>
+              <button
+                onClick={() => setShowCategoryModal(false)}
+                className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <input
+                  type="text"
+                  value={categoryForm.name}
+                  maxLength={100}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  value={categoryForm.description}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm min-h-[80px] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+                <input
+                  type="color"
+                  value={categoryForm.color}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, color: e.target.value })}
+                  className="h-10 w-20 border border-gray-300 rounded"
+                />
+              </div>
+
+              {categoryFormError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+                  {categoryFormError}
+                </div>
+              )}
+
+              {categories.length > 0 && (
+                <div className="border-t pt-4">
+                  <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Existing Categories</p>
+                  <div className="space-y-2 max-h-44 overflow-y-auto">
+                    {categories.map((category) => (
+                      <div key={category.id} className="flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{category.name}</p>
+                          <p className="text-xs text-gray-500">{category.test_count ?? 0} test(s)</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openEditCategoryModal(category)}
+                            className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCategory(category)}
+                            className="text-xs px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowCategoryModal(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              >
+                Close
+              </button>
+              <button
+                onClick={handleSaveCategory}
+                disabled={categoryActionLoading}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {categoryActionLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                {editingCategoryId ? 'Save Category' : 'Create Category'}
+              </button>
             </div>
           </div>
         </div>
