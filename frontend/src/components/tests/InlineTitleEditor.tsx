@@ -39,7 +39,7 @@ export const InlineTitleEditor: React.FC<InlineTitleEditorProps> = ({
   }, [isEditing]);
 
   const showErrorToast = (msg: string) => {
-    setErrorToast(msg);
+    setErrorToast(msg || 'Failed to update title');
     setTimeout(() => setErrorToast(null), 4000);
   };
 
@@ -137,50 +137,59 @@ export const InlineTitleEditor: React.FC<InlineTitleEditorProps> = ({
           />
           {saving && <Loader2 className="w-4 h-4 animate-spin text-blue-600 flex-shrink-0" />}
         </div>
-        {validationError && (
-          <p
-            id={`title-error-${testId}`}
-            className="text-xs text-red-600 mt-1"
-            role="alert"
-          >
-            {validationError}
-          </p>
-        )}
-        {errorToast && (
-          <p className="text-xs text-red-600 mt-1" role="alert">
-            {errorToast}
-          </p>
-        )}
+        <div aria-live="polite">
+          {validationError && (
+            <p
+              id={`title-error-${testId}`}
+              className="text-xs text-red-600 mt-1"
+              role="alert"
+            >
+              {validationError}
+            </p>
+          )}
+          {errorToast && (
+            <p className="text-xs text-red-600 mt-1" role="alert">
+              {errorToast}
+            </p>
+          )}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex items-center gap-1 min-w-0 flex-1">
-      <button
-        type="button"
-        onClick={enterEditMode}
-        disabled={disabled || saving}
-        aria-label={`Edit title: ${title}`}
-        data-testid={`inline-title-button-${testId}`}
-        className="text-lg font-semibold text-gray-900 hover:text-blue-600 cursor-pointer text-left truncate disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {title}
-      </button>
-      <button
-        type="button"
-        onClick={enterEditMode}
-        disabled={disabled || saving}
-        aria-label="Rename test title"
-        data-testid={`inline-title-pencil-${testId}`}
-        className="p-1 text-gray-400 hover:text-gray-600 rounded flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        <Pencil className="w-4 h-4" />
-      </button>
-      {successToast && (
-        <span className="text-xs text-green-600 ml-1 flex-shrink-0" role="status">
-          {successToast}
-        </span>
+    <div className="min-w-0 flex-1">
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={enterEditMode}
+          disabled={disabled || saving}
+          aria-label={`Edit title: ${title}`}
+          data-testid={`inline-title-button-${testId}`}
+          className="text-lg font-semibold text-gray-900 hover:text-blue-600 cursor-pointer text-left truncate disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {title}
+        </button>
+        <button
+          type="button"
+          onClick={enterEditMode}
+          disabled={disabled || saving}
+          aria-label="Rename test title"
+          data-testid={`inline-title-pencil-${testId}`}
+          className="p-1 text-gray-400 hover:text-gray-600 rounded flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Pencil className="w-4 h-4" />
+        </button>
+        {successToast && (
+          <span className="text-xs text-green-600 ml-1 flex-shrink-0" role="status">
+            {successToast}
+          </span>
+        )}
+      </div>
+      {errorToast && (
+        <p className="text-xs text-red-600 mt-1" role="alert" aria-live="polite">
+          {errorToast}
+        </p>
       )}
     </div>
   );

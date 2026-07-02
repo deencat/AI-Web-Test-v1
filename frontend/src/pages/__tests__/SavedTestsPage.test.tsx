@@ -22,9 +22,10 @@ import userEvent from '@testing-library/user-event';
 
 const mockNavigate = vi.fn();
 const mockSetSearchParams = vi.fn();
+let mockSearchParams = new URLSearchParams();
 vi.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
-  useSearchParams: () => [new URLSearchParams(), mockSetSearchParams],
+  useSearchParams: () => [mockSearchParams, mockSetSearchParams],
 }));
 
 vi.mock('../../components/layout/Layout', () => ({
@@ -59,6 +60,8 @@ vi.mock('../../components/common/Button', () => ({
 
 const mockTestsService = {
   getAllTests: vi.fn(),
+  getTestById: vi.fn(),
+  updateTest: vi.fn(),
   deleteTest: vi.fn(),
   batchDeleteTests: vi.fn(),
   batchAssignCategory: vi.fn(),
@@ -138,7 +141,18 @@ async function renderPage() {
 describe('SavedTestsPage — batch delete (Sprint 10.5)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSearchParams = new URLSearchParams();
     mockTestsService.getAllTests.mockResolvedValue(THREE_TESTS);
+    mockTestsService.getTestById.mockResolvedValue({
+      id: 1,
+      title: 'Test 1',
+      description: 'Description 1',
+      steps: ['step 1'],
+      expected_result: 'done',
+      priority: 'medium',
+      requires_runtime_credentials: false,
+      test_category_id: null,
+    });
     mockTestCategoriesService.getAll.mockResolvedValue(TEST_CATEGORIES);
     mockSchedulesService.listAll.mockResolvedValue([]);
   });
@@ -290,5 +304,24 @@ describe('SavedTestsPage — batch delete (Sprint 10.5)', () => {
     await user.selectOptions(screen.getByTestId('set-category-button'), '10');
 
     expect(mockTestsService.batchAssignCategory).toHaveBeenCalledWith([1, 2], 10);
+  });
+
+  it('opens saved edit drawer when ?edit is present', async () => {
+    mockSearchParams = new URLSearchParams('edit=1');
+    const { SavedTestsPage } = await import('../SavedTestsPage');
+    render(<SavedTestsPage />);
+
+    expect(await screen.findByText('Edit Test Case')).toBeInTheDocument();
+    expect(mockTestsService.getTestById).toHaveBeenCalledWith('1');
+  });
+
+  it('clears edit query param when edit target load fails', async () => {
+    mockSearchParams = new URLSearchParams('edit=9999');
+    mockTestsService.getTestById.mockRejectedValue(new Error('not found'));
+    const { SavedTestsPage } = await import('../SavedTestsPage');
+    render(<SavedTestsPage />);
+
+    expect(await screen.findByText('Unable to load test for editing.')).toBeInTheDocument();
+    expect(mockSetSearchParams).toHaveBeenCalledWith(expect.any(URLSearchParams), { replace: true });
   });
 });

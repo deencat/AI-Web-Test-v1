@@ -35,6 +35,7 @@ export const SavedTestsPage: React.FC = () => {
   const [tests, setTests] = useState<SavedTest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pageNotice, setPageNotice] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [filterPriority, setFilterPriority] = useState('all');
@@ -95,6 +96,12 @@ export const SavedTestsPage: React.FC = () => {
       void loadAndEditTest(editId);
     }
   }, [searchParams]);
+
+  const clearEditParam = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('edit');
+    setSearchParams(next, { replace: true });
+  };
 
   const loadAllScheduleBadges = async () => {
     try {
@@ -170,8 +177,8 @@ export const SavedTestsPage: React.FC = () => {
     } catch (err) {
       console.error('Failed to load test:', err);
       setEditError(err instanceof Error ? err.message : 'Failed to load test');
-      alert('Failed to load test for editing.');
-      setSearchParams({}, { replace: true });
+      setPageNotice('Unable to load test for editing.');
+      clearEditParam();
     } finally {
       setEditLoading(false);
     }
@@ -225,7 +232,8 @@ export const SavedTestsPage: React.FC = () => {
   const closeEditDrawer = () => {
     setEditingTest(null);
     setEditError(null);
-    setSearchParams({}, { replace: true });
+    clearEditParam();
+    void loadTests();
   };
 
   const handleTitleChange = (testId: number, newTitle: string) => {
@@ -550,6 +558,15 @@ export const SavedTestsPage: React.FC = () => {
             </Button>
           </div>
         </div>
+        {pageNotice && (
+          <div
+            className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+            role="status"
+            aria-live="polite"
+          >
+            {pageNotice}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-[14rem_minmax(0,1fr)] gap-6">
           <Card>

@@ -2,7 +2,7 @@
 
 **Document ID:** ADR-008  
 **Component:** Tests Navigation + Saved Tests Library Organization  
-**Status:** Proposed  
+**Status:** Accepted  
 **Date:** July 2, 2026  
 **Author:** GAN Generator  
 **Related Files:**
@@ -10,18 +10,18 @@
 - `frontend/src/App.tsx`
 - `frontend/src/pages/TestsPage.tsx`
 - `frontend/src/pages/SavedTestsPage.tsx`
-- `frontend/src/components/tests/InlineTitleEditor.tsx` (planned)
+- `frontend/src/components/tests/InlineTitleEditor.tsx`
 - `frontend/src/services/testsService.ts`
-- `frontend/src/services/testCategoriesService.ts` (planned)
+- `frontend/src/services/testCategoriesService.ts`
 - `backend/app/models/test_case.py`
-- `backend/app/models/test_category.py` (planned)
+- `backend/app/models/test_category.py`
 - `backend/app/schemas/test_case.py`
-- `backend/app/schemas/test_category.py` (planned)
+- `backend/app/schemas/test_category.py`
 - `backend/app/crud/test_case.py`
-- `backend/app/crud/test_category.py` (planned)
+- `backend/app/crud/test_category.py`
 - `backend/app/api/v1/endpoints/tests.py`
-- `backend/app/api/v1/endpoints/test_categories.py` (planned)
-- `backend/app/migrations/versions/*` (planned migration for `test_categories` + `test_category_id`)
+- `backend/app/api/v1/endpoints/test_categories.py`
+- `backend/app/migrations/versions/*` (migration for `test_categories` + `test_category_id`)
 - `gan-harness/spec.md`
 
 ---
