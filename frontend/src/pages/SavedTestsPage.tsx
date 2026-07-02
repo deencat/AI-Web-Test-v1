@@ -537,7 +537,11 @@ export const SavedTestsPage: React.FC = () => {
             <p className="text-gray-600 mt-1">Manage and execute your saved test cases</p>
           </div>
           <div className="flex items-center gap-3">
-            <Button variant="secondary" onClick={openCreateCategoryModal}>
+            <Button
+              variant="secondary"
+              onClick={openCreateCategoryModal}
+              data-testid="manage-categories-button"
+            >
               Manage Categories
             </Button>
             <Button variant="primary" onClick={() => navigate('/tests')}>
@@ -561,6 +565,7 @@ export const SavedTestsPage: React.FC = () => {
                     ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600'
                     : 'hover:bg-gray-50 text-gray-700'
                 }`}
+                data-testid="category-filter-all"
               >
                 <span>All</span>
                 <span className="text-xs bg-gray-100 rounded-full px-2 py-0.5">{tests.length}</span>
@@ -576,6 +581,7 @@ export const SavedTestsPage: React.FC = () => {
                     ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600'
                     : 'hover:bg-gray-50 text-gray-700'
                 }`}
+                data-testid="category-filter-uncategorized"
               >
                 <span>Uncategorized</span>
                 <span className="text-xs bg-gray-100 rounded-full px-2 py-0.5">{uncategorizedCount}</span>
@@ -596,6 +602,7 @@ export const SavedTestsPage: React.FC = () => {
                         ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600'
                         : 'hover:bg-gray-50 text-gray-700'
                     }`}
+                    data-testid={`category-filter-${category.id}`}
                   >
                     <span className="flex items-center gap-2 min-w-0">
                       <span
@@ -698,6 +705,7 @@ export const SavedTestsPage: React.FC = () => {
                   else setActiveCategoryFilter(Number(value));
                 }}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                data-testid="saved-tests-category-filter"
               >
                 <option value="all">All Categories</option>
                 <option value="uncategorized">Uncategorized</option>
@@ -777,7 +785,10 @@ export const SavedTestsPage: React.FC = () => {
             {!error && filteredTests.length === 0 && (
           <Card>
             <div className="text-center py-12">
-              <p className="text-gray-600 mb-4">
+              <p
+                className="text-gray-600 mb-4"
+                data-testid={tests.length === 0 ? 'saved-tests-empty-state' : 'category-filter-empty-state'}
+              >
                 {tests.length === 0
                   ? 'No saved tests yet. Generate some tests to get started!'
                   : `No tests match your filters in ${getCategoryName(activeCategoryFilter)}.`}
@@ -849,6 +860,7 @@ export const SavedTestsPage: React.FC = () => {
                         }}
                         className="px-2 py-1 rounded-full text-xs font-medium border border-gray-300 text-gray-700 bg-white"
                         aria-label={`Category for ${test.title}`}
+                        data-testid={`row-category-select-${test.id}`}
                       >
                         <option value="uncategorized">Uncategorized</option>
                         {categories.map((category) => (
@@ -1006,6 +1018,7 @@ export const SavedTestsPage: React.FC = () => {
                         })
                       }
                       className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-blue-700 bg-white"
+                      data-testid="saved-edit-category-select"
                     >
                       <option value="uncategorized">Uncategorized</option>
                       {categories.map((category) => (
@@ -1247,7 +1260,10 @@ export const SavedTestsPage: React.FC = () => {
       )}
 
       {showCategoryModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          data-testid="manage-categories-modal"
+        >
           <div className="bg-white rounded-xl shadow-xl p-6 max-w-xl w-full mx-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold text-gray-900">
@@ -1270,6 +1286,7 @@ export const SavedTestsPage: React.FC = () => {
                   maxLength={100}
                   onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  data-testid="category-name-input"
                 />
               </div>
               <div>
@@ -1278,6 +1295,7 @@ export const SavedTestsPage: React.FC = () => {
                   value={categoryForm.description}
                   onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm min-h-[80px] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  data-testid="category-description-input"
                 />
               </div>
               <div>
@@ -1287,6 +1305,7 @@ export const SavedTestsPage: React.FC = () => {
                   value={categoryForm.color}
                   onChange={(e) => setCategoryForm({ ...categoryForm, color: e.target.value })}
                   className="h-10 w-20 border border-gray-300 rounded"
+                  data-testid="category-color-input"
                 />
               </div>
 
@@ -1301,7 +1320,11 @@ export const SavedTestsPage: React.FC = () => {
                   <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Existing Categories</p>
                   <div className="space-y-2 max-h-44 overflow-y-auto">
                     {categories.map((category) => (
-                      <div key={category.id} className="flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2">
+                      <div
+                        key={category.id}
+                        className="flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2"
+                        data-testid={`category-item-${category.id}`}
+                      >
                         <div className="min-w-0">
                           <p className="text-sm font-medium text-gray-900 truncate">{category.name}</p>
                           <p className="text-xs text-gray-500">{category.test_count ?? 0} test(s)</p>
@@ -1311,6 +1334,7 @@ export const SavedTestsPage: React.FC = () => {
                             type="button"
                             onClick={() => openEditCategoryModal(category)}
                             className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
+                            data-testid={`edit-category-${category.id}`}
                           >
                             Edit
                           </button>
@@ -1318,6 +1342,7 @@ export const SavedTestsPage: React.FC = () => {
                             type="button"
                             onClick={() => handleDeleteCategory(category)}
                             className="text-xs px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50"
+                            data-testid={`delete-category-${category.id}`}
                           >
                             Delete
                           </button>
@@ -1333,6 +1358,7 @@ export const SavedTestsPage: React.FC = () => {
               <button
                 onClick={() => setShowCategoryModal(false)}
                 className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                data-testid="close-category-modal-button"
               >
                 Close
               </button>
@@ -1340,6 +1366,7 @@ export const SavedTestsPage: React.FC = () => {
                 onClick={handleSaveCategory}
                 disabled={categoryActionLoading}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                data-testid="save-category-button"
               >
                 {categoryActionLoading && <Loader2 className="w-4 h-4 animate-spin" />}
                 {editingCategoryId ? 'Save Category' : 'Create Category'}
