@@ -24,11 +24,23 @@ if [[ -z "$SECRET" ]]; then
 fi
 
 echo "Testing POST $EVENTS_URL"
+CURL_EXIT=0
 HTTP_CODE=$(curl -s -o /tmp/awt-events-smoke.json -w "%{http_code}" \
+  --connect-timeout 10 \
   -X POST "$EVENTS_URL" \
   -H "Authorization: Bearer $SECRET" \
   -H "Content-Type: application/json" \
-  -d '{"job_id":"00000000-0000-0000-0000-000000000099","event_type":"error","message":"ubuntu bridge smoke test"}')
+  -d '{"job_id":"00000000-0000-0000-0000-000000000099","event_type":"error","message":"ubuntu bridge smoke test"}') || CURL_EXIT=$?
+
+if [[ "$CURL_EXIT" -ne 0 ]]; then
+  echo "FAIL: curl could not reach $EVENTS_URL (exit $CURL_EXIT)"
+  case "$CURL_EXIT" in
+    7)  echo "  → No route / connection refused — on Windows: start AWT with --host 0.0.0.0:8000 and allow inbound TCP 8000 in firewall" ;;
+    28) echo "  → Connection timed out after 10s" ;;
+    *)  echo "  → See: curl --help (exit codes)" ;;
+  esac
+  exit 1
+fi
 
 echo "HTTP $HTTP_CODE"
 cat /tmp/awt-events-smoke.json
