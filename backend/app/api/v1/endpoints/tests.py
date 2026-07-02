@@ -14,8 +14,11 @@ from app.schemas.test_case import (
     TestStatistics,
     BatchDeleteRequest,
     BatchDeleteResponse,
+    BatchCategoryRequest,
+    BatchCategoryResponse,
 )
 from app.crud import test_case as crud
+from app.crud import test_category as category_crud
 
 router = APIRouter()
 
@@ -48,6 +51,7 @@ def sanitize_test_case_for_response(test_case):
         'preconditions': test_case.preconditions,
         'test_data': test_case.test_data,
         'category_id': test_case.category_id,
+        'test_category_id': test_case.test_category_id,
         'tags': test_case.tags,
         'test_metadata': test_case.test_metadata,
         'created_at': test_case.created_at,
@@ -56,9 +60,37 @@ def sanitize_test_case_for_response(test_case):
         'scenario_id': test_case.scenario_id,
         'template_id': test_case.template_id,
     }
+
+    if getattr(test_case, 'test_category', None):
+        test_case_dict['test_category'] = {
+            'id': test_case.test_category.id,
+            'name': test_case.test_category.name,
+            'color': test_case.test_category.color,
+        }
     
     # Convert dict to Pydantic model
     return TestCaseResponse.model_validate(test_case_dict)
+
+
+def _validate_test_category_ownership(
+    db: Session,
+    test_category_id: Optional[int],
+    user_id: int,
+) -> None:
+    """Ensure test_category_id belongs to the current user when provided."""
+    if test_category_id is None:
+        return
+
+    category = category_crud.get_test_category(
+        db=db,
+        category_id=test_category_id,
+        user_id=user_id,
+    )
+    if not category:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid test_category_id for current user",
+        )
 
 
 @router.get("/stats", response_model=TestStatistics)
@@ -115,6 +147,17 @@ def list_test_cases(
     test_type: Optional[TestType] = Query(None, description="Filter by test type"),
     status: Optional[TestStatus] = Query(None, description="Filter by status"),
     priority: Optional[Priority] = Query(None, description="Filter by priority"),
+    test_category_id: Optional[int] = Query(
+        None,
+        description=(
+            "Filter by user-defined category ID. "
+            "Use 0 to return only uncategorized tests (test_category_id IS NULL)."
+        ),
+    ),
+    uncategorized: bool = Query(
+        False,
+        description="When true, return only uncategorized tests (test_category_id IS NULL)",
+    ),
     user_id: Optional[int] = Query(None, description="Filter by user ID (admin only)"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -130,6 +173,8 @@ def list_test_cases(
     - `test_type`: Filter by test type (e2e, unit, integration, api)
     - `status`: Filter by status (pending, in_progress, passed, failed, skipped)
     - `priority`: Filter by priority (high, medium, low)
+    - `test_category_id`: Filter by user-defined category; use `0` for uncategorized only
+    - `uncategorized`: When true, return only tests without a user-defined category
     - `user_id`: Filter by user ID (requires admin role)
     
     **Response:**
@@ -157,7 +202,9 @@ def list_test_cases(
         test_type=test_type,
         status=status,
         priority=priority,
-        user_id=user_id
+        user_id=user_id,
+        test_category_id=test_category_id,
+        uncategorized=uncategorized,
     )
     
     # Sanitize test cases to handle empty strings in description and expected_result
@@ -197,12 +244,19 @@ def create_test_case(
     - Created test case with ID and timestamps
     """
     try:
+        _validate_test_category_ownership(
+            db=db,
+            test_category_id=test_case.test_category_id,
+            user_id=current_user.id,
+        )
         db_test_case = crud.create_test_case(
             db=db,
             test_case=test_case,
             user_id=current_user.id
         )
-        return db_test_case
+        return sanitize_test_case_for_response(db_test_case)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -246,7 +300,41 @@ def get_test_case(
             detail="Not authorized to view this test case"
         )
     
-    return db_test_case
+    return sanitize_test_case_for_response(db_test_case)
+
+
+@router.patch("/batch/category", response_model=BatchCategoryResponse)
+def batch_assign_test_category(
+    body: BatchCategoryRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Bulk assign or clear user-defined category on test cases.
+
+    **Authentication Required**
+
+    **Request Body:**
+    - `test_ids`: List of test case IDs (1–100)
+    - `test_category_id`: Category to assign, or null to uncategorize
+
+    **Response:**
+    - `updated`: Number of tests updated
+    - `failed`: IDs not updated (not found or not owned)
+    """
+    _validate_test_category_ownership(
+        db=db,
+        test_category_id=body.test_category_id,
+        user_id=current_user.id,
+    )
+
+    updated, failed = category_crud.batch_assign_test_category(
+        db=db,
+        test_ids=body.test_ids,
+        test_category_id=body.test_category_id,
+        user_id=current_user.id,
+    )
+    return BatchCategoryResponse(updated=updated, failed=failed)
 
 
 @router.put("/{test_case_id}", response_model=TestCaseResponse)
@@ -290,6 +378,13 @@ def update_test_case(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to update this test case"
         )
+
+    if updates.test_category_id is not None:
+        _validate_test_category_ownership(
+            db=db,
+            test_category_id=updates.test_category_id,
+            user_id=current_user.id,
+        )
     
     # Update test case
     updated_test_case = crud.update_test_case(
@@ -298,7 +393,7 @@ def update_test_case(
         updates=updates
     )
     
-    return updated_test_case
+    return sanitize_test_case_for_response(updated_test_case)
 
 
 @router.delete("/batch", response_model=BatchDeleteResponse)

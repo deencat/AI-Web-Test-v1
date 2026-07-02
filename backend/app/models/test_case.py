@@ -55,6 +55,12 @@ class TestCase(Base):
     
     # Additional fields for categorization
     category_id = Column(Integer, ForeignKey("kb_categories.id"), nullable=True, index=True)
+    test_category_id = Column(
+        Integer,
+        ForeignKey("test_categories.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     tags = Column(JSON, nullable=True)  # Array of strings
     test_metadata = Column(JSON, nullable=True)  # Additional metadata (renamed from 'metadata' to avoid SQLAlchemy conflict)
     
@@ -69,8 +75,9 @@ class TestCase(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     user = relationship("User", back_populates="test_cases")
     
-    # Category relationship
+    # Category relationships
     category = relationship("KBCategory", backref="test_cases")
+    test_category = relationship("TestCategory", back_populates="test_cases")
     
     # Template/Scenario relationships (Day 7 integration)
     scenario = relationship("TestScenario", backref="generated_tests", foreign_keys=[scenario_id])

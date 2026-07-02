@@ -1,7 +1,7 @@
 """CRUD operations for test cases."""
 import json
 from typing import List, Optional, Dict, Any
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, and_, or_
 
 from app.models.test_case import TestCase, TestType, TestStatus, Priority
@@ -78,6 +78,7 @@ def create_test_case(db: Session, test_case: TestCaseCreate, user_id: int) -> Te
         preconditions=test_case.preconditions,
         test_data=test_case.test_data,
         category_id=test_case.category_id,
+        test_category_id=test_case.test_category_id,
         tags=test_case.tags,
         test_metadata=test_case.test_metadata,
         user_id=user_id
@@ -99,7 +100,12 @@ def get_test_case(db: Session, test_case_id: int) -> Optional[TestCase]:
     Returns:
         Test case or None if not found
     """
-    test_case = db.query(TestCase).filter(TestCase.id == test_case_id).first()
+    test_case = (
+        db.query(TestCase)
+        .options(joinedload(TestCase.test_category))
+        .filter(TestCase.id == test_case_id)
+        .first()
+    )
     
     if test_case:
         parse_test_case_json_fields(test_case)
@@ -114,11 +120,13 @@ def get_test_cases(
     test_type: Optional[TestType] = None,
     status: Optional[TestStatus] = None,
     priority: Optional[Priority] = None,
-    user_id: Optional[int] = None
+    user_id: Optional[int] = None,
+    test_category_id: Optional[int] = None,
+    uncategorized: bool = False,
 ) -> tuple[List[TestCase], int]:
     """
     Get test cases with optional filtering and pagination.
-    
+
     Args:
         db: Database session
         skip: Number of records to skip
@@ -127,12 +135,15 @@ def get_test_cases(
         status: Filter by status
         priority: Filter by priority
         user_id: Filter by user ID
-        
+        test_category_id: Filter by user-defined category ID.
+            Use 0 to filter uncategorized tests (test_category_id IS NULL).
+        uncategorized: When True, filter tests with test_category_id IS NULL.
+
     Returns:
         Tuple of (test cases list, total count)
     """
-    query = db.query(TestCase)
-    
+    query = db.query(TestCase).options(joinedload(TestCase.test_category))
+
     # Apply filters
     if test_type:
         query = query.filter(TestCase.test_type == test_type)
@@ -142,6 +153,10 @@ def get_test_cases(
         query = query.filter(TestCase.priority == priority)
     if user_id:
         query = query.filter(TestCase.user_id == user_id)
+    if uncategorized or test_category_id == 0:
+        query = query.filter(TestCase.test_category_id.is_(None))
+    elif test_category_id is not None:
+        query = query.filter(TestCase.test_category_id == test_category_id)
     
     # Get total count
     total = query.count()

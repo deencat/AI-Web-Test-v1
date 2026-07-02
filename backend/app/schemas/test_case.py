@@ -3,6 +3,7 @@ from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import datetime
 from app.models.test_case import TestType, Priority, TestStatus
+from app.schemas.test_category import TestCategorySummary
 
 
 # Base schema with common fields
@@ -49,7 +50,14 @@ class TestCaseBase(BaseModel):
     )
     
     # Day 7 Integration fields
-    category_id: Optional[int] = Field(None, description="Knowledge base category ID")
+    category_id: Optional[int] = Field(
+        None,
+        description="Knowledge base category ID (generation/RAG context only)",
+    )
+    test_category_id: Optional[int] = Field(
+        None,
+        description="User-defined organization category ID",
+    )
     tags: Optional[List[str]] = Field(None, description="Test tags for categorization")
     test_metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata (template_id, scenario_id, etc.)")
 
@@ -89,7 +97,14 @@ class TestCaseUpdate(BaseModel):
     expected_result: Optional[str] = Field(None, min_length=1)
     preconditions: Optional[str] = None
     test_data: Optional[Dict[str, Any]] = None
-    category_id: Optional[int] = None
+    category_id: Optional[int] = Field(
+        None,
+        description="Knowledge base category ID (generation/RAG context only)",
+    )
+    test_category_id: Optional[int] = Field(
+        None,
+        description="User-defined organization category ID",
+    )
     tags: Optional[List[str]] = None
     test_metadata: Optional[Dict[str, Any]] = None
     requires_runtime_credentials: Optional[bool] = Field(
@@ -125,7 +140,11 @@ class TestCaseInDB(TestCaseBase):
 # Schema for API response
 class TestCaseResponse(TestCaseInDB):
     """Schema for test case API response."""
-    pass
+
+    test_category: Optional[TestCategorySummary] = Field(
+        None,
+        description="Nested user-defined category when loaded",
+    )
 
 
 # Schema for test generation request
@@ -248,5 +267,28 @@ class BatchDeleteResponse(BaseModel):
     failed: IDs that could not be deleted (not found, not owned, or DB error).
     """
     deleted: int
+    failed: List[int]
+
+
+# ── Batch Category Assignment ────────────────────────────────────────────────
+
+class BatchCategoryRequest(BaseModel):
+    """Request body for PATCH /tests/batch/category.
+
+    test_ids: list of test case IDs to update (1–100 items).
+    test_category_id: category to assign, or null to uncategorize.
+    """
+
+    test_ids: List[int] = Field(..., min_length=1, max_length=100)
+    test_category_id: Optional[int] = Field(
+        None,
+        description="User-defined category ID to assign, or null to uncategorize",
+    )
+
+
+class BatchCategoryResponse(BaseModel):
+    """Response body for PATCH /tests/batch/category."""
+
+    updated: int
     failed: List[int]
 

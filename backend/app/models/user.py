@@ -25,5 +25,6 @@ class User(Base):
     browser_profiles = relationship("BrowserProfile", back_populates="user", cascade="all, delete-orphan")
     email_credentials = relationship("EmailCredential", back_populates="user", cascade="all, delete-orphan")
     step_library_modules = relationship("StepLibraryModule", back_populates="user", cascade="all, delete-orphan")
+    test_categories = relationship("TestCategory", back_populates="user", cascade="all, delete-orphan")
 
 

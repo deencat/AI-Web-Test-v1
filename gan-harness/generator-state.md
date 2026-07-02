@@ -1,32 +1,25 @@
-# Generator State — Iteration 003
+# Generator State — Iteration Sprint 2
 
 ## What Was Built
-- **Sidebar split**: Replaced single "Tests" nav with "Generate Tests" (`/tests`, Sparkles icon) and "Saved Tests" (`/tests/saved`, FolderOpen icon)
-- **GenerateTestsPage**: Extracted from TestsPage — NL generation form, KB context, generated test cards, save/edit/delete before persist; no saved-test list or edit redirect handling
-- **SavedTestsPage enhancements**: `?edit=` drawer (slide-over), editable title field in drawer, inline title rename via `InlineTitleEditor`
-- **InlineTitleEditor**: New reusable component — click/pencil to edit, Enter/blur save, Escape cancel, validation, loading state, error revert
-- **App.tsx**: `TestsRoute` redirects `/tests?edit={id}` → `/tests/saved?edit={id}`; imports `GenerateTestsPage`
-- **TestDetailPage**: Edit link updated to `/tests/saved?edit=`
-- **E2E tests**: Updated `03-tests-page.spec.ts`, `06-navigation.spec.ts`; also fixed `02-dashboard.spec.ts`, `07-sprint2-features.spec.ts` for new nav labels
+- `TestCategory` SQLAlchemy model with UNIQUE (user_id, name)
+- Migration `backend/migrations/add_test_categories.py` (upgrade/downgrade, idempotent)
+- Pydantic schemas for test category CRUD + nested `TestCategorySummary` on tests
+- CRUD module with test counts, delete uncategorize, batch assign
+- REST router `/api/v1/test-categories` (list/create/get/update/delete)
+- Extended `TestCase` with `test_category_id` FK (kept `category_id` KB FK unchanged)
+- `GET /tests?test_category_id=` filter (`0` = uncategorized; `uncategorized=true` also supported)
+- `PATCH /tests/batch/category` bulk assign endpoint
+- Response enrichment: nested `test_category: { id, name, color }`
+- 22 unit tests in `backend/tests/unit/test_test_categories.py`
 
 ## What Changed This Iteration
-- **Fixed**: TestDetailPage delete navigation — post-delete now navigates to `/tests/saved` instead of `/tests` (Generate Tests)
-- **Added**: `createDisposableTest` helper in `tests/e2e/helpers/auth.ts` for isolated delete E2E coverage
-- **Added**: E2E test `should navigate to saved tests after deleting from test detail` in Saved Tests Page — Sprint 1 suite
-
-## Files Changed
-| File | Action |
-|------|--------|
-| `frontend/src/pages/TestDetailPage.tsx` | Modified — delete nav to `/tests/saved` |
-| `tests/e2e/helpers/auth.ts` | Modified — added `createDisposableTest` helper |
-| `tests/e2e/03-tests-page.spec.ts` | Modified — delete navigation E2E test |
+- Sprint 2 backend-only scope per spec (no frontend changes)
 
 ## Known Issues
-- `npm run build` still fails due to pre-existing TS errors in unrelated files (mock/knowledgeBase, AgentWorkflow, SettingsPage-Old, etc.) — **no new errors in Sprint 1 changed files**
-- Inline title E2E tests skip when no saved tests exist in the environment
-- SavedTestsPage edit drawer uses `TestStepEditor` auto-save for steps; manual `steps` in PUT may be stale if user edits steps then immediately clicks Save Changes without waiting for auto-save debounce
+- Project uses custom migrations in `backend/migrations/` (not Alembic env); migration runs via `python migrations/add_test_categories.py`
+- SQLite `downgrade()` DROP COLUMN may not work on older SQLite versions
 
 ## Dev Server
-- URL: http://localhost:5173
-- Status: running
-- Command: `npm run dev` (in `frontend/`)
+- URL: http://localhost:3000 (frontend unchanged)
+- Backend API: standard FastAPI port from project config
+- Status: not restarted this iteration (backend-only)
