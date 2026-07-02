@@ -183,6 +183,89 @@ test.describe('Saved Tests Page — Sprint 1', () => {
     await expect(page.locator(`[data-testid="${testId}"]`)).toHaveText(baseTitle, { timeout: 15000 });
   });
 
+  test('should navigate back to saved tests from test detail', async ({ page }) => {
+    const titleButton = page.locator('[data-testid^="inline-title-button-"]').first();
+    const testId = await titleButton.getAttribute('data-testid');
+    const id = testId?.replace('inline-title-button-', '');
+    expect(id).toBeTruthy();
+
+    await page.getByTitle('View Details').first().click();
+    await page.waitForURL(new RegExp(`/tests/${id}$`));
+    await expect(page).toHaveURL(new RegExp(`/tests/${id}$`));
+
+    await page.getByRole('button', { name: /back to saved tests/i }).click();
+    await page.waitForURL('**/tests/saved');
+    await expect(page).toHaveURL(/\/tests\/saved$/);
+    await expect(page.getByRole('heading', { name: /saved tests/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /generate tests/i })).not.toBeVisible();
+  });
+
+  test('should revert title when inline save fails with API error', async ({ page }) => {
+    const titleButton = page.locator('[data-testid^="inline-title-button-"]').first();
+    const testId = await titleButton.getAttribute('data-testid');
+    expect(testId).toBeTruthy();
+    const id = testId!.replace('inline-title-button-', '');
+    const originalTitle = (await titleButton.textContent())?.trim() || 'Test';
+
+    await page.route(`**/api/v1/tests/${id}`, async (route) => {
+      if (route.request().method() === 'PUT') {
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: 'Simulated save failure' }),
+        });
+      } else {
+        await route.continue();
+      }
+    });
+
+    await titleButton.click();
+    const input = page.locator('[data-testid^="inline-title-input-"]').first();
+    await input.fill(`Failed Rename ${Date.now()}`);
+    await input.press('Enter');
+
+    await expect(page.locator(`[data-testid="${testId}"]`)).toHaveText(originalTitle, {
+      timeout: 15000,
+    });
+    await expect(page.locator('[data-testid^="inline-title-input-"]')).toHaveCount(0);
+  });
+
+  test('should show loading spinner during inline title save', async ({ page }) => {
+    const titleButton = page.locator('[data-testid^="inline-title-button-"]').first();
+    const testId = await titleButton.getAttribute('data-testid');
+    expect(testId).toBeTruthy();
+    const id = testId!.replace('inline-title-button-', '');
+    const originalTitle = (await titleButton.textContent())?.trim() || 'Test';
+    const baseTitle = originalTitle.replace(/\s+spin\s+\d+$/, '').slice(0, 200);
+    const newTitle = `${baseTitle} spin ${Date.now()}`;
+
+    await page.route(`**/api/v1/tests/${id}`, async (route) => {
+      if (route.request().method() === 'PUT') {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        await route.continue();
+      } else {
+        await route.continue();
+      }
+    });
+
+    await titleButton.click();
+    const input = page.locator('[data-testid^="inline-title-input-"]').first();
+    await input.fill(newTitle);
+    await input.press('Enter');
+
+    await expect(page.locator('.animate-spin').first()).toBeVisible({
+      timeout: 5000,
+    });
+    await expect(page.locator(`[data-testid="${testId}"]`)).toHaveText(newTitle, { timeout: 15000 });
+
+    await page.unroute(`**/api/v1/tests/${id}`);
+    await page.locator(`[data-testid="${testId}"]`).click();
+    const revertInput = page.locator('[data-testid^="inline-title-input-"]').first();
+    await revertInput.fill(baseTitle);
+    await revertInput.press('Enter');
+    await expect(page.locator(`[data-testid="${testId}"]`)).toHaveText(baseTitle, { timeout: 15000 });
+  });
+
   test('should open edit drawer via ?edit= query param on saved tab', async ({ page }) => {
     const testId = await page
       .locator('[data-testid^="inline-title-button-"]')

@@ -87,7 +87,7 @@ export const TestDetailPage: React.FC = () => {
   };
 
   const handleBack = () => {
-    navigate('/tests');
+    navigate('/tests/saved');
   };
 
   const handleCompareVersions = (v1: number, v2: number) => {
@@ -184,7 +184,7 @@ export const TestDetailPage: React.FC = () => {
         <div className="space-y-6">
           <Button variant="secondary" onClick={handleBack}>
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Tests
+            Back to Saved Tests
           </Button>
           <Card>
             <div className="text-center py-8">
@@ -205,7 +205,7 @@ export const TestDetailPage: React.FC = () => {
         <div className="space-y-6">
           <Button variant="secondary" onClick={handleBack}>
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Tests
+            Back to Saved Tests
           </Button>
           <Card>
             <div className="text-center py-8">
@@ -225,7 +225,7 @@ export const TestDetailPage: React.FC = () => {
           <div className="flex-1">
             <Button variant="secondary" onClick={handleBack} className="mb-4">
               <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Tests
+              Back to Saved Tests
             </Button>
             <h1 className="text-3xl font-bold text-gray-900">{test.title || test.name}</h1>
             <p className="text-gray-600 mt-2">{test.description}</p>
