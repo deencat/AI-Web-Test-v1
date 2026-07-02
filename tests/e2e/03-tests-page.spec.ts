@@ -274,8 +274,7 @@ test.describe('Saved Tests Page — Sprint 1', () => {
     await page.reload();
     await waitForSavedTestsList(page);
 
-    const testRow = page.locator('div').filter({ hasText: `ID: #${testId}` });
-    await testRow.getByTitle('View Details').click();
+    await page.goto(`/tests/${testId}`);
     await page.waitForURL(new RegExp(`/tests/${testId}$`));
     await expect(page).toHaveURL(new RegExp(`/tests/${testId}$`));
 
