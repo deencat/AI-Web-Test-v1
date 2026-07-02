@@ -26,7 +26,7 @@ AI Web Test users today land on a single **Tests** sidebar item that mixes natur
 | **Frontend types** | `frontend/src/types/api.ts` | Conflated | `category_id` documented as KB |
 | **Test suites picker** | `frontend/src/components/SuiteFormModal.tsx` | Unaffected | Uses `testsService.getAllTests()` — must still see all saved tests |
 | **E2E** | `tests/e2e/03-tests-page.spec.ts`, `06-navigation.spec.ts` | Stale assumptions | Expect single "Tests" link and "Test Cases" heading on `/tests` |
-| **ADR** | — | **Missing** | New **ADR-008** required for data model + navigation split |
+| **ADR** | `documentation/ADR-008-test-categories-navigation.md` | Added | Captures data model separation + navigation split + inline title editing |
 
 **In scope:** Sidebar/routing split, user category CRUD, assign/change category (single + bulk), filter/group UI on Saved Tests, **inline title rename on saved test rows**, full edit drawer title field, backend model + API, migration, ADR-008, E2E updates.
 
@@ -547,13 +547,15 @@ Migration `downgrade()` drops `test_category_id` column and `test_categories` ta
 
 **DoD:** User can create categories, assign single/bulk, filter list; delete category uncategorizes tests.
 
-### Sprint 4: Docs + polish (~0.5 day)
+### Sprint 4: Docs + QA hardening (~0.75 day)
 
 | # | Deliverable | Effort |
 |---|-------------|--------|
 | 4.1 | ADR-008 | 1h |
-| 4.2 | Edit drawer polish on Saved Tests; inline title edge cases (concurrent edit, a11y audit) | 2h |
-| 4.3 | Frontend `SavedTestsPage.test.tsx` + `InlineTitleEditor.test.tsx` | 2h |
+| 4.2 | Saved Tests edit polish; inline title edge-case validation (concurrent edit, a11y audit) | 2h |
+| 4.3 | Frontend tests: `SavedTestsPage.test.tsx` + `InlineTitleEditor.test.tsx` | 2h |
+
+**DoD:** ADR-008 is published and references navigation split + `test_category_id` model + inline title editing; Saved Tests edit UX passes edge-case checks; frontend tests cover inline rename validation/cancel/save paths and Saved Tests edit/query-param behavior.
 
 **Total estimate:** ~4.5–5 days across 4 sprints.
 
@@ -614,7 +616,7 @@ Migration `downgrade()` drops `test_category_id` column and `test_categories` ta
 
 ### Documentation
 
-- [ ] `documentation/ADR-008-test-categories-navigation.md` complete (mentions inline title edit)
+- [x] `documentation/ADR-008-test-categories-navigation.md` complete (mentions inline title edit)
 - [ ] OpenAPI shows new endpoints and fields
 
 ---
