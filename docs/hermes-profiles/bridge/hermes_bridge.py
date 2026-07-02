@@ -24,10 +24,29 @@ import threading
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [bridge] %(message)s")
 logger = logging.getLogger("hermes_bridge")
+
+
+def _load_hermes_env() -> None:
+    """Load ~/.hermes/.env into os.environ (does not override existing vars)."""
+    env_path = Path.home() / ".hermes" / ".env"
+    if not env_path.is_file():
+        logger.warning("No %s — set AWT_AGENT_EVENTS_URL before starting bridge", env_path)
+        return
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+    logger.info("Loaded env from %s", env_path)
 
 _DELEGATE_CHAINS: dict[str, list[tuple[str, str]]] = {
     "full_cycle": [
@@ -134,8 +153,29 @@ def post_event(
             "Content-Type": "application/json",
         },
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:500]
+        logger.error(
+            "POST %s failed HTTP %s for job %s event %s: %s",
+            events_url,
+            exc.code,
+            job_id,
+            event_type,
+            detail,
+        )
+        raise
+    except urllib.error.URLError as exc:
+        logger.error(
+            "POST %s unreachable for job %s event %s: %s",
+            events_url,
+            job_id,
+            event_type,
+            exc.reason,
+        )
+        raise
 
 
 def _demo_mode() -> bool:
@@ -441,7 +481,27 @@ class BridgeHandler(BaseHTTPRequestHandler):
         self._json_response(202, {"accepted": True, "job_id": job_id})
 
 
+def _log_bridge_config(port: int) -> None:
+    events_url = os.environ.get("AWT_AGENT_EVENTS_URL", "").strip()
+    secret_set = bool(os.environ.get("HERMES_BRIDGE_SECRET", "").strip())
+    demo = _demo_mode()
+    logger.info("Bridge config: port=%s demo_mode=%s secret_set=%s", port, demo, secret_set)
+    if events_url:
+        logger.info("AWT_AGENT_EVENTS_URL=%s", events_url)
+    else:
+        logger.error(
+            "AWT_AGENT_EVENTS_URL is not set. Add it to ~/.hermes/.env "
+            "(NOT only in qa-orchestrator profile) and restart the bridge."
+        )
+    if events_url and ("localhost" in events_url or "127.0.0.1" in events_url):
+        logger.warning(
+            "AWT_AGENT_EVENTS_URL uses loopback — use the Windows LAN IP "
+            "(e.g. http://192.168.1.227:8000/api/v1/agent/hermes/events) when bridge runs on Ubuntu."
+        )
+
+
 def serve(port: int) -> None:
+    _log_bridge_config(port)
     server = ThreadingHTTPServer(("0.0.0.0", port), BridgeHandler)
     logger.info("Listening on 0.0.0.0:%s (POST /run, GET /health)", port)
     try:
@@ -468,6 +528,7 @@ def main() -> int:
     post_p.add_argument("--summary", help="JSON object for payload_summary")
 
     args = parser.parse_args()
+    _load_hermes_env()
 
     if args.command == "serve":
         serve(args.port)
