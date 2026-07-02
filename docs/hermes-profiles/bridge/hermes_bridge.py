@@ -218,7 +218,7 @@ def _run_orchestrator_cli(job_type: str, project: str | None, params: dict) -> s
         raise RuntimeError(
             f"orchestrator exit {result.returncode}: {result.stderr or result.stdout}",
         )
-    return (result.stdout or "").strip()
+    return (result.stdout or result.stderr or "").strip()
 
 
 def _simulate_delegates(
@@ -331,6 +331,8 @@ def execute_job(job_id: str, job_type: str, project: str | None, params: dict) -
         # (invoke the qa-orchestrator profile).
         session_id = f"sess_{job_id.replace('-', '')[:12]}"
         user_message = str(params.get("message", "")).strip()
+        if not user_message:
+            raise RuntimeError("orchestrator_chat requires params.message")
         if _demo_mode():
             logger.info("Job %s — open chat (demo)", job_id)
             assistant_reply = _demo_open_chat_reply(user_message)
@@ -351,18 +353,11 @@ def execute_job(job_id: str, job_type: str, project: str | None, params: dict) -
                 event_type="delegate_complete",
                 profile="qa-orchestrator",
                 hermes_session_id=session_id,
-                message=assistant_reply,
+                message="Orchestrator reply",
                 payload_summary={"status": "success", "mode": "demo_open_chat"},
                 llm_turns=[
-                    {
-                        "role": "user",
-                        "content": user_message,
-                    },
-                    {
-                        "role": "assistant",
-                        "content": assistant_reply,
-                        "tokens": 64,
-                    },
+                    {"role": "user", "content": user_message},
+                    {"role": "assistant", "content": assistant_reply, "tokens": 64},
                 ],
             )
             post_event(
@@ -400,10 +395,22 @@ def execute_job(job_id: str, job_type: str, project: str | None, params: dict) -
         message=f"Orchestrator CLI started for {job_type}",
     )
     try:
-        output = _run_orchestrator_cli(job_type, project, params)
-        # For Agent Console "chat" jobs, attach the assistant output so the UI
-        # can display a real reply instead of the bridge's demo placeholder.
-        if job_type == "orchestrator_chat" and output:
+        cli_output = _run_orchestrator_cli(job_type, project, params)
+        if cli_output:
+            llm_turns: list[dict[str, Any]] = [
+                {
+                    "role": "assistant",
+                    "content": cli_output,
+                    "tokens": max(len(cli_output) // 4, 1),
+                }
+            ]
+            if job_type == "orchestrator_chat":
+                user_message = str((params or {}).get("message", "")).strip()
+                if user_message:
+                    llm_turns = [
+                        {"role": "user", "content": user_message},
+                        *llm_turns,
+                    ]
             post_event(
                 events_url=events_url,
                 secret=secret,
@@ -413,7 +420,8 @@ def execute_job(job_id: str, job_type: str, project: str | None, params: dict) -
                 parent_profile=None,
                 hermes_session_id=session_id,
                 message="Orchestrator reply",
-                llm_turns=[{"role": "assistant", "content": output}],
+                payload_summary={"status": "success", "job_type": job_type},
+                llm_turns=llm_turns,
             )
         post_event(
             events_url=events_url,

@@ -1,9 +1,55 @@
 """Extract human-readable orchestrator replies from factory job events."""
 from __future__ import annotations
 
+import json
 from typing import Any, Optional
 
 from app.models.factory_job import FactoryJob
+
+_BOILERPLATE_MESSAGES = frozenset(
+    {
+        "orchestrator cli finished",
+        "open chat completed",
+        "orchestrator reply",
+    }
+)
+
+
+def _is_boilerplate(message: str) -> bool:
+    lower = message.strip().lower()
+    if not lower:
+        return True
+    if lower in _BOILERPLATE_MESSAGES:
+        return True
+    if lower.startswith("orchestrator cli started"):
+        return True
+    if lower.startswith("bridge completed"):
+        return True
+    return False
+
+
+def _summary_from_text(text: str) -> Optional[str]:
+    stripped = text.strip()
+    if not stripped:
+        return None
+
+    candidates = [stripped]
+    first_brace = stripped.find("{")
+    last_brace = stripped.rfind("}")
+    if first_brace >= 0 and last_brace > first_brace:
+        candidates.append(stripped[first_brace : last_brace + 1])
+
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        summary = parsed.get("summary")
+        if isinstance(summary, str) and summary.strip():
+            return summary.strip()
+    return None
 
 
 def _assistant_from_llm_turns(turns: Any) -> Optional[str]:
@@ -19,23 +65,48 @@ def _assistant_from_llm_turns(turns: Any) -> Optional[str]:
     return None
 
 
+def _summary_from_payload(payload: Any) -> Optional[str]:
+    if not isinstance(payload, dict):
+        return None
+    summary = payload.get("summary")
+    if isinstance(summary, str) and summary.strip():
+        return summary.strip()
+    return None
+
+
 def extract_orchestrator_reply(job: FactoryJob) -> Optional[str]:
     """Best-effort assistant reply for open chat and delegate completions."""
     events = list(job.events or [])
+
     for event in reversed(events):
-        reply = _assistant_from_llm_turns(event.llm_turns)
-        if reply:
-            return reply
+        raw = _assistant_from_llm_turns(event.llm_turns)
+        if not raw:
+            continue
+        summary = _summary_from_text(raw)
+        if summary:
+            return summary
+        if not _is_boilerplate(raw):
+            return raw
 
-        if event.event_type == "error" and event.message:
-            return event.message
+    for event in reversed(events):
+        summary = _summary_from_payload(event.payload_summary)
+        if summary:
+            return summary
 
-        if event.event_type in ("delegate_complete", "job_complete"):
-            profile = (event.profile or "").lower()
-            if profile in ("qa-orchestrator", "factory_bridge", "hermes_bridge"):
-                msg = (event.message or "").strip()
-                if msg and not msg.startswith("Bridge completed"):
-                    return msg
+    for event in reversed(events):
+        msg = (event.message or "").strip()
+        if not msg or _is_boilerplate(msg):
+            continue
+        summary = _summary_from_text(msg)
+        if summary:
+            return summary
+        profile = (event.profile or "").lower()
+        if event.event_type in ("delegate_complete", "error") and profile in (
+            "qa-orchestrator",
+            "factory_bridge",
+            "hermes_bridge",
+        ):
+            return msg
 
     if job.status == "failed" and job.error_message:
         return job.error_message

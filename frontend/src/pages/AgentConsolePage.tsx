@@ -15,12 +15,137 @@ import { isFactoryOperator, isSuperadmin } from '../utils/roles';
 
 const TERMINAL_JOB_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
+const BOILERPLATE_REPLIES = new Set([
+  'orchestrator cli finished',
+  'open chat completed',
+  'orchestrator reply',
+]);
+
+function isBoilerplateReply(text: string): boolean {
+  const lower = text.trim().toLowerCase();
+  if (!lower || BOILERPLATE_REPLIES.has(lower)) return true;
+  if (lower.startsWith('orchestrator cli started')) return true;
+  if (lower.startsWith('bridge completed')) return true;
+  return false;
+}
+
+function extractSummaryFromText(raw: string | null | undefined): string | null {
+  const parsed = parseOrchestratorReply(raw ?? null);
+  if (!parsed?.summary || isBoilerplateReply(parsed.summary)) return null;
+  return parsed.summary;
+}
+
+function extractAssistantReplyFromEvent(ev: FactoryJobEvent): string | null {
+  const turns = ev.llm_turns;
+  if (!Array.isArray(turns)) return null;
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    const turn = turns[i] as Record<string, unknown>;
+    if (turn?.role === 'assistant' && typeof turn.content === 'string' && turn.content.trim()) {
+      return turn.content.trim();
+    }
+  }
+  return null;
+}
+
+function extractAssistantReplyFromJob(
+  events: FactoryJobEvent[],
+  orchestratorReply: string | null,
+): string | null {
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const fromTurns = extractAssistantReplyFromEvent(events[i]);
+    const summary = extractSummaryFromText(fromTurns);
+    if (summary) return summary;
+  }
+
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const payloadSummary = events[i].payload_summary?.summary;
+    if (typeof payloadSummary === 'string' && payloadSummary.trim()) {
+      return payloadSummary.trim();
+    }
+  }
+
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const summary = extractSummaryFromText(events[i].message);
+    if (summary) return summary;
+  }
+
+  return extractSummaryFromText(orchestratorReply);
+}
+
+function getMonitorMessage(ev: FactoryJobEvent): string {
+  const assistantReply = extractAssistantReplyFromEvent(ev);
+  if (assistantReply) {
+    const summary = extractSummaryFromText(assistantReply);
+    if (summary) return summary;
+    if (!isBoilerplateReply(assistantReply)) return assistantReply;
+  }
+  const fromMessage = extractSummaryFromText(ev.message);
+  if (fromMessage) return fromMessage;
+  return ev.message || ev.event_type;
+}
+
+type ParsedOrchestratorReply = {
+  summary: string;
+  jobType?: string;
+  testCaseIds?: Array<string | number>;
+  errors?: string[];
+  raw?: string;
+};
+
+function parseOrchestratorReply(rawReply: string | null): ParsedOrchestratorReply | null {
+  if (!rawReply) return null;
+  const trimmed = rawReply.trim();
+  if (!trimmed) return null;
+
+  // Try to extract and parse embedded JSON payload from verbose Hermes output.
+  const firstBrace = trimmed.indexOf('{');
+  const lastBrace = trimmed.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    const candidate = trimmed.slice(firstBrace, lastBrace + 1);
+    try {
+      const parsed = JSON.parse(candidate) as {
+        summary?: unknown;
+        job_type?: unknown;
+        test_case_ids?: unknown;
+        errors?: unknown;
+      };
+      const summary =
+        typeof parsed.summary === 'string' && parsed.summary.trim()
+          ? parsed.summary.trim()
+          : trimmed;
+      return {
+        summary,
+        jobType: typeof parsed.job_type === 'string' ? parsed.job_type : undefined,
+        testCaseIds: Array.isArray(parsed.test_case_ids)
+          ? parsed.test_case_ids as Array<string | number>
+          : undefined,
+        errors: Array.isArray(parsed.errors)
+          ? parsed.errors
+              .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+              .map((x) => x.trim())
+          : undefined,
+        raw: trimmed,
+      };
+    } catch {
+      // Fall back to plain text rendering below.
+    }
+  }
+
+  return { summary: trimmed, raw: trimmed };
+}
+
+type ChatBubble = {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  text: string;
+};
+
 export const AgentConsolePage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const jobId = searchParams.get('job');
   const [message, setMessage] = useState(() => (isSuperadmin() ? '' : 'Run regression'));
-  const [reply, setReply] = useState<string | null>(null);
   const [orchestratorReply, setOrchestratorReply] = useState<string | null>(null);
+  const [chatBubbles, setChatBubbles] = useState<ChatBubble[]>([]);
   const [jobStatus, setJobStatus] = useState<string | null>(null);
   const [events, setEvents] = useState<FactoryJobEvent[]>([]);
   const [trace, setTrace] = useState<HermesTrace | null>(null);
@@ -28,9 +153,37 @@ export const AgentConsolePage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollAbortRef = useRef<AbortController | null>(null);
+  const lastAssistantReplyKeyRef = useRef<string | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
   const allowed = isFactoryOperator();
   const openChat = isSuperadmin();
+  const assistantChatReply = extractAssistantReplyFromJob(events, orchestratorReply);
+  const waitingForReply =
+    Boolean(jobId) &&
+    (loading || (jobStatus === 'running' && !assistantChatReply && !error));
+
+  useEffect(() => {
+    if (!assistantChatReply || !jobId) return;
+    const key = `${jobId}:${assistantChatReply}`;
+    if (lastAssistantReplyKeyRef.current === key) return;
+    lastAssistantReplyKeyRef.current = key;
+    setChatBubbles((prev) => [
+      ...prev,
+      {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        text: assistantChatReply,
+      },
+    ]);
+  }, [assistantChatReply, jobId]);
+
+  useEffect(() => {
+    chatScrollRef.current?.scrollTo({
+      top: chatScrollRef.current.scrollHeight,
+      behavior: 'smooth',
+    });
+  }, [chatBubbles, waitingForReply]);
 
   const loadHermesTrace = useCallback(async (id: string) => {
     try {
@@ -130,13 +283,21 @@ export const AgentConsolePage: React.FC = () => {
     if (!message.trim()) return;
     setLoading(true);
     setError(null);
-    setReply(null);
     setOrchestratorReply(null);
+    lastAssistantReplyKeyRef.current = null;
+    setChatBubbles((prev) => [
+      ...prev,
+      {
+        id: `user-${Date.now()}`,
+        role: 'user',
+        text: message.trim(),
+      },
+    ]);
 
     try {
       const res = await postAgentChat(message.trim(), { project: 'Three-HK' });
-      setReply(res.reply);
       setSearchParams({ job: res.job_id }, { replace: true });
+      setMessage('');
     } catch (err: unknown) {
       const msg =
         err && typeof err === 'object' && 'response' in err
@@ -164,7 +325,7 @@ export const AgentConsolePage: React.FC = () => {
 
   return (
     <Layout>
-      <div className="max-w-5xl mx-auto space-y-6">
+      <div className="max-w-7xl mx-auto space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Agent Console</h1>
           <p className="text-gray-600 mt-1">
@@ -174,9 +335,49 @@ export const AgentConsolePage: React.FC = () => {
           </p>
         </div>
 
-        <div className={`grid grid-cols-1 gap-6 ${jobId && openChat ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}>
-          <section className="bg-white rounded-lg shadow p-6">
+        <div
+          className={`grid grid-cols-1 gap-6 ${
+            jobId && openChat ? 'lg:grid-cols-12' : 'lg:grid-cols-3'
+          }`}
+        >
+          <section
+            className={`bg-white rounded-lg shadow p-6 ${
+              jobId && openChat ? 'lg:col-span-7' : 'lg:col-span-2'
+            }`}
+          >
             <h2 className="text-lg font-semibold mb-4">Agent Chat</h2>
+            <div
+              ref={chatScrollRef}
+              className="mb-4 border border-gray-200 rounded-lg bg-gray-50 p-4 min-h-[280px] max-h-[420px] overflow-y-auto space-y-3"
+            >
+              {chatBubbles.length === 0 && !waitingForReply ? (
+                <p className="text-sm text-gray-500">
+                  Conversation will appear here. Ask naturally, or use <code>!command</code> for structured actions.
+                </p>
+              ) : (
+                chatBubbles.map((bubble) => (
+                  <div
+                    key={bubble.id}
+                    className={
+                      bubble.role === 'user'
+                        ? 'bg-blue-600 text-white rounded-2xl rounded-br-md px-4 py-3 max-w-[85%] ml-auto'
+                        : 'mr-12 bg-white text-gray-900 rounded-2xl rounded-bl-md px-4 py-3 border border-gray-200 shadow-sm max-w-[85%]'
+                    }
+                  >
+                    {bubble.role === 'assistant' && (
+                      <p className="text-xs text-purple-700 mb-1 font-semibold">QA Orchestrator</p>
+                    )}
+                    <p className="text-sm whitespace-pre-wrap break-words">{bubble.text}</p>
+                  </div>
+                ))
+              )}
+              {waitingForReply && (
+                <div className="mr-12 bg-white text-gray-500 rounded-2xl rounded-bl-md px-4 py-3 border border-gray-200 shadow-sm max-w-[85%]">
+                  <p className="text-xs text-purple-700 mb-1 font-semibold">QA Orchestrator</p>
+                  <p className="text-sm italic">Thinking…</p>
+                </div>
+              )}
+            </div>
             <form onSubmit={handleSubmit} className="space-y-4">
               <textarea
                 className="w-full border border-gray-300 rounded-lg p-3 min-h-[120px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -197,22 +398,8 @@ export const AgentConsolePage: React.FC = () => {
                 {loading ? 'Sending…' : 'Send'}
               </button>
             </form>
-            {orchestratorReply && (
-              <div className="mt-4 text-sm bg-purple-50 border border-purple-200 rounded-lg p-4">
-                <p className="text-xs font-semibold text-purple-800 uppercase tracking-wide mb-2">
-                  QA Orchestrator
-                </p>
-                <p className="text-gray-800 whitespace-pre-wrap">{orchestratorReply}</p>
-              </div>
-            )}
-            {reply && (
-              <p className="mt-4 text-xs text-gray-500">{reply}</p>
-            )}
             {error && (
               <p className="mt-4 text-sm text-red-700 bg-red-50 border border-red-100 rounded p-3">{error}</p>
-            )}
-            {jobStatus === 'running' && !orchestratorReply && !error && (
-              <p className="mt-4 text-sm text-gray-500 italic">Waiting for QA Orchestrator…</p>
             )}
             {jobId && (
               <p className="mt-2 text-xs text-gray-500">
@@ -222,7 +409,11 @@ export const AgentConsolePage: React.FC = () => {
             )}
           </section>
 
-          <section className="bg-white rounded-lg shadow p-6">
+          <section
+            className={`bg-white rounded-lg shadow p-6 ${
+              jobId && openChat ? 'lg:col-span-3' : 'lg:col-span-1'
+            }`}
+          >
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Job Monitor</h2>
               {jobId && (
@@ -242,12 +433,12 @@ export const AgentConsolePage: React.FC = () => {
             ) : (
               <ul className="space-y-2 max-h-[420px] overflow-y-auto text-sm font-mono">
                 {events.map((ev) => (
-                  <li key={ev.id} className="border-l-4 border-blue-400 pl-3 py-1">
+                  <li key={ev.id} className="border-l-4 border-blue-400 pl-3 py-1 break-words">
                     <span className="text-gray-400">{new Date(ev.created_at).toLocaleTimeString()}</span>
                     {' '}
                     <span className="text-purple-700">{factoryProfileDisplayName(ev.profile)}</span>
                     {' '}
-                    <span className="text-gray-800">{ev.message || ev.event_type}</span>
+                    <span className="text-gray-800 whitespace-pre-wrap">{getMonitorMessage(ev)}</span>
                   </li>
                 ))}
               </ul>
@@ -255,7 +446,7 @@ export const AgentConsolePage: React.FC = () => {
           </section>
 
           {jobId && openChat && (
-            <section className="bg-white rounded-lg shadow p-6 border border-amber-200">
+            <section className="bg-white rounded-lg shadow p-6 border border-amber-200 lg:col-span-2">
               <h2 className="text-lg font-semibold mb-1">Agent Observatory</h2>
               <p className="text-xs text-amber-700 mb-4">Superadmin only — delegate payloads &amp; LLM turns</p>
               {traceError && (
