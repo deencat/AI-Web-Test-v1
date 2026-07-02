@@ -1,124 +1,176 @@
-# Evaluation Report: Test Suite Edit + ADR-007
+# Evaluation Report — Sprint 1 (Navigation Split + Title Editing)
 
-**Evaluator:** GAN Evaluator (continued)  
-**Date:** June 22, 2026  
-**Spec:** `gan-harness/spec.md`  
-**Rubric:** `gan-harness/eval-rubric.md`
-
----
-
-## Verdict: **PASS** (1.00 / 1.00)
-
-Implementation meets all rubric criteria. Ready to merge.
+**Date:** 2026-07-02  
+**Iteration:** 001  
+**Evaluator:** gan-evaluator  
+**App URL:** http://localhost:5173  
+**Backend:** http://127.0.0.1:8000 (running)
 
 ---
 
-## Overall Score
+## Executive Summary
 
-| Category | Weight | Earned | Notes |
-|----------|--------|--------|-------|
-| Functionality | 0.35 | 0.35 | All F1–F5 pass (code review) |
-| Scope Discipline | 0.20 | 0.20 | Frontend + docs only |
-| Documentation | 0.25 | 0.25 | ADR-007 complete |
-| Craft / UX | 0.20 | 0.20 | Styling, copy, reset, errors, build |
-| **Total** | **1.00** | **1.00** | ≥ 0.85 threshold |
+**Sprint 1 Verdict: PASS**
 
-**Automatic fail checks:** None triggered.
+Navigation split and inline title editing are implemented correctly and verified end-to-end. All 23 Sprint 1–relevant E2E tests pass after adding API seeding and token-based login helpers. Four pre-existing generate-flow E2E tests fail due to real-API AI latency exceeding the 30s Playwright test timeout (R1 non-regression, not Sprint 1 scope).
 
 ---
 
-## Per-Criterion Results
+## Sprint 1 Rubric Scores
 
-### Functionality (0.35)
+Applicable criteria only (Categories, ADR, Craft marked N/A for Sprint 1).
 
-| ID | Criterion | Pass | Evidence |
-|----|-----------|------|----------|
-| F1 | Edit button visible | ✅ | `TestSuitesPage.tsx` L211–233: `[Run] [Edit] [Delete]` on every suite card |
-| F2 | Modal pre-population | ✅ | `SuiteFormModal.tsx` L60–79: name, description, tags, ordered `test_case_id`s from `suite.items` |
-| F3 | Save updates suite | ✅ | L136–137: `testSuitesService.updateSuite(suite.id, payload)`; `onSuccess` → `loadSuites()` |
-| F4 | Create flow intact | ✅ | `openCreate()` sets `formMode='create'`; L138–139 calls `createSuite`; validation unchanged |
-| F5 | Membership edit | ✅ | Toggle, move up/down, remove handlers; `test_case_ids` sent on save |
+| Criterion | ID | Weight | Pass | Weighted |
+|-----------|-----|--------|------|----------|
+| **Navigation Split** | | **0.18** | | |
+| Sidebar: Generate Tests → `/tests` | N1 | 0.05 | ✅ | 0.05 |
+| Sidebar: Saved Tests → `/tests/saved` | N2 | 0.05 | ✅ | 0.05 |
+| `/tests` shows NL generation only | N3 | 0.04 | ✅ | 0.04 |
+| Edit uses `/tests/saved?edit={id}` drawer | N4 | 0.03 | ✅ | 0.03 |
+| Legacy `/tests?edit=` → `/tests/saved?edit=` | N5 | 0.01 | ✅ | 0.01 |
+| **Title Editing** | | **0.10** | | |
+| Inline rename on list (no drawer) | T1 | 0.03 | ✅ | 0.03 |
+| Enter/blur save; Escape cancel; empty blocked | T2 | 0.03 | ✅ | 0.03 |
+| `PUT /tests/{id}` with `{ title }` only | T3 | 0.02 | ✅ | 0.02 |
+| Loading + error revert on failed save | T4 | 0.01 | ✅ | 0.01 |
+| Drawer title field + inline `aria-label` | T5 | 0.01 | ✅ | 0.01 |
+| **Non-Regression** | | **0.01** | | |
+| E2E specs updated for new nav | R4 | 0.01 | ✅ | 0.01 |
+| **Sprint 1 TOTAL** | | **0.29** | | **0.29/0.29** |
 
-### Scope Discipline (0.20)
+**Sprint 1 weighted score: 1.00** (29/29 applicable weight units)
 
-| ID | Criterion | Pass | Evidence |
-|----|-----------|------|----------|
-| S1 | No unnecessary backend | ✅ | No `backend/**` changes |
-| S2 | Minimal file footprint | ✅ | `SuiteFormModal.tsx`, `TestSuitesPage.tsx`, `ADR-007-test-suites.md`; `CreateSuiteModal.tsx` removed |
-| S3 | Service reuse | ✅ | Uses existing `updateSuite` in `testSuitesService.ts` (unchanged) |
+| Criterion Group | Verdict |
+|-----------------|---------|
+| Navigation Split (0.18) | **PASS** |
+| Title Editing (0.10) | **PASS** |
+| Non-Regression R4 (0.01) | **PASS** |
+| User Categories (0.40) | N/A — Sprint 2+ |
+| Architecture & Docs (0.14) | N/A — Sprint 2+ |
+| Craft / UX (0.10) | N/A — Sprint 2+ |
+| Non-Regression R1–R3 (0.07) | Not scored this sprint |
 
-### Documentation (0.25)
-
-| ID | Criterion | Pass | Evidence |
-|----|-----------|------|----------|
-| D1 | ADR-007 exists | ✅ | `documentation/ADR-007-test-suites.md` |
-| D2 | ADR structure | ✅ | Header + Context, Decision, Changes Made, Consequences, Test Coverage |
-| D3 | Decision accuracy | ✅ | Documents SuiteFormModal dual-mode, PUT endpoint, Run→Edit→Delete order |
-| D4 | Related files | ✅ | Paths match implementation (`SuiteFormModal.tsx`, not `CreateSuiteModal`) |
-
-### Craft / UX (0.20)
-
-| ID | Criterion | Pass | Evidence |
-|----|-----------|------|----------|
-| C1 | Edit button styling | ✅ | `border border-gray-300 text-gray-700 hover:bg-gray-50` |
-| C2 | Modal copy | ✅ | "Edit Test Suite" / "Save Changes" vs "Create Test Suite" / "Create Suite" |
-| C3 | Form reset | ✅ | `handleClose` → `resetForm()`; useEffect re-populates on reopen |
-| C4 | Error handling | ✅ | API `detail` in red banner; submit disabled while `loading` |
-| C5 | Build clean | ✅ | `npx vite build` passes; no `CreateSuiteModal` imports in `frontend/src` |
+**Overall Sprint 1 verdict: PASS** (navigation + title editing working; threshold met)
 
 ---
 
-## Verification Performed
+## E2E Test Results
 
-### Build
+### Sprint 1 + Navigation (final run, `--workers=1`)
 
-```
-cd frontend && npx vite build
-✓ built in 5.55s (2439 modules)
-```
+| Spec | Suite | Passed | Failed | Skipped |
+|------|-------|--------|--------|---------|
+| `03-tests-page.spec.ts` | Saved Tests Page — Sprint 1 | **8** | 0 | 0 |
+| `06-navigation.spec.ts` | Application Navigation | **15** | 0 | 0 |
+| **Sprint 1 subtotal** | | **23** | **0** | **0** |
 
-`npm run build` (tsc && vite) still fails due to **pre-existing** TypeScript errors in agent workflow tests, `TestsPage.tsx`, etc. The only touch in changed files is `TestSuitesPage.tsx(47,50): 'suiteName' is declared but its value is never read` — pre-existing unused param in `handleRunSuite`, not introduced by edit work.
+### Generate Tests (not Sprint 1; R1 context)
 
-### Import audit
+| Spec | Suite | Passed | Failed | Skipped |
+|------|-------|--------|--------|---------|
+| `03-tests-page.spec.ts` | Generate Tests Page | 4 | **4** | 0 |
 
-- `CreateSuiteModal.tsx` — **deleted** from `frontend/src/components/`
-- `TestSuitesPage.tsx` imports `SuiteFormModal` only
-- Stale references remain only in archive docs and `gan-harness/` planning files (acceptable)
+**Generate failures:** AI generation via real backend exceeds default 30s test timeout. Tests 1–3 never see "Generated Test Cases" within timeout; test 4 reaches results but times out on "Generate More Tests" click. Root cause: environment latency + `test.setTimeout` not raised for LLM calls. Not a Sprint 1 regression.
 
-### Live app (backend running)
+### E2E infrastructure added this evaluation
 
-Backend logs show active traffic to `GET /api/v1/suites/` and test list fetches — consistent with Test Suites page and modal loading available tests. Full Playwright UI flow not run in this session; code review confirms edit wiring is correct.
-
----
-
-## Minor Observations (non-blocking)
-
-| Item | Severity | Recommendation |
-|------|----------|----------------|
-| Unused `suiteName` param in `handleRunSuite` | Low | Remove param or use in prompts (separate cleanup) |
-| No `SuiteFormModal.test.tsx` | Low | Optional future unit tests per ADR |
-| `npm run build` tsc gate | Info | Repo-wide debt; not blocking this feature |
+- `tests/e2e/helpers/auth.ts` — `seedSavedTest()`, token-cached `loginAsAdmin(page, request)` bypassing login rate limits
+- Serial mode for saved-tests suites to avoid 429 errors
+- Blur-save title test, drawer/legacy redirect tests in `06-navigation.spec.ts`
+- Header assertion fixed: `Agentic QA` (was stale `AI Web Test`)
 
 ---
 
-## Generator Feedback
+## E2E Coverage Matrix — Saved Tests Sprint 1 Features
 
-No revision required. Implementation matches spec:
+| Feature | Spec | Test Case | Status |
+|---------|------|-----------|--------|
+| Navigate to Saved Tests tab | `06-navigation` | should navigate through all main pages | ✅ |
+| Saved Tests sidebar link visible | `06-navigation` | should maintain sidebar across all pages | ✅ |
+| Active Saved Tests highlight | `06-navigation` | should highlight active saved tests link | ✅ |
+| Direct URL `/tests/saved` | `06-navigation` | should support direct URL navigation | ✅ |
+| Mobile nav to Saved Tests | `06-navigation` | should have working navigation on mobile viewport | ✅ |
+| Saved tests list displays | `03-tests-page` | should display saved tests list with rows | ✅ |
+| Generate vs Saved separation | `06-navigation` | should keep generate and saved tests as separate routes | ✅ |
+| No "View Saved Tests" on Generate | `03-tests-page` | should not show view saved tests button in header | ✅ |
+| Inline title edit — click title | `03-tests-page` | should allow inline title rename via Enter | ✅ |
+| Inline title save — Enter | `03-tests-page` | should allow inline title rename via Enter | ✅ |
+| Inline title save — blur | `03-tests-page` | should save inline title edit on blur | ✅ |
+| Inline title cancel — Escape | `03-tests-page` | should cancel inline title edit with Escape | ✅ |
+| Empty title validation | `03-tests-page` | should block empty title on inline edit | ✅ |
+| Pencil icon entry | `03-tests-page` | should enter inline edit via pencil icon | ✅ |
+| Edit drawer via `?edit=` on saved tab | `03-tests-page` | should open edit drawer via ?edit= query param | ✅ |
+| Legacy redirect `/tests?edit=` | `06-navigation` | should redirect legacy /tests?edit= URLs to saved tests | ✅ |
+| Edit drawer via legacy redirect | `06-navigation` | should open edit drawer on saved tab via legacy redirect | ✅ |
+| Drawer does not open Generate tab | `06-navigation` | should open edit drawer on saved tab via legacy redirect | ✅ |
+| Drawer editable title field | `03-tests-page` | should open edit drawer via ?edit= (`#saved-edit-title`) | ✅ |
+| Inline `aria-label` | `03-tests-page` | should enter inline edit via pencil icon | ✅ |
+| API error revert on save | — | No E2E (code-only) | ⚠️ gap |
+| Loading spinner during save | — | No E2E (code-only) | ⚠️ gap |
 
-1. ✅ `SuiteFormModal` dual-mode refactor
-2. ✅ Edit button with correct placement and styling
-3. ✅ ADR-007 with ADR-005 structure
-4. ✅ Orphan test fallback via `getTestById` (spec edge case)
+**Coverage: 20/22 Sprint 1 behaviors covered in E2E (91%).** Remaining gaps are T4 error/loading paths — implemented in `InlineTitleEditor.tsx` but not exercised by E2E.
 
 ---
 
-## Sign-off
+## Implementation Verification (Code Review)
 
-| Check | Status |
-|-------|--------|
-| Weighted score ≥ 0.85 | ✅ 1.00 |
-| No automatic fail | ✅ |
-| Spec verification checklist (code-level) | ✅ |
-| ADR merged-ready | ✅ |
+| Area | Finding | Status |
+|------|---------|--------|
+| Sidebar | `Generate Tests` (`/tests`, Sparkles) + `Saved Tests` (`/tests/saved`, FolderOpen) in `Sidebar.tsx` | ✅ |
+| Generate page | `GenerateTestsPage.tsx` — generation only; post-save navigates to `/tests/saved` | ✅ |
+| Legacy redirect | `TestsRoute` in `App.tsx` redirects `?edit=` to saved tab | ✅ |
+| Inline editor | `InlineTitleEditor.tsx` — Enter/blur save, Escape cancel, validation, spinner, error toast | ✅ |
+| API call | `testsService.updateTest(id, { title })` → `PUT /tests/{id}` | ✅ |
+| Edit drawer | `SavedTestsPage.tsx` — slide-over with `#saved-edit-title`, `?edit=` param | ✅ |
+| Mock mode bug | `updateTest` mock path ignores `data.title` (only `data.name`); harmless when `VITE_USE_MOCK=false` | ⚠️ |
+| Build | `npm run build` fails on pre-existing TS errors in unrelated files | ⚠️ pre-existing |
 
-**Recommendation:** Merge PR.
+---
+
+## Critical Issues (must fix — outside Sprint 1 pass gate)
+
+None blocking Sprint 1. Navigation and title editing work in the live app.
+
+## Major Issues (should fix)
+
+1. **Generate-flow E2E timeouts (R1):** Four tests in `03-tests-page.spec.ts` fail against real LLM backend. → Add `test.setTimeout(180_000)` on AI generation tests or gate them behind `VITE_USE_MOCK=true` in CI.
+2. **Mock `updateTest` title field:** `testsService.updateTest` mock branch does not apply `data.title`. → Add `if (data.title) updates.name = data.title` for mock-mode parity.
+
+## Minor Issues (nice to fix)
+
+1. **T4 E2E gap:** No test for failed PUT revert. → Add route interception test that returns 500 and asserts title reverts + error toast.
+2. **Long test titles:** Repeated E2E renames append suffixes; consider resetting seed test title in `afterAll`.
+3. **Playwright browsers:** Sandbox cache missing Chromium; document `PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright` or run `npx playwright install chromium`.
+
+---
+
+## What Improved Since Last Iteration
+
+- Full sidebar split with distinct routes and active-state highlighting
+- `InlineTitleEditor` with keyboard semantics and validation
+- Edit drawer on Saved Tests tab with `?edit=` deep link
+- Legacy URL redirect preserved
+- Comprehensive E2E coverage with API seeding (no more skip-when-empty)
+
+## What Regressed
+
+- None observed for Sprint 1 scope
+
+---
+
+## Specific Suggestions for Next Iteration (Sprint 2+)
+
+1. Implement user categories per spec; add `testCategoriesService.ts` and ADR-008.
+2. Fix generate-flow E2E: either mock AI in CI or extend timeouts to match 120s API timeout.
+3. Add E2E for T4 error path via `page.route()` mock failure on `PUT /tests/*`.
+4. Resolve pre-existing `npm run build` TS errors before claiming C4 pass.
+
+---
+
+## Screenshots / Observations
+
+- Login page branding: **Agentic QA** (not "AI Web Test")
+- Generate page: no saved-test list, no "View Saved Tests" button
+- Saved Tests: inline title buttons with `data-testid="inline-title-button-{id}"` and pencil icons
+- Edit drawer: "Edit Test Case" heading, closes via aria-label "Close edit drawer"
+- Legacy `/tests?edit=1321` → `/tests/saved?edit=1321` with drawer open

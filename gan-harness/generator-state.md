@@ -35,6 +35,6 @@
 - SavedTestsPage edit drawer uses `TestStepEditor` auto-save for steps; manual `steps` in PUT may be stale if user edits steps then immediately clicks Save Changes without waiting for auto-save debounce
 
 ## Dev Server
-- URL: http://localhost:3000
-- Status: not started in this session (Evaluator should run `npm run dev` in `frontend/`)
-- Command: `npm run dev`
+- URL: http://localhost:5173
+- Status: running
+- Command: `npm run dev` (in `frontend/`)

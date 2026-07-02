@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { loginAsAdmin, waitForSavedTestsList } from './helpers/auth';
 
 /**
  * Generate Tests Page Tests
@@ -6,13 +7,8 @@ import { test, expect } from '@playwright/test';
  */
 
 test.describe('Generate Tests Page', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/');
-    await page.getByPlaceholder(/username/i).fill('admin');
-    await page.getByPlaceholder(/password/i).fill('admin123');
-    await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL('**/dashboard');
-
+  test.beforeEach(async ({ page, request }) => {
+    await loginAsAdmin(page, request);
     await page.getByRole('link', { name: /generate tests/i }).click();
     await page.waitForURL('**/tests');
   });
@@ -41,7 +37,7 @@ test.describe('Generate Tests Page', () => {
     await page.getByRole('button', { name: /generate test cases/i }).click();
 
     await expect(page.getByText(/generating tests/i)).toBeVisible({ timeout: 1000 });
-    await expect(page.getByText(/generated test cases/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/generated test cases/i)).toBeVisible({ timeout: 120000 });
     await expect(page.getByText(/test case 1/i)).toBeVisible();
   });
 
@@ -49,7 +45,7 @@ test.describe('Generate Tests Page', () => {
     await page.getByPlaceholder(/example.*test the login flow/i).fill('Test checkout process');
     await page.getByRole('button', { name: /generate test cases/i }).click();
 
-    await expect(page.getByText(/generated test cases/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/generated test cases/i)).toBeVisible({ timeout: 120000 });
     await expect(page.getByText(/test case 1/i)).toBeVisible();
     await expect(page.getByText(/test steps/i).first()).toBeVisible();
     await expect(page.getByText(/expected result/i).first()).toBeVisible();
@@ -60,7 +56,7 @@ test.describe('Generate Tests Page', () => {
     await page.getByPlaceholder(/example.*test the login flow/i).fill('Test user profile');
     await page.getByRole('button', { name: /generate test cases/i }).click();
 
-    await expect(page.getByText(/generated test cases/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/generated test cases/i)).toBeVisible({ timeout: 120000 });
 
     const saveButtons = page.getByRole('button', { name: /save/i });
     await expect(saveButtons.first()).toBeVisible();
@@ -71,7 +67,7 @@ test.describe('Generate Tests Page', () => {
     await page.getByPlaceholder(/example.*test the login flow/i).fill('Test search');
     await page.getByRole('button', { name: /generate test cases/i }).click();
 
-    await expect(page.getByText(/generated test cases/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/generated test cases/i)).toBeVisible({ timeout: 120000 });
     await page.getByRole('button', { name: /generate more tests/i }).click();
     await expect(page.getByPlaceholder(/example.*test the login flow/i)).toBeVisible();
   });
@@ -81,32 +77,39 @@ test.describe('Generate Tests Page', () => {
   });
 });
 
-test.describe('Saved Tests Page — inline title edit', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/');
-    await page.getByPlaceholder(/username/i).fill('admin');
-    await page.getByPlaceholder(/password/i).fill('admin123');
-    await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL('**/dashboard');
+test.describe('Saved Tests Page — Sprint 1', () => {
+  test.describe.configure({ mode: 'serial' });
 
+  test.beforeAll(async ({ request }) => {
+    const { seedSavedTest } = await import('./helpers/auth');
+    await seedSavedTest(request);
+  });
+
+  test.beforeEach(async ({ page, request }) => {
+    await loginAsAdmin(page, request);
     await page.getByRole('link', { name: /saved tests/i }).click();
     await page.waitForURL('**/tests/saved');
+    await waitForSavedTestsList(page);
   });
 
   test('should display saved tests page with header', async ({ page }) => {
     await expect(page.getByRole('heading', { name: /saved tests/i })).toBeVisible();
   });
 
-  test('should allow inline title rename when tests exist', async ({ page }) => {
+  test('should display saved tests list with rows', async ({ page }) => {
+    await expect(page.getByText(/showing \d+ of \d+ test/i)).toBeVisible();
+    await expect(page.locator('[data-testid^="row-checkbox-"]').first()).toBeVisible();
+    await expect(page.locator('[data-testid^="inline-title-button-"]').first()).toBeVisible();
+  });
+
+  test('should allow inline title rename via Enter', async ({ page }) => {
     const titleButton = page.locator('[data-testid^="inline-title-button-"]').first();
+    const testId = await titleButton.getAttribute('data-testid');
+    expect(testId).toBeTruthy();
 
-    if (await titleButton.count() === 0) {
-      test.skip();
-      return;
-    }
-
-    const originalTitle = await titleButton.textContent();
-    const newTitle = `${originalTitle} (renamed)`;
+    const originalTitle = (await titleButton.textContent())?.trim() || 'Test';
+    const baseTitle = originalTitle.replace(/\s+e2e\s+\d+$/, '').replace(/\s+blur\s+\d+$/, '').slice(0, 200);
+    const newTitle = `${baseTitle} e2e ${Date.now()}`;
 
     await titleButton.click();
     const input = page.locator('[data-testid^="inline-title-input-"]').first();
@@ -114,27 +117,87 @@ test.describe('Saved Tests Page — inline title edit', () => {
     await input.fill(newTitle);
     await input.press('Enter');
 
-    await expect(page.getByRole('button', { name: new RegExp(newTitle!, 'i') })).toBeVisible({ timeout: 5000 });
+    await expect(page.locator(`[data-testid="${testId}"]`)).toHaveText(newTitle, { timeout: 15000 });
+    await expect(page.getByText('Edit Test Case')).not.toBeVisible();
 
-    await page.getByRole('button', { name: new RegExp(newTitle!, 'i') }).click();
+    await page.locator(`[data-testid="${testId}"]`).click();
     const revertInput = page.locator('[data-testid^="inline-title-input-"]').first();
-    await revertInput.fill(originalTitle || 'Test');
+    await revertInput.fill(baseTitle);
     await revertInput.press('Enter');
+    await expect(page.locator(`[data-testid="${testId}"]`)).toHaveText(baseTitle, { timeout: 15000 });
+  });
+
+  test('should cancel inline title edit with Escape', async ({ page }) => {
+    const titleButton = page.locator('[data-testid^="inline-title-button-"]').first();
+    const originalTitle = (await titleButton.textContent())?.trim() || 'Test';
+
+    await titleButton.click();
+    const input = page.locator('[data-testid^="inline-title-input-"]').first();
+    await input.fill('Temporary Cancel Title');
+    await input.press('Escape');
+
+    await expect(input).not.toBeVisible();
+    await expect(titleButton).toHaveText(originalTitle);
+  });
+
+  test('should enter inline edit via pencil icon', async ({ page }) => {
+    const pencil = page.locator('[data-testid^="inline-title-pencil-"]').first();
+    await pencil.click();
+    const input = page.locator('[data-testid^="inline-title-input-"]').first();
+    await expect(input).toBeVisible();
+    await expect(input).toHaveAttribute('aria-label', 'Test title');
+    await input.press('Escape');
   });
 
   test('should block empty title on inline edit', async ({ page }) => {
     const titleButton = page.locator('[data-testid^="inline-title-button-"]').first();
-
-    if (await titleButton.count() === 0) {
-      test.skip();
-      return;
-    }
-
     await titleButton.click();
     const input = page.locator('[data-testid^="inline-title-input-"]').first();
     await input.fill('');
     await input.press('Enter');
 
     await expect(page.getByText(/title is required/i)).toBeVisible();
+    await expect(input).toBeVisible();
+  });
+
+  test('should save inline title edit on blur', async ({ page }) => {
+    const titleButton = page.locator('[data-testid^="inline-title-button-"]').first();
+    const testId = await titleButton.getAttribute('data-testid');
+    expect(testId).toBeTruthy();
+
+    const originalTitle = (await titleButton.textContent())?.trim() || 'Test';
+    const baseTitle = originalTitle.replace(/\s+e2e\s+\d+$/, '').replace(/\s+blur\s+\d+$/, '').slice(0, 200);
+    const newTitle = `${baseTitle} blur ${Date.now()}`;
+
+    await titleButton.click();
+    const input = page.locator('[data-testid^="inline-title-input-"]').first();
+    await input.fill(newTitle);
+    await page.getByRole('heading', { name: /saved tests/i }).click();
+
+    await expect(page.locator(`[data-testid="${testId}"]`)).toHaveText(newTitle, { timeout: 15000 });
+
+    await page.locator(`[data-testid="${testId}"]`).click();
+    const revertInput = page.locator('[data-testid^="inline-title-input-"]').first();
+    await revertInput.fill(baseTitle);
+    await revertInput.press('Enter');
+    await expect(page.locator(`[data-testid="${testId}"]`)).toHaveText(baseTitle, { timeout: 15000 });
+  });
+
+  test('should open edit drawer via ?edit= query param on saved tab', async ({ page }) => {
+    const testId = await page
+      .locator('[data-testid^="inline-title-button-"]')
+      .first()
+      .getAttribute('data-testid');
+    const id = testId?.replace('inline-title-button-', '');
+    expect(id).toBeTruthy();
+
+    await page.goto(`/tests/saved?edit=${id}`);
+    await expect(page).toHaveURL(new RegExp(`/tests/saved\\?edit=${id}`));
+    await expect(page.getByRole('heading', { name: /edit test case/i })).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(page.locator('#saved-edit-title')).toBeVisible();
+    await page.getByRole('button', { name: /close edit drawer/i }).click();
+    await expect(page.getByRole('heading', { name: /edit test case/i })).not.toBeVisible();
   });
 });
