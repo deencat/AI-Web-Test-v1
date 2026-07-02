@@ -17,6 +17,7 @@
     ],
 
     "excludeFiles": [
+        ".cursorrules",
         ".env", ".env.local",
         "*.db", "*.bak", "*.sqlite", "*.sqlite3",
         "crawl_and_save_5g_voucher_plan_v2.ps1",
