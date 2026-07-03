@@ -1,149 +1,221 @@
-# Evaluation Report — Sprint 2 Backend Categories (Iteration 004)
+# Evaluation Report — Stop Execution: Cooperative Cancel (Iteration 001)
 
-**Date:** 2026-07-02  
-**Iteration:** 004  
+**Date:** 2026-07-03  
+**Iteration:** 001  
+**Feature:** Cooperative cancel for saved test 3-tier execution  
 **Evaluator:** gan-evaluator  
 **App URL:** http://localhost:5173  
-**Backend:** http://127.0.0.1:8000
+**Backend:** http://127.0.0.1:8000  
+**Spec:** `gan-harness/spec.md`  
+**Rubric:** `gan-harness/eval-rubric.md` (pass threshold ≥ 0.85)
 
 ---
 
 ## Executive Summary
 
-Sprint 2 backend deliverables for user-defined test categories are **implemented and verified**. All required models, migration, CRUD layer, REST endpoints, test filtering, and bulk category assignment are present. Unit test suite `test_test_categories.py` provides **100% behavior coverage** of spec-required behaviors (22/22 passing).
+Stop Execution (Sprints 1–4) is **implemented and verified end-to-end**. The cooperative cancel API, in-memory store, execution hooks, queue guard, `StopExecutionButton`, and `ExecutionProgressPage` wiring all behave as specified. Backend unit tests (13/13) and frontend component tests (16/16) pass. A new Playwright suite **`tests/e2e/11-stop-execution-cancel.spec.ts`** maps all 11 rubric evaluator-script steps to named tests — **11/11 passed** (serial, `--workers=1`).
 
-Live API check: `GET /api/v1/test-categories` returns `401 Not authenticated` (router registered; auth enforced). Migration script runs idempotently against the dev database.
+**Weighted score: 0.97 / 1.00 — PASS**
 
-Sprint 1 E2E regression (focused grep run): **25 passed, 1 failed, 1 skipped**. The single failure is a flaky mobile-viewport `beforeEach` login timeout — not related to Sprint 2 backend changes. All 12 Sprint 1 saved-tests behaviors remain covered and passing.
+One rubric criterion fails: **R3** (`npm run build` in frontend) due to pre-existing TypeScript errors in unrelated `agentWorkflow.types.test.ts` (not introduced by this feature). All automatic-fail conditions are clear.
 
-**Overall Verdict: PASS**
-
----
-
-## Sprint 2 Backend Deliverables (B1–B4, A4)
-
-| ID | Criterion | Status | Evidence |
-|----|-----------|--------|----------|
-| **B1** | `test_categories` table — user-scoped, unique `(user_id, name)` | ✅ PASS | `backend/app/models/test_category.py`; `backend/migrations/add_test_categories.py`; `uq_test_categories_user_name` constraint |
-| **B2** | `test_category_id` on `test_cases` — nullable FK, separate from KB `category_id` | ✅ PASS | `backend/app/models/test_case.py` lines 57–63 (`category_id` KB FK preserved; `test_category_id` user FK added) |
-| **B3** | Category CRUD API at `/api/v1/test-categories` with ownership checks | ✅ PASS | `backend/app/api/v1/endpoints/test_categories.py`; registered in `api.py` line 11 |
-| **B4** | `GET /tests?test_category_id=` filter + `PATCH /tests/batch/category` | ✅ PASS | `backend/app/api/v1/endpoints/tests.py`; CRUD in `backend/app/crud/test_category.py` |
-| **A4** | Backend layering — endpoints → CRUD, no business logic in routers | ✅ PASS | Routers delegate to `crud/test_category.py` and `crud/test_case.py`; validation helpers only |
+**Prerequisite for live execution E2E:** Backend worker requires `playwright install chromium` in `backend/venv` (documented as remaining risk).
 
 ---
 
-## pytest Results
+## Weighted Score
 
-**Command (working):**
+```
+score = Σ (criterion_weight × pass?1:0)
+```
+
+| Band | Score | Verdict |
+|------|-------|---------|
+| Pass | ≥ 0.85 | **PASS** |
+| Revise | 0.70 – 0.84 | — |
+| Fail | < 0.70 or automatic fail | — |
+
+**Total: 0.97 / 1.00 — PASS**
+
+---
+
+## Automatic Fail Checklist
+
+| Condition | Result |
+|-----------|--------|
+| No cancel API endpoint | ✅ Clear — `DELETE /api/v1/executions/{id}/cancel` exists |
+| No Stop button on ExecutionProgressPage | ✅ Clear — `StopExecutionButton` wired for `pending`/`running` |
+| Running execution stuck in `running` after stop | ✅ Clear — E2E step 5 confirms `cancelled` within poll window |
+| Cancel conflated with DELETE execution record | ✅ Clear — separate routes; E2E steps 9–10 |
+| Normal pass/fail runs regress | ✅ Clear — E2E step 8 terminal completion |
+
+---
+
+## Per-Criterion Results
+
+### Backend Cancel API & Store (0.30)
+
+| ID | Criterion | Weight | Status | Evidence |
+|----|-----------|--------|--------|----------|
+| B1 | Cancel endpoint exists | 0.06 | ✅ PASS | `executions.py` `DELETE /{execution_id}/cancel` → 204; E2E step 9 |
+| B2 | Auth + ownership | 0.04 | ✅ PASS | `test_cancel_wrong_user`, `test_cancel_not_found` |
+| B3 | Pending cancel | 0.06 | ✅ PASS | `test_cancel_pending_execution`; E2E cancel flow |
+| B4 | Running cancel request | 0.05 | ✅ PASS | `test_cancel_running_sets_flag`; `register_cancel` + `request_cancel` |
+| B5 | `execution_cancel_store.py` | 0.05 | ✅ PASS | 5/5 store unit tests; thread-safe pattern |
+| B6 | Idempotent cancel | 0.04 | ✅ PASS | `test_cancel_completed_idempotent`; E2E step 9 double DELETE |
+
+### Cooperative Execution Hooks (0.25)
+
+| ID | Criterion | Weight | Status | Evidence |
+|----|-----------|--------|--------|----------|
+| E1 | Step loop poll | 0.06 | ✅ PASS | `execution_service.py` `is_cancel_requested` before steps/loops |
+| E2 | Finalize cancelled | 0.06 | ✅ PASS | `crud.cancel_execution` → `status=cancelled`; not `failed` |
+| E3 | 3-tier cancel_check | 0.05 | ✅ PASS | `three_tier_execution_service.py` polls at tier boundaries |
+| E4 | Cleanup on cancel | 0.04 | ✅ PASS | `clear_cancel` in worker `finally`; cleanup path in service |
+| E5 | Queue pre-start guard | 0.04 | ✅ PASS | `queue_manager.py` skips `status=cancelled` |
+
+### Frontend Stop UX (0.25)
+
+| ID | Criterion | Weight | Status | Evidence |
+|----|-----------|--------|--------|----------|
+| F1 | StopExecutionButton component | 0.05 | ✅ PASS | `frontend/src/components/execution/StopExecutionButton.tsx` |
+| F2 | Parity with StopAgentButton | 0.06 | ✅ PASS | Red outline, `stop-execution-button`, `stop-execution-confirmation`; E2E steps 2–4 |
+| F3 | ExecutionProgressPage wired | 0.06 | ✅ PASS | Header before Debug Step; visible `pending`/`running` only |
+| F4 | No optimistic cancel | 0.04 | ✅ PASS | `isStopping` local only; status from 2s poll |
+| F5 | executionService.cancelExecution | 0.04 | ✅ PASS | `DELETE /executions/{id}/cancel` in service layer |
+
+### Tests & Documentation (0.10)
+
+| ID | Criterion | Weight | Status | Evidence |
+|----|-----------|--------|--------|----------|
+| T1 | Backend unit tests | 0.04 | ✅ PASS | 13/13 pytest (`test_execution_cancel_store.py`, `test_execution_cancel.py`) |
+| T2 | Frontend component test | 0.03 | ✅ PASS | 16/16 vitest `StopExecutionButton.test.tsx` |
+| T3 | ADR or addendum | 0.03 | ✅ PASS | `documentation/ADR-009-execution-cancel.md` |
+
+### Non-Regression (0.10)
+
+| ID | Criterion | Weight | Status | Evidence |
+|----|-----------|--------|--------|----------|
+| R1 | Normal execution complete | 0.04 | ✅ PASS | E2E step 8 — terminal badge with pass/fail |
+| R2 | Delete execution distinct | 0.03 | ✅ PASS | E2E steps 9–10; `test_delete_execution_still_works` |
+| R3 | Build clean | 0.03 | ❌ FAIL | `npm run build` fails on unrelated `agentWorkflow.types.test.ts` TS errors |
+
+---
+
+## Failing Criteria
+
+| ID | Issue | Fix |
+|----|-------|-----|
+| **R3** | `npm run build` exits code 2 — TypeScript errors in `src/types/__tests__/agentWorkflow.types.test.ts` (stale types vs `AgentProgress`, `GenerateTestsRequest`, etc.) | Exclude test files from production `tsc` build, or update agent-workflow type tests to match current types |
+
+---
+
+## Test Run Results
+
+### Backend unit tests
+
 ```bash
 source backend/venv/bin/activate
-cd backend && PYTHONPATH=. pytest tests/unit/test_test_categories.py -v
+cd backend && PYTHONPATH=. pytest tests/unit/test_execution_cancel_store.py tests/unit/test_execution_cancel.py -v
 ```
 
 | Result | Count |
 |--------|-------|
-| **Passed** | **22** |
+| **Passed** | **13** |
 | Failed | 0 |
-| Skipped | 0 |
 
-**Note:** Running `pytest backend/tests/unit/test_test_categories.py` from repo root without `PYTHONPATH=.` fails with `ModuleNotFoundError: No module named 'app'`. CI/docs should use `cd backend && PYTHONPATH=. pytest …`.
+### Frontend component test
 
----
-
-## Coverage Matrix — Sprint 2 Required Behaviors (100%)
-
-**Coverage status: 100% (all 13 required behaviors mapped to passing tests)**
-
-| Required Behavior | Evidence Test | Status |
-|------------------|---------------|--------|
-| `test_categories` model + migration | `TestTestCategoryModel::test_model_columns`, `test_unique_user_name_constraint`; migration `add_test_categories.py` (idempotent run verified) | ✅ |
-| `test_category_id` column on `test_cases` | `TestTestCaseCategoryIntegration::test_create_and_update_test_category_id`; model FK in `test_case.py` | ✅ |
-| `GET /test-categories` returns user's categories with `test_count` | `TestCategoryEndpoints::test_list_includes_test_count` | ✅ |
-| `POST /test-categories` creates category | `TestCategoryCRUD::test_create_list_get_update_delete`; `TestCategoryEndpoints::test_duplicate_name_returns_409` (POST path) | ✅ |
-| `PUT /test-categories/{id}` updates category | `TestCategoryCRUD::test_create_list_get_update_delete` | ✅ |
-| `DELETE /test-categories/{id}` deletes and nullifies tests | `TestCategoryCRUD::test_delete_nullifies_test_category_id` | ✅ |
-| Ownership: cannot access other user's categories | `TestCategoryCRUD::test_ownership_isolation`; `TestCategoryEndpoints::test_user_cannot_access_other_users_category` | ✅ |
-| Duplicate category name per user → error | `TestCategoryCRUD::test_duplicate_name_same_user_raises_on_second_create`; `TestCategoryEndpoints::test_duplicate_name_returns_409` | ✅ |
-| `test_category_id` on test create/update | `TestTestsCategoryEndpoints::test_create_test_with_category_id`; `test_update_test_category_id`; `TestTestCaseCategoryIntegration::test_create_and_update_test_category_id` | ✅ |
-| `GET /tests?test_category_id={id}` filters correctly | `TestTestsCategoryEndpoints::test_get_tests_filter_by_category`; `TestTestCaseCategoryIntegration::test_filter_by_test_category_id` | ✅ |
-| `GET /tests` uncategorized filter | `TestTestsCategoryEndpoints::test_get_tests_uncategorized_filter`; `TestTestCaseCategoryIntegration::test_filter_uncategorized_with_zero`; `test_filter_uncategorized_flag` | ✅ |
-| `PATCH /tests/batch/category` bulk assign | `TestTestsCategoryEndpoints::test_patch_batch_category`; `TestTestCaseCategoryIntegration::test_batch_assign_category` | ✅ |
-| Response includes nested `test_category` object | `TestTestsCategoryEndpoints::test_get_tests_filter_by_category` (asserts `items[0]["test_category"]["name"]`) | ✅ |
-
-**Additional edge-case coverage (beyond minimum matrix):**
-- Same name allowed for different users: `TestCategoryCRUD::test_same_name_different_users_allowed`
-- Invalid foreign category on create returns 400: `TestTestsCategoryEndpoints::test_invalid_category_on_create_returns_400`
-- Per-category test count in CRUD layer: `TestCategoryCRUD::test_test_count_per_category`
-
----
-
-## Sprint 1 E2E Regression Check
-
-**Command:**
 ```bash
-npx playwright test tests/e2e/03-tests-page.spec.ts tests/e2e/06-navigation.spec.ts \
-  --workers=1 --grep "Saved Tests Page — Sprint 1|Application Navigation"
+cd frontend && npm test -- --run src/components/execution/__tests__/StopExecutionButton.test.tsx
 ```
 
-| Suite | Passed | Failed | Skipped |
-|-------|--------|--------|---------|
-| Saved Tests Page — Sprint 1 | 12 | 0 | 0 |
-| Application Navigation | 13 | 1 | 1 |
-| **Total** | **25** | **1** | **1** |
+| Result | Count |
+|--------|-------|
+| **Passed** | **16** |
+| Failed | 0 |
 
-**Failure (environmental, not Sprint 2 regression):**
-- `should have working navigation on mobile viewport` — `beforeEach` login hook timed out at 30s (`apiRequestContext.get` to `/auth/me` while browser context closed).
+### Playwright E2E (100% rubric script coverage)
 
-**Sprint 1 saved-tests behaviors:** All 12 matrix items from iteration 003 remain passing (inline title edit, legacy redirect, delete navigation, etc.).
+```bash
+npx playwright test tests/e2e/11-stop-execution-cancel.spec.ts --workers=1 --reporter=list
+```
 
----
+| Result | Count |
+|--------|-------|
+| **Passed** | **11** |
+| Failed | 0 |
+| Duration | ~15s |
 
-## Sprint 2 Rubric Score (`gan-harness/eval-rubric.md`)
+**Note:** First run required `npx playwright install chromium` (root) and `playwright install chromium` in `backend/venv` for execution workers.
 
-Scored against Sprint 2-relevant criteria: **B1–B4, A4**
+### Frontend build (R3)
 
-| Criterion | Weight | Score | Notes |
-|-----------|--------|-------|-------|
-| B1 — `test_categories` table | 0.05 | 0.05 | Model + idempotent migration |
-| B2 — `test_category_id` on tests | 0.05 | 0.05 | Nullable FK; KB `category_id` unchanged |
-| B3 — Category CRUD API | 0.04 | 0.04 | Full CRUD + ownership + 409 on duplicate |
-| B4 — Test filter + batch | 0.04 | 0.04 | Filter, uncategorized=0, batch PATCH |
-| A4 — Backend layering | 0.03 | 0.03 | Thin routers → CRUD modules |
-| **Total** | **0.21** | **0.21** | |
+```bash
+cd frontend && npm run build
+```
 
-**Sprint 2 weighted score: 1.00 (0.21 / 0.21)**  
-**Sprint 2 verdict: PASS** (meets ≥ 0.85 threshold; all B1–B4 pass; pytest green)
-
-### Sprint 1 Criteria (carry-forward)
-
-Sprint 1 criteria (N1–N5, T1–T5, R4) were **PASS** in iteration 003 and remain **PASS** — no regressions in the 12 saved-tests E2E behaviors. One unrelated navigation mobile test flaked.
+**FAILED** — pre-existing TS errors in agent-workflow type tests (see R3 above).
 
 ---
 
-## Architecture Notes (A4 Detail)
+## Rubric Evaluator Script → E2E Coverage Matrix (100%)
 
-- **Endpoints:** `test_categories.py` — list/create/get/update/delete; duplicate check before create/update; 404 for cross-user access.
-- **CRUD:** `crud/test_category.py` — all DB operations, test counts, delete-with-nullify, batch assign.
-- **Tests router:** `tests.py` — `_validate_test_category_ownership` helper; filter params; `PATCH /batch/category` delegates to CRUD.
-- **Separation:** `category_id` (KB/generation) and `test_category_id` (user org) coexist on `TestCase` model with distinct relationships.
+| # | Rubric Step | Playwright Test Name | Status |
+|---|-------------|----------------------|--------|
+| 1 | Log in; open saved test ≥5 steps; Run | `step 1: login, open saved test with ≥5 steps, click Run` | ✅ |
+| 2 | Land on `/executions/{id}`; Stop visible (red outline) | `step 2: execution progress page shows red-outline Stop Execution button` | ✅ |
+| 3 | While pending/running, click Stop | `step 3: click Stop while execution is pending or running` | ✅ |
+| 4 | Confirm "Stopping execution…" confirmation | `step 4: inline Stopping execution… confirmation appears` | ✅ |
+| 5 | Wait until status badge Cancelled (≤120s) | `step 5: wait until status badge shows Cancelled` | ✅ |
+| 6 | Stop hidden; partial steps listed | `step 6: Stop button hidden when terminal; partial steps still listed` | ✅ |
+| 7 | Execution History — cancelled filter | `step 7: Execution History shows cancelled run with cancelled filter` | ✅ |
+| 8 | Normal run completes pass/fail | `step 8: normal run completes with pass or fail unchanged` | ✅ |
+| 9 | DELETE cancel on completed → 204 idempotent | `step 9: DELETE cancel on completed run returns 204 idempotent` | ✅ |
+| 10 | DELETE execution record on cancelled run | `step 10: DELETE execution record on cancelled run removes record` | ✅ |
+| 11 | Backend unit tests pass | `step 11: backend cancel unit tests pass` (+ evaluator pytest run) | ✅ |
+
+**E2E file:** `tests/e2e/11-stop-execution-cancel.spec.ts`  
+**Helper added:** `createMultiStepCancelTest()` in `tests/e2e/helpers/auth.ts`
 
 ---
 
-## Remaining Risks / Notes
+## Remaining Risks
 
-1. **pytest invocation:** Requires `PYTHONPATH=.` from `backend/` directory; document in CI/Makefile.
-2. **Migration style:** Uses standalone script (`migrations/add_test_categories.py`) rather than Alembic revision — acceptable for this project pattern but differs from spec's Alembic path example.
-3. **E2E mobile flake:** Navigation mobile test intermittently times out on login — pre-existing environmental issue; retry or increase timeout separately.
-4. **Sprint 3 not evaluated:** Frontend category UI (U1–U5) out of scope for this Sprint 2 backend evaluation.
+1. **R3 build failure** — unrelated agent-workflow type tests block `npm run build`; should be fixed before merge if CI enforces build.
+2. **Backend Playwright browsers** — execution workers fail fast if `backend/venv` Playwright Chromium is not installed; document in dev setup / CI.
+3. **In-memory cancel store** — single-process only (per spec); multi-worker deployments need Redis migration.
+4. **Cancelled UI step cards** — early pending cancel shows `0 / N steps` in overview but no per-step `StepCard` rows (API returns empty `steps[]`); acceptable for v1 but polish opportunity.
+5. **Tier 3 cancel latency** — mid–LLM-call cancel may take up to tier timeout (~120s); not exercised in fast E2E run.
 
 ---
 
-## Verdict
+## Services Left Running
 
-| Scope | Verdict |
-|-------|---------|
-| Sprint 2 Backend (B1–B4) | **PASS** |
-| Sprint 2 pytest (22/22) | **PASS** |
-| Sprint 2 behavior coverage matrix | **100%** |
-| Sprint 1 E2E regression (saved tests) | **PASS** (no behavioral regression) |
-| **Overall** | **PASS** |
+| Service | URL | Status |
+|---------|-----|--------|
+| Backend (uvicorn) | http://127.0.0.1:8000 | **Running** (restarted after Playwright install) |
+| Frontend | http://localhost:5173 | Started by Playwright `webServer` during E2E; not left running after test run |
+
+---
+
+## Commands Run (Evaluator)
+
+```bash
+# Start backend
+cd backend && source venv/bin/activate && PYTHONPATH=. uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+# Install browsers (required once)
+npx playwright install chromium
+cd backend && source venv/bin/activate && playwright install chromium
+
+# Unit / component tests
+cd backend && PYTHONPATH=. pytest tests/unit/test_execution_cancel_store.py tests/unit/test_execution_cancel.py -v
+cd frontend && npm test -- --run src/components/execution/__tests__/StopExecutionButton.test.tsx
+
+# E2E
+npx playwright test tests/e2e/11-stop-execution-cancel.spec.ts --workers=1 --reporter=list
+
+# Build check (R3)
+cd frontend && npm run build
+```

@@ -53,6 +53,43 @@ export async function seedSavedTest(request: APIRequestContext): Promise<number>
   return created.id as number;
 }
 
+/** Saved test with ≥5 steps for stop-execution E2E (cooperative cancel). */
+export async function createMultiStepCancelTest(
+  request: APIRequestContext,
+  title?: string
+): Promise<number> {
+  const token = await getApiToken(request);
+  const headers = { Authorization: `Bearer ${token}` };
+
+  const createResponse = await request.post(`${API_BASE}/tests`, {
+    headers,
+    data: {
+      title: title ?? `E2E Cancel Test ${Date.now()}`,
+      description: 'Multi-step test for cooperative execution cancel E2E',
+      test_type: 'e2e',
+      priority: 'medium',
+      steps: [
+        'Navigate to https://example.com',
+        'Verify the page title contains Example',
+        'Scroll to the bottom of the page',
+        'Verify the page body is visible',
+        'Navigate to https://example.org',
+        'Verify the page loaded successfully',
+      ],
+      expected_result: 'All navigation steps complete without error',
+    },
+  });
+
+  if (!createResponse.ok()) {
+    throw new Error(
+      `Failed to create multi-step cancel test: ${createResponse.status()} ${await createResponse.text()}`
+    );
+  }
+
+  const created = await createResponse.json();
+  return created.id as number;
+}
+
 export async function createDisposableTest(
   request: APIRequestContext,
   title?: string
