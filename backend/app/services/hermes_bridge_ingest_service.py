@@ -83,6 +83,19 @@ def ingest_hermes_bridge_event(
     except Exception as exc:
         logger.warning("[HermesBridge] status sync failed for job %s: %s", body.job_id, exc)
 
+    if body.event_type == "job_complete":
+        try:
+            from app.services.agent_conversation_service import finalize_conversation_from_job
+
+            db.refresh(job)
+            finalize_conversation_from_job(db, job)
+        except Exception as exc:
+            logger.warning(
+                "[HermesBridge] conversation finalize failed for job %s: %s",
+                body.job_id,
+                exc,
+            )
+
     return HermesBridgeEventResponse(
         event_id=event.id,
         job_id=body.job_id,

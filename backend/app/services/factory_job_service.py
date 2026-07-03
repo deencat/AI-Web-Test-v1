@@ -93,4 +93,11 @@ def set_job_status(
         job.error_message = error_message
     db.commit()
     db.refresh(job)
+    if status in (FactoryJobStatus.COMPLETED, FactoryJobStatus.FAILED):
+        try:
+            from app.services.agent_conversation_service import finalize_conversation_from_job
+
+            finalize_conversation_from_job(db, job)
+        except Exception:
+            pass
     return job

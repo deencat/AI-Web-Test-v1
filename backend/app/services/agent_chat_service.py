@@ -36,6 +36,9 @@ def _open_chat_params(message: str, context: Dict[str, Any]) -> Dict[str, Any]:
     resume_session = str(context.get("hermes_resume_session", "")).strip()
     if resume_session:
         params["hermes_resume_session"] = resume_session
+    conversation_id = str(context.get("conversation_id", "")).strip()
+    if conversation_id:
+        params["conversation_id"] = conversation_id
     return params
 
 

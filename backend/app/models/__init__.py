@@ -16,6 +16,7 @@ from app.models.browser_profile import BrowserProfile
 from app.models.email_credential import EmailCredential
 from app.models.step_library_module import StepLibraryModule
 from app.models.factory_job import FactoryJob, FactoryJobEvent, FactoryJobStatus
+from app.models.agent_conversation import AgentConversation, AgentConversationMessage
 from app.models.journey_factory import (
     JourneyBacklogItem,
     JourneyRegistryEntry,
@@ -43,6 +44,7 @@ __all__ = [
     "EmailCredential",
     "StepLibraryModule",
     "FactoryJob", "FactoryJobEvent", "FactoryJobStatus",
+    "AgentConversation", "AgentConversationMessage",
     "JourneyBacklogItem", "JourneyRegistryEntry", "JourneyRegistryProject", "BacklogStatus",
     "UrlSnapshot",
     "SystemSettings",

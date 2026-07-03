@@ -1,7 +1,7 @@
 import logging
 from typing import Callable, Generator, Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2PasswordBearer
 
 from app.core.config import settings
@@ -99,6 +99,66 @@ def require_role(min_rank: int, label: str) -> Callable:
 
 require_factory_operator = require_role(_FACTORY_OPERATOR_MIN_RANK, "agent_operator")
 require_superadmin = require_role(_ROLE_RANK["superadmin"], "superadmin")
+
+_optional_auth_bearer = HTTPBearer(auto_error=False)
+
+
+def get_factory_operator_sse(
+    db: Session = Depends(get_db),
+    token: Optional[str] = Query(
+        None,
+        description="JWT for EventSource clients that cannot send Authorization headers",
+    ),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_optional_auth_bearer),
+) -> User:
+    """Factory operator auth for SSE (EventSource cannot send Authorization headers)."""
+    raw = token or (credentials.credentials if credentials else None)
+    if not raw:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    payload = decode_token(raw)
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user_id_str: Optional[str] = payload.get("sub")
+    if user_id_str is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        user_id = int(user_id_str)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user = get_user(db, user_id=user_id)
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if _role_rank(user.role) < _FACTORY_OPERATOR_MIN_RANK:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Requires agent_operator role or higher",
+        )
+    return user
 
 _bridge_bearer = HTTPBearer(auto_error=False)
 _bridge_logger = logging.getLogger(__name__)

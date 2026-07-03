@@ -51,4 +51,5 @@ class AgentChatRequest(BaseModel):
 
 class AgentChatResponse(BaseModel):
     job_id: str
+    conversation_id: Optional[str] = None
     reply: str

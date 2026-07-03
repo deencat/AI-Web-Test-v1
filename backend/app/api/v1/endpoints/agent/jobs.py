@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_factory_operator
+from app.api.deps import get_db, get_factory_operator_sse, require_factory_operator
 from app.models.user import User
 from app.schemas.factory_job import (
     FactoryJobCreate,
@@ -135,7 +135,7 @@ async def stream_job(
     request: Request,
     job_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_factory_operator),
+    current_user: User = Depends(get_factory_operator_sse),
 ) -> StreamingResponse:
     job = get_factory_job(db, job_id)
     if not job:

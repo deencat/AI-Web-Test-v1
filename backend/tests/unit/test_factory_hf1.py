@@ -41,6 +41,18 @@ class TestAgentChatService:
         assert job.params["hermes_resume_session"] == "20260702_184853_e11540"
         assert job.params["message"] == "what do you mean by that?"
 
+    def test_open_chat_passes_conversation_id(self):
+        job, _ = parse_chat_to_job(
+            "hello",
+            {"conversation_id": "conv-123", "hermes_resume_session": "sess-1"},
+            allow_open_chat=True,
+            prefer_open_chat=True,
+        )
+        assert job.job_type == "orchestrator_chat"
+        assert job.params["conversation_id"] == "conv-123"
+        assert job.params["hermes_resume_session"] == "sess-1"
+        assert job.params["message"] == "hello"
+
     def test_superadmin_can_force_structured_command_with_bang_prefix(self):
         job, _ = parse_chat_to_job(
             "!drain backlog",

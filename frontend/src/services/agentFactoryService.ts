@@ -26,12 +26,108 @@ export interface FactoryJob {
 
 export interface AgentChatResponse {
   job_id: string;
+  conversation_id?: string | null;
   reply: string;
+}
+
+export interface AgentConversationMessage {
+  id: number;
+  role: 'user' | 'assistant' | 'system' | string;
+  text: string;
+  job_id?: string | null;
+  created_at: string;
+}
+
+export interface AgentConversation {
+  conversation_id: string;
+  project?: string | null;
+  hermes_resume_session?: string | null;
+  is_active: boolean;
+  messages: AgentConversationMessage[];
+  created_at: string;
+  updated_at: string;
 }
 
 export async function postAgentChat(message: string, context: Record<string, unknown> = {}): Promise<AgentChatResponse> {
   const { data } = await api.post<AgentChatResponse>('/agent/chat', { message, context });
   return data;
+}
+
+export async function getActiveAgentConversation(project = 'Three-HK'): Promise<AgentConversation> {
+  const { data } = await api.get<AgentConversation>('/agent/conversations/active', {
+    params: { project },
+  });
+  return data;
+}
+
+export async function getAgentConversation(conversationId: string): Promise<AgentConversation> {
+  const { data } = await api.get<AgentConversation>(`/agent/conversations/${conversationId}`);
+  return data;
+}
+
+export async function createAgentConversation(project = 'Three-HK'): Promise<AgentConversation> {
+  const { data } = await api.post<AgentConversation>('/agent/conversations/new', null, {
+    params: { project },
+  });
+  return data;
+}
+
+export async function syncAgentConversationJob(
+  conversationId: string,
+  jobId: string,
+): Promise<AgentConversation> {
+  const { data } = await api.post<AgentConversation>(
+    `/agent/conversations/${conversationId}/sync-job/${jobId}`,
+  );
+  return data;
+}
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
+
+function factoryJobStreamUrl(jobId: string): string {
+  const token = localStorage.getItem('token') || '';
+  const base = API_BASE_URL.startsWith('http')
+    ? API_BASE_URL
+    : `${window.location.origin}${API_BASE_URL}`;
+  return `${base}/agent/jobs/${jobId}/stream?token=${encodeURIComponent(token)}`;
+}
+
+/** Stream factory job events via SSE (lower latency than polling). */
+export function streamFactoryJob(
+  jobId: string,
+  handlers: {
+    onEvent: (event: FactoryJobEvent) => void;
+    onComplete: (status: string) => void;
+    onError?: () => void;
+  },
+): () => void {
+  const source = new EventSource(factoryJobStreamUrl(jobId));
+
+  source.addEventListener('job_event', (raw) => {
+    try {
+      const event = JSON.parse((raw as MessageEvent).data) as FactoryJobEvent;
+      handlers.onEvent(event);
+    } catch {
+      handlers.onError?.();
+    }
+  });
+
+  source.addEventListener('job_complete', (raw) => {
+    try {
+      const payload = JSON.parse((raw as MessageEvent).data) as { status?: string };
+      handlers.onComplete(payload.status || 'completed');
+    } catch {
+      handlers.onComplete('completed');
+    }
+    source.close();
+  });
+
+  source.addEventListener('error', () => {
+    handlers.onError?.();
+    source.close();
+  });
+
+  return () => source.close();
 }
 
 export async function getFactoryJob(jobId: string): Promise<FactoryJob> {
