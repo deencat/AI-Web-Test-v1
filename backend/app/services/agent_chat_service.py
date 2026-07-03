@@ -31,6 +31,14 @@ _HEAL_PATTERN = re.compile(
 )
 
 
+def _open_chat_params(message: str, context: Dict[str, Any]) -> Dict[str, Any]:
+    params: Dict[str, Any] = {"message": message}
+    resume_session = str(context.get("hermes_resume_session", "")).strip()
+    if resume_session:
+        params["hermes_resume_session"] = resume_session
+    return params
+
+
 def parse_chat_to_job(
     message: str,
     context: Dict[str, Any],
@@ -60,7 +68,7 @@ def parse_chat_to_job(
         job = FactoryJobCreate(
             job_type="orchestrator_chat",
             project=project,
-            params={"message": text},
+            params=_open_chat_params(text, context),
         )
         return job, "Sent to QA Orchestrator (open chat)."
 
@@ -133,7 +141,7 @@ def parse_chat_to_job(
         job = FactoryJobCreate(
             job_type="orchestrator_chat",
             project=project,
-            params={"message": text},
+            params=_open_chat_params(text, context),
         )
         return job, "Sent to QA Orchestrator (open chat)."
 

@@ -60,6 +60,59 @@ class TestExtractOrchestratorReply:
         )
         assert extract_orchestrator_reply(job) == "AI Web Test MCP is reachable (healthy)."
 
+    def test_extracts_summary_from_pretty_printed_hermes_cli_output(self):
+        payload = (
+            'Query: hi there\nInitializing agent...\n'
+            '{\n'
+            '  "status": "success",\n'
+            '  "summary": "AI Web Test MCP is reachable (healthy). Tell me what you\n'
+            ' want to do next: run_regression.",\n'
+            '  "test_case_ids": []\n'
+            '}'
+        )
+        job = SimpleNamespace(
+            status="completed",
+            error_message=None,
+            events=[
+                SimpleNamespace(
+                    event_type="delegate_complete",
+                    profile="qa-orchestrator",
+                    message="Orchestrator reply",
+                    llm_turns=[
+                        {"role": "user", "content": "hi there"},
+                        {"role": "assistant", "content": payload},
+                    ],
+                    payload_summary=None,
+                ),
+            ],
+        )
+        assert extract_orchestrator_reply(job) == (
+            "AI Web Test MCP is reachable (healthy). Tell me what you want to do next: run_regression."
+        )
+
+    def test_ignores_system_status_messages(self):
+        job = SimpleNamespace(
+            status="running",
+            error_message=None,
+            events=[
+                SimpleNamespace(
+                    event_type="job_queued",
+                    profile="factory_worker",
+                    message="Job queued: orchestrator_chat",
+                    llm_turns=None,
+                    payload_summary={"job_type": "orchestrator_chat"},
+                ),
+                SimpleNamespace(
+                    event_type="bridge_accepted",
+                    profile="factory_bridge",
+                    message="Job accepted by QA Orchestrator node",
+                    llm_turns=None,
+                    payload_summary=None,
+                ),
+            ],
+        )
+        assert extract_orchestrator_reply(job) is None
+
     def test_falls_back_to_failed_error_message(self):
         job = SimpleNamespace(
             status="failed",

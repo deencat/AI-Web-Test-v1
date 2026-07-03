@@ -18,6 +18,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -184,14 +185,54 @@ def _demo_mode() -> bool:
     return not os.environ.get("HERMES_ORCHESTRATOR_CMD", "").strip()
 
 
+def _extract_hermes_resume_session(output: str) -> str | None:
+    """Parse Hermes CLI session id from chat output (for follow-up messages)."""
+    for pattern in (
+        r"Session:\s*(\S+)",
+        r"hermes --resume (\S+)",
+    ):
+        match = re.search(pattern, output)
+        if match:
+            return match.group(1).strip()
+    return None
+
+
+def _orchestrator_chat_cmd(params: dict) -> list[str]:
+    message = str((params or {}).get("message", "")).strip()
+    if not message:
+        raise RuntimeError("orchestrator_chat requires params.message")
+
+    resume_session = str((params or {}).get("hermes_resume_session", "")).strip()
+    orchestrator_cmd = os.environ.get("HERMES_ORCHESTRATOR_CMD", "qa-orchestrator").strip()
+    if resume_session:
+        hermes_cmd = os.environ.get("HERMES_CLI_CMD", "hermes").strip()
+        profile = os.environ.get("HERMES_ORCHESTRATOR_PROFILE", "qa-orchestrator").strip()
+        logger.info("Resuming Hermes session %s for orchestrator_chat", resume_session)
+        return [hermes_cmd, "--resume", resume_session, "-p", profile, "chat", "-q", message]
+    return [orchestrator_cmd, "chat", "-q", message]
+
+
+def _delegate_payload_summary(
+    *,
+    job_type: str,
+    cli_output: str,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {"status": "success", "job_type": job_type}
+    if extra:
+        payload.update(extra)
+    resume_session = _extract_hermes_resume_session(cli_output)
+    if resume_session:
+        payload["hermes_resume_session"] = resume_session
+    return payload
+
+
 def _run_orchestrator_cli(job_type: str, project: str | None, params: dict) -> str:
     cmd_base = os.environ.get("HERMES_ORCHESTRATOR_CMD", "qa-orchestrator").strip()
     if job_type == "orchestrator_chat":
-        message = str((params or {}).get("message", "")).strip()
-        if not message:
-            raise RuntimeError("orchestrator_chat requires params.message")
+        cmd = _orchestrator_chat_cmd(params)
         result = subprocess.run(
-            [cmd_base, "chat", "-q", message],
+            cmd,
             capture_output=True,
             text=True,
             timeout=int(os.environ.get("HERMES_ORCHESTRATOR_TIMEOUT", "3600")),
@@ -420,7 +461,10 @@ def execute_job(job_id: str, job_type: str, project: str | None, params: dict) -
                 parent_profile=None,
                 hermes_session_id=session_id,
                 message="Orchestrator reply",
-                payload_summary={"status": "success", "job_type": job_type},
+                payload_summary=_delegate_payload_summary(
+                    job_type=job_type,
+                    cli_output=cli_output,
+                ),
                 llm_turns=llm_turns,
             )
         post_event(

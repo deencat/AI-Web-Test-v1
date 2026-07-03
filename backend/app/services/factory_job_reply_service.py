@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Optional
 
 from app.models.factory_job import FactoryJob
+
+_SUMMARY_FIELD_RE = re.compile(r'"summary"\s*:\s*"([\s\S]*?)"\s*,', re.MULTILINE)
 
 _BOILERPLATE_MESSAGES = frozenset(
     {
@@ -24,6 +27,16 @@ def _is_boilerplate(message: str) -> bool:
     if lower.startswith("orchestrator cli started"):
         return True
     if lower.startswith("bridge completed"):
+        return True
+    if lower.startswith("job queued:"):
+        return True
+    if lower.startswith("job accepted"):
+        return True
+    if lower.startswith("open chat:"):
+        return True
+    if "initializing agent" in lower:
+        return True
+    if lower.startswith("query:"):
         return True
     return False
 
@@ -48,7 +61,11 @@ def _summary_from_text(text: str) -> Optional[str]:
             continue
         summary = parsed.get("summary")
         if isinstance(summary, str) and summary.strip():
-            return summary.strip()
+            return " ".join(summary.split())
+
+    match = _SUMMARY_FIELD_RE.search(stripped)
+    if match:
+        return " ".join(match.group(1).split())
     return None
 
 
@@ -92,21 +109,6 @@ def extract_orchestrator_reply(job: FactoryJob) -> Optional[str]:
         summary = _summary_from_payload(event.payload_summary)
         if summary:
             return summary
-
-    for event in reversed(events):
-        msg = (event.message or "").strip()
-        if not msg or _is_boilerplate(msg):
-            continue
-        summary = _summary_from_text(msg)
-        if summary:
-            return summary
-        profile = (event.profile or "").lower()
-        if event.event_type in ("delegate_complete", "error") and profile in (
-            "qa-orchestrator",
-            "factory_bridge",
-            "hermes_bridge",
-        ):
-            return msg
 
     if job.status == "failed" and job.error_message:
         return job.error_message
