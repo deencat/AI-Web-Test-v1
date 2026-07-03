@@ -1,686 +1,721 @@
-# Implementation Spec: Test Navigator — Split Tabs + User Categories + Title Editing
+# Product Specification: Stop Execution — Cooperative Cancel for 3-Tier Test Runs
 
-> Generated from brief: *"Currently the saved tests are in tests tab. I want to have saved tests in an individual tab while generate tests have it own tab. For saved tests, I want user can customize their own category then they are add or change the test cases category. For saved tests, I also want user can edit test cases title."*
+> Generated from brief: *"Add a Stop button to stop 3-tier test execution (Playwright → XPath → Stagehand AI) for saved test runs."*
+
+---
 
 ## Vision
 
-AI Web Test users today land on a single **Tests** sidebar item that mixes natural-language generation, generated-test review, and a buried link to saved tests (`/tests/saved` is not in the sidebar). This creates cognitive overload: "generate" and "manage" are different jobs performed in the same place.
+When a saved test is running through the 3-tier execution stack, users need a **safe, predictable way to abort** without waiting for every step and tier fallback to finish. **Stop Execution** gives them a red **Stop** control on the execution progress page that mirrors the existing agent workflow cancel pattern: cooperative polling between steps and between tiers, no thread killing, and backend-confirmed `cancelled` status via the existing 2-second poll loop.
 
-**Test Navigator** splits those jobs into two first-class sidebar destinations — **Generate Tests** and **Saved Tests** — and adds **user-defined test categories** so teams can organize saved cases by product area, sprint, or environment without conflating that with Knowledge Base document taxonomy. On the Saved Tests library, users can **rename test cases inline** (quick title edit on the list row) or via the full edit drawer — without opening the Generate tab. The target UX feels like a lightweight test library manager: generate on one tab, curate and run on another, filter by your own folders, rename titles in place.
-
----
-
-## Scope and Current State
-
-| Layer | Component | Status | Notes |
-|-------|-----------|--------|-------|
-| **Sidebar** | `frontend/src/components/layout/Sidebar.tsx` | Partial | Single "Tests" → `/tests` |
-| **Generate flow** | `frontend/src/pages/TestsPage.tsx` | Combined | NL form, KB category for generation context, generated review/save, `?edit=` loads saved test into same page |
-| **Saved list** | `frontend/src/pages/SavedTestsPage.tsx` | Hidden route | `/tests/saved` — search, type/priority/scheduled filters, batch delete, run, schedule; **title is read-only `<h3>`**; Edit → `/tests?edit={id}` |
-| **Detail** | `frontend/src/pages/TestDetailPage.tsx` | Complete | `/tests/:testId` |
-| **Routes** | `frontend/src/App.tsx` | Partial | `/tests`, `/tests/saved`, `/tests/:testId` — no generate/saved split in nav |
-| **Test CRUD API** | `backend/app/api/v1/endpoints/tests.py` | Partial | Full CRUD; `PUT /tests/{id}` supports `title` (min 1, max 255) via `TestCaseUpdate`; `category_id` in response; **no category filter query param** |
-| **Test model** | `backend/app/models/test_case.py` | Conflated | `category_id` FK → `kb_categories.id` (KB context, not user org) |
-| **KB categories** | `backend/app/models/kb_document.py` (`KBCategory`) | KB-only | Global, unique `name`, no `user_id`; used for KB docs + optional generation context |
-| **Generation API** | `backend/app/api/v1/endpoints/test_generation.py` | Complete | `category_id` = KB category for RAG context |
-| **Frontend types** | `frontend/src/types/api.ts` | Conflated | `category_id` documented as KB |
-| **Test suites picker** | `frontend/src/components/SuiteFormModal.tsx` | Unaffected | Uses `testsService.getAllTests()` — must still see all saved tests |
-| **E2E** | `tests/e2e/03-tests-page.spec.ts`, `06-navigation.spec.ts` | Stale assumptions | Expect single "Tests" link and "Test Cases" heading on `/tests` |
-| **ADR** | `documentation/ADR-008-test-categories-navigation.md` | Added | Captures data model separation + navigation split + inline title editing |
-
-**In scope:** Sidebar/routing split, user category CRUD, assign/change category (single + bulk), filter/group UI on Saved Tests, **inline title rename on saved test rows**, full edit drawer title field, backend model + API, migration, ADR-008, E2E updates.
-
-**Out of scope:** Changing three-tier execution, test generation LLM logic, KB category management UX, drag-and-drop category ordering (nice-to-have), cross-user shared categories (future), backend changes for title update (already supported).
+The experience should feel identical in spirit to **Stop Agent** — click Stop, see "Stopping execution…", wait for the badge to flip to **Cancelled**, partial step history preserved. Users who queued a long test by mistake can cancel while **pending** before a browser ever opens.
 
 ---
 
-## Architectural Decision: Test Categories Data Model
+## User Story
 
-### Options evaluated
+**As a** QA engineer running a saved test case,  
+**I want** to stop an in-progress or queued execution from the progress page,  
+**So that** I can abort mistaken runs, long-hanging Stagehand fallbacks, or tests pointed at the wrong environment without force-refreshing or deleting the execution record.
 
-| Option | Description | Verdict |
-|--------|-------------|---------|
-| **A) Reuse `KBCategory`** | Extend `kb_categories` for test organization | **Reject** — global unique names, no `user_id`, semantically tied to KB documents; editing/deleting KB categories would break test org; conflates RAG context with user filing |
-| **B) New `test_categories` table** | User-scoped categories; separate FK on `test_cases` | **Accept** — clean separation; matches user brief ("customize their own category") |
-| **C) Tags only** | Use existing `tags` JSON array | **Reject** — weaker filtering/grouping UX; no color/icon; no "manage categories" screen; bulk reassignment awkward |
-
-### Recommendation: **Option B — `test_categories` table**
-
-**Rationale:**
-1. **Separation of concerns:** `category_id` on generation requests remains KB context (RAG). Saved-test organization uses `test_category_id`.
-2. **User ownership:** Categories are per-user (same pattern as test cases, suites).
-3. **Evolution:** Supports name, color, description, sort order without touching KB schema.
-4. **Migration safety:** Existing `test_cases.category_id` (KB FK) can remain for historical/generation linkage; new column avoids breaking KB relationships.
-
-**Field naming after migration:**
-
-| Column | Purpose |
-|--------|---------|
-| `test_cases.category_id` | **Keep** — KB category used at generation time (optional); rename in API docs to `kb_category_id` in response alias if clarity needed |
-| `test_cases.test_category_id` | **New** — user-defined organization category (nullable) |
-
-Generation flow on `GenerateTestsPage` continues to pass `category_id` to `/tests/generate` as KB context only. Saving a test does **not** auto-assign `test_category_id` unless user explicitly picks an org category at save time (optional dropdown on save card — Sprint 2 polish).
+**Acceptance (happy path):**
+1. User clicks **Run** on a saved test → lands on `/executions/{id}`.
+2. While `status` is `pending` or `running`, **Stop Execution** is visible and enabled.
+3. User clicks Stop → inline **"Stopping execution…"** appears; button disables.
+4. Within cooperative bounds (up to ~120s if mid–Tier 3 LLM call), status becomes `cancelled`.
+5. Partial completed steps remain listed; Execution History shows `cancelled` filter match.
+6. `DELETE /executions/{id}` still deletes the record; cancel does not.
 
 ---
 
-## Navigation & Tab Design
+## Scope
 
-### Sidebar changes
+### In scope
 
-Replace single nav item with two (icons from `lucide-react`):
+| Area | Deliverable |
+|------|-------------|
+| Backend store | `execution_cancel_store.py` — thread-safe in-memory cancel flags keyed by `execution_id` |
+| Backend API | `DELETE /api/v1/executions/{execution_id}/cancel` → 204 |
+| CRUD | `cancel_execution()` — DB finalization helper |
+| Queue | Dequeue pending; pre-start guard in `queue_manager` |
+| Execution loop | Cooperative polls in `execute_test()` step loop (incl. loop bodies) |
+| 3-tier | `cancel_check` param on `ThreeTierExecutionService.execute_step()` |
+| Frontend | `StopExecutionButton.tsx`, `executionService.cancelExecution()`, wire on `ExecutionProgressPage` |
+| Tests | Unit + component tests per rubric |
+| Docs | ADR-009 (new) or ADR-002 addendum section |
 
-| Label | Path | Icon | Active when |
-|-------|------|------|-------------|
-| **Generate Tests** | `/tests` | `Sparkles` | `pathname === '/tests'` or `pathname.startsWith('/tests/generate')` |
-| **Saved Tests** | `/tests/saved` | `FolderOpen` | `pathname === '/tests/saved'` or `pathname.startsWith('/tests/saved')` |
+### Out of scope
 
-Place **Generate Tests** then **Saved Tests** adjacent (where "Tests" was), before Step Library.
-
-### Route strategy
-
-| Route | Page | Behavior |
-|-------|------|----------|
-| `/tests` | `GenerateTestsPage` | **Generate only** — extract generation + generated-review from current `TestsPage`; remove saved-test list and "View Saved Tests" header button |
-| `/tests/saved` | `SavedTestsPage` | **Saved library** — list, filters, categories, inline title edit, edit-in-place drawer |
-| `/tests/saved?edit={id}` | `SavedTestsPage` | Opens edit drawer/modal for test `{id}` (replaces `/tests?edit=`) |
-| `/tests/:testId` | `TestDetailPage` | Unchanged |
-| `/tests?edit={id}` | Redirect | `<Navigate to="/tests/saved?edit={id}" replace />` in `App.tsx` or page-level redirect — backward compat |
-| `/tests/generate` | Optional alias | Redirect to `/tests` — only if Generator prefers explicit path; **default: `/tests` is generate** |
-
-**Do not** redirect `/tests` → `/tests/saved`. Generate remains the default tests entry (matches current behavior and "Generate New Tests" CTAs).
-
-### Page split: `TestsPage` → `GenerateTestsPage`
-
-1. Rename `TestsPage.tsx` → `GenerateTestsPage.tsx` (or keep filename, change export — **prefer rename** for clarity).
-2. **Remove** from generate page:
-   - `loadAndEditTest` / `?edit=` handling (moves to SavedTestsPage)
-   - `editingSavedTest` flow
-   - Header "View Saved Tests" button (sidebar replaces it)
-   - Any mock "existing tests" list view (`showGenerator` toggle for non-generation content)
-3. **Keep** on generate page:
-   - NL prompt form
-   - KB category selector (`selectedCategory` → generation `category_id`)
-   - Generated test cards, save/edit/delete before persist
-   - Post-save navigation → `/tests/saved` (optionally with toast "View in Saved Tests")
-
-### Edit flow decision
-
-**Editing a saved test stays on the Saved Tests tab** — not the Generate tab.
-
-| Action | Destination |
-|--------|-------------|
-| **Quick rename title only** | Inline on list row — no drawer, no navigation |
-| Edit steps/title/description/category from saved list | `/tests/saved?edit={id}` — inline drawer or full-width edit panel on SavedTestsPage (reuse `TestStepEditor` + form state from current `TestsPage` edit block) |
-| After save (drawer) | Remain on `/tests/saved`; clear `?edit=` param |
-| Cancel edit (drawer) | Close drawer; `navigate('/tests/saved', { replace: true })` |
-
-**Rationale:** Generate tab = create net-new from NL; Saved tab = curate persisted tests. Mixing edit on generate tab was the original pain point. Inline title edit covers the most common rename action without opening the full editor.
-
-### Dashboard / deep links
-
-| Source | Current | New |
-|--------|---------|-----|
-| `SavedTestsPage` "Generate New Tests" | `navigate('/tests')` | Keep → `/tests` |
-| `SavedTestsPage` Edit button | `navigate('/tests?edit=…')` | `navigate('/tests/saved?edit=…')` |
-| `RenameModuleModal` | `/tests/{id}` | Unchanged |
-| `SuiteFormModal` test picker | `getAllTests()` | Unchanged — no category filter in picker (show all user tests) |
+- Stop button on `SavedTestsPage` or list views (progress page only for v1)
+- Suite-level bulk cancel (`suite_execution_service.py`)
+- WebSocket push for instant status (keep 2s polling)
+- Force-kill threads, `asyncio.Task.cancel()`, or process signals
+- Reusing `DELETE /executions/{id}` for cancel (breaks delete semantics)
+- Optimistic UI (`status=cancelled` before API/poll confirms)
+- Redis-backed cancel store (in-memory mirrors `workflow_store.py` for v1)
+- Admin "cancel any user's execution" (ownership rules match existing execution endpoints)
 
 ---
 
-## Title Editing Feature
+## Current State Analysis
 
-Users must be able to change a saved test's **title** from the Saved Tests list without opening the full edit drawer or navigating to the Generate tab. The full edit drawer also retains a title field for editing title alongside steps, description, priority, and category.
+### What exists
 
-### Two edit surfaces (complementary, not redundant)
+| Layer | Location | Status |
+|-------|----------|--------|
+| `ExecutionStatus.CANCELLED` | `backend/app/models/test_execution.py` | Enum value present |
+| Frontend `cancelled` type | `frontend/src/types/execution.ts` | `ExecutionStatus` includes `'cancelled'` |
+| Status badge styling | `ExecutionProgressPage.tsx` `ExecutionStatusBadge` | Gray badge for `cancelled` |
+| History filter | `ExecutionHistoryPage.tsx` | `<option value="cancelled">` |
+| Queue dequeue primitive | `execution_queue.remove_from_queue()` | Exists; not wired to cancel |
+| Agent cancel pattern | `workflow_store.py`, `workflows.py` DELETE, `StopAgentButton.tsx` | **Reference implementation** |
+| Progress polling | `ExecutionProgressPage.tsx` | 2s interval while `pending`/`running` |
+| Execution worker | `queue_manager.py` → `ExecutionService.execute_test()` | No cancel awareness |
+| 3-tier engine | `three_tier_execution_service.py` | No `cancel_check` |
+| Delete execution | `DELETE /executions/{id}` | Deletes record — must stay distinct |
 
-| Surface | When to use | Opens drawer? |
-|---------|-------------|---------------|
-| **Inline title editor** | User wants to rename only | **No** |
-| **Full edit drawer** (`?edit=id`) | User edits steps, description, priority, category, or title in context of other fields | Yes |
+### What's missing
 
-### Inline title editor UX
-
-**Component:** `frontend/src/components/tests/InlineTitleEditor.tsx` (new, reusable)
-
-**Trigger:**
-- Click the test title text (`<h3>` replacement), **or**
-- Click a small pencil icon button adjacent to the title (`aria-label="Rename test title"`)
-
-**Edit mode:**
-- Title text becomes a single-line `<input>` styled to match `text-lg font-semibold text-gray-900`
-- Input receives focus and selects all text on enter edit mode
-- `maxLength={255}` (matches backend `TestCaseUpdate.title`)
-
-**Save:**
-- **Enter** — save if valid and changed
-- **Blur** — save if valid and changed (debounce not required; single PUT per blur)
-- Show inline loading indicator on the row (spinner or input `disabled` + opacity) while `PUT` in flight
-
-**Cancel:**
-- **Escape** — revert to previous title; exit edit mode without API call
-
-**Validation (client):**
-- Trim whitespace before save
-- Empty or whitespace-only title → **block save**, show inline red helper text *"Title is required"* (or border `border-red-500`), keep edit mode open
-- Unchanged title on blur/Enter → exit edit mode silently (no API call)
-
-**API:**
-```http
-PUT /api/v1/tests/{id}
-Content-Type: application/json
-
-{ "title": "New title here" }
-```
-- Partial update — send `{ title }` only; no backend changes required (`TestCaseUpdate` already supports optional `title`, min 1, max 255 chars)
-- Use existing `testsService.updateTest(id, { title })`
-
-**Success:**
-- Update local list state optimistically or from response
-- Optional brief success toast: *"Title updated"* (green, bottom-right — match Step Library rename toast pattern)
-
-**Error:**
-- On network/4xx/5xx failure: **revert** displayed title to last known good value
-- Show error toast: *"Failed to update title"* (or server message if available)
-- Exit edit mode after revert
-
-**Accessibility:**
-- Title in view mode: `role="button"` or wrap in button with `aria-label="Edit title: {currentTitle}"` if not using native click on heading
-- Edit input: `aria-label="Test title"`, `aria-invalid={hasError}`, `aria-describedby` for validation message
-- Pencil button: `aria-label="Rename test title"`
-- Keyboard: Tab to pencil → Enter activates edit; Escape cancels; Enter saves
-
-**Visual pattern (match existing Tailwind):**
-- View mode: `text-lg font-semibold text-gray-900 hover:text-blue-600 cursor-pointer` on title (subtle affordance)
-- Edit input: `border border-blue-400 rounded px-2 py-0.5 focus:ring-2 focus:ring-blue-500 focus:outline-none`
-- Pencil: `p-1 text-gray-400 hover:text-gray-600 rounded` with `Pencil` icon from `lucide-react` (`w-4 h-4`)
-- Do **not** use `contentEditable` — use controlled `<input>` for predictable validation
-
-**Reference patterns in codebase:**
-- Step Library uses modal rename (`RenameModuleModal`) for slug changes — heavier than needed for title
-- Knowledge Base uses inline edit in review panels — similar save/cancel semantics
-- Prefer lightweight inline input over modal for title-only rename
-
-### Full edit drawer title field
-
-The edit drawer (`?edit=id`) **must** include an editable **Title** text input at the top of the form:
-- Same validation: required, 1–255 chars
-- Saves with full `testsService.updateTest` payload on "Save Changes"
-- If user also edited title inline on the same row before opening drawer, drawer loads current title from list state / fresh fetch
-
-### Edge cases — title editing
-
-| Case | Behavior |
-|------|----------|
-| Empty title on save | Blocked client-side; inline error; no API call |
-| Duplicate titles | **Allowed** — no uniqueness constraint on test titles per user |
-| Title unchanged on blur | Exit edit mode; no API call |
-| Concurrent edit (drawer + inline) | Last successful save wins; refresh list on drawer close if inline changed during session |
-| Failed save | Revert to previous title; error toast |
-| User editing title while batch delete selected | Inline edit allowed; row remains selectable |
-| Inline edit during `batchDeleting` | Disable inline edit triggers while batch delete in progress |
-| Very long title (255 chars) | `maxLength={255}` on input; server validates same |
-| Mobile viewport | Inline input full width within card; touch-friendly tap target on title |
-| Screen reader | Announce validation errors via `aria-live="polite"` region |
-
-### API — no backend changes
-
-| Item | Status |
-|------|--------|
-| `PUT /tests/{id}` with `{ title }` | Already supported via `TestCaseUpdate` |
-| Title validation | Backend: min 1, max 255 chars |
-| New endpoints | None required |
+| Gap | Required artifact |
+|-----|-------------------|
+| In-memory cancel flags | `backend/app/services/execution_cancel_store.py` |
+| Cancel API route | `DELETE /executions/{id}/cancel` in `executions.py` |
+| DB cancel helper | `crud/test_execution.cancel_execution()` |
+| Step-loop polling | `ExecutionService.execute_test()` |
+| Tier-boundary polling | `ThreeTierExecutionService.execute_step(..., cancel_check=)` |
+| Queue lifecycle hooks | Register on worker start, clear on finish, pre-start DB check |
+| Frontend button | `frontend/src/components/execution/StopExecutionButton.tsx` |
+| Frontend API method | `executionService.cancelExecution(id)` |
+| Tests | `test_execution_cancel_store.py`, `test_execution_cancel.py`, `StopExecutionButton.test.tsx` |
+| ADR | ADR-009 or ADR-002 addendum |
 
 ---
 
-## User-Defined Categories Feature
+## Architecture Decision: Cooperative Cancel (Mirror Workflow Cancel)
 
-### Category management (CRUD)
+### Decision
 
-**Entry points on Saved Tests page:**
-1. **"Manage Categories"** button in page header (secondary outline) → opens `CategoryManagerModal`
-2. **"+ Category"** quick action in category filter sidebar/chip row
+Adopt the **same cooperative cancel pattern** used for agent workflows (ADR-004):
 
-**CategoryManagerModal** (new component):
+1. **API** sets a cancel flag (in-memory store + optional immediate DB update for `pending`).
+2. **Worker** polls the flag between logical boundaries (steps, tier fallbacks).
+3. **Worker** finalizes with `status=cancelled`, `completed_at`, partial counts — never `failed`.
+4. **`finally`** always runs `cleanup()` (Playwright + Stagehand).
 
-| Field | Validation |
-|-------|------------|
-| Name | Required, 1–100 chars, unique per user |
-| Description | Optional |
-| Color | Hex, default `#3B82F6` (reuse KB color picker pattern) |
+### Rationale
 
-**Actions:** Create, Edit, Delete.
+| Approach | Verdict |
+|----------|---------|
+| Cooperative in-memory flag + poll | **Accept** — proven by `workflow_store` + `orchestration_service` |
+| Force-kill worker thread | **Reject** — orphaned browsers, corrupt DB state |
+| `DELETE /executions/{id}` for cancel | **Reject** — conflates cancel with record deletion |
+| DB-only cancel flag | **Reject for v1** — running worker needs fast poll without per-step DB round-trips |
+| Optimistic frontend cancel | **Reject** — user brief requires poll-confirmed status |
 
-**Delete behavior:** If category has tests → confirm dialog: *"N tests use this category. They will become Uncategorized."* Set `test_category_id = NULL` on affected tests (soft org removal, not test deletion).
-
-### Assign / change category on test cases
-
-| Mode | UI | API |
-|------|-----|-----|
-| **Single — row action** | Category dropdown in each test row (or in edit drawer) | `PUT /tests/{id}` with `test_category_id` |
-| **Single — edit drawer** | Category `<select>` alongside priority | Same |
-| **Bulk — multi-select** | Toolbar: "Set Category" → dropdown when `selectedIds.size > 0` | `PATCH /tests/batch/category` (new) with `{ test_ids: number[], test_category_id: number \| null }` |
-| **On save from Generate** | Optional "Save to category" on each generated card before save | `POST /tests` includes `test_category_id` |
-
-### Filtering & grouping UI
-
-**Layout addition on SavedTestsPage** — left sidebar (desktop) or horizontal chip scroll (mobile):
+### State machine
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│ Saved Test Cases                    [Manage Categories] │
-├──────────────┬──────────────────────────────────────────┤
-│ All (42)     │  [Search] [Type] [Priority] [Schedule]   │
-│ ─────────    │  ┌─────────────────────────────────────┐ │
-│ ● Billing(8) │  │ [✓] Login Flow ✎  [Billing] [high]   │ │
-│ ● Login (5)  │  │     (inline title + row actions)    │ │
-│ ● Uncategorized (12)                                      │
-└──────────────┴──────────────────────────────────────────┘
+                    ┌─────────────┐
+         run        │   pending   │◄── cancel: DB cancelled + dequeue
+        ──────────► │             │
+                    └──────┬──────┘
+                           │ worker picks up
+                           ▼
+                    ┌─────────────┐
+                    │   running   │◄── cancel: request_cancel(execution_id)
+                    └──────┬──────┘
+                           │ cooperative poll detects cancel
+                           ▼
+                    ┌─────────────┐
+                    │  cancelled  │  (terminal)
+                    └─────────────┘
 ```
 
-- Click category → filter list client-side (or server `?test_category_id=` if list is large)
-- **"Uncategorized"** = `test_category_id IS NULL`
-- Category chip on each row shows color dot + name
-- Filter bar adds **Category** dropdown (redundant with sidebar — keep sidebar as primary, dropdown for mobile)
+**Pending path:** API sets `status=cancelled`, `completed_at`, calls `queue.remove_from_queue(execution_id)`, returns 204. Worker never starts.
 
-### Empty states
+**Running path:** API calls `request_cancel(execution_id)` (registers flag if not already), returns 204. Worker detects flag, calls `cancel_execution()` with partial stats, breaks loop, `finally` cleanup.
 
-| State | Message + CTA |
-|-------|-----------------|
-| No categories yet | Sidebar shows only "All" + "Uncategorized"; "Create your first category" in Manage Categories |
-| No tests in category | "No tests in Billing yet" + link to Generate Tests |
-| No saved tests at all | Existing empty state + "Generate New Tests" |
+**Terminal path (`completed`, `failed`, `cancelled`):** API returns 204 idempotently (no error).
+
+### Reference files (copy patterns from)
+
+- `backend/app/services/workflow_store.py` — `request_cancel`, `is_cancel_requested`
+- `backend/app/api/v2/endpoints/workflows.py` — `DELETE` → 204
+- `backend/app/services/orchestration_service.py` — `cancel_check=lambda: is_cancel_requested(id)`
+- `frontend/src/features/agent-workflow/components/StopAgentButton.tsx` — UX parity
 
 ---
 
-## Data Model & API
+## API Contract
 
-### New table: `test_categories`
+### `DELETE /api/v1/executions/{execution_id}/cancel`
 
-```sql
-CREATE TABLE test_categories (
-  id SERIAL PRIMARY KEY,
-  name VARCHAR(100) NOT NULL,
-  description TEXT,
-  color VARCHAR(20) NOT NULL DEFAULT '#3B82F6',
-  sort_order INTEGER NOT NULL DEFAULT 0,
-  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  created_at TIMESTAMP NOT NULL,
-  updated_at TIMESTAMP NOT NULL,
-  UNIQUE (user_id, name)
-);
-CREATE INDEX ix_test_categories_user_id ON test_categories(user_id);
+**Auth:** Required (`deps.get_current_user`)
+
+**Ownership:** Non-admin → `execution.user_id == current_user.id`; else 403
+
+**Responses:**
+
+| Condition | Status | Body |
+|-----------|--------|------|
+| Execution not found | 404 | `{"detail": "Execution not found"}` |
+| Wrong user | 403 | `{"detail": "You don't have permission to cancel this execution"}` |
+| Success (any cancellable or terminal state) | 204 | No content |
+
+**Handler logic (pseudocode):**
+
+```python
+@router.delete("/{execution_id}/cancel", status_code=204)
+def cancel_execution_endpoint(execution_id: int, current_user, db):
+    execution = crud_executions.get_execution(db, execution_id)
+    # 404 / 403 checks ...
+
+    if execution.status == ExecutionStatus.PENDING:
+        queue.remove_from_queue(execution_id)
+        crud_executions.cancel_execution(db, execution_id, ...)
+        clear_cancel(execution_id)  # idempotent cleanup
+        return None
+
+    if execution.status == ExecutionStatus.RUNNING:
+        register_cancel(execution_id)   # ensure key exists
+        request_cancel(execution_id)    # set flag
+        return None
+
+    # completed | failed | cancelled → idempotent 204
+    return None
 ```
 
-### Alter `test_cases`
+**Route ordering:** Register **before** `DELETE /{execution_id}` is impossible since they share path depth — use distinct path segment:
 
-```sql
-ALTER TABLE test_cases
-  ADD COLUMN test_category_id INTEGER REFERENCES test_categories(id) ON DELETE SET NULL;
-CREATE INDEX ix_test_cases_test_category_id ON test_cases(test_category_id);
+```
+DELETE /{execution_id}/cancel   ← cancel (new)
+DELETE /{execution_id}          ← delete record (existing)
 ```
 
-**Keep** existing `category_id` → `kb_categories` for KB/generation linkage.
+Place `@router.delete("/{execution_id}/cancel")` **above** `@router.delete("/{execution_id}")` in `executions.py` (FastAPI matches more specific paths first when declared first; verify in tests).
 
-### New backend modules
+### CRUD: `cancel_execution`
 
-| File | Purpose |
-|------|---------|
-| `backend/app/models/test_category.py` | SQLAlchemy model |
-| `backend/app/schemas/test_category.py` | Create/Update/Response |
-| `backend/app/crud/test_category.py` | CRUD + count tests per category |
-| `backend/app/api/v1/endpoints/test_categories.py` | REST router |
-| `backend/app/migrations/versions/xxxx_add_test_categories.py` | Alembic migration |
+**File:** `backend/app/crud/test_execution.py`
 
-### API endpoints
-
-**`/api/v1/test-categories`** (new router, register in `api.py`):
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/test-categories` | List current user's categories with `test_count` |
-| POST | `/test-categories` | Create |
-| GET | `/test-categories/{id}` | Get one (ownership check) |
-| PUT | `/test-categories/{id}` | Update |
-| DELETE | `/test-categories/{id}` | Delete; nullify `test_cases.test_category_id` |
-
-**Extend `/api/v1/tests`:**
-
-| Change | Detail |
-|--------|--------|
-| `GET /tests` | Add query param `test_category_id: Optional[int]`; special value `uncategorized` via `test_category_id=0` convention or `uncategorized=true` |
-| `TestCaseCreate/Update/Response` | Add `test_category_id: Optional[int]` |
-| `PATCH /tests/batch/category` | Bulk assign `{ test_ids, test_category_id }` |
-| Response enrichment | Include nested `test_category: { id, name, color }` when loaded |
-| `PUT /tests/{id}` | **Unchanged** — `title` partial update already supported |
-
-**Schemas** — update descriptions:
-- `category_id` → document as "KB category ID (generation context)"
-- `test_category_id` → "User-defined organization category"
-
-### Frontend service
-
-New `frontend/src/services/testCategoriesService.ts`:
-
-```ts
-getAll(), create(data), update(id, data), delete(id)
-batchAssignCategory(testIds, categoryId | null)  // via tests batch endpoint
+```python
+def cancel_execution(
+    db: Session,
+    execution_id: int,
+    *,
+    total_steps: int = 0,
+    passed_steps: int = 0,
+    failed_steps: int = 0,
+    skipped_steps: int = 0,
+) -> TestExecution:
+    """Mark execution as cancelled with partial progress."""
 ```
 
-Update `testsService.ts`: add `test_category_id` to create/update types; `getAllTests({ test_category_id })` filter param. Existing `updateTest(id, { title })` used by inline editor.
+Sets:
+- `status = ExecutionStatus.CANCELLED`
+- `result = None` (or leave unchanged — prefer `None` for cancelled mid-run)
+- `completed_at = datetime.utcnow()`
+- `duration_seconds` from `started_at` if set
+- step count fields from kwargs
+
+Does **not** set `error_message` (not a failure).
 
 ---
 
-## Files to Change
+## Backend Implementation Detail
 
-### Must change
+### 1. `execution_cancel_store.py` (new)
 
-| File | Change |
-|------|--------|
-| `frontend/src/components/layout/Sidebar.tsx` | Two nav items: Generate Tests, Saved Tests |
-| `frontend/src/pages/TestsPage.tsx` | Rename → `GenerateTestsPage.tsx`; strip saved-test edit/list; update headings |
-| `frontend/src/pages/SavedTestsPage.tsx` | Category sidebar, filters, bulk assign, edit drawer with `?edit=`, **replace read-only `<h3>` with `InlineTitleEditor`** |
-| `frontend/src/components/tests/InlineTitleEditor.tsx` | **New** — click-to-edit title, validation, PUT on save |
-| `frontend/src/App.tsx` | Import rename; redirect `/tests?edit=` → saved; route order preserved |
-| `frontend/src/types/api.ts` | Add `TestCategory`, `test_category_id` on Test types |
-| `frontend/src/services/testsService.ts` | `test_category_id` support, batch category; `updateTest` for title (existing) |
-| `frontend/src/services/testCategoriesService.ts` | **New** |
-| `frontend/src/components/testCategories/CategoryManagerModal.tsx` | **New** |
-| `frontend/src/components/testCategories/CategorySidebar.tsx` | **New** (optional extract) |
-| `backend/app/models/test_category.py` | **New** |
-| `backend/app/models/test_case.py` | Add `test_category_id` FK + relationship |
-| `backend/app/schemas/test_case.py` | Add `test_category_id` fields |
-| `backend/app/schemas/test_category.py` | **New** |
-| `backend/app/crud/test_category.py` | **New** |
-| `backend/app/crud/test_case.py` | Filter by `test_category_id`; batch category update |
-| `backend/app/api/v1/endpoints/test_categories.py` | **New** |
-| `backend/app/api/v1/endpoints/tests.py` | Filter param, batch category endpoint |
-| `backend/app/api/v1/api.py` | Register test_categories router |
-| `backend/app/migrations/versions/…` | **New** migration |
-| `documentation/ADR-008-test-categories-navigation.md` | **New** ADR (include title editing on Saved tab) |
-| `tests/e2e/03-tests-page.spec.ts` | Update for "Generate Tests" nav label/heading |
-| `tests/e2e/06-navigation.spec.ts` | Two test nav links; saved tests route |
+**Path:** `backend/app/services/execution_cancel_store.py`
 
-### Optional (Sprint 2+)
+Mirror `workflow_store.py` API:
 
-| File | Change |
-|------|--------|
-| `frontend/src/pages/__tests__/SavedTestsPage.test.tsx` | Category filter + bulk assign + **inline title edit** tests |
-| `frontend/src/components/tests/__tests__/InlineTitleEditor.test.tsx` | **New** — unit tests for save/cancel/validation |
-| `backend/tests/unit/test_test_categories.py` | **New** unit tests |
-| `frontend/src/pages/GenerateTestsPage.tsx` | Optional category on save card |
-| `docs/CODEMAPS/frontend.md` | Route map update |
+```python
+def register_cancel(execution_id: int) -> None:
+    """Ensure execution_id key exists in store (called when worker starts)."""
 
-### No change required
+def request_cancel(execution_id: int) -> bool:
+    """Set cancel_requested=True. Returns True if key existed."""
 
-| File | Reason |
-|------|--------|
-| `backend/app/api/v1/endpoints/test_generation.py` | KB `category_id` unchanged |
-| `backend/app/schemas/test_case.py` (title field) | `TestCaseUpdate.title` already exists |
-| `frontend/src/components/SuiteFormModal.tsx` | Picker uses all tests |
-| `backend/app/models/kb_document.py` | KB categories independent |
-| Execution engine / ADR-002 | Out of scope |
+def is_cancel_requested(execution_id: int) -> bool:
+    """Return True if cancellation was requested."""
 
----
+def clear_cancel(execution_id: int) -> bool:
+    """Remove entry. Returns True if existed. Call in worker finally."""
+```
 
-## UI/UX Specification
+Implementation: `threading.Lock` + `Dict[int, Dict[str, Any]]` keyed by integer `execution_id`.
 
-### Generate Tests page (`/tests`)
+### 2. `ExecutionService.execute_test()` hooks
 
-**Header:**
-- Title: **Generate Tests**
-- Subtitle: *Generate test cases using natural language*
-- No "View Saved Tests" button (sidebar handles navigation)
+**File:** `backend/app/services/execution_service.py`
 
-**Body:** Unchanged generation form + KB context panel + results area.
+**New import:** `from app.services.execution_cancel_store import register_cancel, is_cancel_requested, clear_cancel`
 
-**Post-save:** `navigate('/tests/saved')` with optional query `?highlight={newId}`.
+**At start of try block** (after resolving `execution` record, before `start_execution`):
 
-### Saved Tests page (`/tests/saved`)
+```python
+register_cancel(execution.id)
+```
 
-**Header:**
-- Title: **Saved Tests**
-- Buttons: `[Manage Categories]` (secondary), `[Generate New Tests]` (primary → `/tests`)
+**New helper** (module-level or method):
 
-**Category sidebar (md+):** Fixed width `w-56`, white card, category rows with count badge, color dot, active state `bg-blue-50 border-l-4 border-blue-600`.
+```python
+def _is_cancelled(execution_id: int) -> bool:
+    return is_cancel_requested(execution_id)
+```
 
-**Test table/card row:**
-- **Title row:** `InlineTitleEditor` (click title or pencil → inline input) — replaces static `<h3>`
-- Category badge (colored pill) or "Uncategorized" gray pill
-- Quick category change: click pill → small popover select
-- Description, metadata, action buttons unchanged
+**New exception** (optional, for clarity):
 
-**Edit drawer (`?edit=id`):**
-- Slide-over from right, `max-w-2xl`
-- Fields: **title** (required text input), description, steps (`TestStepEditor`), priority, **Test Category** dropdown, runtime credentials flag
-- Footer: Cancel | Save Changes
-- Uses `testsService.updateTest`
+```python
+class ExecutionCancelledError(Exception):
+    """Raised internally when cooperative cancel detected."""
+```
 
-**Bulk toolbar** (when rows selected):
-`[N selected] [Set Category ▾] [Delete]` — extends existing batch delete bar.
+**Poll sites** — call at top of each iteration:
 
-### Edge cases
+1. Main `while idx <= total_steps:` loop (line ~816)
+2. Inner `for iteration in range(...)` loop body (loop blocks)
+3. Inner `for loop_step_idx in range(...)` inside loop blocks
 
-| Case | Behavior |
-|------|----------|
-| Delete category with tests | Tests → Uncategorized (`test_category_id = null`) |
-| Duplicate category name | API 409; inline validation in modal |
-| Edit test category to null | "Uncategorized" in UI |
-| `?edit=` invalid id | Toast error; strip query param |
-| User has 0 categories | Sidebar: All + Uncategorized only; assign via "Set Category" prompts create |
-| KB `category_id` on test from generation | Shown only in test detail metadata (optional "KB context" label) — not in org sidebar |
-| Admin viewing other user's tests | Categories scoped to test owner; admin list shows tests but category CRUD only for own categories |
-| Mobile viewport | Category sidebar → horizontal scroll chips above filters |
-| Empty title inline edit | Blocked; inline validation message |
-| Failed title save | Revert title; error toast |
-| Duplicate test titles | Allowed |
+On cancel detected:
 
-### Responsive
+```python
+execution = crud_execution.cancel_execution(
+    db=db,
+    execution_id=execution.id,
+    total_steps=total_steps,
+    passed_steps=passed_steps,
+    failed_steps=failed_steps,
+    skipped_steps=skipped_steps,
+)
+if progress_callback:
+    await progress_callback({"execution_id": execution.id, "status": "cancelled", ...})
+raise ExecutionCancelledError()  # or break + goto finalize
+```
 
-- `< md`: hide left sidebar; category chips row below header
-- Table horizontal scroll preserved
-- Edit drawer full-screen on mobile
-- Inline title input spans available row width on mobile
+**Exception handling** — extend existing `except` chain:
 
----
+```python
+except ExecutionCancelledError:
+    pass  # already finalized
+except Exception as e:
+    ...  # existing fail_execution
+finally:
+    clear_cancel(execution.id)
+    await self.cleanup()
+```
 
-## Migration Path
+**Pass `cancel_check` into `_execute_step`:**
 
-### Existing data
+```python
+async def _execute_step(
+    self,
+    page: Page,
+    step_description: str,
+    step_number: int,
+    base_url: str,
+    detailed_step: Dict[str, Any] = None,
+    execution_id: int = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
+) -> Dict[str, Any]:
+```
 
-1. **Deploy migration** adding `test_categories` + `test_cases.test_category_id` (nullable, default NULL).
-2. **Do not auto-migrate** `test_cases.category_id` (KB FK) into `test_category_id` — they are different concepts. Existing tests appear as **Uncategorized** in org sidebar.
-3. **Optional admin script** (out of band): if team previously misused KB categories as folders, one-time script can create `test_categories` rows and map by KB name — document in ADR, not required for MVP.
+When calling `three_tier_service.execute_step`:
 
-### Backward compatibility
+```python
+result = await self.three_tier_service.execute_step(
+    step=step_data,
+    execution_id=execution_id,
+    step_index=step_number - 1,
+    cancel_check=cancel_check,
+)
+```
 
-| Item | Strategy |
-|------|----------|
-| `/tests?edit={id}` | 302/Navigate to `/tests/saved?edit={id}` |
-| API clients using `category_id` | Unchanged semantics (KB); additive `test_category_id` |
-| `GET /tests` without new param | Returns all tests (unchanged) |
-| `PUT /tests/{id}` with `{ title }` | Unchanged — already supported |
-| OpenAPI | Bump field docs; no breaking removals |
+Wire from `execute_test`:
 
-### Rollback
+```python
+cancel_check = lambda: is_cancel_requested(execution.id)
+result = await self._execute_step(..., cancel_check=cancel_check)
+```
 
-Migration `downgrade()` drops `test_category_id` column and `test_categories` table. No impact on KB or execution. Inline title editor is frontend-only rollback.
+### 3. `ThreeTierExecutionService.execute_step()` hooks
 
----
+**File:** `backend/app/services/three_tier_execution_service.py`
 
-## Sprint Breakdown
+**Updated signature:**
 
-### Sprint 1: Navigation split + title editing (~1.25 days)
+```python
+async def execute_step(
+    self,
+    step: Dict[str, Any],
+    execution_id: Optional[int] = None,
+    step_index: Optional[int] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
+) -> Dict[str, Any]:
+```
 
-| # | Deliverable | Effort |
-|---|-------------|--------|
-| 1.1 | Sidebar: Generate Tests + Saved Tests | 1h |
-| 1.2 | Extract `GenerateTestsPage`; remove edit/saved cross-links | 2–3h |
-| 1.3 | `App.tsx` redirects; update headings | 1h |
-| 1.4 | Move `?edit=` handling to `SavedTestsPage` (reuse existing edit UI) | 3h |
-| 1.5 | **`InlineTitleEditor` component + integrate in SavedTestsPage rows** | 2–3h |
-| 1.6 | Edit drawer includes title field; Edit button → `/tests/saved?edit=` | 1h (part of 1.4) |
-| 1.7 | Update E2E `03-tests-page`, `06-navigation`; add inline title rename case | 2h |
+**Helper:**
 
-**DoD:** Two sidebar tabs work; generate at `/tests`; saved at `/tests/saved`; edit stays on saved; old `?edit=` URLs work; **user can rename title inline on list row without opening drawer**; drawer title field works for full edits.
+```python
+def _check_cancelled(cancel_check) -> bool:
+    if callable(cancel_check):
+        try:
+            return bool(cancel_check())
+        except Exception:
+            return False
+    return False
+```
 
-### Sprint 2: Backend categories (~1.5 days)
+**Poll points** (return early with cancelled result):
 
-| # | Deliverable | Effort |
-|---|-------------|--------|
-| 2.1 | Model, migration, CRUD, endpoints | 4h |
-| 2.2 | Extend test schemas + `test_category_id` on create/update | 2h |
-| 2.3 | `GET /tests?test_category_id=` filter | 1h |
-| 2.4 | `PATCH /tests/batch/category` | 2h |
-| 2.5 | Unit tests for CRUD + ownership | 2h |
+| # | Location | When |
+|---|----------|------|
+| 1 | Start of `execute_step`, after strategy log | Before Tier 1 |
+| 2 | After Tier 1 fails, before fallback branch | Before Tier 2/3 |
+| 3 | Inside `_execute_option_a` | Before `tier2_executor.execute_step` |
+| 4 | Inside `_execute_option_b` | Before `tier3_executor.execute_step` |
+| 5 | Inside `_execute_option_c` | Before Tier 2 **and** before Tier 3 escalation |
 
-**DoD:** API documented in OpenAPI; migration runs clean; pytest for test_categories passes.
+**Cancelled result shape:**
 
-### Sprint 3: Saved Tests category UI (~1.5 days)
+```python
+return {
+    "success": False,
+    "cancelled": True,
+    "tier": None,
+    "error": "Execution cancelled by user",
+    "error_type": "cancelled",
+    "execution_history": execution_history,
+    "strategy_used": strategy,
+}
+```
 
-| # | Deliverable | Effort |
-|---|-------------|--------|
-| 3.1 | `testCategoriesService.ts` | 1h |
-| 3.2 | `CategoryManagerModal` CRUD | 3h |
-| 3.3 | Category sidebar + filter integration | 3h |
-| 3.4 | Row badge + single assign dropdown | 2h |
-| 3.5 | Bulk "Set Category" in selection toolbar | 2h |
+**`ExecutionService._execute_step`** must propagate `cancelled: True` so the step loop can break without recording a FAIL step (or record SKIP — **prefer: no new step record for in-flight step; break immediately**).
 
-**DoD:** User can create categories, assign single/bulk, filter list; delete category uncategorizes tests.
+### 4. `queue_manager.py` lifecycle
 
-### Sprint 4: Docs + QA hardening (~0.75 day)
+**File:** `backend/app/services/queue_manager.py`
 
-| # | Deliverable | Effort |
-|---|-------------|--------|
-| 4.1 | ADR-008 | 1h |
-| 4.2 | Saved Tests edit polish; inline title edge-case validation (concurrent edit, a11y audit) | 2h |
-| 4.3 | Frontend tests: `SavedTestsPage.test.tsx` + `InlineTitleEditor.test.tsx` | 2h |
+**Pre-start guard** in `_check_and_start_next()` after `get_next_execution()`:
 
-**DoD:** ADR-008 is published and references navigation split + `test_category_id` model + inline title editing; Saved Tests edit UX passes edge-case checks; frontend tests cover inline rename validation/cancel/save paths and Saved Tests edit/query-param behavior.
+```python
+execution = crud_execution.get_execution(db, queued_execution.execution_id)
+if execution and execution.status == ExecutionStatus.CANCELLED:
+  logger.info(f"Skipping cancelled execution {execution.id}")
+  return  # do not mark active / do not start thread
+```
 
-**Total estimate:** ~4.5–5 days across 4 sprints.
+Use a short-lived DB session in `_check_and_start_next` or pass status on `QueuedExecution` — simplest: query DB before `mark_as_active`.
 
----
+**Worker `run_execution` finally block** (after `service.cleanup()`):
 
-## Verification Checklist
+```python
+from app.services.execution_cancel_store import clear_cancel
+clear_cancel(queued_execution.execution_id)
+```
 
-### Navigation & pages
+**Register** happens inside `execute_test` (not queue_manager) so direct `execute_test` calls also work.
 
-- [ ] Sidebar shows **Generate Tests** and **Saved Tests** as separate items
-- [ ] `/tests` shows only generation UI (no saved test list)
-- [ ] `/tests/saved` in sidebar navigates to saved list
-- [ ] `/tests?edit=5` redirects to `/tests/saved?edit=5`
-- [ ] Edit saved test opens drawer on Saved Tests; save does not leave saved tab
-- [ ] "Generate New Tests" on saved page → `/tests`
-- [ ] `/tests/:testId` detail page still works
-
-### Title editing
-
-- [ ] Saved test row title is **not** read-only — click title or pencil enters edit mode
-- [ ] Inline rename does **not** open edit drawer or navigate to Generate tab
-- [ ] Enter or blur saves changed title via `PUT /tests/{id}` with `{ title }` only
-- [ ] Escape cancels edit and restores previous title
-- [ ] Empty/whitespace title blocked with inline validation (no API call)
-- [ ] Loading state shown while save in progress
-- [ ] Failed save reverts title and shows error toast
-- [ ] Duplicate titles allowed (two tests can share a title)
-- [ ] Edit drawer title field still editable alongside steps/description
-- [ ] `aria-label` on pencil button and title input; keyboard Enter/Escape work
-
-### Categories
-
-- [ ] Create category via Manage Categories modal
-- [ ] Rename/recolor category; list updates
-- [ ] Delete category → tests become Uncategorized
-- [ ] Assign category on single test (row dropdown + edit drawer)
-- [ ] Bulk select → Set Category → all selected updated
-- [ ] Sidebar filter by category; counts match
-- [ ] Uncategorized filter shows only `test_category_id = null`
-- [ ] Duplicate category name per user → validation error
-
-### API & data
-
-- [ ] `GET /test-categories` returns only current user's categories with counts
-- [ ] `PUT /tests/{id}` with `test_category_id` persists
-- [ ] `PUT /tests/{id}` with `{ title }` persists (inline + drawer)
-- [ ] `GET /tests?test_category_id={id}` filters correctly
-- [ ] `PATCH /tests/batch/category` works for 2+ tests
-- [ ] KB generation with `category_id` still works; distinct from `test_category_id`
-
-### Non-regression
-
-- [ ] Test suite picker shows all saved tests
-- [ ] Run, schedule, batch delete on Saved Tests unchanged
-- [ ] `npm run build` (frontend) passes
-- [ ] `pytest` backend unit tests pass
-- [ ] E2E navigation + generate tests specs pass
-
-### Documentation
-
-- [x] `documentation/ADR-008-test-categories-navigation.md` complete (mentions inline title edit)
-- [ ] OpenAPI shows new endpoints and fields
+**Note:** `queue_manager` already calls `service.cleanup()` in its own `finally`; `execute_test` also has `finally: cleanup()`. Ensure double-cleanup is safe (idempotent — verify existing `cleanup()` handles this).
 
 ---
 
-## Evaluation Criteria
+## Frontend UX Spec
 
-See `gan-harness/eval-rubric.md` for weighted scorer sheet.
+### `StopExecutionButton.tsx` (new)
 
-**Pass requires:** Sidebar split functional, edit on saved tab, **inline title rename on saved list**, category CRUD + assign + filter working, ADR-008 present, no regression on generate/run/suites.
+**Path:** `frontend/src/components/execution/StopExecutionButton.tsx`
+
+Mirror `StopAgentButton.tsx` with these mappings:
+
+| StopAgentButton | StopExecutionButton |
+|-----------------|---------------------|
+| `workflowStatus` | `executionStatus: ExecutionStatus \| null` |
+| `onStop` | `onStop: () => void` |
+| `data-testid="stop-agent-button"` | `data-testid="stop-execution-button"` |
+| `data-testid="stop-confirmation"` | `data-testid="stop-execution-confirmation"` |
+| "Stop Agent" | "Stop Execution" |
+| "Stopping workflow…" | "Stopping execution…" |
+| `aria-label="Stop agent workflow"` | `aria-label="Stop test execution"` |
+
+**Terminal statuses (disabled):** `completed`, `failed`, `cancelled`
+
+**Enabled when:** `pending`, `running`
+
+**Styling:** Red outline — `bg-red-50 text-red-600 border border-red-200 hover:bg-red-100` (copy from StopAgentButton).
+
+### `executionService.cancelExecution`
+
+**File:** `frontend/src/services/executionService.ts`
+
+```typescript
+async cancelExecution(executionId: number): Promise<void> {
+  await api.delete(`/executions/${executionId}/cancel`);
+}
+```
+
+Mock mode: `Promise.resolve()`.
+
+### `ExecutionProgressPage.tsx` wiring
+
+**Imports:**
+
+```typescript
+import { StopExecutionButton } from '../components/execution/StopExecutionButton';
+```
+
+**State:**
+
+```typescript
+const [isStopping, setIsStopping] = useState(false);
+```
+
+**Handler:**
+
+```typescript
+const handleStopExecution = async () => {
+  if (!executionId || isStopping) return;
+  setIsStopping(true);
+  try {
+    await executionService.cancelExecution(Number(executionId));
+    // Do NOT set execution.status locally — poll will confirm
+    await fetchExecutionDetail();
+  } catch (err) {
+    setError(err instanceof Error ? err.message : 'Failed to stop execution');
+    setIsStopping(false);
+  }
+};
+```
+
+**Reset `isStopping`** when poll observes terminal status:
+
+```typescript
+useEffect(() => {
+  if (execution?.status === 'cancelled' || execution?.status === 'completed' || execution?.status === 'failed') {
+    setIsStopping(false);
+  }
+}, [execution?.status]);
+```
+
+**Header placement** (line ~193, before Debug Step button):
+
+```tsx
+<div className="flex items-center gap-3">
+  {(execution.status === 'pending' || execution.status === 'running') && (
+    <StopExecutionButton
+      executionStatus={execution.status}
+      onStop={handleStopExecution}
+      isLoading={isStopping}
+    />
+  )}
+  <Button variant="primary" ...>🐛 Debug Step</Button>
+  <ExecutionStatusBadge ... />
+</div>
+```
+
+**Polling:** Existing `useEffect` continues — when status becomes `cancelled`, polling stops (`shouldPoll` false).
+
+**No optimistic cancel:** `setExecution` must not set `status: 'cancelled'` in `handleStopExecution`.
 
 ---
 
 ## Design Direction
 
-Match existing AI Web Test Tailwind/Layout patterns — no redesign.
+- **Color palette:** Stop button `#dc2626` (red-600) on `#fef2f2` (red-50); confirmation text `#ea580c` (orange-600) — match StopAgentButton
+- **Typography:** `text-sm font-medium` button; `text-xs font-medium` confirmation
+- **Layout:** Inline in execution header toolbar, left of Debug Step
+- **Visual identity:** ⏹ stop icon character (not Heroicons) for parity with agent workflow
+- **Inspiration:** `StopAgentButton`, GitHub Actions "Cancel workflow" (cooperative, status-driven)
 
-| Token | Value |
-|-------|-------|
-| Primary | `#2563eb` (blue-600) — primary buttons, active nav |
-| Active nav | `bg-blue-700 text-white` (existing sidebar) |
-| Page background | `bg-gray-50` via Layout |
-| Cards | White, `border-gray-200`, `rounded-lg` |
-| Category colors | User-picked hex; pill `bg-{color}20` with dot |
-| Typography | Page title `text-3xl font-bold text-gray-900`; labels `text-sm font-medium text-gray-700`; row title `text-lg font-semibold text-gray-900` |
-| Secondary actions | `border border-gray-300 text-gray-700 hover:bg-gray-50` |
-| Destructive | Red-600 (delete only) |
-| Inline edit focus | `border-blue-400 ring-blue-500` |
-
-**Layout philosophy:** Dense operational dashboard (Saved Tests) + focused single-column flow (Generate). Category sidebar mirrors KB document filter mental model without copying KB data. Inline title edit keeps rename friction near zero.
-
-**Visual identity:**
-- Color dots next to category names (not generic folder icons everywhere)
-- Count badges `text-xs bg-gray-100 rounded-full px-2`
-- Edit drawer slide-over (not modal-on-modal)
-- Subtle pencil affordance on title hover (not always-visible chrome overload)
-
-**Anti-AI-slop / anti-patterns:**
-- No gradient headers or hero sections on list pages
-- No card grid redesign for saved tests — keep table/list efficiency
-- Do not conflate KB category selector (Generate page) with org category sidebar (Saved page) — different labels: **"KB Context (optional)"** vs **"Test Category"**
-- No icon-only category management without text labels
-- Avoid third floating action button; use header toolbar
-- Do not open a modal just to rename a title — use inline input
-- No `contentEditable` divs for title
-
-**Inspiration:** GitHub Issues inline title edit on list view; Jira quick rename on issue row; Step Library rename toast pattern — adapted to existing blue-gray enterprise UI.
+**Anti-patterns to avoid:**
+- Gradient buttons, generic "destructive" purple
+- Hiding Stop behind a kebab menu
+- Browser `window.confirm()` dialog (use inline confirmation like agent)
+- Spinner replacing the button text (keep button label stable)
 
 ---
 
-## ADR-008 Content Outline
+## Features (Prioritized)
 
-**File:** `documentation/ADR-008-test-categories-navigation.md`
+### Must-Have (Sprint 1–2)
 
-Sections (per ADR-005 structure):
-1. **Context** — Combined Tests page; KB `category_id` misuse risk; user request for custom categories; read-only titles on saved list
-2. **Decision** — Split nav; new `test_categories` table; `test_category_id` on `test_cases`; edit on saved tab; **inline title editor on Saved Tests**; keep KB `category_id` for generation
-3. **Changes Made** — table of files (include `InlineTitleEditor.tsx`)
-4. **Consequences** — positive/negative; alternatives A/C rejected
-5. **Test Coverage** — checklist mapping
+1. **execution_cancel_store** — thread-safe register/request/is_cancel/clear
+2. **cancel_execution CRUD** — DB finalization with partial counts
+3. **DELETE /executions/{id}/cancel** — auth, pending dequeue, running flag, idempotent 204
+4. **execute_test polls** — before each step; finalize as `cancelled`
+5. **three_tier cancel_check** — poll between Tier 1/2/3
+6. **queue pre-start guard** — skip cancelled pending items
+7. **StopExecutionButton** — parity with StopAgentButton
+8. **ExecutionProgressPage wire-up** — `isStopping`, no optimistic UI
+
+### Should-Have (Sprint 3)
+
+9. **ADR-009** — document cooperative cancel decision
+10. **Loop-block cancel** — polls inside nested loop iterators (included in Sprint 2 implementation)
+11. **ExecutionHistoryPage** — verify cancelled rows display correctly (likely already works)
+
+### Nice-to-Have (Sprint 4+)
+
+12. Stop from Execution History row actions
+13. Redis-backed cancel store for multi-worker deployments
+14. E2E Playwright test in `tests/e2e/` for full stop flow
 
 ---
 
 ## Technical Stack
 
-- **Frontend:** React, Vite, TypeScript, Tailwind, React Router, lucide-react
-- **Backend:** FastAPI, SQLAlchemy, Alembic, Pydantic v2
-- **Key patterns:** `FormMode` create/edit (`StepLibraryPage`, `SuiteFormModal`); services in `frontend/src/services/`; endpoints → services → CRUD; inline edit via controlled input (`InlineTitleEditor`)
+- **Frontend:** React 19, TypeScript, Vite, Tailwind (utility classes), Vitest + Testing Library
+- **Backend:** Python 3.11, FastAPI, SQLAlchemy 2.0, PostgreSQL 15
+- **Automation:** Playwright 1.56, Stagehand 0.5.6
+- **Key new files:** `execution_cancel_store.py`, `StopExecutionButton.tsx`
+- **Key modified files:** `executions.py`, `execution_service.py`, `three_tier_execution_service.py`, `queue_manager.py`, `test_execution.py` (crud), `ExecutionProgressPage.tsx`, `executionService.ts`
+
+---
+
+## Sprint Plan
+
+### Sprint 1: Cancel Store + API + CRUD
+
+**Goals:** Backend can accept cancel requests and dequeue pending executions.
+
+**Tasks:**
+
+| # | File | Task |
+|---|------|------|
+| 1.1 | `backend/app/services/execution_cancel_store.py` | Create store (mirror workflow_store) |
+| 1.2 | `backend/tests/unit/test_execution_cancel_store.py` | Unit tests for store |
+| 1.3 | `backend/app/crud/test_execution.py` | Add `cancel_execution()` |
+| 1.4 | `backend/app/api/v1/endpoints/executions.py` | Add `DELETE /{execution_id}/cancel` |
+| 1.5 | `backend/tests/unit/test_execution_cancel.py` | API tests: 404, 403, pending→cancelled+dequeue, running→204, idempotent |
+
+**Definition of done:** `pytest backend/tests/unit/test_execution_cancel*.py` passes; pending cancel removes item from queue.
+
+---
+
+### Sprint 2: Cooperative Execution Hooks
+
+**Goals:** Running executions stop cleanly between steps and tiers.
+
+**Tasks:**
+
+| # | File | Task |
+|---|------|------|
+| 2.1 | `execution_service.py` | `register_cancel`, poll in step loops, `ExecutionCancelledError`, `cancel_execution` finalize |
+| 2.2 | `execution_service.py` | Pass `cancel_check` to `_execute_step` |
+| 2.3 | `three_tier_execution_service.py` | Add `cancel_check` param; poll at tier boundaries; return `cancelled` result |
+| 2.4 | `queue_manager.py` | Pre-start DB status guard; `clear_cancel` in worker finally |
+| 2.5 | `backend/tests/unit/test_execution_cancel.py` | Integration-style tests with mocked execute_test / tier service |
+
+**Definition of done:** Cancel mid-run yields `status=cancelled`, not `failed`; `cleanup()` invoked.
+
+---
+
+### Sprint 3: Frontend Stop UX
+
+**Goals:** User can stop from progress page; UI matches agent pattern.
+
+**Tasks:**
+
+| # | File | Task |
+|---|------|------|
+| 3.1 | `frontend/src/services/executionService.ts` | `cancelExecution()` |
+| 3.2 | `frontend/src/components/execution/StopExecutionButton.tsx` | New component |
+| 3.3 | `frontend/src/components/execution/__tests__/StopExecutionButton.test.tsx` | Component tests |
+| 3.4 | `frontend/src/pages/ExecutionProgressPage.tsx` | Wire button, `isStopping`, poll reset |
+
+**Definition of done:** `npm run build` succeeds; component tests pass; manual stop flow works.
+
+---
+
+### Sprint 4: Documentation + Non-Regression
+
+**Goals:** ADR written; full test suite green.
+
+**Tasks:**
+
+| # | File | Task |
+|---|------|------|
+| 4.1 | `documentation/ADR-009-execution-cancel.md` | New ADR (or ADR-002 addendum) |
+| 4.2 | Full backend test suite | No regressions on normal pass/fail |
+| 4.3 | `gan-harness/eval-rubric.md` | Evaluator sign-off |
+
+**Definition of done:** Weighted eval score ≥ 0.85 per rubric.
+
+---
+
+## Test Strategy
+
+### Backend unit: `test_execution_cancel_store.py`
+
+- `register_cancel` creates key
+- `request_cancel` returns False for unknown, True when registered
+- `is_cancel_requested` True after request
+- `clear_cancel` removes key; subsequent `is_cancel_requested` False
+- Thread-safety smoke (optional: concurrent request_cancel)
+
+### Backend unit/integration: `test_execution_cancel.py`
+
+| Test | Assertion |
+|------|-----------|
+| `test_cancel_pending_execution` | DB `cancelled`, not in queue |
+| `test_cancel_running_sets_flag` | `is_cancel_requested(id)` True, DB still `running` until worker finishes |
+| `test_cancel_completed_idempotent` | 204, status unchanged |
+| `test_cancel_wrong_user` | 403 |
+| `test_cancel_not_found` | 404 |
+| `test_execute_test_cancel_mid_step` | Mock 3-tier slow; request cancel; final status `cancelled` |
+| `test_delete_execution_still_works` | `DELETE /executions/{id}` deletes; distinct from cancel route |
+
+### Frontend: `StopExecutionButton.test.tsx`
+
+Copy structure from `StopAgentButton.test.tsx`:
+- Renders with `data-testid="stop-execution-button"`
+- Disabled for `completed`, `failed`, `cancelled`, `null`
+- Enabled for `pending`, `running`
+- Click calls `onStop`, shows `stop-execution-confirmation`
+- Disabled when `isLoading=true`
+
+### Manual / Evaluator script
+
+See `gan-harness/eval-rubric.md` § Evaluator Test Script.
+
+---
+
+## Risks & Edge Cases
+
+| Risk | Mitigation |
+|------|------------|
+| Mid–Tier 3 LLM call takes 60–120s before next poll | Document in UI copy; poll only between tiers/steps; acceptable v1 latency |
+| Double `cleanup()` (queue_manager + execute_test) | Verify `ExecutionService.cleanup()` idempotent |
+| Cancel requested before `register_cancel` | `request_cancel` should `register_cancel` if missing (auto-create key) |
+| Race: worker starts same moment as pending cancel | Pre-start DB status check in queue_manager; transactional cancel in API |
+| In-memory store lost on server restart | Running execution continues; v1 acceptable; document in ADR |
+| Loop block mid-iteration | Poll at inner loop headers; break all nested loops |
+| OTP expansion step in progress | Poll before `_execute_step`; cannot interrupt IMAP poll mid-flight — acceptable |
+| `cancel_check` raises | Treat as not cancelled (mirror requirements_agent pattern) |
+| Admin viewing another user's execution | Cancel endpoint respects same ownership as GET |
+| Concurrent double-click Stop | `isStopping` disables button; API idempotent |
+
+**Empty/error states:**
+- API network error → show error banner, re-enable Stop (`setIsStopping(false)`)
+- Execution already `cancelled` on page load → Stop hidden (not rendered for terminal)
+
+---
+
+## Evaluation Criteria
+
+See `gan-harness/eval-rubric.md` for weighted scoring (pass ≥ 0.85).
+
+**Summary weights:**
+- Backend Cancel API & Store: 0.30
+- Cooperative Execution Hooks: 0.25
+- Frontend Stop UX: 0.25
+- Tests & Documentation: 0.10
+- Non-Regression: 0.10
+
+**Automatic fail conditions:**
+- No cancel endpoint
+- No Stop on ExecutionProgressPage
+- Running execution stuck after stop
+- Cancel conflated with delete
+- Normal pass/fail runs regress

@@ -1,89 +1,98 @@
-# Evaluation Rubric: Test Navigator — Split Tabs + User Categories + Title Editing
+# Evaluation Rubric: Stop 3-Tier Execution
 
-**App:** AI Web Test v1 — Generate Tests + Saved Tests + User Categories + Inline Title Edit  
-**Weight total: 1.0**  
+**Feature:** Cooperative cancel for saved test 3-tier execution  
+**Spec:** `gan-harness/spec.md`  
+**Weight total:** 1.0  
 **Pass threshold:** ≥ 0.85 weighted score  
-**Automatic fail:** Single combined Tests tab only (no sidebar split), no test category CRUD, edit saved test forces navigate to Generate tab, **saved test titles remain read-only with no inline rename**, or generate/run/suite flows regress
+**Automatic fail:** No cancel API endpoint; no Stop button on ExecutionProgressPage; running execution stuck in `running` after stop click; cancel conflated with DELETE execution record; normal pass/fail runs regress
 
 ---
 
-## Navigation Split (0.18)
+## Implementation Checklist (Generator)
 
-| ID | Criterion | Pass condition | Weight |
-|----|-----------|----------------|--------|
-| N1 | Sidebar: Generate Tests | Distinct sidebar link to `/tests` labeled "Generate Tests" | 0.05 |
-| N2 | Sidebar: Saved Tests | Distinct sidebar link to `/tests/saved` labeled "Saved Tests" | 0.05 |
-| N3 | Generate page scope | `/tests` shows NL generation only — no saved test library embedded | 0.04 |
-| N4 | Edit on Saved tab | Editing saved test uses `/tests/saved?edit={id}` drawer/panel; does not require Generate tab | 0.03 |
-| N5 | Legacy redirect | `/tests?edit={id}` redirects to `/tests/saved?edit={id}` | 0.01 |
+Sprint order — **do not skip**:
 
----
+| Sprint | Deliverables | Key paths |
+|--------|--------------|-----------|
+| 1 | Store + CRUD + API | `execution_cancel_store.py`, `crud/test_execution.cancel_execution`, `executions.py` DELETE `/{id}/cancel` |
+| 2 | Execution hooks | `execution_service.execute_test`, `three_tier_execution_service.execute_step(..., cancel_check=)`, `queue_manager.py` |
+| 3 | Frontend | `StopExecutionButton.tsx`, `executionService.cancelExecution`, `ExecutionProgressPage.tsx` |
+| 4 | Docs + regression | `ADR-009-execution-cancel.md`, full test suite |
 
-## Title Editing (0.10)
+**Required signatures:**
 
-| ID | Criterion | Pass condition | Weight |
-|----|-----------|----------------|--------|
-| T1 | Inline rename on list | User can click title or pencil on Saved Tests row to edit title **without** opening edit drawer | 0.03 |
-| T2 | Save / cancel semantics | Enter or blur saves valid changed title; Escape cancels and reverts; empty title blocked client-side | 0.03 |
-| T3 | API partial update | Save calls `PUT /tests/{id}` with `{ title }` only via `testsService.updateTest` | 0.02 |
-| T4 | Error + loading handling | Loading state during save; failed save reverts title and shows error feedback | 0.01 |
-| T5 | Drawer title + a11y | Full edit drawer still has editable title field; inline editor has `aria-label` and keyboard support | 0.01 |
+```python
+# execution_cancel_store.py
+def register_cancel(execution_id: int) -> None: ...
+def request_cancel(execution_id: int) -> bool: ...
+def is_cancel_requested(execution_id: int) -> bool: ...
+def clear_cancel(execution_id: int) -> bool: ...
 
----
+# three_tier_execution_service.py
+async def execute_step(
+    self, step, execution_id=None, step_index=None,
+    cancel_check: Optional[Callable[[], bool]] = None,
+) -> Dict[str, Any]: ...
 
-## User Categories — Backend (0.18)
-
-| ID | Criterion | Pass condition | Weight |
-|----|-----------|----------------|--------|
-| B1 | `test_categories` table | Migration exists; user-scoped; unique (user_id, name) | 0.05 |
-| B2 | `test_category_id` on tests | Column on `test_cases`; nullable FK; separate from KB `category_id` | 0.05 |
-| B3 | Category CRUD API | `GET/POST/PUT/DELETE /api/v1/test-categories` with ownership checks | 0.04 |
-| B4 | Test filter + batch | `GET /tests?test_category_id=` works; bulk assign endpoint works | 0.04 |
+# execution_service.py — _execute_step gains same cancel_check param
+```
 
 ---
 
-## User Categories — Frontend (0.22)
+## Backend Cancel API & Store (0.30)
 
 | ID | Criterion | Pass condition | Weight |
 |----|-----------|----------------|--------|
-| U1 | Manage Categories modal | Create, edit, delete categories from Saved Tests page | 0.06 |
-| U2 | Category filter UI | Sidebar or chips filter saved list; "Uncategorized" supported | 0.06 |
-| U3 | Single assign | User can change one test's category (row or edit drawer) | 0.04 |
-| U4 | Bulk assign | Multi-select → Set Category updates all selected tests | 0.04 |
-| U5 | Delete category behavior | Deleting category uncategorizes tests (not delete tests) | 0.02 |
+| B1 | Cancel endpoint exists | `DELETE /api/v1/executions/{id}/cancel` returns 204 | 0.06 |
+| B2 | Auth + ownership | Wrong user → 403; missing execution → 404 | 0.04 |
+| B3 | Pending cancel | `status=pending` → DB `cancelled`, `queue.remove_from_queue()`, never runs | 0.06 |
+| B4 | Running cancel request | `status=running` → `register_cancel` + `request_cancel`; 204 immediately; DB stays `running` until worker finalizes | 0.05 |
+| B5 | `execution_cancel_store.py` | Thread-safe register/request/is_cancel/clear mirroring `workflow_store.py` | 0.05 |
+| B6 | Idempotent cancel | Double cancel or cancel on terminal state → 204, no error | 0.04 |
 
 ---
 
-## Architecture & Documentation (0.14)
+## Cooperative Execution Hooks (0.25)
 
 | ID | Criterion | Pass condition | Weight |
 |----|-----------|----------------|--------|
-| A1 | ADR-008 exists | `documentation/ADR-008-test-categories-navigation.md` present | 0.04 |
-| A2 | KB vs org separation | ADR documents Option B; KB `category_id` retained for generation only | 0.04 |
-| A3 | Service layer | `testCategoriesService.ts` in `frontend/src/services/`; no raw fetch in pages | 0.03 |
-| A4 | Backend layering | Endpoints → CRUD; no business logic in routers | 0.03 |
+| E1 | Step loop poll | `ExecutionService.execute_test()` checks `is_cancel_requested(execution.id)` before each step (incl. loop blocks) | 0.06 |
+| E2 | Finalize cancelled | `crud.cancel_execution()` sets `status=cancelled`, `completed_at`, partial step counts; **not** `failed` | 0.06 |
+| E3 | 3-tier cancel_check | `ThreeTierExecutionService.execute_step(..., cancel_check=)` polls before Tier 1, before fallback, between Tier 2→3 in option_c | 0.05 |
+| E4 | Cleanup on cancel | `finally` runs `cleanup()` — browser/Stagehand closed; `clear_cancel(execution_id)` in worker | 0.04 |
+| E5 | Queue pre-start guard | `queue_manager._check_and_start_next` skips execution when DB `status=cancelled` | 0.04 |
 
 ---
 
-## Craft / UX (0.10)
+## Frontend Stop UX (0.25)
 
 | ID | Criterion | Pass condition | Weight |
 |----|-----------|----------------|--------|
-| C1 | Label clarity | Generate page KB selector ≠ Saved page "Test Category" (no conflation) | 0.03 |
-| C2 | Visual consistency | Matches existing Tailwind sidebar, cards, blue-600 primary; inline title matches row typography | 0.03 |
-| C3 | Empty states | Zero categories and zero tests have sensible CTAs | 0.02 |
-| C4 | Build clean | `npm run build` in `frontend/` succeeds | 0.02 |
+| F1 | StopExecutionButton component | Exists at `frontend/src/components/execution/StopExecutionButton.tsx` | 0.05 |
+| F2 | Parity with StopAgentButton | Red styling, terminal disable, `data-testid="stop-execution-button"`, "Stopping execution…" via `stop-execution-confirmation` | 0.06 |
+| F3 | ExecutionProgressPage wired | Stop visible when `pending`/`running`; hidden when terminal; placed in header before Debug Step | 0.06 |
+| F4 | No optimistic cancel | `isStopping` local state only; `execution.status` updated via 2s poll, not set to `cancelled` in handler | 0.04 |
+| F5 | executionService.cancelExecution | `DELETE /executions/{id}/cancel` via service layer | 0.04 |
 
 ---
 
-## Non-Regression (0.08)
+## Tests & Documentation (0.10)
 
 | ID | Criterion | Pass condition | Weight |
 |----|-----------|----------------|--------|
-| R1 | Generate flow | NL generate → review → save still works | 0.03 |
-| R2 | Run / schedule | Run and schedule from Saved Tests unchanged | 0.02 |
-| R3 | Test suites picker | `SuiteFormModal` still lists all saved tests | 0.02 |
-| R4 | E2E updated | `03-tests-page` and `06-navigation` specs pass or updated for new nav | 0.01 |
+| T1 | Backend unit tests | `backend/tests/unit/test_execution_cancel_store.py` + `test_execution_cancel.py` pass | 0.04 |
+| T2 | Frontend component test | `frontend/src/components/execution/__tests__/StopExecutionButton.test.tsx` passes | 0.03 |
+| T3 | ADR or ADR addendum | `documentation/ADR-009-execution-cancel.md` or ADR-002 addendum section | 0.03 |
+
+---
+
+## Non-Regression (0.10)
+
+| ID | Criterion | Pass condition | Weight |
+|----|-----------|----------------|--------|
+| R1 | Normal execution complete | Run saved test → completes with pass/fail unchanged | 0.04 |
+| R2 | Delete execution distinct | `DELETE /executions/{id}` still deletes record; cancel route is `/{id}/cancel` | 0.03 |
+| R3 | Build clean | `npm run build` in frontend succeeds; backend tests pass | 0.03 |
 
 ---
 
@@ -103,22 +112,17 @@ score = Σ (criterion_weight × pass?1:0)
 
 ## Evaluator Test Script (Playwright / manual)
 
-1. Log in; confirm sidebar has **Generate Tests** and **Saved Tests** (not single "Tests").
-2. Click **Generate Tests** → `/tests` → enter prompt → generate → save one test.
-3. Click **Saved Tests** → saved test appears.
-4. **Inline title edit:** click test title (or pencil) → type new title → press Enter → title updates in list without drawer opening.
-5. **Inline cancel:** click title again → change text → press Escape → title reverts.
-6. **Inline validation:** click title → clear text → blur → inline error shown; title not saved.
-7. Open **Manage Categories** → create "Billing" (blue) → save.
-8. Select test → **Set Category** → Billing → row shows Billing badge.
-9. Filter sidebar to Billing → only that test shows.
-10. Edit test via **Edit** → drawer opens on Saved tab → change title in drawer → save → remain on `/tests/saved`.
-11. Bulk select 2 tests → Set Category → verify both updated.
-12. Delete "Billing" category → tests show Uncategorized.
-13. Visit `/tests?edit={id}` → lands on `/tests/saved?edit={id}`.
-14. Open Test Suites → create/edit suite → test picker shows saved tests.
-15. Confirm `documentation/ADR-008-test-categories-navigation.md` exists.
-16. Run `npm run build` in `frontend/`; `pytest` for new backend tests if present.
+1. Log in; open a saved test with ≥ 5 steps; click **Run**.
+2. Land on `/executions/{id}` — confirm **Stop Execution** button visible (red outline).
+3. While status is **pending** or **running**, click Stop.
+4. Confirm inline **"Stopping execution…"** appears (`data-testid="stop-execution-confirmation"`).
+5. Wait (up to 120s for cooperative tier completion) until status badge shows **Cancelled**.
+6. Confirm Stop button hidden/disabled; partial completed steps still listed.
+7. Navigate to Execution History — cancelled run appears with `cancelled` status filter.
+8. Start another run; let it complete normally — pass/fail flow unchanged.
+9. `DELETE /executions/{id}/cancel` on completed run → 204 (idempotent).
+10. `DELETE /executions/{id}` on cancelled run → record deleted (distinct from cancel).
+11. Run backend unit tests: `pytest backend/tests/unit/test_execution_cancel*.py`.
 
 ---
 
@@ -126,13 +130,12 @@ score = Σ (criterion_weight × pass?1:0)
 
 | Anti-pattern | Action |
 |--------------|--------|
-| Reuse `KBCategory` for user test folders without ADR justification | Fail A2 |
-| Saved tests still only reachable via button on Generate page | Fail N2 |
-| `category_id` repurposed to mean org category (breaks KB generation) | Automatic fail |
-| Edit navigates to `/tests?edit=` on Generate page as primary flow | Fail N4 |
-| Title rename requires opening full edit drawer or Generate tab | Fail T1 |
-| Title remains static `<h3>` with no inline edit affordance | Automatic fail |
-| No migration; only frontend labels | Fail B1 |
-| Category CRUD via KB endpoints | Fail B3 |
-| Broken generate or suite picker | Automatic fail |
-| Modal-only title rename (no inline path) | Fail T1 |
+| POST-only cancel with no DELETE route | Fail B1 |
+| Stop button on SavedTestsPage only, not progress page | Fail F3 |
+| Optimistic UI sets `execution.status = 'cancelled'` before poll confirms | Fail F4 |
+| Cancel sets status `failed` or calls `fail_execution()` | Fail E2 |
+| Uses `DELETE /executions/{id}` for cancel (breaks delete) | Automatic fail |
+| No cleanup — orphaned Playwright after cancel | Fail E4 |
+| Force-kill thread / `Task.cancel()` without cooperative poll | Deduct E1/E3 |
+| Missing auth on cancel endpoint | Fail B2 |
+| `request_cancel` without ensuring key exists for running execution | Deduct B4 |
