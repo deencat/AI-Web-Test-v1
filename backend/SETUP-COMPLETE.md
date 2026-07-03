@@ -1,5 +1,7 @@
 # Backend Setup Complete! ✅
 
+> **Note (2026-07):** Canonical Python version is **3.11** per `backend/Dockerfile` and `.cursorrules`. Local venvs may use 3.12+; align with team standard before production deploy.
+
 ## What Has Been Done
 
 1. ✅ Created Python virtual environment in `backend/venv`

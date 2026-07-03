@@ -102,7 +102,7 @@ Content-Type: application/json
 ```
 GET /api/v1/executions/{execution_id}
 ```
-**Status values**: `PENDING` → `RUNNING` → `PASSED` / `FAILED` / `SKIPPED`
+**Status values**: `PENDING` → `RUNNING` → `PASSED` / `FAILED` / `CANCELLED` / `SKIPPED`
 
 Key response fields:
 ```json
@@ -129,6 +129,14 @@ GET /api/v1/executions/queue/status
 GET /api/v1/executions/queue/statistics
 GET /api/v1/executions/queue/active
 ```
+
+### Cancel execution (cooperative stop)
+```
+DELETE /api/v1/executions/{execution_id}/cancel
+```
+**Response**: `204 No Content` (idempotent for terminal states)
+
+Cancels `pending` (dequeues before browser starts) or `running` (cooperative poll between steps/tiers). Partial step history is preserved; status becomes `cancelled`. Do **not** use `DELETE /executions/{id}` for cancel — that deletes the record. See `documentation/ADR-009-execution-cancel.md`.
 
 ---
 

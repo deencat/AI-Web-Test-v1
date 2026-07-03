@@ -68,6 +68,8 @@
 - `backend/app/models/execution_settings.py` (extended)
 - `backend/app/schemas/execution_settings.py` (extended)
 
+**Related ADRs:** [ADR-009 Cooperative Cancel](./ADR-009-execution-cancel.md) extends this engine with abort semantics.
+
 ---
 
 ## Table of Contents
