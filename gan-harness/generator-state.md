@@ -1,25 +1,23 @@
-# Generator State — Iteration Sprint 2
+# Generator State — Iteration 001
 
 ## What Was Built
-- `TestCategory` SQLAlchemy model with UNIQUE (user_id, name)
-- Migration `backend/migrations/add_test_categories.py` (upgrade/downgrade, idempotent)
-- Pydantic schemas for test category CRUD + nested `TestCategorySummary` on tests
-- CRUD module with test counts, delete uncategorize, batch assign
-- REST router `/api/v1/test-categories` (list/create/get/update/delete)
-- Extended `TestCase` with `test_category_id` FK (kept `category_id` KB FK unchanged)
-- `GET /tests?test_category_id=` filter (`0` = uncategorized; `uncategorized=true` also supported)
-- `PATCH /tests/batch/category` bulk assign endpoint
-- Response enrichment: nested `test_category: { id, name, color }`
-- 22 unit tests in `backend/tests/unit/test_test_categories.py`
+- `execution_cancel_store.py` — thread-safe in-memory cancel flags keyed by execution_id
+- `cancel_execution()` CRUD helper — DB finalization with partial progress counts
+- `DELETE /api/v1/executions/{execution_id}/cancel` — auth, pending dequeue, running flag, idempotent 204
+- Cooperative cancel hooks in `ExecutionService.execute_test()` — step loop + nested loop polls
+- `cancel_check` param on `ThreeTierExecutionService.execute_step()` — tier boundary polls
+- Queue pre-start cancelled guard + `clear_cancel` in worker finally
+- `StopExecutionButton.tsx` + `executionService.cancelExecution()` wired on `ExecutionProgressPage`
+- Unit/component tests and ADR-009 documentation
 
 ## What Changed This Iteration
-- Sprint 2 backend-only scope per spec (no frontend changes)
+- Full implementation of Sprints 1–4 per gan-harness spec (Stop Execution feature)
 
 ## Known Issues
-- Project uses custom migrations in `backend/migrations/` (not Alembic env); migration runs via `python migrations/add_test_categories.py`
-- SQLite `downgrade()` DROP COLUMN may not work on older SQLite versions
+- In-memory cancel store is single-process only (Redis deferred per spec)
+- Cancel during mid–Tier 3 LLM call may take up to tier timeout (~120s)
 
 ## Dev Server
-- URL: http://localhost:3000 (frontend unchanged)
-- Backend API: standard FastAPI port from project config
-- Status: not restarted this iteration (backend-only)
+- URL: http://localhost:5173 (frontend) / http://localhost:8000 (backend)
+- Status: not started in this iteration
+- Command: `npm run dev` (frontend), backend via docker-compose or uvicorn

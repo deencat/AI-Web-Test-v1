@@ -36,8 +36,14 @@ from app.services.step_module_resolver import resolve_steps
 from app.services.root_cause_analysis_service import generate_root_cause_analysis
 from app.services.user_settings_service import user_settings_service
 from app.crud.step_session_snapshot import save_step_session_snapshot, get_step_session_snapshot
+from app.services.execution_cancel_store import register_cancel, is_cancel_requested, clear_cancel
 
 logger = logging.getLogger(__name__)
+
+
+class ExecutionCancelledError(Exception):
+    """Raised internally when cooperative cancel is detected."""
+
 
 # Chrome-like UA injected into every browser context to prevent preprod servers
 # from detecting HeadlessChrome automation and issuing a session redirect.
@@ -634,6 +640,8 @@ class ExecutionService:
             )
         
         try:
+            register_cancel(execution.id)
+
             # Update status to running
             execution = crud_execution.start_execution(db, execution.id)
             
@@ -812,8 +820,31 @@ class ExecutionService:
             # Expanded steps like "Input the Nth number of OTP…" match is_otp_step()
             # themselves; without this guard they would re-trigger IMAP on every digit.
             otp_expanded_end = 0
+
+            cancel_check = lambda: is_cancel_requested(execution.id)
+
+            async def _finalize_cancel() -> None:
+                nonlocal execution
+                execution = crud_execution.cancel_execution(
+                    db=db,
+                    execution_id=execution.id,
+                    total_steps=total_steps,
+                    passed_steps=passed_steps,
+                    failed_steps=failed_steps,
+                    skipped_steps=skipped_steps,
+                )
+                if progress_callback:
+                    await progress_callback({
+                        "execution_id": execution.id,
+                        "status": "cancelled",
+                        "message": "Execution cancelled by user",
+                    })
+                raise ExecutionCancelledError()
             
             while idx <= total_steps:
+                if cancel_check():
+                    await _finalize_cancel()
+
                 step_desc = steps[idx - 1]  # 0-based list access
 
                 # JIT OTP expansion: poll IMAP only when we reach the OTP placeholder
@@ -841,10 +872,16 @@ class ExecutionService:
                     loop_failed = 0
                     
                     for iteration in range(1, active_loop["iterations"] + 1):
+                        if cancel_check():
+                            await _finalize_cancel()
+
                         logger.info(f"[LOOP] Iteration {iteration}/{active_loop['iterations']} of loop '{active_loop['id']}'")
                         
                         # Execute each step in the loop range
                         for loop_step_idx in range(active_loop["start_step"], active_loop["end_step"] + 1):
+                            if cancel_check():
+                                await _finalize_cancel()
+
                             loop_step_desc = steps[loop_step_idx - 1]
                             loop_step_start = datetime.utcnow()
                             
@@ -890,7 +927,18 @@ class ExecutionService:
                                     })
                                 
                                 # Execute the step with detailed data
-                                result = await self._execute_step(page, loop_step_desc_substituted, loop_step_idx, base_url, detailed_step, execution.id)
+                                result = await self._execute_step(
+                                    page,
+                                    loop_step_desc_substituted,
+                                    loop_step_idx,
+                                    base_url,
+                                    detailed_step,
+                                    execution.id,
+                                    cancel_check=cancel_check,
+                                )
+
+                                if result.get("cancelled"):
+                                    await _finalize_cancel()
                                 
                                 loop_step_end = datetime.utcnow()
                                 duration = (loop_step_end - loop_step_start).total_seconds()
@@ -946,6 +994,8 @@ class ExecutionService:
                                         logger.warning(f"[LOOP] Critical step {loop_step_idx} failed in iteration {iteration}, stopping loop")
                                         break
                             
+                            except ExecutionCancelledError:
+                                raise
                             except Exception as e:
                                 loop_failed += 1
                                 loop_step_end = datetime.utcnow()
@@ -1041,7 +1091,18 @@ class ExecutionService:
                     # Execute the step with detailed data.
                     # execution_instruction is the clean instruction for the 3-tier engine;
                     # step_desc_substituted is stored in the DB (may differ for CRM steps).
-                    result = await self._execute_step(page, execution_instruction, idx, base_url, detailed_step, execution.id)
+                    result = await self._execute_step(
+                        page,
+                        execution_instruction,
+                        idx,
+                        base_url,
+                        detailed_step,
+                        execution.id,
+                        cancel_check=cancel_check,
+                    )
+
+                    if result.get("cancelled"):
+                        await _finalize_cancel()
                     
                     step_end = datetime.utcnow()
                     duration = (step_end - step_start).total_seconds()
@@ -1098,6 +1159,8 @@ class ExecutionService:
                         if result.get("critical", False):
                             break
                     
+                except ExecutionCancelledError:
+                    raise
                 except Exception as e:
                     failed_steps += 1
                     step_end = datetime.utcnow()
@@ -1171,6 +1234,8 @@ class ExecutionService:
                     "message": f"Execution completed: {passed_steps}/{total_steps} steps passed"
                 })
             
+        except ExecutionCancelledError:
+            pass
         except Exception as e:
             # Execution failed
             execution = crud_execution.fail_execution(
@@ -1188,6 +1253,7 @@ class ExecutionService:
                 })
         
         finally:
+            clear_cancel(execution.id)
             # Cleanup
             await self.cleanup()
         
@@ -1200,7 +1266,8 @@ class ExecutionService:
         step_number: int,
         base_url: str,
         detailed_step: Dict[str, Any] = None,
-        execution_id: int = None
+        execution_id: int = None,
+        cancel_check: Optional[Callable[[], bool]] = None,
     ) -> Dict[str, Any]:
         """
         Execute a single test step using 3-Tier Execution Engine.
@@ -1469,10 +1536,22 @@ class ExecutionService:
                 result = await self.three_tier_service.execute_step(
                     step=step_data,
                     execution_id=execution_id,
-                    step_index=step_number - 1
+                    step_index=step_number - 1,
+                    cancel_check=cancel_check,
                 )
                 
                 print(f"[DEBUG] 3-Tier result: {result}")
+
+                if result.get("cancelled"):
+                    return {
+                        "success": False,
+                        "cancelled": True,
+                        "error": result.get("error", "Execution cancelled by user"),
+                        "actual": "Execution cancelled by user",
+                        "expected": step_description,
+                        "execution_history": result.get("execution_history", []),
+                        "strategy_used": result.get("strategy_used"),
+                    }
                 
                 # Convert 3-tier result format to legacy format
                 if result["success"]:

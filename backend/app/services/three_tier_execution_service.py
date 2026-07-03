@@ -5,7 +5,7 @@ Sprint 5.5: Main execution service with Options A, B, C
 import asyncio
 import json
 import time
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Callable
 from playwright.async_api import Page
 from sqlalchemy.orm import Session
 from stagehand import Stagehand
@@ -27,6 +27,31 @@ from app.schemas.execution_settings import FallbackStrategy
 from app.utils.llm_execution_context import set_llm_context, llm_exec_ctx
 
 logger = logging.getLogger(__name__)
+
+
+def _check_cancelled(cancel_check: Optional[Callable[[], bool]]) -> bool:
+    if callable(cancel_check):
+        try:
+            return bool(cancel_check())
+        except Exception:
+            return False
+    return False
+
+
+def _cancelled_step_result(
+    execution_history: List[Dict[str, Any]],
+    strategy: str,
+) -> Dict[str, Any]:
+    return {
+        "success": False,
+        "cancelled": True,
+        "tier": None,
+        "error": "Execution cancelled by user",
+        "error_type": "cancelled",
+        "execution_history": execution_history,
+        "strategy_used": strategy,
+    }
+
 
 
 class ExecutionFailedError(Exception):
@@ -147,7 +172,8 @@ class ThreeTierExecutionService:
         self,
         step: Dict[str, Any],
         execution_id: Optional[int] = None,
-        step_index: Optional[int] = None
+        step_index: Optional[int] = None,
+        cancel_check: Optional[Callable[[], bool]] = None,
     ) -> Dict[str, Any]:
         """
         Execute test step with configured fallback strategy.
@@ -171,6 +197,9 @@ class ThreeTierExecutionService:
             f"[3-Tier] Executing step with strategy {strategy}: "
             f"{step.get('action')} - {step.get('instruction')}"
         )
+
+        if _check_cancelled(cancel_check):
+            return _cancelled_step_result(execution_history, strategy)
 
         confirm_progress_snapshot = None
 
@@ -227,6 +256,9 @@ class ThreeTierExecutionService:
             
             # Tier 1 failed, proceed with selected fallback strategy
             logger.info(f"[3-Tier] Tier 1 failed, falling back to strategy {strategy}")
+
+            if _check_cancelled(cancel_check):
+                return _cancelled_step_result(execution_history, strategy)
             
             try:
                 if action == "verify_screenshot":
@@ -248,7 +280,9 @@ class ThreeTierExecutionService:
                         tier=2,
                         caller="tier2_hybrid",
                     )
-                    result = await self._execute_option_a(step, execution_history, confirm_progress_snapshot)
+                    result = await self._execute_option_a(
+                        step, execution_history, confirm_progress_snapshot, cancel_check
+                    )
                 elif strategy == "option_b":
                     set_llm_context(
                         execution_id=execution_id,
@@ -256,7 +290,9 @@ class ThreeTierExecutionService:
                         tier=3,
                         caller="tier3_stagehand",
                     )
-                    result = await self._execute_option_b(step, execution_history, confirm_progress_snapshot)
+                    result = await self._execute_option_b(
+                        step, execution_history, confirm_progress_snapshot, cancel_check
+                    )
                 elif strategy == "option_c":
                     set_llm_context(
                         execution_id=execution_id,
@@ -264,7 +300,9 @@ class ThreeTierExecutionService:
                         tier=2,
                         caller="tier2_hybrid",
                     )
-                    result = await self._execute_option_c(step, execution_history, confirm_progress_snapshot)
+                    result = await self._execute_option_c(
+                        step, execution_history, confirm_progress_snapshot, cancel_check
+                    )
                 else:
                     raise ValueError(f"Unknown fallback strategy: {strategy}")
                 
@@ -339,11 +377,15 @@ class ThreeTierExecutionService:
         step: Dict[str, Any],
         execution_history: List[Dict[str, Any]],
         confirm_progress_snapshot=None,
+        cancel_check: Optional[Callable[[], bool]] = None,
     ) -> Dict[str, Any]:
         """
         Option A: Tier 1 → Tier 2
         Cost-conscious approach, 90-95% success rate
         """
+        if _check_cancelled(cancel_check):
+            return _cancelled_step_result(execution_history, "option_a")
+
         await self._ensure_tier2_initialized()
 
         try:
@@ -373,11 +415,15 @@ class ThreeTierExecutionService:
         step: Dict[str, Any],
         execution_history: List[Dict[str, Any]],
         confirm_progress_snapshot=None,
+        cancel_check: Optional[Callable[[], bool]] = None,
     ) -> Dict[str, Any]:
         """
         Option B: Tier 1 → Tier 3 (skip Tier 2)
         AI-first approach, 92-94% success rate
         """
+        if _check_cancelled(cancel_check):
+            return _cancelled_step_result(execution_history, "option_b")
+
         await self._ensure_tier3_initialized()
         
         tier3_result = await self.tier3_executor.execute_step(step)
@@ -404,11 +450,15 @@ class ThreeTierExecutionService:
         step: Dict[str, Any],
         execution_history: List[Dict[str, Any]],
         confirm_progress_snapshot=None,
+        cancel_check: Optional[Callable[[], bool]] = None,
     ) -> Dict[str, Any]:
         """
         Option C: Tier 1 → Tier 2 → Tier 3 (full cascade)
         Maximum reliability approach, 97-99% success rate
         """
+        if _check_cancelled(cancel_check):
+            return _cancelled_step_result(execution_history, "option_c")
+
         # Try Tier 2 first
         await self._ensure_tier2_initialized()
 
@@ -431,6 +481,9 @@ class ThreeTierExecutionService:
         
         # Tier 2 failed, try Tier 3 as last resort
         logger.info(f"[3-Tier] Tier 2 failed, trying Tier 3 as last resort")
+
+        if _check_cancelled(cancel_check):
+            return _cancelled_step_result(execution_history, "option_c")
         
         await self._ensure_tier3_initialized()
         

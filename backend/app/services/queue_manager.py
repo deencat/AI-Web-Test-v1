@@ -110,6 +110,16 @@ class QueueManager:
         if not queued_execution:
             logger.debug("Queue is empty, nothing to start")
             return
+
+        # Pre-start guard: skip executions cancelled while still queued
+        db = SessionLocal()
+        try:
+            execution = crud_execution.get_execution(db, queued_execution.execution_id)
+            if execution and execution.status == ExecutionStatus.CANCELLED:
+                logger.info(f"Skipping cancelled execution {execution.id}")
+                return
+        finally:
+            db.close()
         
         # Mark as active before starting
         if not self.queue.mark_as_active(queued_execution):
@@ -306,6 +316,9 @@ class QueueManager:
             finally:
                 # Restore original signal handler
                 signal.signal = original_signal
+
+                from app.services.execution_cancel_store import clear_cancel
+                clear_cancel(queued_execution.execution_id)
                 
                 # Mark execution as complete in queue
                 self.queue.mark_as_complete(queued_execution.execution_id)
