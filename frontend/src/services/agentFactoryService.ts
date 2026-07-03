@@ -48,8 +48,31 @@ export interface AgentConversation {
   updated_at: string;
 }
 
+export interface AgentConversationListItem {
+  conversation_id: string;
+  preview?: string | null;
+  message_count: number;
+  is_active: boolean;
+  updated_at: string;
+  created_at: string;
+}
+
 export async function postAgentChat(message: string, context: Record<string, unknown> = {}): Promise<AgentChatResponse> {
   const { data } = await api.post<AgentChatResponse>('/agent/chat', { message, context });
+  return data;
+}
+
+export async function listAgentConversations(limit = 100): Promise<AgentConversationListItem[]> {
+  const { data } = await api.get<{ items: AgentConversationListItem[] }>('/agent/conversations', {
+    params: { limit },
+  });
+  return data.items;
+}
+
+export async function activateAgentConversation(conversationId: string): Promise<AgentConversation> {
+  const { data } = await api.post<AgentConversation>(
+    `/agent/conversations/${conversationId}/activate`,
+  );
   return data;
 }
 

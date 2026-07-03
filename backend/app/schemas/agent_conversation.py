@@ -25,3 +25,16 @@ class AgentConversationResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AgentConversationListItem(BaseModel):
+    conversation_id: str
+    preview: Optional[str] = None
+    message_count: int = 0
+    is_active: bool = False
+    updated_at: datetime
+    created_at: datetime
+
+
+class AgentConversationListResponse(BaseModel):
+    items: List[AgentConversationListItem] = Field(default_factory=list)

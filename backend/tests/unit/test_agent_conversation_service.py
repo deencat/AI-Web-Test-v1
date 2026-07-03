@@ -10,10 +10,12 @@ from app.models.agent_conversation import AgentConversation, AgentConversationMe
 from app.models.factory_job import FactoryJob, FactoryJobEvent, FactoryJobStatus
 from app.models.user import User
 from app.services.agent_conversation_service import (
+    activate_conversation,
     append_message,
     create_new_conversation,
     finalize_conversation_from_job,
     get_or_create_active_conversation,
+    list_conversations_for_user,
 )
 
 
@@ -110,6 +112,40 @@ def test_finalize_conversation_from_job_appends_assistant(db, factory_user: User
 
     db.refresh(conversation)
     assert conversation.hermes_resume_session is None
+
+
+def test_activate_conversation(db, factory_user: User) -> None:
+    first = create_new_conversation(db, factory_user.id)
+    append_message(db, first, role="user", text="first thread", job_id=None)
+    second = create_new_conversation(db, factory_user.id)
+    append_message(db, second, role="user", text="second thread", job_id=None)
+
+    activated = activate_conversation(db, first.id, factory_user.id)
+    assert activated is not None
+    assert activated.id == first.id
+
+    db.refresh(first)
+    db.refresh(second)
+    assert first.is_active is True
+    assert second.is_active is False
+
+
+def test_list_conversations_for_user(db, factory_user: User) -> None:
+    conv = create_new_conversation(db, factory_user.id)
+    append_message(db, conv, role="user", text="Hello from the past", job_id=None)
+    append_message(
+        db,
+        conv,
+        role="assistant",
+        text="I remember this thread.",
+        job_id=None,
+    )
+
+    items = list_conversations_for_user(db, factory_user.id)
+    assert len(items) == 1
+    assert items[0]["conversation_id"] == conv.id
+    assert items[0]["message_count"] == 2
+    assert "remember" in (items[0]["preview"] or "").lower()
 
 
 def test_finalize_extracts_hermes_session(db, factory_user: User) -> None:

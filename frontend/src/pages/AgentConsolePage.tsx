@@ -3,21 +3,29 @@ import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import {
   AgentConversation,
+  AgentConversationListItem,
   AgentConversationMessage,
   FactoryJob,
   FactoryJobEvent,
+  activateAgentConversation,
   createAgentConversation,
   getActiveAgentConversation,
   getAgentConversation,
   getFactoryJob,
   getHermesTrace,
   HermesTrace,
+  listAgentConversations,
   postAgentChat,
   streamFactoryJob,
   syncAgentConversationJob,
 } from '../services/agentFactoryService';
 import { factoryProfileDisplayName } from '../constants/factoryProfiles';
 import { isFactoryOperator, isSuperadmin } from '../utils/roles';
+import {
+  formatConversationDate,
+  getLastConversationId,
+  setLastConversationId,
+} from '../utils/agentConversationStorage';
 import {
   cleanHermesResumeSession,
   extractChatReplyFromJob,
@@ -54,6 +62,7 @@ function applyConversationState(
   setters.setConversationId(conversation.conversation_id);
   setters.setChatBubbles(messagesToBubbles(conversation.messages));
   setters.setHermesResumeSession(cleanHermesResumeSession(conversation.hermes_resume_session));
+  setLastConversationId(conversation.conversation_id);
 }
 
 export const AgentConsolePage: React.FC = () => {
@@ -72,6 +81,8 @@ export const AgentConsolePage: React.FC = () => {
   const [traceError, setTraceError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [conversationLoading, setConversationLoading] = useState(true);
+  const [conversationHistory, setConversationHistory] = useState<AgentConversationListItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [chatOnly, setChatOnly] = useState(true);
 
@@ -108,6 +119,18 @@ export const AgentConsolePage: React.FC = () => {
     [conversationId, jobId, setSearchParams],
   );
 
+  const refreshHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const items = await listAgentConversations();
+      setConversationHistory(items);
+    } catch {
+      // non-fatal
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!allowed) {
       setConversationLoading(false);
@@ -119,14 +142,23 @@ export const AgentConsolePage: React.FC = () => {
     const load = async () => {
       setConversationLoading(true);
       try {
-        const conversation = conversationParam
-          ? await getAgentConversation(conversationParam)
-          : await getActiveAgentConversation();
+        const preferredId = conversationParam || getLastConversationId();
+        let conversation: AgentConversation;
+        if (preferredId) {
+          try {
+            conversation = await getAgentConversation(preferredId);
+          } catch {
+            conversation = await getActiveAgentConversation();
+          }
+        } else {
+          conversation = await getActiveAgentConversation();
+        }
         if (cancelled) return;
         applyConversationState(conversation, conversationSetters);
-        if (!conversationParam) {
+        if (conversation.conversation_id !== conversationParam) {
           updateSearchParams({ conversation: conversation.conversation_id });
         }
+        await refreshHistory();
       } catch {
         if (!cancelled) {
           setError('Could not load conversation history.');
@@ -141,7 +173,7 @@ export const AgentConsolePage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [allowed, conversationParam, updateSearchParams]);
+  }, [allowed, conversationParam, updateSearchParams, refreshHistory]);
 
   useEffect(() => {
     if (jobId) activeJobIdRef.current = jobId;
@@ -175,9 +207,10 @@ export const AgentConsolePage: React.FC = () => {
     syncAgentConversationJob(conversationId, jobId)
       .then((conversation) => {
         applyConversationState(conversation, conversationSetters);
+        refreshHistory().catch(() => undefined);
       })
       .catch(() => undefined);
-  }, [conversationId, jobId, jobStatus]);
+  }, [conversationId, jobId, jobStatus, refreshHistory]);
 
   useEffect(() => {
     chatScrollRef.current?.scrollTo({
@@ -349,6 +382,32 @@ export const AgentConsolePage: React.FC = () => {
     e.currentTarget.form?.requestSubmit();
   };
 
+  const handleSelectConversation = async (targetId: string) => {
+    if (targetId === conversationId || conversationLoading) return;
+
+    streamCloseRef.current?.();
+    activeJobIdRef.current = null;
+    lastAssistantReplyKeyRef.current = null;
+    setEvents([]);
+    setTrace(null);
+    setTraceError(null);
+    setOrchestratorReply(null);
+    setJobStatus(null);
+    setError(null);
+    setConversationLoading(true);
+
+    try {
+      const conversation = await activateAgentConversation(targetId);
+      applyConversationState(conversation, conversationSetters);
+      updateSearchParams({ job: null, conversation: targetId });
+      await refreshHistory();
+    } catch {
+      setError('Could not open that conversation.');
+    } finally {
+      setConversationLoading(false);
+    }
+  };
+
   const handleNewConversation = async () => {
     streamCloseRef.current?.();
     activeJobIdRef.current = null;
@@ -364,6 +423,7 @@ export const AgentConsolePage: React.FC = () => {
       const conversation = await createAgentConversation();
       applyConversationState(conversation, conversationSetters);
       updateSearchParams({ job: null, conversation: conversation.conversation_id });
+      await refreshHistory();
     } catch {
       setHermesResumeSession(null);
       setChatBubbles([]);
@@ -387,15 +447,17 @@ export const AgentConsolePage: React.FC = () => {
   }
 
   const gridClass = chatOnly
-    ? 'grid grid-cols-1 gap-6'
+    ? 'grid grid-cols-1 lg:grid-cols-12 gap-6'
     : `grid grid-cols-1 gap-6 ${
         jobId && openChat ? 'lg:grid-cols-12' : 'lg:grid-cols-3'
       }`;
 
+  const historyColClass = chatOnly ? 'lg:col-span-3' : 'lg:col-span-2';
+
   const chatColClass = chatOnly
-    ? ''
+    ? 'lg:col-span-9'
     : jobId && openChat
-      ? 'lg:col-span-7'
+      ? 'lg:col-span-5'
       : 'lg:col-span-2';
 
   return (
@@ -422,18 +484,66 @@ export const AgentConsolePage: React.FC = () => {
         </div>
 
         <div className={gridClass}>
+          <aside className={`bg-white rounded-lg shadow p-4 ${historyColClass}`}>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-gray-900">History</h2>
+              <button
+                type="button"
+                onClick={() => handleNewConversation().catch(() => undefined)}
+                className="text-xs text-blue-700 hover:underline"
+              >
+                + New
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">
+              Saved on the server — survives refresh, logout, and idle time.
+            </p>
+            {historyLoading && conversationHistory.length === 0 ? (
+              <p className="text-xs text-gray-500">Loading…</p>
+            ) : conversationHistory.length === 0 ? (
+              <p className="text-xs text-gray-500">No past conversations yet.</p>
+            ) : (
+              <ul className="space-y-1 max-h-[520px] overflow-y-auto">
+                {conversationHistory.map((item) => {
+                  const selected = item.conversation_id === conversationId;
+                  return (
+                    <li key={item.conversation_id}>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectConversation(item.conversation_id).catch(() => undefined)}
+                        className={`w-full text-left rounded-lg px-3 py-2 border transition-colors ${
+                          selected
+                            ? 'border-blue-300 bg-blue-50'
+                            : 'border-transparent hover:bg-gray-50 hover:border-gray-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs text-gray-500">
+                            {formatConversationDate(item.updated_at)}
+                          </span>
+                          {item.is_active && (
+                            <span className="text-[10px] uppercase tracking-wide text-blue-700 font-medium">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-900 mt-0.5 line-clamp-2">
+                          {item.preview || '(empty conversation)'}
+                        </p>
+                        <p className="text-[11px] text-gray-400 mt-0.5">
+                          {item.message_count} message{item.message_count === 1 ? '' : 's'}
+                        </p>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </aside>
+
           <section className={`bg-white rounded-lg shadow p-6 ${chatColClass}`}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Agent Chat</h2>
-              {openChat && (chatBubbles.length > 0 || hermesResumeSession || conversationId) && (
-                <button
-                  type="button"
-                  onClick={() => handleNewConversation().catch(() => undefined)}
-                  className="text-sm text-gray-600 hover:text-gray-900 hover:underline"
-                >
-                  New conversation
-                </button>
-              )}
             </div>
             {conversationLoading && (
               <p className="text-xs text-gray-500 mb-3">Loading conversation…</p>

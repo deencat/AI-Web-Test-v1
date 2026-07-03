@@ -48,7 +48,8 @@ Or restart the systemd service if you use one.
 1. From Windows UI: Agent Console → send a message → reply shows JSON `summary` text only.
 2. UI shows: *Hermes session active — follow-up messages keep chat context.*
 3. Send a follow-up (e.g. “what did I just ask?”) — orchestrator should remember prior turn.
-4. Refresh the page — conversation bubbles restore from server (`/api/v1/agent/conversations/active`).
+4. Refresh the page — conversation bubbles restore from server (`/api/v1/agent/conversations/active` or pick a thread in **History**).
+5. **History** sidebar lists all saved threads; click one to resume (stored per user, survives logout).
 5. Optional: uncheck **Chat only** to see Job Monitor; events should stream via SSE (`/agent/jobs/{id}/stream`).
 
 ## Troubleshooting

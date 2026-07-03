@@ -4,11 +4,18 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_factory_operator
 from app.models.user import User
-from app.schemas.agent_conversation import AgentConversationResponse, AgentConversationMessageResponse
+from app.schemas.agent_conversation import (
+    AgentConversationListItem,
+    AgentConversationListResponse,
+    AgentConversationResponse,
+    AgentConversationMessageResponse,
+)
 from app.services.agent_conversation_service import (
+    activate_conversation,
     create_new_conversation,
     get_conversation_for_user,
     get_or_create_active_conversation,
+    list_conversations_for_user,
     list_messages,
 )
 
@@ -28,6 +35,23 @@ def _to_response(db: Session, conversation) -> AgentConversationResponse:
         created_at=conversation.created_at,
         updated_at=conversation.updated_at,
     )
+
+
+@router.get(
+    "/conversations",
+    response_model=AgentConversationListResponse,
+    summary="List saved chat conversations for the current user",
+)
+def list_conversations(
+    limit: int = Query(100, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_factory_operator),
+) -> AgentConversationListResponse:
+    items = [
+        AgentConversationListItem.model_validate(item)
+        for item in list_conversations_for_user(db, current_user.id, limit=limit)
+    ]
+    return AgentConversationListResponse(items=items)
 
 
 @router.get(
@@ -55,6 +79,22 @@ def get_conversation(
     current_user: User = Depends(require_factory_operator),
 ) -> AgentConversationResponse:
     conversation = get_conversation_for_user(db, conversation_id, current_user.id)
+    if not conversation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    return _to_response(db, conversation)
+
+
+@router.post(
+    "/conversations/{conversation_id}/activate",
+    response_model=AgentConversationResponse,
+    summary="Set a conversation as the active thread to resume later",
+)
+def activate_conversation_endpoint(
+    conversation_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_factory_operator),
+) -> AgentConversationResponse:
+    conversation = activate_conversation(db, conversation_id, current_user.id)
     if not conversation:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
     return _to_response(db, conversation)

@@ -204,3 +204,75 @@ def list_messages(db: Session, conversation: AgentConversation) -> List[AgentCon
         .order_by(AgentConversationMessage.id.asc())
         .all()
     )
+
+
+def _preview_text(text: str, max_len: int = 80) -> str:
+    cleaned = " ".join(text.split())
+    if len(cleaned) <= max_len:
+        return cleaned
+    return f"{cleaned[: max_len - 3].rstrip()}..."
+
+
+def list_conversations_for_user(
+    db: Session,
+    user_id: int,
+    *,
+    limit: int = 100,
+) -> List[dict]:
+    """List conversations newest-first with preview of the latest message."""
+    conversations = (
+        db.query(AgentConversation)
+        .filter(AgentConversation.user_id == user_id)
+        .order_by(AgentConversation.updated_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    items: List[dict] = []
+    for conversation in conversations:
+        last_message = (
+            db.query(AgentConversationMessage)
+            .filter(AgentConversationMessage.conversation_id == conversation.id)
+            .order_by(AgentConversationMessage.id.desc())
+            .first()
+        )
+        message_count = (
+            db.query(AgentConversationMessage)
+            .filter(AgentConversationMessage.conversation_id == conversation.id)
+            .count()
+        )
+        preview = _preview_text(last_message.text) if last_message else None
+        items.append(
+            {
+                "conversation_id": conversation.id,
+                "preview": preview,
+                "message_count": message_count,
+                "is_active": conversation.is_active,
+                "updated_at": conversation.updated_at,
+                "created_at": conversation.created_at,
+            }
+        )
+    return items
+
+
+def activate_conversation(
+    db: Session,
+    conversation_id: str,
+    user_id: int,
+) -> Optional[AgentConversation]:
+    """Mark a conversation as the user's active thread (for resume after days idle)."""
+    conversation = get_conversation_for_user(db, conversation_id, user_id)
+    if not conversation:
+        return None
+
+    db.query(AgentConversation).filter(
+        AgentConversation.user_id == user_id,
+        AgentConversation.is_active.is_(True),
+        AgentConversation.id != conversation_id,
+    ).update({"is_active": False})
+
+    conversation.is_active = True
+    conversation.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(conversation)
+    return conversation
