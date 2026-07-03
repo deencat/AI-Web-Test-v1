@@ -41,6 +41,15 @@ class TestAgentChatService:
         assert job.params["hermes_resume_session"] == "20260702_184853_e11540"
         assert job.params["message"] == "what do you mean by that?"
 
+    def test_open_chat_omits_resume_session_when_null(self):
+        job, _ = parse_chat_to_job(
+            "hello",
+            {"conversation_id": "conv-123", "hermes_resume_session": None},
+            allow_open_chat=True,
+            prefer_open_chat=True,
+        )
+        assert "hermes_resume_session" not in job.params
+
     def test_open_chat_passes_conversation_id(self):
         job, _ = parse_chat_to_job(
             "hello",

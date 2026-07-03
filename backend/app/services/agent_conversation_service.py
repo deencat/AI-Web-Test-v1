@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.models.agent_conversation import AgentConversation, AgentConversationMessage
 from app.models.factory_job import FactoryJob
 from app.services.factory_job_reply_service import extract_orchestrator_reply
+from app.utils.hermes_session import clean_hermes_resume_session
 
 _HERMES_SESSION_RE = (
     re.compile(r"Session:\s*(\S+)"),
@@ -22,9 +23,9 @@ def _hermes_resume_from_job(job: FactoryJob) -> Optional[str]:
     for event in reversed(job.events or []):
         payload = event.payload_summary
         if isinstance(payload, dict):
-            session = payload.get("hermes_resume_session")
-            if isinstance(session, str) and session.strip():
-                return session.strip()
+            session = clean_hermes_resume_session(payload.get("hermes_resume_session"))
+            if session:
+                return session
         if event.llm_turns:
             for turn in reversed(event.llm_turns):
                 if not isinstance(turn, dict):
@@ -171,7 +172,7 @@ def finalize_conversation_from_job(db: Session, job: FactoryJob) -> None:
     if _assistant_message_for_job(db, conversation.id, job.id):
         resume = _hermes_resume_from_job(job)
         if resume:
-            conversation.hermes_resume_session = resume
+            conversation.hermes_resume_session = clean_hermes_resume_session(resume)
             conversation.updated_at = datetime.utcnow()
             db.commit()
         return
@@ -191,7 +192,7 @@ def finalize_conversation_from_job(db: Session, job: FactoryJob) -> None:
 
     resume = _hermes_resume_from_job(job)
     if resume:
-        conversation.hermes_resume_session = resume
+        conversation.hermes_resume_session = clean_hermes_resume_session(resume)
         conversation.updated_at = datetime.utcnow()
         db.commit()
 

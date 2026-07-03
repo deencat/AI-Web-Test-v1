@@ -6,6 +6,7 @@ import re
 from typing import Any, Optional
 
 from app.models.factory_job import FactoryJob
+from app.utils.hermes_session import clean_hermes_resume_session
 
 _SUMMARY_FIELD_RE = re.compile(r'"summary"\s*:\s*"([\s\S]*?)"\s*,', re.MULTILINE)
 
@@ -91,6 +92,45 @@ def _summary_from_payload(payload: Any) -> Optional[str]:
     return None
 
 
+def _hermes_cli_reply(raw: str) -> Optional[str]:
+    """Surface Hermes CLI errors when no JSON summary is present."""
+    stripped = raw.strip()
+    if not stripped:
+        return None
+
+    lines: list[str] = []
+    for line in stripped.splitlines():
+        ln = line.strip()
+        if not ln:
+            continue
+        lower = ln.lower()
+        if lower.startswith("query:"):
+            continue
+        if lower == "initializing agent...":
+            continue
+        if lower.startswith("goodbye"):
+            continue
+        lines.append(ln)
+
+    if not lines:
+        return None
+
+    message = " ".join(lines)
+    lower = message.lower()
+    if any(
+        token in lower
+        for token in (
+            "session not found",
+            "error:",
+            "failed",
+            "unavailable",
+            "could not",
+        )
+    ):
+        return message
+    return None
+
+
 def extract_orchestrator_reply(job: FactoryJob) -> Optional[str]:
     """Best-effort assistant reply for open chat and delegate completions."""
     events = list(job.events or [])
@@ -102,6 +142,9 @@ def extract_orchestrator_reply(job: FactoryJob) -> Optional[str]:
         summary = _summary_from_text(raw)
         if summary:
             return summary
+        cli_reply = _hermes_cli_reply(raw)
+        if cli_reply:
+            return cli_reply
         if not _is_boilerplate(raw):
             return raw
 

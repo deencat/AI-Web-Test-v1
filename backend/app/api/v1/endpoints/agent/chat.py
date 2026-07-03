@@ -14,6 +14,7 @@ from app.services.agent_conversation_service import (
 from app.services.factory_job_service import create_factory_job
 from app.services.factory_bridge_client import submit_job_to_bridge_async
 from app.services.factory_scheduler_service import submit_factory_job_async
+from app.utils.hermes_session import clean_hermes_resume_session
 
 router = APIRouter()
 
@@ -42,13 +43,16 @@ def agent_chat(
     else:
         conversation = get_or_create_active_conversation(db, current_user.id, project)
 
+    resume_session = clean_hermes_resume_session(
+        conversation.hermes_resume_session or body.context.get("hermes_resume_session")
+    )
     chat_context = {
         **body.context,
         "project": project,
         "conversation_id": conversation.id,
-        "hermes_resume_session": conversation.hermes_resume_session
-        or body.context.get("hermes_resume_session"),
     }
+    if resume_session:
+        chat_context["hermes_resume_session"] = resume_session
 
     try:
         job_body, reply = parse_chat_to_job(

@@ -4,6 +4,7 @@ from typing import Any, Dict, Tuple
 
 from app.core.config import settings
 from app.schemas.factory_job import FactoryJobCreate
+from app.utils.hermes_session import clean_hermes_resume_session
 
 _REGRESSION_PATTERN = re.compile(
     r"\b(run|start|trigger|execute)\b.*\b(regression|regress)\b",
@@ -33,7 +34,7 @@ _HEAL_PATTERN = re.compile(
 
 def _open_chat_params(message: str, context: Dict[str, Any]) -> Dict[str, Any]:
     params: Dict[str, Any] = {"message": message}
-    resume_session = str(context.get("hermes_resume_session", "")).strip()
+    resume_session = clean_hermes_resume_session(context.get("hermes_resume_session"))
     if resume_session:
         params["hermes_resume_session"] = resume_session
     conversation_id = str(context.get("conversation_id", "")).strip()

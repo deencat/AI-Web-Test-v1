@@ -38,6 +38,46 @@ function normalizeSummaryText(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
+export function cleanHermesResumeSession(value: unknown): string | null {
+  if (value == null) return null;
+  const session = String(value).trim();
+  if (!session || ['none', 'null', 'undefined'].includes(session.toLowerCase())) {
+    return null;
+  }
+  return session;
+}
+
+function hermesCliReply(raw: string): string | null {
+  const stripped = raw.trim();
+  if (!stripped) return null;
+
+  const lines: string[] = [];
+  for (const line of stripped.split('\n')) {
+    const ln = line.trim();
+    if (!ln) continue;
+    const lower = ln.toLowerCase();
+    if (lower.startsWith('query:')) continue;
+    if (lower === 'initializing agent...') continue;
+    if (lower.startsWith('goodbye')) continue;
+    lines.push(ln);
+  }
+
+  if (!lines.length) return null;
+
+  const message = lines.join(' ');
+  const lower = message.toLowerCase();
+  if (
+    lower.includes('session not found') ||
+    lower.includes('error:') ||
+    lower.includes('failed') ||
+    lower.includes('unavailable') ||
+    lower.includes('could not')
+  ) {
+    return message;
+  }
+  return null;
+}
+
 export function extractJsonSummaryOnly(raw: string | null | undefined): string | null {
   if (!raw?.trim()) return null;
   const trimmed = raw.trim();
@@ -92,6 +132,9 @@ export function extractChatReplyFromJob(
     const jsonSummary = extractJsonSummaryOnly(fromTurns);
     if (jsonSummary) return jsonSummary;
 
+    const cliReply = hermesCliReply(fromTurns);
+    if (cliReply) return cliReply;
+
     const profile = (ev.profile || '').toLowerCase();
     if (
       ev.event_type === 'delegate_complete' &&
@@ -116,6 +159,9 @@ export function extractChatReplyFromJob(
   const jsonSummary = extractJsonSummaryOnly(apiReply);
   if (jsonSummary) return jsonSummary;
 
+  const cliReply = hermesCliReply(apiReply);
+  if (cliReply) return cliReply;
+
   if (!looksLikeVerboseCliDump(apiReply) && !apiReply.includes('{')) {
     return apiReply;
   }
@@ -125,10 +171,8 @@ export function extractChatReplyFromJob(
 
 export function extractHermesResumeSession(events: FactoryJobEvent[]): string | null {
   for (let i = events.length - 1; i >= 0; i -= 1) {
-    const fromPayload = events[i].payload_summary?.hermes_resume_session;
-    if (typeof fromPayload === 'string' && fromPayload.trim()) {
-      return fromPayload.trim();
-    }
+    const fromPayload = cleanHermesResumeSession(events[i].payload_summary?.hermes_resume_session);
+    if (fromPayload) return fromPayload;
     const fromTurns = extractAssistantReplyFromEvent(events[i]);
     if (fromTurns) {
       const sessionMatch =

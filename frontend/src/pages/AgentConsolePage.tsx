@@ -19,6 +19,7 @@ import {
 import { factoryProfileDisplayName } from '../constants/factoryProfiles';
 import { isFactoryOperator, isSuperadmin } from '../utils/roles';
 import {
+  cleanHermesResumeSession,
   extractChatReplyFromJob,
   extractHermesResumeSession,
   getMonitorMessage,
@@ -52,7 +53,7 @@ function applyConversationState(
 ) {
   setters.setConversationId(conversation.conversation_id);
   setters.setChatBubbles(messagesToBubbles(conversation.messages));
-  setters.setHermesResumeSession(conversation.hermes_resume_session || null);
+  setters.setHermesResumeSession(cleanHermesResumeSession(conversation.hermes_resume_session));
 }
 
 export const AgentConsolePage: React.FC = () => {
@@ -318,8 +319,9 @@ export const AgentConsolePage: React.FC = () => {
         project: 'Three-HK',
         conversation_id: conversationId,
       };
-      if (hermesResumeSession) {
-        chatContext.hermes_resume_session = hermesResumeSession;
+      const resume = cleanHermesResumeSession(hermesResumeSession);
+      if (resume) {
+        chatContext.hermes_resume_session = resume;
       }
       const res = await postAgentChat(userText, chatContext);
       if (res.conversation_id) {

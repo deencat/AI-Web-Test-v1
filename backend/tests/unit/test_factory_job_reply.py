@@ -120,3 +120,30 @@ class TestExtractOrchestratorReply:
             events=[],
         )
         assert extract_orchestrator_reply(job) == "Bridge unreachable"
+
+    def test_surfaces_hermes_session_not_found_error(self):
+        payload = (
+            "Query: Hi there\nInitializing agent...\n"
+            "Session not found: None\n"
+            "Use a session ID from a previous CLI run (hermes sessions list).\n\n"
+            "Goodbye! \u2695"
+        )
+        job = SimpleNamespace(
+            status="completed",
+            error_message=None,
+            events=[
+                SimpleNamespace(
+                    event_type="delegate_complete",
+                    profile="qa-orchestrator",
+                    message="Orchestrator reply",
+                    llm_turns=[
+                        {"role": "user", "content": "Hi there"},
+                        {"role": "assistant", "content": payload},
+                    ],
+                    payload_summary=None,
+                ),
+            ],
+        )
+        reply = extract_orchestrator_reply(job)
+        assert reply is not None
+        assert "Session not found" in reply

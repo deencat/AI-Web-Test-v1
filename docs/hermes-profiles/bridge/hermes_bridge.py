@@ -203,6 +203,8 @@ def _orchestrator_chat_cmd(params: dict) -> list[str]:
         raise RuntimeError("orchestrator_chat requires params.message")
 
     resume_session = str((params or {}).get("hermes_resume_session", "")).strip()
+    if resume_session.lower() in ("", "none", "null", "undefined"):
+        resume_session = ""
     orchestrator_cmd = os.environ.get("HERMES_ORCHESTRATOR_CMD", "qa-orchestrator").strip()
     if resume_session:
         hermes_cmd = os.environ.get("HERMES_CLI_CMD", "hermes").strip()
