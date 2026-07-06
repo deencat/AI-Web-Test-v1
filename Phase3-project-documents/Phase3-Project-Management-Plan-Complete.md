@@ -4881,6 +4881,24 @@ Blockers Requiring CTO Decision:
 
 ---
 
+## Appendix: Product programs (PG — parallel to HF)
+
+**Not part of Sprint 10.x numbering** — tracked as **PG program** (see `docs/programs/Implementation-Plan.md`).
+
+| Track | Status (2026-07-06) | Notes |
+|-------|---------------------|--------|
+| **PG-0** Framework docs + manifest schema | ✅ Complete | Generic slug-agnostic model; ReqIQ as LEGO brick |
+| **PG-1** Program loader + Reference Hub UI | ⬜ Not started | `/programs`, `/programs/:slug` |
+| **PG-2 … PG-5** | ⬜ Not started | ReqIQ onboarding, journeys, factory scoping, API profile |
+
+**Design:** One YAML manifest per product under `backend/config/programs/<slug>.yaml`. Platform components via `platform_profile` (e.g. `dt-telecom-default`) or inline definition. **5G 流動寬頻** is an **example** manifest only (`docs/programs/examples/5g-mobile-broadband/`).
+
+**Depends on:** HF-2 journey registry, HF-3 factory worker, ReqIQ proxy (Sprint 8/9 handoff).
+
+**Key docs:** `docs/programs/Program-Framework.md` · `docs/programs/Manifest-Schema.md` · `docs/programs/README.md`
+
+---
+
 ## Supporting Documents
 
 This document provides sprint planning, task breakdown, and project management. For detailed analysis, strategies, and agent-specific documentation, see the following supporting documents:
