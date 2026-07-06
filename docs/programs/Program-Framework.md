@@ -1,159 +1,217 @@
 # Program framework — LEGO architecture
 
-**Version:** 1.1 · **Date:** 2026-07-06  
+**Version:** 1.2 · **Date:** 2026-07-06  
 **Audience:** QA, UAT, developers, factory operators
 
 ---
 
 ## 1. Principles
 
-1. **Programs are data-driven** — one YAML manifest per product; no hard-coded routes, menus, or bricks in application code.
-2. **Platform components vary by product** — telecom DT may use WebApp + CRM + Billing + Matrixx; another product might use only WebApp + API + a single admin portal.
-3. **ReqIQ is a building block** — workspace, sources, `capabilityKey`, readiness, wiki; structure and navigation live in AWT.
-4. **Reference layers are optional** — legacy systems or read-only context (e.g. MCS plan tables) are **not** test targets unless explicitly marked `automate: true`.
+1. **Programs are data-driven** — one YAML manifest per product line; no hard-coded routes or product names in code.
+2. **Initiatives are time-bounded** — offers, promotions, and delivery projects are **initiatives** under a program (same internal name; display label via `kind` + `title`).
+3. **Platform components are stable per program** — WebApp, CRM, Billing, etc. Initiatives declare which components they touch.
+4. **ReqIQ is a building block** — sources, requirements, readiness, wiki; structure and timeline live in AWT.
+5. **Reference layers are not initiatives** — legacy docs (e.g. MCS migration guides) support **parity verification** only; no hard automation rules yet.
 
 ---
 
-## 2. Three LEGO layers
+## 2. Four-layer model
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Program (e.g. 5G 流動寬頻, Postpaid, FMC, …)                │
-│  product_features[] — business capabilities                    │
+│  Program (long-lived: e.g. mobile broadband line)            │
 └──────────────────────────┬──────────────────────────────────┘
-                           │ each feature maps to ≥1 platform component
-┌──────────────────────────▼──────────────────────────────────┐
-│  platform_components[] — systems under test for THIS program   │
-│  (from platform_profile and/or inline manifest)                │
-└──────────────────────────┬──────────────────────────────────┘
-                           │ optional
-┌──────────────────────────▼──────────────────────────────────┐
-│  reference_layers[] — context only (automate: false)           │
-└─────────────────────────────────────────────────────────────┘
+                           │
+         ┌─────────────────┼─────────────────┐
+         ▼                 ▼                 ▼
+┌────────────────┐ ┌──────────────┐ ┌──────────────────────┐
+│ platform_      │ │ reference_   │ │ initiatives[]        │
+│ components     │ │ layers       │ │ (timed commercial /  │
+│ (what we test) │ │ (context)    │ │  delivery work)      │
+└────────────────┘ └──────────────┘ └──────────────────────┘
 ```
 
-### 2.1 Platform components (`platform_components`)
-
-Defined per program via:
-
-- **`platform_profile`** — include a shared library from `backend/config/programs/_platform-profiles/<name>.yaml`, or
-- **`platform_components`** — inline list in the program manifest, or
-- **Both** — profile as base, manifest entries merge/override.
-
-Each component has:
-
-| Field | Meaning |
-|-------|---------|
-| `id` | Stable key (e.g. `DT_CRM`, `WEB_PORTAL`, `PAYMENT_API`) |
-| `title` | Display name |
-| `modules` | Optional sub-areas |
-| `test_surfaces` | e.g. `ui`, `api`, `batch`, `integration` |
-
-**Do not assume** every program uses the DT telecom seven-tuple. The **dt-telecom-default** profile is one reusable library.
-
-### 2.2 Product features (`product_features`)
-
-Business-facing capabilities for **this** program:
-
-| Field | Meaning |
-|-------|---------|
-| `id` | `capability_key` for ReqIQ and journey registry |
-| `title` | Display name |
-| `platform_components` | Which systems are involved |
-| `reference_layers` | Optional links to read-only context |
-| `source_files` | Docs/assets for ReqIQ ingest |
-
-### 2.3 Reference layers (`reference_layers`)
-
-| Field | Meaning |
-|-------|---------|
-| `id` | Layer key |
-| `automate` | **`false`** = never crawl/automate (default for legacy) |
-| `capability_key` | ReqIQ tag for RAG/assertions only |
-| `assets` | Files or URLs |
-
-### 2.4 Extensions (`extensions`)
-
-**Optional, program-specific** blocks — not required in the schema. Examples:
-
-- `extensions.migration` — dual-system transition rules (5G example)
-- `extensions.compliance` — regulatory checklist
-- `extensions.promo_calendar` — campaign dates
-
-AWT loader passes extensions through to Hub UI as opaque structured data; no code change per extension type in Phase 1.
+| Layer | Lifetime | Example |
+|-------|----------|---------|
+| **Program** | Years | Product line umbrella |
+| **Platform components** | Stable (per program) | DT WebApp, CRM, Billing, Matrixx |
+| **Reference layers** | Stable context | MCS plan tables; migration user guide for **DT vs BAU parity checks** |
+| **Initiatives** | Start/end (flexible) | ABC base offer 30-May; June marketing 5-Jun |
 
 ---
 
-## 3. Journey registry tagging (generic)
+## 3. Initiatives (canonical term)
 
-Use `JourneyRegistryEntry.extra_config` (existing JSON column):
+**Internal schema name:** `initiatives`  
+**UI labels:** Offer, Promotion, Project — via `kind` + `title` (marketing language).
+
+### 3.1 What an initiative is
+
+One **launch or change** under a program: base plan go-live, rebate promo, IT project enabling a new CRM flow, etc.
+
+### 3.2 Core fields
+
+| Field | Meaning |
+|-------|---------|
+| `id` | Stable slug (e.g. `abc-base-20260530`) |
+| `kind` | `base_offer` \| `promotion` \| `project` \| `bundle` \| … (display only) |
+| `title` | Human name (e.g. "ABC plan", "June marketing") |
+| `effective_from` | Launch / go-live date |
+| `effective_to` | End date, or **`null`** = open-ended |
+| `relationship` | `replace` \| `stack` — vs prior initiative(s) |
+| `relates_to` | Initiative id(s) this replaces or stacks on (when applicable) |
+| `capability_keys` | ReqIQ / journey / coverage tags |
+| `platform_components` | Subset of program platform touched by **this** initiative |
+| `source_files` | PDFs, circulars for this wave |
+| `regression_tags` | Factory / Loop B filters |
+
+### 3.3 Replace vs stack
+
+| `relationship` | Meaning | Test focus |
+|----------------|---------|------------|
+| **`replace`** | Supersedes prior offer/terms for scope in `relates_to` | Full regression on new initiative; retire or narrow old journeys |
+| **`stack`** | Adds on top; base offer still valid | **Delta** tests: promo, coupon, rebate, banner — plus smoke on base |
+
+Audience (new customers only vs all) can be added per initiative when needed (`audience: new_signups | all | existing_only`) — optional field.
+
+### 3.4 End dates and extensions
+
+- **`effective_to: null`** — no fixed end.
+- **Fixed end** — e.g. `2026-06-30`.
+- **Extension before end** — `amendments[]` on the initiative (no new initiative required):
+
+```yaml
+amendments:
+  - type: extend_end_date
+    amended_at: "2026-06-28"
+    previous_effective_to: "2026-06-30"
+    new_effective_to: "2026-07-15"
+    note: "Marketing extension approved"
+```
+
+Loader/UI uses **latest** `effective_to` after amendments for timeline display.
+
+### 3.5 Worked example (generic)
+
+```yaml
+initiatives:
+  - id: abc-base-20260530
+    kind: base_offer
+    title: "ABC plan"
+    effective_from: "2026-05-30"
+    effective_to: null
+    relationship: null
+    capability_keys: [PLANS_ABC]
+    platform_components: [DT_WEBAPP, DT_CRM, DT_MATRIXX, DT_BILLING]
+
+  - id: june-marketing-20260605
+    kind: promotion
+    title: "June marketing"
+    effective_from: "2026-06-05"
+    effective_to: "2026-06-30"
+    relationship: stack          # or: replace
+    relates_to: [abc-base-20260530]
+    capability_keys: [PROMO_JUNE]
+    platform_components: [DT_WEBAPP, DT_ECOUPON, DT_BILLING]
+```
+
+Multiple initiatives may be **active at once** (base + stacked promo).
+
+---
+
+## 4. Platform components
+
+Defined per program via `platform_profile` and/or inline `platform_components` (see [Manifest-Schema.md](Manifest-Schema.md)).
+
+Initiatives **reference** these ids; they do not redefine the platform stack unless a program adds inline components.
+
+---
+
+## 5. Reference layers (not initiatives)
+
+For **read-only context** — especially legacy BAU/MCS material.
+
+| Field | Meaning |
+|-------|---------|
+| `automate` | **`false`** by default — never crawl MCS/BAU |
+| `capability_key` | ReqIQ tag for RAG / manual assertions |
+| `parity_note` | Optional: "Use to verify DT CRM shows equivalent function to BAU MCS" |
+
+**Migration guides** (e.g. MCS→CRM user guide) live here — **not** as initiatives or migration waves. QA may use them to compare DT behaviour to documented BAU behaviour; **no hard factory rules** until the team defines them.
+
+---
+
+## 6. Product features vs initiatives
+
+- **`initiatives`** — primary unit for timeline, docs, tests, and factory backlog.
+- **`feature_catalog`** (optional) — shared vocabulary of `capability_keys` across initiatives; omit if initiative keys are enough.
+
+Do **not** create a separate program YAML per initiative.
+
+---
+
+## 7. Journey registry
 
 ```yaml
 extra_config:
-  program_slug: <manifest program.slug>
-  platform_components: [DT_CRM, DT_WEBAPP]
-  capability_keys: [FEATURE_A, FEATURE_B]
-  test_kind: ui          # ui | api | orchestration
-  test_scope_note: "DT only; REF_MCS for assertions"
+  program_slug: mobile-broadband
+  initiative_id: june-marketing-20260605
+  platform_components: [DT_ECOUPON, DT_WEBAPP]
+  capability_keys: [PROMO_JUNE]
+  test_kind: ui
 ```
 
-Factory and planner read **`program_slug`** and manifest `factory` rules — not product-specific constants in code.
+Factory filters by `program_slug`, `initiative_id`, and `regression_tags`.
 
 ---
 
-## 4. ReqIQ (unchanged)
+## 8. ReqIQ (unchanged schema)
 
 | Artifact | Convention |
 |----------|------------|
-| Workspace | `program.reqiq_project_id` per manifest (programs may share or split workspaces) |
-| Requirements | `capabilityKey` = `product_features[].id` or platform `id` |
-| Readiness | `feature` string from manifest or requirement |
-| Wiki | Compiled per workspace; AWT may stitch per-program snippets |
-| Exclusions | `factory.exclude_capability_keys` in manifest |
+| Workspace | `program.reqiq_project_id` |
+| Requirements | `capabilityKey` from initiative `capability_keys` |
+| Readiness | `feature` scoped to initiative title or key |
+| Sources | Upload per initiative `source_files` |
+| Reference | `reference_layers` — parity context only |
 
 ---
 
-## 5. AI Web Test UI (slug-agnostic)
+## 9. AI Web Test UI (slug-agnostic)
 
 | Route | Behaviour |
 |-------|-----------|
-| `/programs` | List manifests from `backend/config/programs/*.yaml` |
-| `/programs/:slug` | Reference Hub driven entirely by that manifest |
-| Knowledge Base | ReqIQ workspace (unchanged); filter by `program_slug` / capability |
-
-Hub sections come from manifest (`hub_sections`, `product_features`, `reference_layers`, `hub_gaps`) — not from hard-coded 5G section names.
+| `/programs` | List programs |
+| `/programs/:slug` | Hub: platform, reference, **initiative timeline** |
+| `/programs/:slug/initiatives/:id` | Detail: docs, coverage, journeys (PG-1+) |
 
 ---
 
-## 6. Factory integration
-
-Manifest `factory` block:
+## 10. Factory integration
 
 ```yaml
 factory:
-  program_tags: [<slug>, ...]
-  exclude_capability_keys: [...]
-  planner_rules: [...]
+  program_tags: [<program-slug>]
+  exclude_capability_keys: [REF_MCS_PLANS]   # reference layers
+  planner_rules:
+    - "Scope test-gen to initiative platform_components"
+    - "For relationship stack, prefer delta journeys over full base replay"
 ```
 
-Worker/planner receives `program_slug`, loads manifest, applies rules. **No** `if slug == '5g-mobile-broadband'` in application code.
+---
+
+## 11. Adding a new program
+
+1. Create `backend/config/programs/<slug>.yaml`.
+2. Set `platform_profile` or `platform_components`.
+3. Add `reference_layers` if legacy parity docs exist.
+4. Add `initiatives[]` with dates, relationship, and capability keys.
+5. Seed `journey_templates` per initiative when UAT URLs are known.
+
+See [Manifest-Schema.md](Manifest-Schema.md) · [Implementation-Plan.md](Implementation-Plan.md).
 
 ---
 
-## 7. Adding a new program (checklist)
+## 12. Example manifest
 
-1. Copy `backend/config/programs/5g-mobile-broadband.yaml` → `<new-slug>.yaml`.
-2. Set `program.slug`, `title`, `reqiq_project_id`, `test_scope`.
-3. Choose `platform_profile` or define `platform_components`.
-4. Define `product_features` and optional `reference_layers`.
-5. Add `docs/programs/examples/<slug>/` case study (optional).
-6. Seed `journey_templates` with real UAT URLs when known.
-7. Register journeys with `extra_config.program_slug`.
-
-See [Manifest-Schema.md](Manifest-Schema.md) and [Implementation-Plan.md](Implementation-Plan.md).
-
----
-
-## 8. Example
-
-[5G 流動寬頻](examples/5g-mobile-broadband/README.md) — DT telecom pilot using profile `dt-telecom-default`, MCS reference layer, and `extensions.migration`.
+[5G 流動寬頻](examples/5g-mobile-broadband/README.md) — DT telecom example with `reference_layers` (MCS + migration guide) and sample `initiatives`.

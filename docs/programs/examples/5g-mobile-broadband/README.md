@@ -13,15 +13,11 @@
 
 ## Why this example
 
-- Uses shared profile **`dt-telecom-default`** (WebApp, CRM, Billing, Matrixx, …).
-- **`reference_layers`** for MCS plan tables (`automate: false`).
-- **`extensions.migration`** for MCS→CRM transition context (DT testing only).
-- Another product (e.g. postpaid-only, FMC-only, B2B API) would use different `product_features` and may omit `extensions` or use a different `platform_profile`.
-
-## Source materials
-
-`docs/5G 流動寬頻/` — partial ops portal export (not in git by default).
+- Uses **`platform_profile: dt-telecom-default`**.
+- **`initiatives[]`** for plans, VAS, promos, projects (timed commercial work).
+- **`reference_layers`** for MCS plans + migration guide (parity only — not initiatives).
+- Another product would use different initiatives, or fewer platform components.
 
 ## Validate framework
 
-When PG-1 is implemented, this slug should load at `/programs/5g-mobile-broadband` with no 5G-specific UI code.
+When PG-1 ships: `/programs/5g-mobile-broadband` shows initiative timeline; no product-specific code paths.

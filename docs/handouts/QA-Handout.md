@@ -65,11 +65,11 @@ Document the list in Confluence; apply in registry and test cases.
 
 ## Product programs (PG)
 
-Programs are **YAML-defined** product initiatives (platform components × product features). ReqIQ stays a knowledge brick; structure lives in AWT.
+Programs are YAML-defined product lines. **Initiatives** (offers, promotions, projects) sit under a program with launch dates, optional end dates, and replace/stack rules.
 
 - Framework: [programs/Program-Framework.md](../programs/Program-Framework.md)  
-- Tag journeys with `extra_config.program_slug` and `platform_components`  
-- Example pilot: [5g-mobile-broadband](../programs/examples/5g-mobile-broadband/README.md) (not the only valid shape)
+- Tag journeys with `program_slug`, `initiative_id`, `platform_components`  
+- Example: [5g-mobile-broadband](../programs/examples/5g-mobile-broadband/README.md)
 
 ## One sentence
 

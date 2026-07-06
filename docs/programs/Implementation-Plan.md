@@ -12,10 +12,10 @@
 
 | Phase | Status | Notes |
 |-------|--------|-------|
-| **PG-0** Framework docs + schema | ✅ | Generic framework; 5G = example manifest only |
-| **PG-1** Program loader + Reference Hub | ⬜ | Slug-agnostic `/programs/:slug` |
-| **PG-2** ReqIQ onboarding pattern | ⬜ | Per-program checklist, not hard-coded uploads |
-| **PG-3** Journey registry integration | ⬜ | `extra_config.program_slug`, `platform_components` |
+| **PG-0** Framework docs + schema (v1.2 initiatives) | ✅ | Initiative model; migration = reference only |
+| **PG-1** Program loader + Reference Hub | ⬜ | `/programs/:slug` + initiative timeline |
+| **PG-2** ReqIQ onboarding pattern | ⬜ | Per-initiative `source_files` upload |
+| **PG-3** Journey registry integration | ⬜ | `extra_config.initiative_id`, `platform_components` |
 | **PG-4** Factory planner scoping | ⬜ | Load manifest rules by `program_slug` |
 | **PG-5** API / orchestration test profile | ⬜ | Optional per `test_surfaces` |
 
@@ -25,9 +25,9 @@
 
 ## 1. Goals
 
-1. **Data-driven programs** — any product via YAML; no 5G-specific code paths.
-2. **Composable platform profiles** — reuse `dt-telecom-default` or define custom components.
-3. **ReqIQ unchanged** — `capabilityKey`, readiness, wiki per program manifest.
+1. **Data-driven programs** — any product via YAML; initiatives for timed offers/promos/projects.
+2. **Initiative model** — `replace` | `stack`, optional end date, `amendments` for extensions.
+3. **Reference layers** — legacy/migration docs for parity only; not initiatives.
 4. **Journey registry** — extend `extra_config` only (no breaking DB change in Phase 1).
 5. **Factory** — planner reads `factory` block from manifest for any `program_slug`.
 
@@ -52,8 +52,8 @@
 |----|-------|-------------|------------|
 | PG-1.1 | Loader service | `program_registry_service.py` | Discovers all `config/programs/*.yaml`; merges `platform_profile` |
 | PG-1.2 | REST API | `GET /api/v1/programs`, `GET /api/v1/programs/{slug}` | List + detail from YAML |
-| PG-1.3 | Hub page | `ProgramHubPage.tsx` at `/programs/:slug` | Renders manifest sections dynamically |
-| PG-1.4 | Programs index | `/programs` | Lists all loaded programs |
+| PG-1.3 | Hub page | `ProgramHubPage.tsx` at `/programs/:slug` | Platform, reference, **initiative timeline** |
+| PG-1.4 | Initiative detail | `/programs/:slug/initiatives/:id` | Docs, capability keys, journey links |
 | PG-1.5 | Sidebar | **Programs** menu | No single-product label |
 | PG-1.6 | Reference / gap UI | Hub items | `automate: false` badge; `hub_gaps` status |
 

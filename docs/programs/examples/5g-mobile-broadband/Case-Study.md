@@ -1,58 +1,59 @@
 # Example case study: 5G 流動寬頻
 
-**Version:** 1.1 · **Date:** 2026-07-06  
-**Type:** Example only — see [Program Framework](../../Program-Framework.md) for the generic model.
+**Version:** 1.2 · **Date:** 2026-07-06  
+**Type:** Example — see [Program Framework](../../Program-Framework.md).
 
 ---
 
-## Program summary
+## Program vs initiatives
 
-| Field | Value |
-|-------|-------|
-| Slug | `5g-mobile-broadband` |
-| `test_scope` | `DT_ONLY` (MCS is reference, not automated) |
-| Platform profile | `dt-telecom-default` |
-| ReqIQ workspace | `cmp0zdx4g0004alp8z77ess7a` (Three-HK) |
+| Level | This example |
+|-------|----------------|
+| **Program** | `5g-mobile-broadband` — long-lived 5G mobile broadband line |
+| **Initiatives** | Plans base offer, VAS, router promo, Tai Po promo, signup project, … |
+| **Reference** | MCS plan tables + migration guide (parity only, not initiatives) |
 
----
-
-## Layer mapping (this product)
-
-### Platform (from profile)
-
-WebApp, CRM, Billing, Matrixx, Provisioning, e-Coupon, MIS — see `_platform-profiles/dt-telecom-default.yaml`.
-
-A **different product** might use only `{WEBAPP, API_GATEWAY}` or add custom components inline.
-
-### Product features (this program)
-
-| Feature ID | Platform components |
-|------------|---------------------|
-| `5GBB_PLANS` | WebApp, CRM, Matrixx, Billing |
-| `5GBB_MIGRATION` | CRM, WebApp, e-Coupon, Provisioning |
-| `5GBB_VAS` | CRM, Matrixx, Billing |
-| `5GBB_ROUTER` | CRM, Billing, e-Coupon, WebApp, Provisioning |
-| … | See manifest |
-
-### Reference layer (not tested)
-
-| Layer | Purpose |
-|-------|---------|
-| `REF_MCS_PLANS` | Plan codes 5Z1–5Z4 for CRM offer assertions |
-
-### Extension (this program only)
-
-`extensions.migration` — MCS→CRM user guide, phase-1 cohort, MMS rules. Other programs omit this block.
+Migration **waves** are **not** modeled as initiatives. The migration PDF sits in `reference_layers` for optional BAU MCS vs DT CRM parity checks.
 
 ---
 
-## Golden paths (illustrative)
+## Initiative patterns illustrated
 
-1. WebApp new sale → CRM → Provisioning → Matrixx  
-2. CRM renewal → e-Coupon → WebApp My Wallet → Provisioning MMS  
-3. VAS subscribe → Matrixx rating → Billing invoice  
+| Initiative | `relationship` | Notes |
+|------------|------------------|-------|
+| `5gbb-plans-base` | — | Base offer; open-ended `effective_to` |
+| `5gbb-vas-datapack` | `stack` | Adds VAS on top of base plans |
+| `taipo-free-3m` | `stack` | Time-limited promo (`effective_to` + `amendments` when needed) |
 
-Orchestration suites are defined per program in manifest `journey_templates` — not global constants.
+Production manifests may use **`replace`** when a new plan supersedes an old one.
+
+---
+
+## ABC / June marketing (generic pattern)
+
+Not specific to this YAML — shows how **any** program would model:
+
+```yaml
+initiatives:
+  - id: abc-base-20260530
+    kind: base_offer
+    title: "ABC plan"
+    effective_from: "2026-05-30"
+    effective_to: null
+    capability_keys: [PLANS_ABC]
+    ...
+
+  - id: june-marketing-20260605
+    kind: promotion
+    title: "June marketing"
+    effective_from: "2026-06-05"
+    effective_to: "2026-06-30"
+    relationship: stack          # or replace
+    relates_to: [abc-base-20260530]
+    amendments:
+      - type: extend_end_date
+        new_effective_to: "2026-07-15"
+```
 
 ---
 

@@ -1,6 +1,6 @@
 # Program manifest schema
 
-**Version:** 1.1 · **Date:** 2026-07-06  
+**Version:** 1.2 · **Date:** 2026-07-06  
 **Location:** `backend/config/programs/<program-slug>.yaml`  
 **Discovery:** Loader reads all `*.yaml` except `_platform-profiles/` and files prefixed with `_`.
 
@@ -11,15 +11,18 @@
 | Key | Required | Description |
 |-----|----------|-------------|
 | `program` | Yes | Identity and ReqIQ link |
-| `platform_profile` | No | Include shared profile by name (e.g. `dt-telecom-default`) |
-| `platform_components` | No | Inline platform bricks; merged over profile if both set |
-| `reference_layers` | No | Read-only context; default `automate: false` |
-| `product_features` | Yes | Business capabilities + platform mapping |
-| `extensions` | No | Program-specific optional blocks |
-| `hub_sections` | No | Reference Hub layout (if omitted, UI derives from features) |
+| `platform_profile` | No | Shared platform library (e.g. `dt-telecom-default`) |
+| `platform_components` | No | Inline platform bricks; merged over profile |
+| `reference_layers` | No | Read-only context; `automate: false` default |
+| `initiatives` | Yes | Time-bounded offers, promotions, projects |
+| `feature_catalog` | No | Optional shared `capability_key` definitions |
+| `hub_sections` | No | Reference Hub layout override |
 | `hub_gaps` | No | Missing links/assets |
-| `journey_templates` | No | Seeds for journey registry |
+| `journey_templates` | No | Journey registry seeds |
 | `factory` | No | Planner/worker rules |
+
+**Removed from core schema:** top-level `product_features` as primary model (use `initiatives` + optional `feature_catalog`).  
+**Migration waves** are **not** initiatives — use `reference_layers` only.
 
 ---
 
@@ -27,38 +30,69 @@
 
 ```yaml
 program:
-  slug: my-product                    # URL-safe, unique
+  slug: my-product
   title: "Display name"
-  locale: zh-HK                       # optional
-  kind: production | pilot | example  # optional metadata
-  test_scope: DT_ONLY                 # free-text or enum — per program
+  locale: zh-HK
+  kind: production | pilot | example
+  test_scope: DT_ONLY                 # per-program; free text
   reqiq_project_id: "<cuid>"
-  source_folder: "docs/..."           # optional local asset path
-  notes: "..."                        # optional
+  source_folder: "docs/..."
+  notes: "..."
 ```
 
 ---
 
-## `platform_profile`
+## `initiatives[]`
 
 ```yaml
-platform_profile: dt-telecom-default
+initiatives:
+  - id: abc-base-20260530
+    kind: base_offer              # base_offer | promotion | project | bundle | ...
+    title: "ABC plan"
+    effective_from: "2026-05-30"
+    effective_to: null            # null = no fixed end
+    relationship: null            # null | replace | stack
+    relates_to: []                # initiative ids when replace/stack
+    audience: null                # optional: new_signups | all | existing_only
+    capability_keys: [PLANS_ABC]
+    platform_components: [DT_WEBAPP, DT_CRM, DT_MATRIXX, DT_BILLING]
+    source_files: []
+    regression_tags: [my-product, initiative:abc-base-20260530]
+    amendments: []                # see below
+
+  - id: june-marketing-20260605
+    kind: promotion
+    title: "June marketing"
+    effective_from: "2026-06-05"
+    effective_to: "2026-06-30"
+    relationship: stack           # or replace
+    relates_to: [abc-base-20260530]
+    capability_keys: [PROMO_JUNE]
+    platform_components: [DT_WEBAPP, DT_ECOUPON, DT_BILLING]
+    amendments:
+      - type: extend_end_date
+        amended_at: "2026-06-28"
+        previous_effective_to: "2026-06-30"
+        new_effective_to: "2026-07-15"
+        note: "Optional extension example"
 ```
 
-Resolves to `backend/config/programs/_platform-profiles/dt-telecom-default.yaml` → `platform_components` array.
+### Initiative field reference
 
----
-
-## `platform_components[]`
-
-```yaml
-platform_components:
-  - id: DT_CRM
-    title: CRM
-    modules: [product_catalog, customer_portal]
-    test_surfaces: [ui]
-    notes: "optional"
-```
+| Field | Required | Description |
+|-------|----------|-------------|
+| `id` | Yes | Unique within program |
+| `kind` | Yes | Display category (offer / promotion / project) |
+| `title` | Yes | Human-readable name |
+| `effective_from` | Yes | ISO date |
+| `effective_to` | No | ISO date or `null` |
+| `relationship` | No | `replace` \| `stack` |
+| `relates_to` | No | List of initiative `id` |
+| `capability_keys` | Yes | ReqIQ + journey tags |
+| `platform_components` | Yes | Subset of program platform |
+| `source_files` | No | Assets under `program.source_folder` |
+| `regression_tags` | No | Factory / regression filters |
+| `amendments` | No | End-date extensions and future amendment types |
 
 ---
 
@@ -66,42 +100,41 @@ platform_components:
 
 ```yaml
 reference_layers:
-  - id: REF_LEGACY_PLANS
-    title: "Legacy plan tables"
-    capability_key: REF_LEGACY_PLANS
+  - id: REF_MCS_PLANS
+    title: "MCS / BAU plan tables"
+    capability_key: REF_MCS_PLANS
     automate: false
-    note: "Assertions only — not crawled"
+    parity_note: "Optional DT vs BAU parity checks — no hard automation rules"
     assets:
       - file: "plan-table.jpg"
         type: image
+
+  - id: REF_MCS_CRM_MIGRATION
+    title: "MCS to CRM migration guide"
+    capability_key: REF_MCS_CRM_MIGRATION
+    automate: false
+    parity_note: "Verify DT CRM reflects documented BAU behaviour where applicable"
+    assets:
+      - file: "migration-user-guide.pdf"
+        type: pdf
 ```
 
 ---
 
-## `product_features[]`
+## `feature_catalog` (optional)
 
 ```yaml
-product_features:
-  - id: FEATURE_SIGNUP
-    title: "Online signup"
-    platform_components: [DT_WEBAPP, DT_CRM]
-    reference_layers: [REF_LEGACY_PLANS]
-    source_files:
-      - "signup-guide.pdf"
+feature_catalog:
+  - id: PLANS_ABC
+    title: "ABC monthly plan"
+    description: "Shared key used across initiatives"
 ```
 
 ---
 
-## `extensions` (optional)
+## `platform_profile` / `platform_components`
 
-Arbitrary YAML per program. Example (5G pilot only):
-
-```yaml
-extensions:
-  migration:
-    capability_key: 5GBB_MIGRATION
-    anchor_file: "migration-user-guide.pdf"
-```
+Unchanged — see v1.1. Initiatives must only reference resolved platform component ids.
 
 ---
 
@@ -109,18 +142,19 @@ extensions:
 
 ```yaml
 journey_templates:
-  - slug: my-journey-slug
-    name: "Human-readable name"
-    capability_keys: [FEATURE_A]
-    feature_url: "https://..."       # or feature_url_tbd: true
-    tags: [regression]
+  - slug: june-promo-wallet
+    name: "June promo — My Wallet"
+    capability_keys: [PROMO_JUNE]
+    initiative_id: june-marketing-20260605
     extra_config:
       program_slug: my-product
-      platform_components: [DT_WEBAPP]
+      initiative_id: june-marketing-20260605
+      platform_components: [DT_WEBAPP, DT_ECOUPON]
       test_kind: ui
+    tags: [my-product, initiative:june-marketing-20260605]
 ```
 
-Merged into `journey_registry_entries` with `project` from journey registry project meta (may equal program slug or a parent project name — configure per deployment).
+`initiative_id` at template root mirrors `extra_config.initiative_id` for seed scripts.
 
 ---
 
@@ -129,23 +163,25 @@ Merged into `journey_registry_entries` with `project` from journey registry proj
 ```yaml
 factory:
   program_tags: [my-product]
-  exclude_capability_keys: [REF_LEGACY_PLANS]
+  exclude_capability_keys: [REF_MCS_PLANS, REF_MCS_CRM_MIGRATION]
   planner_rules:
-    - "Respect test_scope in manifest"
-    - "Exclude reference_layers with automate: false"
+    - "Initiatives drive test scope; reference_layers are not crawl targets"
+    - "relationship stack → prefer delta coverage on relates_to base"
 ```
 
 ---
 
 ## Validation rules (loader)
 
-1. `program.slug` must match filename stem (`<slug>.yaml`).
-2. Every `product_features[].platform_components` id must exist in resolved `platform_components`.
-3. Every `reference_layers[].id` referenced by features must exist.
-4. `journey_templates[].extra_config.program_slug` defaults to `program.slug` if omitted.
+1. `program.slug` matches filename stem.
+2. Every `initiatives[].platform_components` id exists in resolved platform.
+3. `relates_to` references valid initiative ids in the same manifest.
+4. `relationship: replace | stack` should have non-empty `relates_to` (warn if missing).
+5. `effective_from` ≤ resolved `effective_to` (after amendments).
+6. Reference layer ids in `exclude_capability_keys` should have `automate: false`.
 
 ---
 
 ## Shared profiles
 
-See [`backend/config/programs/README.md`](../../backend/config/programs/README.md) and `_platform-profiles/`.
+See [`backend/config/programs/README.md`](../../backend/config/programs/README.md).

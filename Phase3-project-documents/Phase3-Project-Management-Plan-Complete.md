@@ -4887,11 +4887,11 @@ Blockers Requiring CTO Decision:
 
 | Track | Status (2026-07-06) | Notes |
 |-------|---------------------|--------|
-| **PG-0** Framework docs + manifest schema | ✅ Complete | Generic slug-agnostic model; ReqIQ as LEGO brick |
+| **PG-0** Framework docs + manifest schema | ✅ Complete | **Initiatives** model; reference layers for MCS/migration parity |
 | **PG-1** Program loader + Reference Hub UI | ⬜ Not started | `/programs`, `/programs/:slug` |
 | **PG-2 … PG-5** | ⬜ Not started | ReqIQ onboarding, journeys, factory scoping, API profile |
 
-**Design:** One YAML manifest per product under `backend/config/programs/<slug>.yaml`. Platform components via `platform_profile` (e.g. `dt-telecom-default`) or inline definition. **5G 流動寬頻** is an **example** manifest only (`docs/programs/examples/5g-mobile-broadband/`).
+**Design:** One YAML per program. **Initiatives** (offers, promotions, projects) are time-bounded entries with `replace`/`stack`, optional `effective_to`, and `amendments` for extensions. **Reference layers** hold legacy/migration docs for optional DT vs BAU parity checks — not initiatives. Example: `docs/programs/examples/5g-mobile-broadband/`.
 
 **Depends on:** HF-2 journey registry, HF-3 factory worker, ReqIQ proxy (Sprint 8/9 handoff).
 

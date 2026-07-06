@@ -1,6 +1,6 @@
 # Program manifest — example: 5G 流動寬頻
 # Docs: docs/programs/examples/5g-mobile-broadband/
-# Schema: docs/programs/Manifest-Schema.md
+# Schema: docs/programs/Manifest-Schema.md (v1.2 — initiatives)
 # Status: planning seed — loader not implemented until PG-1
 
 program:
@@ -11,7 +11,7 @@ program:
   test_scope: DT_ONLY
   reqiq_project_id: cmp0zdx4g0004alp8z77ess7a
   source_folder: "docs/5G 流動寬頻"
-  notes: "Pilot example for DT telecom program framework — not hard-coded in app"
+  notes: "Example only — illustrates initiatives under a program"
 
 platform_profile: dt-telecom-default
 
@@ -20,78 +20,108 @@ reference_layers:
     title: "MCS / BAU 月費計劃 (reference)"
     capability_key: REF_MCS_PLANS
     automate: false
-    note: "Plan codes for DT CRM assertions — not a test target"
+    parity_note: "Plan codes for DT CRM offer assertions — not automated"
     assets:
       - file: "5Z1-5Z2-5Z3 – 5G流動寬頻月費計劃.JPG"
         type: image
       - file: "5Z4 – 5G流動寬頻月費計劃.JPG"
         type: image
 
-extensions:
-  migration:
-    capability_key: 5GBB_MIGRATION
-    anchor_file: "現有5G寬頻月費計劃Migration安排新舊系統至CRM User Guide.pdf"
-    guide_updated: "2026-06-29"
-    rollout_from: "2025-11-20"
-    phase_1:
-      plan_codes: [5Z1, 5Z2, 5Z3]
-      excludes: [secondary_msisdn, addon_sim]
-    crm_billing_acct_prefix: "0000"
-    router_mms_notification_from: "2026-06-30"
+  - id: REF_MCS_CRM_MIGRATION
+    title: "MCS to CRM migration guide (reference)"
+    capability_key: REF_MCS_CRM_MIGRATION
+    automate: false
+    parity_note: "Optional DT CRM vs BAU MCS parity checks — no hard factory rules"
+    assets:
+      - file: "現有5G寬頻月費計劃Migration安排新舊系統至CRM User Guide.pdf"
+        type: pdf
 
-product_features:
-  - id: 5GBB_PLANS
-    title: "5G 寬頻月費計劃"
+# Illustrative initiatives — dates are examples; map to real launches in production manifests
+initiatives:
+  - id: 5gbb-plans-base
+    kind: base_offer
+    title: "5G 寬頻月費計劃 (5Z1–5Z4)"
+    effective_from: "2024-01-01"
+    effective_to: null
+    relationship: null
+    relates_to: []
+    capability_keys: [5GBB_PLANS]
     platform_components: [DT_WEBAPP, DT_CRM, DT_MATRIXX, DT_BILLING]
-    reference_layers: [REF_MCS_PLANS]
+    regression_tags: [5g-mobile-broadband, initiative:5gbb-plans-base]
 
-  - id: 5GBB_MIGRATION
-    title: "MCS to CRM migration (DT expectations)"
-    platform_components: [DT_CRM, DT_WEBAPP, DT_ECOUPON, DT_PROVISIONING]
-    reference_layers: [REF_MCS_PLANS]
+  - id: 5gbb-signup-dt
+    kind: project
+    title: "5G 寬頻上台 (DT backend)"
+    effective_from: "2024-06-01"
+    effective_to: null
+    relationship: stack
+    relates_to: [5gbb-plans-base]
+    capability_keys: [5GBB_SIGNUP]
+    platform_components: [DT_WEBAPP, DT_CRM, DT_PROVISIONING]
+    source_files:
+      - "更新後台支援3網站5G寬頻服務上台處理.pdf"
 
-  - id: 5GBB_VAS
-    title: "5G 寬頻增值服務 (VAS)"
+  - id: 5gbb-vas-datapack
+    kind: base_offer
+    title: "5G 寬頻任用數據包 (VAS)"
+    effective_from: "2024-03-01"
+    effective_to: null
+    relationship: stack
+    relates_to: [5gbb-plans-base]
+    capability_keys: [5GBB_VAS]
     platform_components: [DT_CRM, DT_MATRIXX, DT_BILLING]
     source_files:
       - "推出「5G寬頻任用數據包」服務(VAS Contract)(DT Version).pdf"
 
-  - id: 5GBB_ROUTER
-    title: "5G 寬頻 Router 租借 / 續約"
+  - id: 5gbb-router-rental
+    kind: promotion
+    title: "5G 寬頻 Router 租借優惠"
+    effective_from: "2024-04-01"
+    effective_to: null
+    relationship: stack
+    relates_to: [5gbb-plans-base]
+    capability_keys: [5GBB_ROUTER]
     platform_components: [DT_CRM, DT_BILLING, DT_ECOUPON, DT_WEBAPP, DT_PROVISIONING]
     source_files:
       - "推出3香港5G寬頻Router租借優惠.pdf"
 
-  - id: 5GBB_COOLING_OFF
-    title: "7日冷靜期 (CRM)"
-    platform_components: [DT_CRM, DT_BILLING]
+  - id: taipo-free-3m
+    kind: promotion
+    title: "大埔受影響居民 — 3個月免費 5G 寬頻"
+    effective_from: "2024-05-01"
+    effective_to: null
+    relationship: stack
+    relates_to: [5gbb-plans-base]
+    capability_keys: [5GBB_PROMO]
+    platform_components: [DT_WEBAPP, DT_CRM]
     source_files:
-      - "5G寬頻7日冷靜期內申請取消合約流程跟進(CRM).pdf"
+      - "為大埔受影響居民提供3個月免費5G寬頻服務.pdf"
+    amendments: []
 
-  - id: 5GBB_SELF_SERVICE
-    title: "客戶自助服務 (My3 / 3SUPREME)"
+  - id: 5gbb-self-service-my3
+    kind: project
+    title: "My3 / 3SUPREME 自助服務"
+    effective_from: "2024-02-01"
+    effective_to: null
+    relationship: stack
+    relates_to: [5gbb-plans-base]
+    capability_keys: [5GBB_SELF_SERVICE]
     platform_components: [DT_WEBAPP]
     source_files:
       - "5G 寬頻之自助服務密碼-SUPREME App and My3 App.pdf"
       - "5G寬頻客戶於My3 App綁定 - 領取易賞錢帳戶.pdf"
 
-  - id: 5GBB_PROMO
-    title: "推廣活動 (大埔)"
-    platform_components: [DT_WEBAPP, DT_CRM]
+  - id: 5gbb-cooling-off-crm
+    kind: project
+    title: "7日冷靜期 (CRM 流程)"
+    effective_from: "2024-01-01"
+    effective_to: null
+    relationship: stack
+    relates_to: [5gbb-plans-base]
+    capability_keys: [5GBB_COOLING_OFF]
+    platform_components: [DT_CRM, DT_BILLING]
     source_files:
-      - "為大埔受影響居民提供3個月免費5G寬頻服務.pdf"
-
-  - id: 5GBB_FMC
-    title: "家居寬頻 FMC"
-    platform_components: [DT_WEBAPP, DT_CRM]
-    source_files:
-      - "3香港推出 - 家居寬頻服務計劃.pdf"
-
-  - id: 5GBB_SIGNUP
-    title: "5G 寬頻上台 (DT)"
-    platform_components: [DT_WEBAPP, DT_CRM, DT_PROVISIONING]
-    source_files:
-      - "更新後台支援3網站5G寬頻服務上台處理.pdf"
+      - "5G寬頻7日冷靜期內申請取消合約流程跟進(CRM).pdf"
 
 hub_gaps:
   - title: "裝置規格及使用方法 (device guides)"
@@ -100,70 +130,61 @@ hub_gaps:
   - title: "Plan detail sub-pages (詳情按此)"
     section: reference_plans
     status: gap
-  - title: "Matrixx operator console UAT URL"
-    platform_component: DT_MATRIXX
-    status: url_tbd
-  - title: "Billing operator console UAT URL"
-    platform_component: DT_BILLING
-    status: url_tbd
 
 journey_templates:
   - slug: 5gbb-webapp-plan-browse
     name: "5G BB — WebApp plan browse"
+    initiative_id: 5gbb-plans-base
     capability_keys: [5GBB_PLANS]
     extra_config:
       program_slug: 5g-mobile-broadband
+      initiative_id: 5gbb-plans-base
       platform_components: [DT_WEBAPP]
       test_kind: ui
-    tags: [5g-mobile-broadband, dt-webapp, regression]
+    tags: [5g-mobile-broadband, initiative:5gbb-plans-base]
     feature_url_tbd: true
 
   - slug: 5gbb-crm-subscription-maintenance
-    name: "5G BB — CRM subscription maintenance (migrated)"
-    capability_keys: [5GBB_PLANS, 5GBB_MIGRATION]
+    name: "5G BB — CRM subscription maintenance"
+    initiative_id: 5gbb-plans-base
+    capability_keys: [5GBB_PLANS]
     extra_config:
       program_slug: 5g-mobile-broadband
+      initiative_id: 5gbb-plans-base
       platform_components: [DT_CRM]
       test_kind: ui
       requires_runtime_credentials: true
-    tags: [5g-mobile-broadband, dt-crm, regression]
-    feature_url_tbd: true
-
-  - slug: 5gbb-crm-cooling-off
-    name: "5G BB — CRM 7-day cooling-off"
-    capability_keys: [5GBB_COOLING_OFF]
-    extra_config:
-      program_slug: 5g-mobile-broadband
-      platform_components: [DT_CRM, DT_BILLING]
-      test_kind: ui
-      requires_runtime_credentials: true
-    tags: [5g-mobile-broadband, dt-crm]
+    tags: [5g-mobile-broadband, initiative:5gbb-plans-base]
     feature_url_tbd: true
 
   - slug: 5gbb-webapp-my3-wallet-router
     name: "5G BB — My3 My Wallet router coupon"
-    capability_keys: [5GBB_ROUTER, 5GBB_MIGRATION]
+    initiative_id: 5gbb-router-rental
+    capability_keys: [5GBB_ROUTER]
     extra_config:
       program_slug: 5g-mobile-broadband
+      initiative_id: 5gbb-router-rental
       platform_components: [DT_WEBAPP, DT_ECOUPON]
       test_kind: ui
-    tags: [5g-mobile-broadband, dt-webapp, dt-ecoupon]
+    tags: [5g-mobile-broadband, initiative:5gbb-router-rental]
     feature_url_tbd: true
 
   - slug: 5gbb-vas-matrixx-rating
-    name: "5G BB VAS — Matrixx rating after subscribe"
+    name: "5G BB VAS — Matrixx rating"
+    initiative_id: 5gbb-vas-datapack
     capability_keys: [5GBB_VAS]
     extra_config:
       program_slug: 5g-mobile-broadband
+      initiative_id: 5gbb-vas-datapack
       platform_components: [DT_MATRIXX, DT_BILLING]
       test_kind: api
-    tags: [5g-mobile-broadband, dt-matrixx]
+    tags: [5g-mobile-broadband, initiative:5gbb-vas-datapack]
     feature_url_tbd: true
 
 factory:
   program_tags: [5g-mobile-broadband]
-  exclude_capability_keys: [REF_MCS_PLANS]
+  exclude_capability_keys: [REF_MCS_PLANS, REF_MCS_CRM_MIGRATION]
   planner_rules:
-    - "Respect program.test_scope (DT_ONLY for this example)"
-    - "Never automate reference_layers with automate: false"
-    - "Prefer readiness check per product_features id before test-gen"
+    - "Test DT platform only"
+    - "Initiatives drive scope; reference_layers are not crawl targets"
+    - "relationship stack → prefer delta tests on relates_to base"
