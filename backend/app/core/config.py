@@ -120,6 +120,9 @@ class Settings(BaseSettings):
     FACTORY_HEAL_MAX_ITEMS: int = 10
     FACTORY_HEAL_MAX_ATTEMPTS: int = 2
 
+    # Product programs (PG) — seed journey_templates from manifests on startup
+    PROGRAM_REGISTRY_SEED: bool = False
+
     # Hermes Bridge (HF-6) — Node 1 posts delegate events to AWT
     HERMES_BRIDGE_SECRET: str | None = None
     HERMES_BRIDGE_URL: str | None = None  # optional forward target for chat (HF-3.7)

@@ -11,6 +11,7 @@ program:
   test_scope: DT_ONLY
   reqiq_project_id: cmp0zdx4g0004alp8z77ess7a
   source_folder: "docs/5G 流動寬頻"
+  registry_project: Three-HK
   notes: "Example only — illustrates initiatives under a program"
 
 platform_profile: dt-telecom-default
@@ -43,6 +44,7 @@ initiatives:
     title: "5G 寬頻月費計劃 (5Z1–5Z4)"
     effective_from: "2024-01-01"
     effective_to: null
+    audience: all
     relationship: null
     relates_to: []
     capability_keys: [5GBB_PLANS]
@@ -89,9 +91,10 @@ initiatives:
     kind: promotion
     title: "大埔受影響居民 — 3個月免費 5G 寬頻"
     effective_from: "2024-05-01"
-    effective_to: null
+    effective_to: "2024-08-31"
     relationship: stack
     relates_to: [5gbb-plans-base]
+    audience: new_signups
     capability_keys: [5GBB_PROMO]
     platform_components: [DT_WEBAPP, DT_CRM]
     source_files:
@@ -180,6 +183,13 @@ journey_templates:
       test_kind: api
     tags: [5g-mobile-broadband, initiative:5gbb-vas-datapack]
     feature_url_tbd: true
+
+orchestration_suites:
+  - id: 5gbb-golden-new-sale
+    title: "New sale: WebApp → CRM → Provisioning"
+    initiative_ids: [5gbb-signup-dt, 5gbb-plans-base]
+    journey_slugs: [5gbb-webapp-plan-browse, 5gbb-crm-subscription-maintenance]
+    test_kind: orchestration
 
 factory:
   program_tags: [5g-mobile-broadband]

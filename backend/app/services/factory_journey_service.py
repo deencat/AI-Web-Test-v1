@@ -15,6 +15,11 @@ from app.models.factory_job import FactoryJob
 from app.models.journey_factory import JourneyBacklogItem, JourneyRegistryEntry
 from app.schemas.test_schedule import TestScheduleCreate
 from app.services.factory_job_service import append_job_event
+from app.services.program_factory_scope import (
+    build_planner_context,
+    merge_program_regression_tags,
+    should_skip_factory_entry,
+)
 from app.services.scheduler_service import scheduler_service
 from app.services.workflow_store import get_state
 
@@ -55,6 +60,10 @@ def _build_crawl_body(
         tags.append("factory-generated")
     if "regression" not in tags:
         tags.append("regression")
+
+    extra = entry.extra_config or {}
+    program_slug = extra.get("program_slug")
+    tags = merge_program_regression_tags(tags, program_slug)
 
     body: Dict[str, Any] = {
         "url": entry.feature_url,
@@ -166,7 +175,21 @@ def generate_journey_for_entry(
     extra_params: Optional[Dict[str, Any]] = None,
 ) -> int:
     """Run crawl-and-save for a registry entry; return test_case_id."""
+    if should_skip_factory_entry(entry):
+        raise ValueError(
+            f"Journey {entry.slug} skipped (retired or excluded by program manifest rules)"
+        )
+
+    planner_ctx = build_planner_context(entry)
     project_meta = crud_journey.get_project_meta(db, entry.project)
+    extra_params = dict(extra_params or {})
+    if planner_ctx.get("planner_rules"):
+        extra_params.setdefault(
+            "user_instruction",
+            _build_user_instruction(entry)
+            + " Program rules: "
+            + "; ".join(planner_ctx["planner_rules"]),
+        )
     body = _build_crawl_body(entry, project_meta, extra_params)
 
     append_job_event(
@@ -229,4 +252,6 @@ def generate_journey_for_backlog_item(
     entry = crud_journey.get_registry_by_slug(db, item.project, item.journey_slug)
     if not entry:
         raise ValueError(f"Registry entry missing: {item.journey_slug}")
+    if should_skip_factory_entry(entry):
+        raise ValueError(f"Journey {item.journey_slug} is retired or excluded — skipping backlog item")
     return generate_journey_for_entry(db, job, entry, extra_params=item.params)

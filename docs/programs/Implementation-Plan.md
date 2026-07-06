@@ -13,11 +13,11 @@
 | Phase | Status | Notes |
 |-------|--------|-------|
 | **PG-0** Framework docs + schema (v1.2 initiatives) | ✅ | Initiative model; migration = reference only |
-| **PG-1** Program loader + Reference Hub | ⬜ | `/programs/:slug` + initiative timeline |
-| **PG-2** ReqIQ onboarding pattern | ⬜ | Per-initiative `source_files` upload |
-| **PG-3** Journey registry integration | ⬜ | `extra_config.initiative_id`, `platform_components` |
-| **PG-4** Factory planner scoping | ⬜ | Load manifest rules by `program_slug` |
-| **PG-5** API / orchestration test profile | ⬜ | Optional per `test_surfaces` |
+| **PG-1** Program loader + Reference Hub | ✅ | `/programs`, hub, initiative detail, YAML editor |
+| **PG-2** ReqIQ onboarding pattern | ✅ | API + `scripts/seed-program-reqiq.py` |
+| **PG-3** Journey registry integration | ✅ | Seed + auto-retire on `replace` |
+| **PG-4** Factory planner scoping | ✅ | `program_factory_scope`, skip retired/excluded |
+| **PG-5** API / orchestration test profile | ✅ | `test_kind` validation, orchestration-suites API |
 
 **Example pilot:** [5g-mobile-broadband](examples/5g-mobile-broadband/README.md) — first manifest to validate PG-1…PG-4.
 

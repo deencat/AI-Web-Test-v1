@@ -19,6 +19,10 @@ import { BacklogQueuePage } from './pages/BacklogQueuePage';
 import { HealReviewPage } from './pages/HealReviewPage';
 import { StepLibraryPage } from './pages/StepLibraryPage';
 import { CrawlAndSavePage } from './pages/CrawlAndSavePage';
+import { ProgramsListPage } from './pages/ProgramsListPage';
+import { ProgramHubPage } from './pages/ProgramHubPage';
+import { InitiativeDetailPage } from './pages/InitiativeDetailPage';
+import { ProgramManifestEditorPage } from './pages/ProgramManifestEditorPage';
 import './index.css';
 
 // Protected Route wrapper
@@ -187,6 +191,38 @@ function App() {
           element={
             <ProtectedRoute>
               <FeedbackListPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/programs"
+          element={
+            <ProtectedRoute>
+              <ProgramsListPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/programs/:slug"
+          element={
+            <ProtectedRoute>
+              <ProgramHubPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/programs/:slug/initiatives/:initiativeId"
+          element={
+            <ProtectedRoute>
+              <InitiativeDetailPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/programs/:slug/edit"
+          element={
+            <ProtectedRoute>
+              <ProgramManifestEditorPage />
             </ProtectedRoute>
           }
         />

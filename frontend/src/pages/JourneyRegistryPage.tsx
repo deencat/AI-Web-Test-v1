@@ -172,20 +172,38 @@ export const JourneyRegistryPage: React.FC = () => {
                   <th className="p-3">Slug</th>
                   <th className="p-3">Name</th>
                   <th className="p-3">URL</th>
+                  <th className="p-3">Program</th>
+                  <th className="p-3">Initiative</th>
+                  <th className="p-3">Platform</th>
                   <th className="p-3">Tags</th>
                   <th className="p-3">Change</th>
                   <th className="p-3" />
                 </tr>
               </thead>
               <tbody>
-                {items.map((row) => (
-                  <tr key={row.id} className="border-b hover:bg-gray-50">
+                {items.map((row) => {
+                  const extra = (row.extra_config || {}) as Record<string, unknown>;
+                  const retired = Boolean(extra.retired);
+                  return (
+                  <tr key={row.id} className={`border-b hover:bg-gray-50 ${retired ? 'opacity-60' : ''}`}>
                     <td className="p-3 font-mono text-xs">{row.slug}</td>
                     <td className="p-3">{row.name}</td>
                     <td className="p-3 truncate max-w-xs" title={row.feature_url}>
                       {row.feature_url}
                     </td>
-                    <td className="p-3">{(row.tags || []).join(', ')}</td>
+                    <td className="p-3 text-xs font-mono">{String(extra.program_slug || '—')}</td>
+                    <td className="p-3 text-xs font-mono">{String(extra.initiative_id || '—')}</td>
+                    <td className="p-3 text-xs">
+                      {Array.isArray(extra.platform_components)
+                        ? (extra.platform_components as string[]).join(', ')
+                        : '—'}
+                    </td>
+                    <td className="p-3">
+                      {(row.tags || []).join(', ')}
+                      {retired && (
+                        <span className="ml-1 px-1.5 py-0.5 rounded bg-orange-100 text-orange-800 text-xs">retired</span>
+                      )}
+                    </td>
                     <td className="p-3">
                       {(() => {
                         const st = snapshotStatus[row.slug];
@@ -220,7 +238,8 @@ export const JourneyRegistryPage: React.FC = () => {
                       </button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           )}

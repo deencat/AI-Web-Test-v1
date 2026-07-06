@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Home, FileText, Database, Settings, PlayCircle, FolderOpen, Bot, Library, Globe, MessageSquare, Map, ListOrdered, Stethoscope } from 'lucide-react';
+import { Home, FileText, Database, Settings, PlayCircle, FolderOpen, Bot, Library, Globe, MessageSquare, Map, ListOrdered, Stethoscope, Layers } from 'lucide-react';
 import { isFactoryOperator } from '../../utils/roles';
 
 const navItems = [
@@ -11,6 +11,7 @@ const navItems = [
   { path: '/test-suites', icon: FolderOpen, label: 'Test Suites' },
   { path: '/executions', icon: PlayCircle, label: 'Executions' },
   { path: '/knowledge-base', icon: Database, label: 'Knowledge Base' },
+  { path: '/programs', icon: Layers, label: 'Programs' },
   { path: '/agent-workflow', icon: Bot, label: 'Agent Workflow' },
   { path: '/agent-console', icon: MessageSquare, label: 'Agent Console' },
   { path: '/journey-registry', icon: Map, label: 'Journey Registry' },

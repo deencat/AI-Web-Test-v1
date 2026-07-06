@@ -1,0 +1,61 @@
+# Example: minimal postpaid browse program (proves generic loader)
+program:
+  slug: postpaid-browse
+  title: "Postpaid Browse (example)"
+  kind: example
+  test_scope: DT_WEBAPP_ONLY
+  reqiq_project_id: cmp0zdx4g0004alp8z77ess7a
+  registry_project: Three-HK
+
+platform_components:
+  - id: DT_WEBAPP
+    title: WebApp
+    test_surfaces: [ui]
+
+initiatives:
+  - id: abc-base-20260530
+    kind: base_offer
+    title: "ABC plan launch"
+    effective_from: "2026-05-30"
+    effective_to: null
+    audience: all
+    capability_keys: [POSTPAID_ABC]
+    platform_components: [DT_WEBAPP]
+    regression_tags: [postpaid-browse, initiative:abc-base-20260530]
+
+  - id: june-marketing-20260605
+    kind: promotion
+    title: "June marketing overlay"
+    effective_from: "2026-06-05"
+    effective_to: "2026-06-30"
+    relationship: stack
+    relates_to: [abc-base-20260530]
+    audience: new_signups
+    capability_keys: [POSTPAID_JUNE_PROMO]
+    platform_components: [DT_WEBAPP]
+    regression_tags: [postpaid-browse, initiative:june-marketing-20260605]
+    amendments: []
+
+journey_templates:
+  - slug: postpaid-abc-browse
+    name: "Postpaid ABC plan browse"
+    initiative_id: abc-base-20260530
+    capability_keys: [POSTPAID_ABC]
+    feature_url: https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/
+    tags: [postpaid-browse, initiative:abc-base-20260530, regression]
+    extra_config:
+      program_slug: postpaid-browse
+      initiative_id: abc-base-20260530
+      platform_components: [DT_WEBAPP]
+      test_kind: ui
+
+orchestration_suites:
+  - id: postpaid-browse-smoke
+    title: "Postpaid browse smoke"
+    initiative_ids: [abc-base-20260530]
+    journey_slugs: [postpaid-abc-browse]
+
+factory:
+  program_tags: [postpaid-browse]
+  planner_rules:
+    - "WebApp-only example program"

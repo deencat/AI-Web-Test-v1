@@ -11,6 +11,7 @@ export interface JourneyRegistryEntry {
   reference_test_id?: number | null;
   requires_login: boolean;
   stop_at_page_hint?: string | null;
+  extra_config?: Record<string, unknown> | null;
 }
 
 export interface JourneyRegistryListResponse {

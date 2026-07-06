@@ -49,6 +49,7 @@ def seed_journey_registry(db: Session, path: Path | None = None) -> int:
             reference_test_id=j.get("reference_test_id"),
             requires_login=bool(j.get("requires_login", False)),
             stop_at_page_hint=j.get("stop_at_page_hint"),
+            extra_config=j.get("extra_config"),
         )
         if existing:
             from app.schemas.journey_factory import JourneyRegistryEntryUpdate

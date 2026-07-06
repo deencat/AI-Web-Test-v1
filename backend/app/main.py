@@ -78,6 +78,19 @@ from app.services.factory_scheduler_service import register_factory_cron_jobs
 
 register_factory_cron_jobs()
 
+if settings.PROGRAM_REGISTRY_SEED:
+    try:
+        from app.services.program_journey_seed import seed_all_program_journeys
+
+        _pg_db = SessionLocal()
+        try:
+            seed_all_program_journeys(_pg_db)
+            print("[programs] PROGRAM_REGISTRY_SEED: journey templates synced from manifests")
+        finally:
+            _pg_db.close()
+    except Exception as _pg_exc:
+        print(f"[programs] PROGRAM_REGISTRY_SEED failed: {_pg_exc}")
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
