@@ -1,129 +1,95 @@
-# 5G 流動寬頻 — Program manifest (AWT)
-# Program code: PG-5G
-# Docs: docs/programs/5g-mobile-broadband/
-# Status: planning seed — loader not implemented until PG-5G-1
+# Program manifest — example: 5G 流動寬頻
+# Docs: docs/programs/examples/5g-mobile-broadband/
+# Schema: docs/programs/Manifest-Schema.md
+# Status: planning seed — loader not implemented until PG-1
 
 program:
   slug: 5g-mobile-broadband
   title: "5G 流動寬頻"
+  kind: example
   locale: zh-HK
   test_scope: DT_ONLY
   reqiq_project_id: cmp0zdx4g0004alp8z77ess7a
-  portal_reference_updated: "2024-05-28"
   source_folder: "docs/5G 流動寬頻"
+  notes: "Pilot example for DT telecom program framework — not hard-coded in app"
 
-migration:
-  id: DT_MIGRATION
-  capability_key: 5GBB_MIGRATION
-  anchor_file: "現有5G寬頻月費計劃Migration安排新舊系統至CRM User Guide.pdf"
-  guide_updated: "2026-06-29"
-  rollout_from: "2025-11-20"
-  phase_1:
-    plan_codes: [5Z1, 5Z2, 5Z3]
-    excludes: [secondary_msisdn, addon_sim]
-  crm_billing_acct_prefix: "0000"
-  router_mms_notification_from: "2026-06-30"
+platform_profile: dt-telecom-default
 
-reference_only:
+reference_layers:
   - id: REF_MCS_PLANS
     title: "MCS / BAU 月費計劃 (reference)"
     capability_key: REF_MCS_PLANS
-    note: "Plan codes and charge-code context for DT CRM assertions — not a test target"
+    automate: false
+    note: "Plan codes for DT CRM assertions — not a test target"
     assets:
       - file: "5Z1-5Z2-5Z3 – 5G流動寬頻月費計劃.JPG"
         type: image
       - file: "5Z4 – 5G流動寬頻月費計劃.JPG"
         type: image
 
-dt_platform:
-  - id: DT_WEBAPP
-    title: WebApp
-    interfaces: [webpage, api]
-    modules: [dtppd, my3, three_com]
-
-  - id: DT_CRM
-    title: CRM
-    modules: [product_catalog, customer_management_portal]
-    notes: "Use ephemeral CRM credentials (Sprint 10.14)"
-
-  - id: DT_BILLING
-    title: Billing
-    modules:
-      - gl_handling
-      - reporting
-      - invoice_handling
-      - autopay
-      - offline_billing
-      - supreme_class_movement
-
-  - id: DT_MATRIXX
-    title: Matrixx
-    aliases: [MTX]
-    modules: [realtime_rating, charging, ran_policy, usage_configuration]
-
-  - id: DT_PROVISIONING
-    title: Provisioning
-    modules: [core_mobile_network, notification_gateway]
-
-  - id: DT_ECOUPON
-    title: e-Coupon
-    modules: [coupon, voucher]
-
-  - id: DT_MIS
-    title: MIS
-    modules: [operational_reporting]
+extensions:
+  migration:
+    capability_key: 5GBB_MIGRATION
+    anchor_file: "現有5G寬頻月費計劃Migration安排新舊系統至CRM User Guide.pdf"
+    guide_updated: "2026-06-29"
+    rollout_from: "2025-11-20"
+    phase_1:
+      plan_codes: [5Z1, 5Z2, 5Z3]
+      excludes: [secondary_msisdn, addon_sim]
+    crm_billing_acct_prefix: "0000"
+    router_mms_notification_from: "2026-06-30"
 
 product_features:
   - id: 5GBB_PLANS
     title: "5G 寬頻月費計劃"
-    dt_components: [DT_WEBAPP, DT_CRM, DT_MATRIXX, DT_BILLING]
-    reference: [REF_MCS_PLANS]
+    platform_components: [DT_WEBAPP, DT_CRM, DT_MATRIXX, DT_BILLING]
+    reference_layers: [REF_MCS_PLANS]
 
   - id: 5GBB_MIGRATION
     title: "MCS to CRM migration (DT expectations)"
-    dt_components: [DT_CRM, DT_WEBAPP, DT_ECOUPON, DT_PROVISIONING]
-    reference: [REF_MCS_PLANS, DT_MIGRATION]
+    platform_components: [DT_CRM, DT_WEBAPP, DT_ECOUPON, DT_PROVISIONING]
+    reference_layers: [REF_MCS_PLANS]
 
   - id: 5GBB_VAS
     title: "5G 寬頻增值服務 (VAS)"
-    dt_components: [DT_CRM, DT_MATRIXX, DT_BILLING]
+    platform_components: [DT_CRM, DT_MATRIXX, DT_BILLING]
     source_files:
       - "推出「5G寬頻任用數據包」服務(VAS Contract)(DT Version).pdf"
 
   - id: 5GBB_ROUTER
     title: "5G 寬頻 Router 租借 / 續約"
-    dt_components: [DT_CRM, DT_BILLING, DT_ECOUPON, DT_WEBAPP, DT_PROVISIONING]
+    platform_components: [DT_CRM, DT_BILLING, DT_ECOUPON, DT_WEBAPP, DT_PROVISIONING]
     source_files:
       - "推出3香港5G寬頻Router租借優惠.pdf"
 
   - id: 5GBB_COOLING_OFF
     title: "7日冷靜期 (CRM)"
-    dt_components: [DT_CRM, DT_BILLING]
+    platform_components: [DT_CRM, DT_BILLING]
     source_files:
       - "5G寬頻7日冷靜期內申請取消合約流程跟進(CRM).pdf"
 
   - id: 5GBB_SELF_SERVICE
     title: "客戶自助服務 (My3 / 3SUPREME)"
-    dt_components: [DT_WEBAPP]
+    platform_components: [DT_WEBAPP]
     source_files:
       - "5G 寬頻之自助服務密碼-SUPREME App and My3 App.pdf"
       - "5G寬頻客戶於My3 App綁定 - 領取易賞錢帳戶.pdf"
 
   - id: 5GBB_PROMO
     title: "推廣活動 (大埔)"
-    dt_components: [DT_WEBAPP, DT_CRM]
+    platform_components: [DT_WEBAPP, DT_CRM]
     source_files:
       - "為大埔受影響居民提供3個月免費5G寬頻服務.pdf"
 
   - id: 5GBB_FMC
     title: "家居寬頻 FMC"
-    dt_components: [DT_WEBAPP, DT_CRM]
+    platform_components: [DT_WEBAPP, DT_CRM]
     source_files:
       - "3香港推出 - 家居寬頻服務計劃.pdf"
 
   - id: 5GBB_SIGNUP
     title: "5G 寬頻上台 (DT)"
-    dt_components: [DT_WEBAPP, DT_CRM, DT_PROVISIONING]
+    platform_components: [DT_WEBAPP, DT_CRM, DT_PROVISIONING]
     source_files:
       - "更新後台支援3網站5G寬頻服務上台處理.pdf"
 
@@ -132,71 +98,72 @@ hub_gaps:
     section: device_guides
     status: gap
   - title: "Plan detail sub-pages (詳情按此)"
-    section: mcs_bau_plans
+    section: reference_plans
     status: gap
   - title: "Matrixx operator console UAT URL"
-    dt_component: DT_MATRIXX
+    platform_component: DT_MATRIXX
     status: url_tbd
   - title: "Billing operator console UAT URL"
-    dt_component: DT_BILLING
+    platform_component: DT_BILLING
     status: url_tbd
 
-# Journey seeds — merged into journey registry at PG-5G-3 (URLs TBD where noted)
 journey_templates:
   - slug: 5gbb-webapp-plan-browse
     name: "5G BB — WebApp plan browse"
     capability_keys: [5GBB_PLANS]
     extra_config:
-      dt_components: [DT_WEBAPP]
+      program_slug: 5g-mobile-broadband
+      platform_components: [DT_WEBAPP]
       test_kind: ui
-      customer_state: new_sale
-    tags: [5g-broadband, dt-webapp, regression]
+    tags: [5g-mobile-broadband, dt-webapp, regression]
     feature_url_tbd: true
 
   - slug: 5gbb-crm-subscription-maintenance
     name: "5G BB — CRM subscription maintenance (migrated)"
     capability_keys: [5GBB_PLANS, 5GBB_MIGRATION]
     extra_config:
-      dt_components: [DT_CRM]
+      program_slug: 5g-mobile-broadband
+      platform_components: [DT_CRM]
       test_kind: ui
-      customer_state: migrated
       requires_runtime_credentials: true
-    tags: [5g-broadband, dt-crm, regression]
+    tags: [5g-mobile-broadband, dt-crm, regression]
     feature_url_tbd: true
 
   - slug: 5gbb-crm-cooling-off
     name: "5G BB — CRM 7-day cooling-off"
     capability_keys: [5GBB_COOLING_OFF]
     extra_config:
-      dt_components: [DT_CRM, DT_BILLING]
+      program_slug: 5g-mobile-broadband
+      platform_components: [DT_CRM, DT_BILLING]
       test_kind: ui
       requires_runtime_credentials: true
-    tags: [5g-broadband, dt-crm]
+    tags: [5g-mobile-broadband, dt-crm]
     feature_url_tbd: true
 
   - slug: 5gbb-webapp-my3-wallet-router
     name: "5G BB — My3 My Wallet router coupon"
     capability_keys: [5GBB_ROUTER, 5GBB_MIGRATION]
     extra_config:
-      dt_components: [DT_WEBAPP, DT_ECOUPON]
+      program_slug: 5g-mobile-broadband
+      platform_components: [DT_WEBAPP, DT_ECOUPON]
       test_kind: ui
-      customer_state: renewal
-    tags: [5g-broadband, dt-webapp, dt-ecoupon]
+    tags: [5g-mobile-broadband, dt-webapp, dt-ecoupon]
     feature_url_tbd: true
 
   - slug: 5gbb-vas-matrixx-rating
     name: "5G BB VAS — Matrixx rating after subscribe"
     capability_keys: [5GBB_VAS]
     extra_config:
-      dt_components: [DT_MATRIXX, DT_BILLING]
+      program_slug: 5g-mobile-broadband
+      platform_components: [DT_MATRIXX, DT_BILLING]
       test_kind: api
-    tags: [5g-broadband, dt-matrixx]
+    tags: [5g-mobile-broadband, dt-matrixx]
     feature_url_tbd: true
 
 factory:
-  program_tags: [5g-broadband, pg-5g]
+  program_tags: [5g-mobile-broadband]
   exclude_capability_keys: [REF_MCS_PLANS]
   planner_rules:
-    - "Test DT platform only; never automate MCS/BAU"
-    - "Use REF_MCS_PLANS only for plan-code assertions in CRM/WebApp"
-    - "Prefer readiness check per capability before test-gen"
+    - "Respect program.test_scope (DT_ONLY for this example)"
+    - "Never automate reference_layers with automate: false"
+    - "Prefer readiness check per product_features id before test-gen"

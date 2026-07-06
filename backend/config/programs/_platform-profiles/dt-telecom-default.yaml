@@ -1,0 +1,51 @@
+# DT telecom — default platform profile
+# Included by program manifests via: platform_profile: dt-telecom-default
+# Not a program — do not load as a standalone manifest.
+
+profile: dt-telecom-default
+title: "DT telecom platform (default)"
+description: "Common Three HK DT systems under test. Programs may subset or extend."
+
+platform_components:
+  - id: DT_WEBAPP
+    title: WebApp
+    test_surfaces: [ui, api]
+    modules: [dtppd, my3, three_com]
+
+  - id: DT_CRM
+    title: CRM
+    test_surfaces: [ui]
+    modules: [product_catalog, customer_management_portal]
+    notes: "Ephemeral CRM credentials — Sprint 10.14"
+
+  - id: DT_BILLING
+    title: Billing
+    test_surfaces: [api, batch, ui]
+    modules:
+      - gl_handling
+      - reporting
+      - invoice_handling
+      - autopay
+      - offline_billing
+      - supreme_class_movement
+
+  - id: DT_MATRIXX
+    title: Matrixx
+    aliases: [MTX]
+    test_surfaces: [api, integration]
+    modules: [realtime_rating, charging, ran_policy, usage_configuration]
+
+  - id: DT_PROVISIONING
+    title: Provisioning
+    test_surfaces: [integration]
+    modules: [core_mobile_network, notification_gateway]
+
+  - id: DT_ECOUPON
+    title: e-Coupon
+    test_surfaces: [ui, api]
+    modules: [coupon, voucher]
+
+  - id: DT_MIS
+    title: MIS
+    test_surfaces: [batch, ui]
+    modules: [operational_reporting]

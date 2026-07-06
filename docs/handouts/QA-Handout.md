@@ -63,13 +63,13 @@ Example for Three-HK:
 
 Document the list in Confluence; apply in registry and test cases.
 
-## 5G 流動寬頻 program (PG-5G)
+## Product programs (PG)
 
-Pilot product program using **DT platform LEGO bricks** (WebApp, CRM, Billing, Matrixx, Provisioning, e-Coupon, MIS). **MCS/BAU plan tables are reference-only** — not automated.
+Programs are **YAML-defined** product initiatives (platform components × product features). ReqIQ stays a knowledge brick; structure lives in AWT.
 
-- Architecture & phases: [programs/5g-mobile-broadband/](../programs/5g-mobile-broadband/README.md)  
-- Tag journeys with `dt_components` and `capability_keys` when seeding registry  
-- CRM tests: enable **CRM login required** on test case (ephemeral password)
+- Framework: [programs/Program-Framework.md](../programs/Program-Framework.md)  
+- Tag journeys with `extra_config.program_slug` and `platform_components`  
+- Example pilot: [5g-mobile-broadband](../programs/examples/5g-mobile-broadband/README.md) (not the only valid shape)
 
 ## One sentence
 
