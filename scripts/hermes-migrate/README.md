@@ -9,11 +9,40 @@ Package Hermes profiles from a **dev Ubuntu mini PC** and deploy to **production
 
 | Script | Purpose | When to use |
 |--------|---------|-------------|
+| `pack-factory-bundle.sh` | **ZIP** with profiles + install script + smoke (no secrets) | Clone to another Ubuntu PC |
+| `install-ubuntu-factory.sh` | One-shot install from unpacked bundle | Target PC after `unzip` |
 | `pack-profiles.sh` | Tarball `~/.hermes/profiles` (no memories, no `.env`) | After dev smoke passes |
 | `deploy-profiles.sh` | Restore from tarball or git `docs/hermes-profiles/` | New prod (or DR) Ubuntu |
 | `smoke-check.sh` | MCP + Bridge + optional AWT event POST | After deploy |
 | `smoke-integration-3.1d.sh` | HF-3.1d orchestrator → planner → test-gen | After 3 profiles deployed |
 | `smoke-awt-prereq-3.1d.ps1` | AWT MCP + backlog prereq (Windows) | Before Ubuntu full smoke |
+
+## Clone to another Ubuntu PC (recommended)
+
+On the **source** PC (after smoke passes):
+
+```bash
+cd scripts/hermes-migrate
+chmod +x pack-factory-bundle.sh install-ubuntu-factory.sh
+./pack-factory-bundle.sh
+# Optional: pack live ~/.hermes/profiles instead of git templates:
+# ./pack-factory-bundle.sh --from-runtime
+
+scp dist/hermes-factory-bundle-*.zip user@other-pc:~/
+```
+
+On the **target** PC:
+
+```bash
+unzip hermes-factory-bundle-*.zip
+cd hermes-factory-bundle-*
+./install-ubuntu-factory.sh
+nano ~/.hermes/.env          # AWT IP, secrets, LLM keys (per host)
+source ~/.hermes/env.sh
+./scripts/smoke-check.sh --env dev
+```
+
+Install Hermes CLI on the target first — see [UBUNTU_DEV_SETUP.md](../../docs/hermes-profiles/UBUNTU_DEV_SETUP.md) Part 2.
 
 ## Quick start (dev)
 
