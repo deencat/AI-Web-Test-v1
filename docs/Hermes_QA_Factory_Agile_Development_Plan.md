@@ -983,6 +983,7 @@ Adjust dates to your team start; maintain 2-week cadence.
 | [ReqIQ-API-Integration-Guide.md](ReqIQ-API-Integration-Guide.md) | MCP / proxy behaviour |
 | [AI-Web-Test-Developer-Handoff.md](AI-Web-Test-Developer-Handoff.md) | ReqIQ proxy, platform context |
 | `Phase3-project-documents/Phase3-Project-Management-Plan-Complete.md` | Platform sprints (Sprint 10.x) — separate from HF program |
+| [programs/5g-mobile-broadband/](programs/5g-mobile-broadband/README.md) | **PG-5G** — 5G 流動寬頻 DT platform program (Reference Hub + ReqIQ LEGO) |
 
 ---
 
