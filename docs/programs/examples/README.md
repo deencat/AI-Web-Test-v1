@@ -5,6 +5,7 @@ Illustrations of the [Program Framework](../Program-Framework.md). **Copy and ad
 | Example | Slug | Notes |
 |---------|------|-------|
 | [5g-mobile-broadband](5g-mobile-broadband/README.md) | `5g-mobile-broadband` | DT telecom; profile `dt-telecom-default`; MCS reference layer |
+| `postpaid-browse` | `postpaid-browse` | Minimal WebApp-only; stack + `audience` example |
 
 ## Adding an example
 
