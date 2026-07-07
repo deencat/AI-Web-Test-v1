@@ -19,6 +19,8 @@ import { BacklogQueuePage } from './pages/BacklogQueuePage';
 import { HealReviewPage } from './pages/HealReviewPage';
 import { StepLibraryPage } from './pages/StepLibraryPage';
 import { CrawlAndSavePage } from './pages/CrawlAndSavePage';
+import { ProductsListPage } from './pages/ProductsListPage';
+import { ProductWorkspacePage } from './pages/ProductWorkspacePage';
 import { ProgramsListPage } from './pages/ProgramsListPage';
 import { ProgramHubPage } from './pages/ProgramHubPage';
 import { InitiativeDetailPage } from './pages/InitiativeDetailPage';
@@ -33,6 +35,23 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" replace />;
   }
   
+  return <>{children}</>;
+}
+
+// Admin-only route guard (UF-5)
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const role = (() => {
+    try {
+      const raw = localStorage.getItem('user');
+      if (!raw) return 'user';
+      return ((JSON.parse(raw) as { role?: string }).role || 'user').toLowerCase();
+    } catch {
+      return 'user';
+    }
+  })();
+  if (role !== 'admin' && role !== 'superadmin') {
+    return <Navigate to="/products" replace />;
+  }
   return <>{children}</>;
 }
 
@@ -166,7 +185,9 @@ function App() {
           path="/journey-registry"
           element={
             <ProtectedRoute>
-              <JourneyRegistryPage />
+              <AdminRoute>
+                <JourneyRegistryPage />
+              </AdminRoute>
             </ProtectedRoute>
           }
         />
@@ -174,7 +195,9 @@ function App() {
           path="/backlog"
           element={
             <ProtectedRoute>
-              <BacklogQueuePage />
+              <AdminRoute>
+                <BacklogQueuePage />
+              </AdminRoute>
             </ProtectedRoute>
           }
         />
@@ -195,10 +218,28 @@ function App() {
           }
         />
         <Route
+          path="/products"
+          element={
+            <ProtectedRoute>
+              <ProductsListPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/products/:productId"
+          element={
+            <ProtectedRoute>
+              <ProductWorkspacePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/programs"
           element={
             <ProtectedRoute>
-              <ProgramsListPage />
+              <AdminRoute>
+                <ProgramsListPage />
+              </AdminRoute>
             </ProtectedRoute>
           }
         />
@@ -206,7 +247,9 @@ function App() {
           path="/programs/:slug"
           element={
             <ProtectedRoute>
-              <ProgramHubPage />
+              <AdminRoute>
+                <ProgramHubPage />
+              </AdminRoute>
             </ProtectedRoute>
           }
         />
@@ -214,7 +257,9 @@ function App() {
           path="/programs/:slug/initiatives/:initiativeId"
           element={
             <ProtectedRoute>
-              <InitiativeDetailPage />
+              <AdminRoute>
+                <InitiativeDetailPage />
+              </AdminRoute>
             </ProtectedRoute>
           }
         />
@@ -222,7 +267,9 @@ function App() {
           path="/programs/:slug/edit"
           element={
             <ProtectedRoute>
-              <ProgramManifestEditorPage />
+              <AdminRoute>
+                <ProgramManifestEditorPage />
+              </AdminRoute>
             </ProtectedRoute>
           }
         />

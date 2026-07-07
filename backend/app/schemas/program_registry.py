@@ -89,6 +89,27 @@ class ProgramSeedJourneysResponse(BaseModel):
     slug: str
     journeys_upserted: int
     journeys_retired: int
+    tests_retired: int = 0
+
+
+class ProgramCreateRequest(BaseModel):
+    slug: str = Field(..., min_length=2, max_length=64, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    title: str = Field(..., min_length=1, max_length=200)
+    kind: Literal["pilot", "production", "example"] = "pilot"
+    test_scope: str = "DT_ONLY"
+    platform_profile: Optional[str] = "dt-telecom-default"
+    registry_project: str = "Three-HK"
+    initiative_title: Optional[str] = None
+
+
+class ProgramCreateResponse(BaseModel):
+    slug: str
+    message: str
+
+
+class PlatformProfileSummary(BaseModel):
+    name: str
+    title: Optional[str] = None
 
 
 class ReqIQOnboardingItem(BaseModel):

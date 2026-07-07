@@ -184,6 +184,102 @@ def load_program_manifest_raw(slug: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def list_platform_profile_names() -> list[str]:
+    if not _PROFILES_DIR.is_dir():
+        return []
+    names: list[str] = []
+    for path in sorted(_PROFILES_DIR.glob("*.yaml")):
+        names.append(path.stem)
+    return names
+
+
+def build_new_program_manifest(
+    *,
+    slug: str,
+    title: str,
+    kind: str = "pilot",
+    test_scope: str = "DT_ONLY",
+    platform_profile: Optional[str] = "dt-telecom-default",
+    registry_project: str = "Three-HK",
+    initiative_title: Optional[str] = None,
+) -> str:
+    """Render a starter YAML manifest for a new program."""
+    today = date.today().isoformat()
+    init_id = f"{slug}-base-{today.replace('-', '')}"
+    init_title = initiative_title or f"{title} — base"
+    lines = [
+        f"# Program manifest — {title}",
+        "program:",
+        f"  slug: {slug}",
+        f'  title: "{title}"',
+        f"  kind: {kind}",
+        f"  test_scope: {test_scope}",
+        f"  registry_project: {registry_project}",
+        "",
+    ]
+    if platform_profile:
+        if platform_profile not in list_platform_profile_names():
+            raise ProgramManifestError(f"Unknown platform profile: {platform_profile}")
+        lines.extend([f"platform_profile: {platform_profile}", ""])
+    else:
+        lines.extend(
+            [
+                "platform_components:",
+                "  - id: DT_WEBAPP",
+                "    title: WebApp",
+                "    test_surfaces: [ui]",
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            "initiatives:",
+            f"  - id: {init_id}",
+            "    kind: base_offer",
+            f'    title: "{init_title}"',
+            f'    effective_from: "{today}"',
+            "    effective_to: null",
+            "    audience: all",
+            "    capability_keys: []",
+            "    platform_components: [DT_WEBAPP]",
+            f"    regression_tags: [{slug}, initiative:{init_id}]",
+            "",
+            "journey_templates: []",
+            "",
+            "factory:",
+            f"  program_tags: [{slug}]",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def create_program_manifest(
+    *,
+    slug: str,
+    title: str,
+    kind: str = "pilot",
+    test_scope: str = "DT_ONLY",
+    platform_profile: Optional[str] = "dt-telecom-default",
+    registry_project: str = "Three-HK",
+    initiative_title: Optional[str] = None,
+) -> dict[str, Any]:
+    """Create a new validated program manifest file."""
+    if slug in list_program_slugs():
+        raise ProgramManifestError(f"Program already exists: {slug}")
+    yaml_content = build_new_program_manifest(
+        slug=slug,
+        title=title,
+        kind=kind,
+        test_scope=test_scope,
+        platform_profile=platform_profile,
+        registry_project=registry_project,
+        initiative_title=initiative_title,
+    )
+    return save_program_manifest_yaml(slug, yaml_content)
+
+
 def save_program_manifest_yaml(slug: str, yaml_content: str) -> dict[str, Any]:
     data = yaml.safe_load(yaml_content) or {}
     validate_manifest(data, slug=slug)

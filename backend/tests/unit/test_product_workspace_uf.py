@@ -1,0 +1,83 @@
+"""Unit tests for Product workspace (UF-1 … UF-6)."""
+import pytest
+
+from app.services.document_ingest import infer_source_type, validate_filename
+from app.services.product_workspace_service import get_product, list_products
+from app.services.program_sync_agent import build_initiatives_from_wiki
+from app.services.wiki_compile_profile import get_compile_feature, list_wiki_profiles
+
+
+def test_list_products_includes_5g_pilot():
+    items = list_products()
+    ids = [p["id"] for p in items]
+    assert "5g-mobile-broadband" in ids
+
+
+def test_get_5g_product_has_reqiq_project():
+    p = get_product("5g-mobile-broadband")
+    assert p["reqiq_project_id"]
+    assert p["program_slug"] == "5g-mobile-broadband"
+
+
+def test_validate_pptx_allowed():
+    validate_filename("june-promo.pptx")
+
+
+def test_validate_exe_rejected():
+    with pytest.raises(ValueError, match="not supported"):
+        validate_filename("virus.exe")
+
+
+def test_infer_source_type_marketing():
+    assert infer_source_type("deck.pptx") == "marketing_deck"
+    assert infer_source_type("screen.png") == "ux_ui"
+
+
+def test_wiki_telecom_profile_loads():
+    assert "telecom-promo" in list_wiki_profiles()
+    feature = get_compile_feature("telecom-promo")
+    assert "Active promotions" in feature
+
+
+SAMPLE_WIKI = """
+## Base offer
+ABC 5G plan from SSCO URS.
+
+## Active promotions
+### June 2026 marketing
+Effective dates: 2026-06-01 to 2026-06-30
+Relationship: overlays base
+Audience: new_signups
+
+## Ended promotions
+- May flash sale (ended 2026-05-31)
+
+## UX and UI (SMCD)
+Checkout banner layout.
+
+## Notifications
+SMS welcome template EN and 繁中.
+"""
+
+
+def test_build_initiatives_from_wiki_parses_june_promo():
+    inits = build_initiatives_from_wiki(
+        SAMPLE_WIKI,
+        program_slug="5g-mobile-broadband",
+        today=__import__("datetime").date(2026, 6, 15),
+    )
+    assert any(i["kind"] == "base_offer" for i in inits)
+    june = next(i for i in inits if "june" in i["title"].lower())
+    assert june["effective_from"] == "2026-06-01"
+    assert june["effective_to"] == "2026-06-30"
+    assert june["audience"] == "new_signups"
+    assert june["relationship"] == "stack"
+
+
+def test_build_initiatives_skips_ended_june_after_july():
+    inits = build_initiatives_from_wiki(
+        SAMPLE_WIKI,
+        program_slug="5g-mobile-broadband",
+        today=__import__("datetime").date(2026, 7, 2),
+    )
+    assert not any("june" in i["title"].lower() for i in inits if i["kind"] == "promotion")

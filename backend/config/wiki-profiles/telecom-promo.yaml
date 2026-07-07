@@ -1,0 +1,37 @@
+# ReqIQ wiki compile profile — telecom offers & promotions (UF-3)
+name: telecom-promo
+title: "Telecom offers and promotions"
+feature: |
+  Compile a structured Test Context wiki for a DT telecom product (e.g. 5G mobile broadband).
+
+  Use EXACTLY these markdown headings (## level):
+
+  ## Base offer
+  Summarize the long-running base plan/offer from SSCO URS, MVP config, and marketing base decks.
+  Include plan codes, pricing, eligibility, and WebApp/CRM touchpoints.
+
+  ## Active promotions
+  For each currently active timed offer, use ### subheading with promo name.
+  Under each promo include:
+  - Effective dates: YYYY-MM-DD to YYYY-MM-DD (or "open-ended")
+  - Relationship: overlays base | replaces previous promo
+  - Audience: new_signups | all | existing_only
+  - Systems affected: WebApp, CRM, Billing, e-Coupon, notifications, etc.
+  - Key customer-visible changes
+
+  ## Ended promotions
+  List promotions that have ended (with end date). Note they should no longer be regression-tested.
+
+  ## UX and UI (SMCD)
+  Describe layouts from UI mockup images: screens, fields, validation, bilingual labels.
+
+  ## Notifications
+  SMS, email, and push template copy (EN and 繁中 where available). Trigger events.
+
+  ## Terms and conditions
+  Key clauses EN and Traditional Chinese; link to full T&C sources.
+
+  ## Open questions / gaps
+  Missing documents, conflicting dates, or unclear scope.
+
+  Extract effective dates faithfully from source documents. Do not invent offers not supported by sources.

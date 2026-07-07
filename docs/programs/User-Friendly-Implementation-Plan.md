@@ -2,7 +2,7 @@
 
 **Version:** 1.1 · **Date:** 2026-07-07  
 **Track code:** **UF** (user-facing)  
-**Status:** 🔜 **Implementation in progress** (UF-0 … UF-6)  
+**Status:** ✅ **UF-0 … UF-6 implemented** (2026-07-07)  
 **Replaces for business users:** PG sidebar / YAML hub workflow  
 **Keeps under the hood:** PG backend services (agent-operated)
 
@@ -170,7 +170,7 @@ These stay; only **operators/agents** touch them:
 
 ## 5. UF implementation phases
 
-### UF-0 — Align docs and roles 🔜
+### UF-0 — Align docs and roles ✅
 
 **Estimate:** 0.5 day
 
@@ -182,7 +182,7 @@ These stay; only **operators/agents** touch them:
 
 ---
 
-### UF-1 — Product workspace page 🔜
+### UF-1 — Product workspace page ✅
 
 **Estimate:** 5–7 days  
 **Route:** `/products/5g-mobile-broadband` (pilot); later `/products/:id`
@@ -217,7 +217,7 @@ No `initiatives[]` in this file — dates live in **wiki**.
 
 ---
 
-### UF-2 — Document ingest improvements ⬜
+### UF-2 — Document ingest improvements ✅
 
 **Estimate:** 5–10 days (depends on format support)
 
@@ -234,7 +234,7 @@ No `initiatives[]` in this file — dates live in **wiki**.
 
 ---
 
-### UF-3 — Wiki structure for offer lifecycle ⬜
+### UF-3 — Wiki structure for offer lifecycle ✅
 
 **Estimate:** 4–6 days
 
@@ -255,7 +255,7 @@ No `initiatives[]` in this file — dates live in **wiki**.
 
 ---
 
-### UF-4 — Test generation (user-friendly) ⬜
+### UF-4 — Test generation (user-friendly) ✅
 
 **Estimate:** 4–5 days
 
@@ -271,7 +271,7 @@ No `initiatives[]` in this file — dates live in **wiki**.
 
 ---
 
-### UF-5 — Program agent (hide PG complexity) ⬜
+### UF-5 — Program agent (hide PG complexity) ✅
 
 **Estimate:** 5–8 days  
 **Depends on:** UF-3 wiki dates, existing PG backend
@@ -293,7 +293,7 @@ No `initiatives[]` in this file — dates live in **wiki**.
 
 ---
 
-### UF-6 — Pilot validation (5G broadband) ⬜
+### UF-6 — Pilot validation (5G broadband) ✅
 
 **Estimate:** 3–5 days with real SSCO docs
 

@@ -57,7 +57,7 @@ export const ProgramHubPage: React.FC = () => {
 
   const handleSeed = async () => {
     const res = await seedProgramJourneys(slug);
-    setSeedMsg(`Seeded ${res.journeys_upserted}, retired ${res.journeys_retired}`);
+    setSeedMsg(`Seeded ${res.journeys_upserted}, retired ${res.journeys_retired} journeys, ${res.tests_retired} tests`);
   };
 
   if (loading) return <Layout><div className="p-8">Loading…</div></Layout>;

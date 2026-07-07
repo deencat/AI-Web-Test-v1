@@ -1,5 +1,20 @@
 import api from './api';
 
+export interface PlatformProfileSummary {
+  name: string;
+  title?: string | null;
+}
+
+export interface ProgramCreateRequest {
+  slug: string;
+  title: string;
+  kind?: 'pilot' | 'production' | 'example';
+  test_scope?: string;
+  platform_profile?: string | null;
+  registry_project?: string;
+  initiative_title?: string;
+}
+
 export interface InitiativeSummary {
   id: string;
   kind: string;
@@ -54,6 +69,16 @@ export interface InitiativeDetailResponse {
   }>;
 }
 
+export async function listPlatformProfiles(): Promise<{ items: PlatformProfileSummary[] }> {
+  const { data } = await api.get('/programs/platform-profiles');
+  return data;
+}
+
+export async function createProgram(body: ProgramCreateRequest): Promise<{ slug: string; message: string }> {
+  const { data } = await api.post('/programs', body);
+  return data;
+}
+
 export async function listPrograms(): Promise<{ items: ProgramSummary[]; total: number }> {
   const { data } = await api.get('/programs');
   return data;
@@ -81,7 +106,7 @@ export async function saveProgramManifest(slug: string, yamlContent: string): Pr
 
 export async function seedProgramJourneys(
   slug: string,
-): Promise<{ slug: string; journeys_upserted: number; journeys_retired: number }> {
+): Promise<{ slug: string; journeys_upserted: number; journeys_retired: number; tests_retired: number }> {
   const { data } = await api.post(`/programs/${slug}/seed-journeys`);
   return data;
 }

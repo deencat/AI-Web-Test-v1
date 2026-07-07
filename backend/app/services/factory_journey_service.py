@@ -241,6 +241,22 @@ def generate_journey_for_entry(
             JourneyRegistryEntryUpdate(reference_test_id=test_case_id),
         )
 
+    extra_cfg = entry.extra_config or {}
+    meta_patch: dict[str, Any] = {}
+    if extra_cfg.get("program_slug"):
+        meta_patch["program_slug"] = extra_cfg["program_slug"]
+    if extra_cfg.get("initiative_id"):
+        meta_patch["initiative_id"] = extra_cfg["initiative_id"]
+    if meta_patch:
+        from app.crud.test_case import get_test_case, update_test_case
+        from app.schemas.test_case import TestCaseUpdate
+
+        tc = get_test_case(db, test_case_id)
+        if tc:
+            meta = dict(tc.test_metadata) if isinstance(tc.test_metadata, dict) else {}
+            meta.update(meta_patch)
+            update_test_case(db, test_case_id, TestCaseUpdate(test_metadata=meta))
+
     return test_case_id
 
 

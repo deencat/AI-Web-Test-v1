@@ -1,0 +1,14 @@
+# Business-facing product workspaces (UF track)
+# Maps friendly product id → ReqIQ project + optional program slug for agent sync
+
+products:
+  - id: 5g-mobile-broadband
+    title: "5G Mobile Broadband"
+    title_zh: "5G 流動寬頻"
+    locale: zh-HK
+    reqiq_project_id: cmp0zdx4g0004alp8z77ess7a
+    program_slug: 5g-mobile-broadband
+    wiki_profile: telecom-promo
+    default_urls:
+      webapp: "https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/"
+    pilot: true

@@ -1017,13 +1017,13 @@ Adjust dates to your team start; maintain 2-week cadence.
 
 | Phase | Status | Deliverable |
 |-------|--------|-------------|
-| **UF-0** | 🔜 | Roles; PG UI hidden from business users |
-| **UF-1** | 🔜 | `/products` workspace — upload, compile wiki, status |
-| **UF-2** | 🔜 | PPTX, images, MVP configs, notification templates |
-| **UF-3** | 🔜 | Telecom wiki compile profile; active/ended promotions |
-| **UF-4** | 🔜 | Generate tests from wiki (one-click) |
-| **UF-5** | 🔜 | Program sync agent (wiki → manifest → seed/retire) |
-| **UF-6** | 🔜 | 5G pilot validation + tests |
+| **UF-0** | ✅ | Roles; PG UI admin-only |
+| **UF-1** | ✅ | `/products` workspace — upload, compile wiki, status |
+| **UF-2** | ✅ | PPTX, images, configs — `document_ingest` + accept list |
+| **UF-3** | ✅ | `wiki-profiles/telecom-promo.yaml` compile profile |
+| **UF-4** | ✅ | Generate tests + run overnight from workspace |
+| **UF-5** | ✅ | `program_sync_agent` + hide Programs/Journey Registry |
+| **UF-6** | ✅ | Pilot checklist + unit tests |
 
 **PG track (programs YAML)** remains **agent-operated** — see [programs/Implementation-Plan.md](programs/Implementation-Plan.md).
 

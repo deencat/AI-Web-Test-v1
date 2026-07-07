@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.crud import journey_factory as crud
 from app.schemas.journey_factory import JourneyRegistryEntryCreate, JourneyRegistryEntryUpdate
+from app.services.program_test_retire import retire_test_cases_for_initiative
 from app.services.program_registry_service import (
     ProgramManifestError,
     list_program_slugs,
@@ -33,9 +34,10 @@ def retire_journeys_for_initiative(
     initiative_id: str,
     retired_by_initiative_id: str,
     project: Optional[str] = None,
-) -> int:
-    """Mark registry journeys for a superseded initiative as retired."""
+) -> tuple[int, int]:
+    """Mark registry journeys for a superseded initiative as retired. Returns (journeys, tests)."""
     count = 0
+    reference_test_ids: set[int] = set()
     entries = crud.list_registry_entries(db, project=project, limit=500)
     now = datetime.now(timezone.utc).isoformat()
     for entry in entries:
@@ -46,6 +48,8 @@ def retire_journeys_for_initiative(
             continue
         if extra.get("retired"):
             continue
+        if entry.reference_test_id:
+            reference_test_ids.add(entry.reference_test_id)
         extra["retired"] = True
         extra["retired_at"] = now
         extra["retired_by_initiative_id"] = retired_by_initiative_id
@@ -59,31 +63,42 @@ def retire_journeys_for_initiative(
             JourneyRegistryEntryUpdate(tags=tags, extra_config=extra),
         )
         count += 1
-    return count
+
+    tests_retired = retire_test_cases_for_initiative(
+        db,
+        program_slug=program_slug,
+        initiative_id=initiative_id,
+        retired_by_initiative_id=retired_by_initiative_id,
+        reference_test_ids=reference_test_ids,
+    )
+    return count, tests_retired
 
 
-def apply_replace_retirements(db: Session, manifest: dict[str, Any]) -> int:
+def apply_replace_retirements(db: Session, manifest: dict[str, Any]) -> tuple[int, int]:
     program_slug = (manifest.get("program") or {}).get("slug")
     if not program_slug:
-        return 0
+        return 0, 0
     project = _registry_project_for_manifest(manifest)
-    total = 0
+    journeys_total = 0
+    tests_total = 0
     for init in manifest.get("initiatives") or []:
         if init.get("relationship") != "replace":
             continue
         for old_id in init.get("relates_to") or []:
-            total += retire_journeys_for_initiative(
+            j, t = retire_journeys_for_initiative(
                 db,
                 program_slug=program_slug,
                 initiative_id=old_id,
                 retired_by_initiative_id=init["id"],
                 project=project,
             )
-    return total
+            journeys_total += j
+            tests_total += t
+    return journeys_total, tests_total
 
 
-def seed_journeys_from_manifest(db: Session, slug: str) -> tuple[int, int]:
-    """Upsert journey_templates from a program manifest. Returns (upserted, retired)."""
+def seed_journeys_from_manifest(db: Session, slug: str) -> tuple[int, int, int]:
+    """Upsert journey_templates from a program manifest. Returns (upserted, journeys_retired, tests_retired)."""
     manifest = load_program_manifest(slug)
     program = manifest.get("program") or {}
     project = _registry_project_for_manifest(manifest)
@@ -96,7 +111,7 @@ def seed_journeys_from_manifest(db: Session, slug: str) -> tuple[int, int]:
             default_env_config=program.get("default_env_config"),
         )
 
-    retired = apply_replace_retirements(db, manifest)
+    journeys_retired, tests_retired = apply_replace_retirements(db, manifest)
 
     count = 0
     for tmpl in manifest.get("journey_templates") or []:
@@ -135,15 +150,19 @@ def seed_journeys_from_manifest(db: Session, slug: str) -> tuple[int, int]:
         else:
             crud.create_registry_entry(db, payload)
         count += 1
-    return count, retired
+    return count, journeys_retired, tests_retired
 
 
 def seed_all_program_journeys(db: Session) -> dict[str, dict[str, int]]:
     results: dict[str, dict[str, int]] = {}
     for slug in list_program_slugs():
         try:
-            upserted, retired = seed_journeys_from_manifest(db, slug)
-            results[slug] = {"journeys_upserted": upserted, "journeys_retired": retired}
+            upserted, journeys_retired, tests_retired = seed_journeys_from_manifest(db, slug)
+            results[slug] = {
+                "journeys_upserted": upserted,
+                "journeys_retired": journeys_retired,
+                "tests_retired": tests_retired,
+            }
         except ProgramManifestError as exc:
             results[slug] = {"error": str(exc)}
     return results
