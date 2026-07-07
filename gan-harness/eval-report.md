@@ -1,10 +1,10 @@
-# Evaluation Report — Stop Execution: Cooperative Cancel (Iteration 001)
+# Evaluation Report — Stop Execution: Cooperative Cancel (Iteration 002)
 
-**Date:** 2026-07-03  
-**Iteration:** 001  
+**Date:** 2026-07-07  
+**Iteration:** 002  
 **Feature:** Cooperative cancel for saved test 3-tier execution  
 **Evaluator:** gan-evaluator  
-**App URL:** http://localhost:5173  
+**App URL:** http://localhost:5173 (Playwright webServer during E2E)  
 **Backend:** http://127.0.0.1:8000  
 **Spec:** `gan-harness/spec.md`  
 **Rubric:** `gan-harness/eval-rubric.md` (pass threshold ≥ 0.85)
@@ -13,13 +13,11 @@
 
 ## Executive Summary
 
-Stop Execution (Sprints 1–4) is **implemented and verified end-to-end**. The cooperative cancel API, in-memory store, execution hooks, queue guard, `StopExecutionButton`, and `ExecutionProgressPage` wiring all behave as specified. Backend unit tests (13/13) and frontend component tests (16/16) pass. A new Playwright suite **`tests/e2e/11-stop-execution-cancel.spec.ts`** maps all 11 rubric evaluator-script steps to named tests — **11/11 passed** (serial, `--workers=1`).
+Stop Execution remains **fully implemented and verified end-to-end**. Iteration 002 re-ran the complete evaluator suite: backend health check, cancel unit tests (13/13), frontend component tests (16/16), Playwright E2E with **11/11 rubric script coverage**, and the R3 frontend build check.
 
 **Weighted score: 0.97 / 1.00 — PASS**
 
-One rubric criterion fails: **R3** (`npm run build` in frontend) due to pre-existing TypeScript errors in unrelated `agentWorkflow.types.test.ts` (not introduced by this feature). All automatic-fail conditions are clear.
-
-**Prerequisite for live execution E2E:** Backend worker requires `playwright install chromium` in `backend/venv` (documented as remaining risk).
+All automatic-fail conditions are clear. The only rubric failure is **R3** (`npm run build` in frontend) due to widespread pre-existing TypeScript errors across the frontend (not introduced by Stop Execution). An extra tier1 regression run (`test_tier1_click_waits.py`) reported **1 failure** — outside the Stop Execution rubric but noted as a remaining risk.
 
 ---
 
@@ -98,7 +96,7 @@ score = Σ (criterion_weight × pass?1:0)
 |----|-----------|--------|--------|----------|
 | R1 | Normal execution complete | 0.04 | ✅ PASS | E2E step 8 — terminal badge with pass/fail |
 | R2 | Delete execution distinct | 0.03 | ✅ PASS | E2E steps 9–10; `test_delete_execution_still_works` |
-| R3 | Build clean | 0.03 | ❌ FAIL | `npm run build` fails on unrelated `agentWorkflow.types.test.ts` TS errors |
+| R3 | Build clean | 0.03 | ❌ FAIL | `npm run build` exits code 2 — 100+ TS errors across frontend |
 
 ---
 
@@ -106,13 +104,37 @@ score = Σ (criterion_weight × pass?1:0)
 
 | ID | Issue | Fix |
 |----|-------|-----|
-| **R3** | `npm run build` exits code 2 — TypeScript errors in `src/types/__tests__/agentWorkflow.types.test.ts` (stale types vs `AgentProgress`, `GenerateTestsRequest`, etc.) | Exclude test files from production `tsc` build, or update agent-workflow type tests to match current types |
+| **R3** | `npm run build` fails — TypeScript errors in `agentWorkflow.types.test.ts`, `knowledgeBase.ts`, `SettingsPage-Old.tsx`, `AgentWorkflowPage.tsx`, and others (unrelated to Stop Execution) | Exclude `**/__tests__/**` and dead files (`SettingsPage-Old.tsx`, `mock/knowledgeBase.ts`) from production `tsc`, or fix stale types across agent-workflow and mock modules |
+
+---
+
+## What Improved Since Iteration 001
+
+- E2E suite re-verified at **11/11** with stable ~15s runtime
+- Backend cancel unit tests remain **13/13** (includes new `test_execute_test_cancel_mid_step`)
+- Backend health endpoint confirmed (`GET /api/v1/health` → 200)
+- Tier1 xpath= prefix fix landed with new tests in `test_tier1_click_waits.py` (4/5 pass)
+
+## What Regressed Since Iteration 001
+
+- **Tier1 regression:** `test_execute_click_waits_for_popup_login_loading_to_clear` fails — `loading_element.wait_for` not called with `state="hidden", timeout=8000` as test expects (popup login loading wait behavior)
+- **R3 scope widened:** Build now surfaces additional TS errors beyond `agentWorkflow.types.test.ts` (knowledgeBase mock, SettingsPage-Old, AgentWorkflowPage props)
 
 ---
 
 ## Test Run Results
 
-### Backend unit tests
+### Backend health
+
+```bash
+curl http://127.0.0.1:8000/api/v1/health
+```
+
+| Result | Response |
+|--------|----------|
+| **200 OK** | `{"status":"healthy","service":"Agentic QA API","version":"1.0.0",...}` |
+
+### Backend unit tests (T1 / rubric step 11)
 
 ```bash
 source backend/venv/bin/activate
@@ -124,7 +146,18 @@ cd backend && PYTHONPATH=. pytest tests/unit/test_execution_cancel_store.py test
 | **Passed** | **13** |
 | Failed | 0 |
 
-### Frontend component test
+### Tier1 regression (extra — not in rubric)
+
+```bash
+cd backend && PYTHONPATH=. pytest tests/test_tier1_click_waits.py -q
+```
+
+| Result | Count |
+|--------|-------|
+| Passed | 4 |
+| **Failed** | **1** (`test_execute_click_waits_for_popup_login_loading_to_clear`) |
+
+### Frontend component test (T2)
 
 ```bash
 cd frontend && npm test -- --run src/components/execution/__tests__/StopExecutionButton.test.tsx
@@ -145,9 +178,7 @@ npx playwright test tests/e2e/11-stop-execution-cancel.spec.ts --workers=1 --rep
 |--------|-------|
 | **Passed** | **11** |
 | Failed | 0 |
-| Duration | ~15s |
-
-**Note:** First run required `npx playwright install chromium` (root) and `playwright install chromium` in `backend/venv` for execution workers.
+| Duration | ~15.3s |
 
 ### Frontend build (R3)
 
@@ -155,11 +186,11 @@ npx playwright test tests/e2e/11-stop-execution-cancel.spec.ts --workers=1 --rep
 cd frontend && npm run build
 ```
 
-**FAILED** — pre-existing TS errors in agent-workflow type tests (see R3 above).
+**FAILED** — exit code 2; 100+ TypeScript errors (see R3 above).
 
 ---
 
-## Rubric Evaluator Script → E2E Coverage Matrix (100%)
+## Rubric Evaluator Script → E2E Coverage Matrix (11/11)
 
 | # | Rubric Step | Playwright Test Name | Status |
 |---|-------------|----------------------|--------|
@@ -176,44 +207,47 @@ cd frontend && npm run build
 | 11 | Backend unit tests pass | `step 11: backend cancel unit tests pass` (+ evaluator pytest run) | ✅ |
 
 **E2E file:** `tests/e2e/11-stop-execution-cancel.spec.ts`  
-**Helper added:** `createMultiStepCancelTest()` in `tests/e2e/helpers/auth.ts`
+**Coverage:** **11/11 (100%)**
 
 ---
 
 ## Remaining Risks
 
-1. **R3 build failure** — unrelated agent-workflow type tests block `npm run build`; should be fixed before merge if CI enforces build.
-2. **Backend Playwright browsers** — execution workers fail fast if `backend/venv` Playwright Chromium is not installed; document in dev setup / CI.
-3. **In-memory cancel store** — single-process only (per spec); multi-worker deployments need Redis migration.
-4. **Cancelled UI step cards** — early pending cancel shows `0 / N steps` in overview but no per-step `StepCard` rows (API returns empty `steps[]`); acceptable for v1 but polish opportunity.
-5. **Tier 3 cancel latency** — mid–LLM-call cancel may take up to tier timeout (~120s); not exercised in fast E2E run.
+1. **R3 build failure** — frontend `tsc` includes test files and stale modules; blocks CI if build is enforced. Fix before merge if CI runs `npm run build`.
+2. **Tier1 popup loading wait** — `test_execute_click_waits_for_popup_login_loading_to_clear` fails; popup login click may not wait for loading overlay to clear.
+3. **Backend Playwright browsers** — execution workers require `playwright install chromium` in `backend/venv`; document in dev setup / CI.
+4. **In-memory cancel store** — single-process only (per spec); multi-worker deployments need Redis migration.
+5. **Cancelled UI step cards** — early pending cancel shows `0 / N steps` in overview but no per-step `StepCard` rows; acceptable for v1.
+6. **Tier 3 cancel latency** — mid–LLM-call cancel may take up to tier timeout (~120s); not exercised in fast E2E run.
 
 ---
 
-## Services Left Running
+## Services Status
 
 | Service | URL | Status |
 |---------|-----|--------|
-| Backend (uvicorn) | http://127.0.0.1:8000 | **Running** (restarted after Playwright install) |
-| Frontend | http://localhost:5173 | Started by Playwright `webServer` during E2E; not left running after test run |
+| Backend (`start_server.py`) | http://127.0.0.1:8000 | **Running** (terminal 10) |
+| Frontend | http://localhost:5173 | Started by Playwright `webServer` during E2E only |
 
 ---
 
-## Commands Run (Evaluator)
+## Commands Run (Evaluator — Iteration 002)
 
 ```bash
-# Start backend
-cd backend && source venv/bin/activate && PYTHONPATH=. uvicorn app.main:app --host 127.0.0.1 --port 8000
+# Health
+curl http://127.0.0.1:8000/api/v1/health
 
-# Install browsers (required once)
-npx playwright install chromium
-cd backend && source venv/bin/activate && playwright install chromium
+# Backend unit tests
+cd backend && source venv/bin/activate && PYTHONPATH=. pytest tests/unit/test_execution_cancel_store.py tests/unit/test_execution_cancel.py -v
 
-# Unit / component tests
-cd backend && PYTHONPATH=. pytest tests/unit/test_execution_cancel_store.py tests/unit/test_execution_cancel.py -v
+# Tier1 regression (extra)
+cd backend && PYTHONPATH=. pytest tests/test_tier1_click_waits.py -q
+
+# Frontend component test
 cd frontend && npm test -- --run src/components/execution/__tests__/StopExecutionButton.test.tsx
 
-# E2E
+# E2E (100% rubric coverage)
+npx playwright install chromium
 npx playwright test tests/e2e/11-stop-execution-cancel.spec.ts --workers=1 --reporter=list
 
 # Build check (R3)
