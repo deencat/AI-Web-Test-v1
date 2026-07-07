@@ -1009,4 +1009,24 @@ Adjust dates to your team start; maintain 2-week cadence.
 
 ---
 
+## 19. Product workspace track (**UF**) — business UX
+
+**Version:** 1.0 · **Date:** 2026-07-07  
+**Detail:** [programs/User-Friendly-Implementation-Plan.md](programs/User-Friendly-Implementation-Plan.md)  
+**Pilot:** 5G Mobile Broadband — upload mixed docs → wiki → tests (no YAML for users)
+
+| Phase | Status | Deliverable |
+|-------|--------|-------------|
+| **UF-0** | 🔜 | Roles; PG UI hidden from business users |
+| **UF-1** | 🔜 | `/products` workspace — upload, compile wiki, status |
+| **UF-2** | 🔜 | PPTX, images, MVP configs, notification templates |
+| **UF-3** | 🔜 | Telecom wiki compile profile; active/ended promotions |
+| **UF-4** | 🔜 | Generate tests from wiki (one-click) |
+| **UF-5** | 🔜 | Program sync agent (wiki → manifest → seed/retire) |
+| **UF-6** | 🔜 | 5G pilot validation + tests |
+
+**PG track (programs YAML)** remains **agent-operated** — see [programs/Implementation-Plan.md](programs/Implementation-Plan.md).
+
+---
+
 *This plan implements v5 §9 sprints A–F as executable agile stories. Hermes Node 1 work is **EPIC-HF-07** and is required for **launch** — see §4.1. Use **§4.2 AWT-first** to finish this-repo development before Node 1. **Keep §0 Progress tracker current** after each merge to `feat/hermes-qa-factory`.*

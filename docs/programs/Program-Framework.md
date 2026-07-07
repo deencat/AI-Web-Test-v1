@@ -7,7 +7,7 @@
 
 ## 1. Principles
 
-1. **Programs are data-driven** — one YAML manifest per product line; no hard-coded routes or product names in code.
+1. **Programs are data-driven** — YAML manifests are **agent-maintained**; business users use Product workspace (UF).
 2. **Initiatives are time-bounded** — offers, promotions, and delivery projects are **initiatives** under a program (same internal name; display label via `kind` + `title`).
 3. **Platform components are stable per program** — WebApp, CRM, Billing, etc. Initiatives declare which components they touch.
 4. **ReqIQ is a building block** — sources, requirements, readiness, wiki; structure and timeline live in AWT.

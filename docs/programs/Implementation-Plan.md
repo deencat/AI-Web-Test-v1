@@ -1,8 +1,8 @@
 # Program framework — Implementation plan
 
-**Version:** 1.1 · **Date:** 2026-07-06  
-**Track code:** **PG** (generic; not tied to one product)  
-**Depends on:** Hermes Factory **HF-2** (journey registry), **HF-3** (factory worker), ReqIQ proxy
+**Version:** 1.2 · **Date:** 2026-07-07  
+**Track code:** **PG** (internal / agent-operated)  
+**Primary business UX:** **[User-Friendly-Implementation-Plan.md](User-Friendly-Implementation-Plan.md)** (**UF** track)
 
 **Legend:** ⬜ Not started · 🔜 Next · ⚠️ Partial · ✅ Done
 
@@ -10,16 +10,25 @@
 
 ## 0. Progress tracker
 
+| Phase | Status | Audience |
+|-------|--------|----------|
+| **PG-0 … PG-5** | ✅ Done | Agent / admin only — **hidden from business users** |
+| **UF-0 … UF-6** | 🔜 In progress | Marketing, SSCO, SMCD — **primary** |
+
+See [User-Friendly-Implementation-Plan.md](User-Friendly-Implementation-Plan.md) for UF phases.
+
+### PG (frozen — agent backend)
+
 | Phase | Status | Notes |
 |-------|--------|-------|
-| **PG-0** Framework docs + schema (v1.2 initiatives) | ✅ | Initiative model; migration = reference only |
-| **PG-1** Program loader + Reference Hub | ✅ | `/programs`, hub, initiative detail, YAML editor |
-| **PG-2** ReqIQ onboarding pattern | ✅ | API + `scripts/seed-program-reqiq.py` |
-| **PG-3** Journey registry integration | ✅ | Seed + auto-retire on `replace` |
-| **PG-4** Factory planner scoping | ✅ | `program_factory_scope`, skip retired/excluded |
-| **PG-5** API / orchestration test profile | ✅ | `test_kind` validation, orchestration-suites API |
+| **PG-0** Framework docs + schema (v1.2 initiatives) | ✅ | |
+| **PG-1** Program loader + Reference Hub | ✅ | UI hidden; agent uses API |
+| **PG-2** ReqIQ onboarding pattern | ✅ | Replaced by Product workspace upload |
+| **PG-3** Journey registry integration | ✅ | Agent triggers seed |
+| **PG-4** Factory planner scoping | ✅ | |
+| **PG-5** API / orchestration test profile | ✅ | |
 
-**Example pilot:** [5g-mobile-broadband](examples/5g-mobile-broadband/README.md) — first manifest to validate PG-1…PG-4.
+**Business users do not use PG UI.** Documents → ReqIQ wiki → tests via **UF** Product workspace.
 
 ---
 
