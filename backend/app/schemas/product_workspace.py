@@ -63,6 +63,30 @@ class ProductGenerateTestsResponse(BaseModel):
     message: str = "Test scenarios generated from wiki"
 
 
+class ProductCreateRequest(BaseModel):
+    title: str = Field(..., min_length=2, max_length=200)
+    title_zh: Optional[str] = Field(None, max_length=200)
+    webapp_url: Optional[str] = Field(None, max_length=500)
+    id: Optional[str] = Field(None, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+class ProductUpdateRequest(BaseModel):
+    title: Optional[str] = Field(None, min_length=2, max_length=200)
+    title_zh: Optional[str] = Field(None, max_length=200)
+    webapp_url: Optional[str] = Field(None, max_length=500)
+
+
+class ProductCreateResponse(BaseModel):
+    product: ProductDetailResponse
+    message: str = "Product ready — upload your documents to get started"
+
+
+class ProductCompileWikiResponse(BaseModel):
+    wiki: dict[str, Any] = Field(default_factory=dict)
+    sync: Optional[ProductSyncResponse] = None
+    message: str = "Summary updated from your documents"
+
+
 class AllowedFormatsResponse(BaseModel):
     extensions: list[str]
     source_type_hints: dict[str, str]

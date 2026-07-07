@@ -68,7 +68,27 @@ export async function uploadProductDocuments(productId: string, files: File[]): 
   return data;
 }
 
-export async function compileProductWiki(productId: string): Promise<unknown> {
+export async function createProduct(body: {
+  title: string;
+  title_zh?: string;
+  webapp_url?: string;
+}): Promise<{ product: ProductDetail; message: string }> {
+  const { data } = await api.post('/products', body);
+  return data;
+}
+
+export async function updateProduct(
+  productId: string,
+  body: { title?: string; title_zh?: string; webapp_url?: string },
+): Promise<ProductDetail> {
+  const { data } = await api.patch(`/products/${productId}`, body);
+  return data;
+}
+
+export async function compileProductWiki(productId: string): Promise<{
+  message: string;
+  sync?: { tests_retired?: number; initiatives_synced?: number };
+}> {
   const { data } = await api.post(`/products/${productId}/compile-wiki`);
   return data;
 }

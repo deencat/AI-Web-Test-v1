@@ -9,17 +9,21 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 import app.services.reqiq_client as reqiq
-from app.api.deps import get_current_active_user, get_db, require_role, _ROLE_RANK
+from app.api.deps import get_current_active_user, get_db
 from app.api.v1.endpoints.requirements import _proxy, _reqiq_unavailable
 from app.models.user import User
 from app.schemas.product_workspace import (
     AllowedFormatsResponse,
+    ProductCompileWikiResponse,
+    ProductCreateRequest,
+    ProductCreateResponse,
     ProductDetailResponse,
     ProductGenerateTestsResponse,
     ProductListResponse,
     ProductStatusResponse,
     ProductSummary,
     ProductSyncResponse,
+    ProductUpdateRequest,
     ProductWorkspaceStatus,
 )
 from app.services.document_ingest import (
@@ -28,18 +32,44 @@ from app.services.document_ingest import (
     infer_source_type,
     validate_filename,
 )
+from app.services.program_sync_agent import sync_program_from_wiki
+from app.services.program_registry_service import ProgramManifestError, create_program_manifest
 from app.services.product_workspace_service import (
     ProductWorkspaceError,
+    create_product_entry,
     get_product,
     list_products,
     product_summary,
+    slug_from_title,
+    update_product_entry,
 )
-from app.services.program_sync_agent import sync_program_from_wiki
 from app.services.wiki_compile_profile import WikiProfileError, get_compile_feature
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-require_admin = require_role(_ROLE_RANK["admin"], "admin")
+
+
+async def _auto_sync_from_wiki(db: Session, product_id: str) -> Optional[ProductSyncResponse]:
+    """Keep automation in sync with wiki — no separate user step."""
+    try:
+        product = get_product(product_id)
+    except ProductWorkspaceError:
+        return None
+    if not product.get("program_slug"):
+        return None
+    try:
+        wiki = await _proxy(reqiq.get_wiki(product["reqiq_project_id"]))
+    except Exception:
+        return None
+    markdown = wiki.get("markdown") or wiki.get("content") or ""
+    if not markdown.strip():
+        return None
+    try:
+        data = sync_program_from_wiki(db, product_id=product_id, wiki_markdown=markdown)
+        return ProductSyncResponse(**data)
+    except ProductWorkspaceError as exc:
+        logger.warning("Auto-sync skipped for %s: %s", product_id, exc)
+        return None
 
 
 def _to_detail(product: dict[str, Any]) -> ProductDetailResponse:
@@ -62,6 +92,78 @@ def allowed_formats(_: User = Depends(get_current_active_user)) -> AllowedFormat
         extensions=sorted(ALLOWED_SOURCE_EXTENSIONS),
         source_type_hints=SOURCE_TYPE_HINTS,
     )
+
+
+@router.post("", response_model=ProductCreateResponse, status_code=status.HTTP_201_CREATED)
+async def create_product_workspace(
+    body: ProductCreateRequest,
+    _: User = Depends(get_current_active_user),
+) -> ProductCreateResponse:
+    """Create product: ReqIQ workspace + config + program shell — one step for any user."""
+    _reqiq_unavailable()
+    product_id = body.id or slug_from_title(body.title)
+    try:
+        get_product(product_id)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Product already exists: {product_id}")
+    except ProductWorkspaceError:
+        pass
+
+    try:
+        reqiq_project = await _proxy(reqiq.create_project(body.title))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    project_id = reqiq_project.get("id")
+    if not project_id:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="ReqIQ did not return a project id")
+
+    try:
+        entry = create_product_entry(
+            product_id=product_id,
+            title=body.title,
+            title_zh=body.title_zh,
+            reqiq_project_id=project_id,
+            webapp_url=body.webapp_url,
+        )
+    except ProductWorkspaceError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    try:
+        create_program_manifest(
+            slug=product_id,
+            title=body.title,
+            kind="pilot",
+            platform_profile="dt-telecom-default",
+            initiative_title=f"{body.title} — base offer",
+        )
+    except ProgramManifestError as exc:
+        if "already exists" not in str(exc).lower():
+            logger.warning("Program manifest for %s: %s", product_id, exc)
+
+    return ProductCreateResponse(
+        product=_to_detail(entry),
+        message="Product created. Upload marketing, SSCO, SMCD, and T&C documents whenever they are ready.",
+    )
+
+
+@router.patch("/{product_id}", response_model=ProductDetailResponse)
+def update_product_workspace(
+    product_id: str,
+    body: ProductUpdateRequest,
+    _: User = Depends(get_current_active_user),
+) -> ProductDetailResponse:
+    try:
+        updated = update_product_entry(
+            product_id,
+            title=body.title,
+            title_zh=body.title_zh,
+            webapp_url=body.webapp_url,
+        )
+    except ProductWorkspaceError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return _to_detail(updated)
 
 
 @router.get("", response_model=ProductListResponse)
@@ -172,11 +274,13 @@ async def upload_product_documents(
     return result
 
 
-@router.post("/{product_id}/compile-wiki")
+@router.post("/{product_id}/compile-wiki", response_model=ProductCompileWikiResponse)
 async def compile_product_wiki(
     product_id: str,
+    db: Session = Depends(get_db),
     _: User = Depends(get_current_active_user),
-) -> Any:
+) -> ProductCompileWikiResponse:
+    """Compile wiki from all documents, then auto-sync offers and test automation."""
     _reqiq_unavailable()
     try:
         product = get_product(product_id)
@@ -189,7 +293,12 @@ async def compile_product_wiki(
     except WikiProfileError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    return await _proxy(reqiq.compile_wiki(product["reqiq_project_id"], feature))
+    wiki = await _proxy(reqiq.compile_wiki(product["reqiq_project_id"], feature))
+    sync = await _auto_sync_from_wiki(db, product_id)
+    msg = "Summary updated from your documents."
+    if sync and sync.tests_retired:
+        msg += f" Ended {sync.tests_retired} outdated test(s) from previous offers."
+    return ProductCompileWikiResponse(wiki=wiki if isinstance(wiki, dict) else {}, sync=sync, message=msg)
 
 
 @router.post("/{product_id}/generate-tests", response_model=ProductGenerateTestsResponse)
@@ -210,7 +319,7 @@ async def generate_tests_from_wiki(
         created=int(result.get("created") or result.get("createdCount") or 0),
         dedupe_dropped=int(result.get("dedupeDropped") or 0),
         batch_id=result.get("batchId"),
-        message="Test scenarios generated — review in Tests section",
+        message="Test scenarios created from your summary",
     )
 
 
@@ -218,28 +327,17 @@ async def generate_tests_from_wiki(
 async def sync_product_program(
     product_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(get_current_active_user),
 ) -> ProductSyncResponse:
+    """Re-apply wiki → automation (usually automatic after Update summary)."""
     _reqiq_unavailable()
-    try:
-        product = get_product(product_id)
-    except ProductWorkspaceError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-
-    wiki = await _proxy(reqiq.get_wiki(product["reqiq_project_id"]))
-    markdown = wiki.get("markdown") or wiki.get("content") or ""
-    if not markdown.strip():
+    sync = await _auto_sync_from_wiki(db, product_id)
+    if not sync:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Wiki not compiled — upload documents and compile wiki first",
+            detail="No wiki summary yet — upload documents and click Update summary",
         )
-
-    try:
-        data = sync_program_from_wiki(db, product_id=product_id, wiki_markdown=markdown)
-    except ProductWorkspaceError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-    return ProductSyncResponse(**data)
+    return sync
 
 
 @router.post("/{product_id}/run-overnight")
@@ -248,7 +346,7 @@ async def run_overnight_regression(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> dict[str, Any]:
-    """Enqueue factory regression for product journeys (UF-4/5)."""
+    """Queue automated test runs; syncs from wiki first if needed."""
     from app.crud import journey_factory as crud_journey
     from app.schemas.factory_job import FactoryJobCreate
     from app.services.factory_job_service import create_factory_job
@@ -269,9 +367,18 @@ async def run_overnight_regression(
         and not (e.extra_config or {}).get("retired")
     ]
     if not slugs:
+        await _auto_sync_from_wiki(db, product_id)
+        entries = crud_journey.list_registry_entries(db, project=project, limit=500)
+        slugs = [
+            e.slug
+            for e in entries
+            if (e.extra_config or {}).get("program_slug") == program_slug
+            and not (e.extra_config or {}).get("retired")
+        ]
+    if not slugs:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No active journeys for this product — sync program from wiki first",
+            detail="Upload documents and click Update summary first, then Create tests",
         )
 
     job = create_factory_job(

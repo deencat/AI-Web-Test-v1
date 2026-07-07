@@ -14,17 +14,11 @@ import { FeedbackListPage } from './pages/FeedbackListPage';
 import { DebugSessionPage } from './pages/DebugSessionPage';
 import { AgentWorkflowPage } from './pages/AgentWorkflowPage';
 import { AgentConsolePage } from './pages/AgentConsolePage';
-import { JourneyRegistryPage } from './pages/JourneyRegistryPage';
-import { BacklogQueuePage } from './pages/BacklogQueuePage';
 import { HealReviewPage } from './pages/HealReviewPage';
 import { StepLibraryPage } from './pages/StepLibraryPage';
 import { CrawlAndSavePage } from './pages/CrawlAndSavePage';
 import { ProductsListPage } from './pages/ProductsListPage';
 import { ProductWorkspacePage } from './pages/ProductWorkspacePage';
-import { ProgramsListPage } from './pages/ProgramsListPage';
-import { ProgramHubPage } from './pages/ProgramHubPage';
-import { InitiativeDetailPage } from './pages/InitiativeDetailPage';
-import { ProgramManifestEditorPage } from './pages/ProgramManifestEditorPage';
 import './index.css';
 
 // Protected Route wrapper
@@ -35,23 +29,6 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" replace />;
   }
   
-  return <>{children}</>;
-}
-
-// Admin-only route guard (UF-5)
-function AdminRoute({ children }: { children: React.ReactNode }) {
-  const role = (() => {
-    try {
-      const raw = localStorage.getItem('user');
-      if (!raw) return 'user';
-      return ((JSON.parse(raw) as { role?: string }).role || 'user').toLowerCase();
-    } catch {
-      return 'user';
-    }
-  })();
-  if (role !== 'admin' && role !== 'superadmin') {
-    return <Navigate to="/products" replace />;
-  }
   return <>{children}</>;
 }
 
@@ -183,23 +160,11 @@ function App() {
         />
         <Route
           path="/journey-registry"
-          element={
-            <ProtectedRoute>
-              <AdminRoute>
-                <JourneyRegistryPage />
-              </AdminRoute>
-            </ProtectedRoute>
-          }
+          element={<Navigate to="/products" replace />}
         />
         <Route
           path="/backlog"
-          element={
-            <ProtectedRoute>
-              <AdminRoute>
-                <BacklogQueuePage />
-              </AdminRoute>
-            </ProtectedRoute>
-          }
+          element={<Navigate to="/products" replace />}
         />
         <Route
           path="/heal-review"
@@ -233,46 +198,8 @@ function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/programs"
-          element={
-            <ProtectedRoute>
-              <AdminRoute>
-                <ProgramsListPage />
-              </AdminRoute>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/programs/:slug"
-          element={
-            <ProtectedRoute>
-              <AdminRoute>
-                <ProgramHubPage />
-              </AdminRoute>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/programs/:slug/initiatives/:initiativeId"
-          element={
-            <ProtectedRoute>
-              <AdminRoute>
-                <InitiativeDetailPage />
-              </AdminRoute>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/programs/:slug/edit"
-          element={
-            <ProtectedRoute>
-              <AdminRoute>
-                <ProgramManifestEditorPage />
-              </AdminRoute>
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/programs" element={<Navigate to="/products" replace />} />
+        <Route path="/programs/*" element={<Navigate to="/products" replace />} />
         <Route path="/" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>

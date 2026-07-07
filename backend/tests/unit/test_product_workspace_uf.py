@@ -2,7 +2,7 @@
 import pytest
 
 from app.services.document_ingest import infer_source_type, validate_filename
-from app.services.product_workspace_service import get_product, list_products
+from app.services.product_workspace_service import create_product_entry, get_product, list_products
 from app.services.program_sync_agent import build_initiatives_from_wiki
 from app.services.wiki_compile_profile import get_compile_feature, list_wiki_profiles
 
@@ -11,6 +11,21 @@ def test_list_products_includes_5g_pilot():
     items = list_products()
     ids = [p["id"] for p in items]
     assert "5g-mobile-broadband" in ids
+
+
+def test_create_product_entry_roundtrip(tmp_path, monkeypatch):
+    import app.services.product_workspace_service as svc
+
+    monkeypatch.setattr(svc, "_CONFIG_PATH", tmp_path / "product-workspaces.yaml")
+    entry = create_product_entry(
+        product_id="new-offer",
+        title="New Offer",
+        reqiq_project_id="reqiq123",
+        title_zh="新優惠",
+        webapp_url="https://example.com/",
+    )
+    assert entry["id"] == "new-offer"
+    assert get_product("new-offer")["title_zh"] == "新優惠"
 
 
 def test_get_5g_product_has_reqiq_project():

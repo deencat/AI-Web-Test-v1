@@ -31,10 +31,3 @@ export function isAdmin(): boolean {
   const role = getStoredUserRole();
   return role === 'admin' || role === 'superadmin';
 }
-
-/** Routes hidden from business users (UF-0 / UF-5). */
-export const ADMIN_ONLY_PATHS = new Set([
-  '/programs',
-  '/journey-registry',
-  '/backlog',
-]);

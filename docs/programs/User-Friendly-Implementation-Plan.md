@@ -337,13 +337,16 @@ No `initiatives[]` in this file — dates live in **wiki**.
 
 ---
 
-## 8. What we are **not** building (pilot)
+## 8. Unified UX (no admin split)
 
-- Multi-product self-service **create product** wizard for business users
-- Visual manifest editor for SSCO
-- Initiative detail pages
-- Manual journey registry management for Marketing
-- Requirement for users to know slugs, capability keys, or test_kind
+All users — Marketing, SSCO, SMCD, QA — use the same **Products** flow:
+
+1. **+ New product** (or open existing)
+2. **Add documents** (any time, any batch)
+3. **Update summary** — compiles wiki + auto-syncs offers (June ends → tests retired)
+4. **Create tests** → **Run tests overnight**
+
+No YAML, Programs hub, or Sync automation button. Backend automation runs inside **Update summary** and **Run overnight**.
 
 ---
 
@@ -352,8 +355,9 @@ No `initiatives[]` in this file — dates live in **wiki**.
 | Metric | Target |
 |--------|--------|
 | Time to first wiki | < 15 min after first upload batch |
-| User steps to first test | ≤ 4 clicks (upload → compile → generate → run) |
-| YAML edits by business users | **0** |
+| User steps to first test | ≤ 4 clicks (upload → update summary → create tests → run overnight) |
+| YAML edits by users | **0** |
+| Admin-only steps | **0** |
 | Documents added mid-month | Recompile only; no re-setup |
 | Promo end (June 30) | June tests auto-stopped by 1 Jul without ticket |
 

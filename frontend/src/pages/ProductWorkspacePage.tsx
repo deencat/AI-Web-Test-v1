@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
-import { isAdmin } from '../utils/roles';
+import { EditProductModal } from '../components/EditProductModal';
 import {
   compileProductWiki,
   generateTestsFromWiki,
@@ -16,7 +16,6 @@ import {
   ProductWorkspaceStatus,
   runOvernight,
   saveProductWiki,
-  syncProductProgram,
   uploadAcceptAttribute,
   uploadProductDocuments,
 } from '../services/productWorkspaceService';
@@ -26,7 +25,6 @@ type ReqRow = { id: string; title: string; state: string; customerOutcome?: stri
 export const ProductWorkspacePage: React.FC = () => {
   const { productId = '' } = useParams();
   const fileRef = useRef<HTMLInputElement>(null);
-  const admin = isAdmin();
 
   const [product, setProduct] = useState<ProductDetail | null>(null);
   const [status, setStatus] = useState<ProductWorkspaceStatus | null>(null);
@@ -34,6 +32,7 @@ export const ProductWorkspacePage: React.FC = () => {
   const [requirements, setRequirements] = useState<ReqRow[]>([]);
   const [wikiText, setWikiText] = useState('');
   const [wikiEditing, setWikiEditing] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -64,7 +63,7 @@ export const ProductWorkspacePage: React.FC = () => {
         })),
       );
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to load workspace');
+      setErr(e instanceof Error ? e.message : 'Failed to load');
     } finally {
       setLoading(false);
     }
@@ -83,7 +82,7 @@ export const ProductWorkspacePage: React.FC = () => {
       await load();
     } catch (e: unknown) {
       const ax = e as { response?: { data?: { detail?: string } } };
-      setErr(ax.response?.data?.detail || (e instanceof Error ? e.message : 'Action failed'));
+      setErr(ax.response?.data?.detail || (e instanceof Error ? e.message : 'Something went wrong'));
     } finally {
       setBusy(null);
     }
@@ -93,7 +92,7 @@ export const ProductWorkspacePage: React.FC = () => {
     if (!files?.length) return;
     await run('upload', async () => {
       await uploadProductDocuments(productId, Array.from(files));
-      setMsg(`Uploaded ${files.length} file(s). Recompile wiki when ready.`);
+      setMsg(`Added ${files.length} file(s). Click “Update summary” when ready.`);
     });
     if (fileRef.current) fileRef.current.value = '';
   };
@@ -105,38 +104,45 @@ export const ProductWorkspacePage: React.FC = () => {
     return <Layout><div className="p-8 text-red-600">{err || 'Product not found'}</div></Layout>;
   }
 
-  const wikiStatus = !status?.wiki_ready
-    ? 'Not compiled'
-    : status.wiki_stale
-      ? 'Stale — new documents'
-      : 'Ready';
+  const needsSummary = !status?.wiki_ready || status.wiki_stale;
 
   return (
     <Layout>
       <div className="p-8 max-w-5xl mx-auto space-y-6">
-        <div>
-          <Link to="/products" className="text-sm text-gray-500 hover:underline">Products</Link>
-          <h1 className="text-2xl font-bold mt-1">{product.title}</h1>
-          {product.title_zh && <p className="text-gray-600">{product.title_zh}</p>}
+        <div className="flex justify-between items-start">
+          <div>
+            <Link to="/products" className="text-sm text-gray-500 hover:underline">← All products</Link>
+            <h1 className="text-2xl font-bold mt-1">{product.title}</h1>
+            {product.title_zh && <p className="text-gray-600">{product.title_zh}</p>}
+          </div>
+          <Button onClick={() => setShowSettings(true)}>Settings</Button>
         </div>
+
+        <Card>
+          <div className="p-4 bg-blue-50 text-sm text-blue-900 rounded-lg border border-blue-100">
+            <strong>How it works:</strong> Drop in documents from Marketing (PPT), SSCO (URS, MVP configs), SMCD (UI images), T&amp;C, and notification templates — anytime, in batches.
+            The system reads everything, writes one <strong>summary</strong> (base offer, June promo, July promo, etc.), and creates <strong>tests</strong>. When a promo ends, outdated tests are retired automatically.
+          </div>
+        </Card>
 
         {err && <p className="text-red-600 text-sm bg-red-50 p-3 rounded">{String(err)}</p>}
         {msg && <p className="text-green-700 text-sm bg-green-50 p-3 rounded">{msg}</p>}
+        {needsSummary && sources.length > 0 && (
+          <p className="text-amber-800 text-sm bg-amber-50 p-3 rounded">
+            You have new or changed documents — click <strong>Update summary</strong> so tests stay current.
+          </p>
+        )}
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-          <Card><div className="p-3"><div className="text-gray-500">Documents</div><div className="text-xl font-bold">{status?.source_count ?? sources.length}</div></div></Card>
-          <Card><div className="p-3"><div className="text-gray-500">Wiki</div><div className="text-xl font-bold">{wikiStatus}</div></div></Card>
-          <Card><div className="p-3"><div className="text-gray-500">Test scenarios</div><div className="text-xl font-bold">{status?.requirement_count ?? requirements.length}</div></div></Card>
-          <Card><div className="p-3"><div className="text-gray-500">Drafts</div><div className="text-xl font-bold">{status?.draft_requirement_count ?? 0}</div></div></Card>
-        </div>
-
-        {/* Step 1 — Documents */}
+        {/* 1 — Documents */}
         <Card>
           <div className="p-4 border-b flex justify-between items-center">
-            <h2 className="font-semibold">Step 1 — Documents</h2>
+            <div>
+              <h2 className="font-semibold">1. Add documents</h2>
+              <p className="text-xs text-gray-500">{status?.source_count ?? sources.length} file(s)</p>
+            </div>
             <label className={`cursor-pointer ${busy === 'upload' ? 'opacity-50' : ''}`}>
               <span className="inline-block px-4 py-2 bg-blue-700 text-white text-sm rounded-lg hover:bg-blue-800">
-                {busy === 'upload' ? 'Uploading…' : 'Upload files'}
+                {busy === 'upload' ? 'Uploading…' : 'Choose files'}
               </span>
               <input
                 ref={fileRef}
@@ -149,53 +155,42 @@ export const ProductWorkspacePage: React.FC = () => {
               />
             </label>
           </div>
-          <div className="p-4 text-sm text-gray-600">
-            PowerPoint, PDF, Word, images (SMCD UI), MVP configs, T&C, notification templates — add anytime.
-          </div>
-          <ul className="divide-y text-sm max-h-48 overflow-y-auto">
+          <ul className="divide-y text-sm max-h-40 overflow-y-auto">
             {sources.length === 0 ? (
-              <li className="p-4 text-gray-400">No documents yet</li>
+              <li className="p-4 text-gray-400">No documents yet — upload whenever files are ready.</li>
             ) : (
               sources.map((s, i) => {
                 const row = s as { id?: string; filename?: string; name?: string };
-                return (
-                  <li key={row.id || i} className="p-3 flex justify-between">
-                    <span>{row.filename || row.name || 'Document'}</span>
-                  </li>
-                );
+                return <li key={row.id || i} className="p-3">{row.filename || row.name || 'Document'}</li>;
               })
             )}
           </ul>
         </Card>
 
-        {/* Step 2 — Wiki */}
+        {/* 2 — Summary */}
         <Card>
           <div className="p-4 border-b flex flex-wrap gap-2 justify-between items-center">
-            <h2 className="font-semibold">Step 2 — Wiki summary</h2>
+            <h2 className="font-semibold">2. Summary (wiki)</h2>
             <div className="flex gap-2">
               <Button
-                disabled={!!busy}
-                onClick={() => run('compile', async () => {
-                  await compileProductWiki(productId);
-                  setMsg('Wiki compiled. Review below and edit if needed.');
+                disabled={!!busy || sources.length === 0}
+                onClick={() => run('summary', async () => {
+                  const res = await compileProductWiki(productId);
+                  setMsg(res.message);
                 })}
               >
-                {busy === 'compile' ? 'Compiling…' : 'Recompile wiki'}
+                {busy === 'summary' ? 'Working…' : 'Update summary'}
               </Button>
               {wikiText && !wikiEditing && (
-                <Button onClick={() => setWikiEditing(true)}>Edit</Button>
+                <Button onClick={() => setWikiEditing(true)}>Edit text</Button>
               )}
               {wikiEditing && (
                 <>
-                  <Button
-                    onClick={() => run('save-wiki', async () => {
-                      await saveProductWiki(productId, wikiText);
-                      setWikiEditing(false);
-                      setMsg('Wiki saved.');
-                    })}
-                  >
-                    Save
-                  </Button>
+                  <Button onClick={() => run('save-wiki', async () => {
+                    await saveProductWiki(productId, wikiText);
+                    setWikiEditing(false);
+                    setMsg('Summary saved.');
+                  })}>Save</Button>
                   <Button onClick={() => { setWikiEditing(false); load(); }}>Cancel</Button>
                 </>
               )}
@@ -203,73 +198,63 @@ export const ProductWorkspacePage: React.FC = () => {
           </div>
           <div className="p-4">
             {wikiEditing ? (
-              <textarea
-                className="w-full min-h-64 font-mono text-xs border rounded p-3"
-                value={wikiText}
-                onChange={(e) => setWikiText(e.target.value)}
-              />
+              <textarea className="w-full min-h-64 font-mono text-xs border rounded p-3" value={wikiText} onChange={(e) => setWikiText(e.target.value)} />
             ) : wikiText ? (
               <pre className="whitespace-pre-wrap text-sm text-gray-800 max-h-96 overflow-y-auto bg-gray-50 p-4 rounded">{wikiText}</pre>
             ) : (
-              <p className="text-gray-400 text-sm">Upload documents, then click Recompile wiki.</p>
+              <p className="text-gray-400 text-sm">After uploading, click Update summary to extract base offer, promos, UX, T&amp;C, and notifications.</p>
             )}
           </div>
         </Card>
 
-        {/* Step 3 — Tests */}
+        {/* 3 — Tests */}
         <Card>
           <div className="p-4 border-b flex flex-wrap gap-2 justify-between items-center">
-            <h2 className="font-semibold">Step 3 — Tests</h2>
+            <div>
+              <h2 className="font-semibold">3. Tests</h2>
+              <p className="text-xs text-gray-500">{requirements.length} scenario(s)</p>
+            </div>
             <div className="flex flex-wrap gap-2">
               <Button
                 disabled={!!busy || !status?.wiki_ready}
-                onClick={() => run('generate', async () => {
+                onClick={() => run('tests', async () => {
                   const res = await generateTestsFromWiki(productId);
-                  setMsg(`${res.message} (${res.created} created)`);
+                  setMsg(`Created ${res.created} test scenario(s) from the summary.`);
                 })}
               >
-                {busy === 'generate' ? 'Generating…' : 'Generate test scenarios'}
+                {busy === 'tests' ? 'Creating…' : 'Create tests'}
               </Button>
               <Button
-                disabled={!!busy}
+                disabled={!!busy || !status?.wiki_ready}
                 onClick={() => run('overnight', async () => {
                   const res = await runOvernight(productId);
-                  setMsg(`Overnight run queued (job ${res.job_id}, ${res.journey_count} journeys).`);
+                  setMsg(`Automated run started (${res.journey_count} flows).`);
                 })}
               >
-                {busy === 'overnight' ? 'Queueing…' : 'Run overnight'}
+                {busy === 'overnight' ? 'Starting…' : 'Run tests overnight'}
               </Button>
-              {admin && (
-                <Button
-                  disabled={!!busy || !wikiText}
-                  onClick={() => run('sync', async () => {
-                    const res = await syncProductProgram(productId);
-                    setMsg(`Synced ${res.initiatives_synced} initiatives; retired ${res.tests_retired} tests.`);
-                  })}
-                >
-                  {busy === 'sync' ? 'Syncing…' : 'Sync automation'}
-                </Button>
-              )}
             </div>
           </div>
-          <ul className="divide-y text-sm max-h-64 overflow-y-auto">
+          <ul className="divide-y text-sm max-h-48 overflow-y-auto">
             {requirements.length === 0 ? (
-              <li className="p-4 text-gray-400">Generate scenarios from wiki to see them here.</li>
+              <li className="p-4 text-gray-400">Create tests after the summary is ready.</li>
             ) : (
               requirements.map((r) => (
                 <li key={r.id} className="p-3">
                   <div className="font-medium">{r.title}</div>
                   {r.customerOutcome && <div className="text-gray-500 text-xs mt-1">{r.customerOutcome}</div>}
-                  <span className="text-xs text-gray-400">{r.state}</span>
                 </li>
               ))
             )}
           </ul>
-          <p className="p-4 text-xs text-gray-500 border-t">
-            Advanced: <Link to="/knowledge-base" className="text-blue-600 hover:underline">Knowledge Base</Link>
-            {admin && <> · <Link to={`/programs/${product.program_slug}`} className="text-blue-600 hover:underline">Program admin</Link></>}
-          </p>
         </Card>
+
+        <EditProductModal
+          productId={productId}
+          isOpen={showSettings}
+          onClose={() => setShowSettings(false)}
+          onSaved={() => { setMsg('Product settings saved.'); load(); }}
+        />
       </div>
     </Layout>
   );
