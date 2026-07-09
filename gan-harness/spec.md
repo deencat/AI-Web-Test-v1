@@ -1141,3 +1141,307 @@ See `gan-harness/eval-rubric-clone-test-case.md` for weighted scoring (pass ≥ 
 - Clone shares `id` with source
 - Steps not copied (empty clone)
 - No Clone button on SavedTestsPage list
+
+---
+
+# Feature 3: App State Graph (ASG) Deterministic Test Generation
+
+> Generated from brief: *"Introduce ASG-based deterministic test generation in AI-Web-Test-v1 to replace unstable random crawling."*
+
+## 1) Problem Statement and Success Metrics
+
+Random browser-use crawling yields low repeatability, weak coverage consistency, and frequent flake caused by unconstrained exploration. AI Web Test v1 needs deterministic replay with bounded exploration and confidence-gated fallback so generated tests are stable and explainable.
+
+### Baseline (current)
+- Crawl success-to-save rate: ~55-65% on medium apps (internal expectation; validate in Phase 1 instrumentation).
+- Replay pass rate on generated tests: ~45-60%.
+- Median generation latency: 8-12 min for 20+ discovered states.
+- Flake rerun delta (same commit/env): >25%.
+
+### Target (after rollout)
+- Deterministic replay pass rate: >= 90% for ASG-generated suites.
+- Flake rerun delta: <= 8%.
+- Coverage stability (unique critical path nodes visited across 3 reruns): >= 0.9 Jaccard.
+- P95 generation latency: <= 6 min for <= 150-node bounded graph.
+- Low-confidence fallback trigger rate: <= 20% after Phase 3 tuning.
+
+## 2) Scope / Non-goals
+
+### In scope
+- Goal-bounded ASG builder from seeded journeys and existing crawl-and-save assets.
+- Deterministic path planner with policy engine and confidence gates.
+- Test synthesizer that outputs `TestCase.steps` as `string[]` (no schema break).
+- Integration into generate-tests workflow with shadow mode and progressive enablement.
+- Observability and triage playbook for ASG build/plan/synthesis failures.
+
+### Non-goals
+- Full autonomous open-world crawling.
+- Replacing execution runtime flow (`ExecutionService -> ThreeTierExecutionService`) for test execution.
+- Changing DB stack (remain SQLAlchemy).
+- Replacing agent ecosystem (Observation/Evolution/Requirements agents are extended, not removed).
+- Introducing visual-design-heavy prototype work; static mocks optional only.
+
+## 3) Architecture Decisions (NEW vs EXTEND vs NO-CHANGE)
+
+### NEW
+- `ASGService` domain: graph build, confidence scoring, path planning, synthesis orchestration.
+- Policy engine: bounded exploration limits (`max_nodes`, `max_depth`, `max_branching`, domain allowlist, forbidden actions).
+- Confidence gate evaluator: node/edge/action confidence thresholds and fallback routing.
+- ASG API namespace: `/api/v2/asg/*`.
+- Artifact bundle format for graph snapshots and synthesis manifests.
+
+### EXTEND
+- `crawl-and-save` pipeline: add deterministic state extraction and transition normalization.
+- `generate-tests` workflow: branch to ASG planner when feature flag enabled.
+- Existing agents:
+  - Observation agent: produce structured state observations.
+  - Evolution agent: propose candidate transitions with risk tags.
+  - Requirements agent: map requirement intents to target graph regions.
+- `flow_steps` conversion: upgraded to consume planned path and emit stable string steps.
+- `post_click_readiness`: reused as transition settle/guard signal in graph edge validation.
+
+### NO-CHANGE
+- Execution dispatch and runtime tiers: all test runs still via `ExecutionService -> ThreeTierExecutionService`.
+- Lazy Tier 2/3 initialization after Tier 1 failure.
+- Router -> service -> CRUD layering.
+- SQLAlchemy-only persistence.
+- `TestCase.steps` remains `array[string]`.
+
+## 4) Delivery Plan by Phases
+
+## Phase 1: Foundation and Shadow Graphing
+
+### Epics
+- ASG data model and APIs.
+- Deterministic state/transition extraction.
+- Shadow-mode graph build on existing crawl runs.
+
+### Key tasks
+- Add ASG tables + migrations (see section 5).
+- Implement state fingerprinting (DOM landmarks + URL + key UI traits).
+- Normalize transition actions from existing crawl actions.
+- Build confidence scoring v1 (`selector_stability`, `readiness_signal`, `action_reproducibility`).
+- Add `/api/v2/asg/build` and `/api/v2/asg/{graph_id}`.
+
+### Dependencies
+- Existing crawl artifact access.
+- `post_click_readiness` signal availability.
+- Auth/tenant model reuse from existing v2 routers.
+
+### Acceptance criteria
+- For 5 representative apps, ASG builds complete with <= 150 nodes and <= 400 edges.
+- Graph build determinism: same seed + policy yields identical node/edge IDs >= 95%.
+- Build API returns reproducible graph summary and artifacts.
+
+### Test strategy
+- Unit: fingerprint hash consistency, transition normalization, confidence scoring bounds.
+- Integration: crawl-and-save -> ASG build -> persisted graph retrieval.
+- Contract tests: `/api/v2/asg/build`, `/api/v2/asg/{id}` schema + auth.
+
+## Phase 2: Path Planner and Test Synthesizer
+
+### Epics
+- Goal-constrained path planner.
+- Synthesizer emitting deterministic `steps: string[]`.
+- Policy engine enforcement and confidence gating.
+
+### Key tasks
+- Implement planner modes: shortest-path, requirement-coverage, risk-first.
+- Add `/api/v2/asg/{graph_id}/plan` and `/api/v2/asg/{graph_id}/synthesize`.
+- Add policy evaluation middleware in ASG service path selection.
+- Add low-confidence fallback contract to current generate-tests path.
+- Produce synthesis manifest linking steps to graph node/edge provenance.
+
+### Dependencies
+- Phase 1 graph quality and confidence metadata.
+- Requirements mapping contract from Requirements agent.
+
+### Acceptance criteria
+- Synthesized tests replay with >= 85% pass rate in staging baseline.
+- 100% generated cases preserve `steps: string[]`.
+- Fallback triggers whenever confidence < configured threshold, with reason codes logged.
+
+### Test strategy
+- Planner unit tests with deterministic fixture graphs.
+- Integration tests from graph -> plan -> synthesize -> saved test case.
+- Regression tests ensuring existing generate-tests path unchanged when flag off.
+
+## Phase 3: Workflow Integration and Progressive Rollout
+
+### Epics
+- End-to-end integration with generate-tests.
+- Progressive enablement and KPI-based tuning.
+- Operationalization (dashboards, playbooks, alerts).
+
+### Key tasks
+- Add `ASG_ENABLED`, `ASG_SHADOW_MODE`, `ASG_CONFIDENCE_MIN` flags.
+- Enable shadow mode in production-like envs (write ASG artifacts, keep legacy output).
+- Roll out by tenant/project cohorts.
+- Tune thresholds using observed replay/flake metrics.
+- Add failure triage tooling and runbooks.
+
+### Dependencies
+- Phase 2 replay KPI readiness.
+- Monitoring pipelines for ASG metrics.
+
+### Acceptance criteria
+- >= 90% deterministic replay pass rate on enabled cohorts.
+- Flake rerun delta <= 8% for ASG-generated tests.
+- No increase >5% in failed executions attributed to planner defects week-over-week.
+
+### Test strategy
+- E2E pipeline tests: crawl -> ASG build -> plan -> synthesize -> execute via existing execution services.
+- Shadow-vs-primary diff checks for path quality and reliability.
+- Canary monitoring assertions with rollback triggers.
+
+## 5) API and Data Model Plan
+
+### Proposed endpoints under `/api/v2/asg`
+- `POST /api/v2/asg/build`
+  - Input: target URL/app context, seed intents, policy limits.
+  - Output: `graph_id`, build stats, confidence summary.
+- `GET /api/v2/asg/{graph_id}`
+  - Output: graph metadata, node/edge counts, status, confidence distribution.
+- `POST /api/v2/asg/{graph_id}/plan`
+  - Input: planning goal (requirement IDs, risk profile, max paths).
+  - Output: planned path set with ranked confidence and rationale.
+- `POST /api/v2/asg/{graph_id}/synthesize`
+  - Input: selected path IDs + synthesis profile.
+  - Output: draft tests with `steps: string[]` + provenance.
+- `POST /api/v2/asg/{graph_id}/validate`
+  - Output: replay confidence report and fallback recommendation.
+
+### DB tables and migration order (SQLAlchemy)
+1. `asg_graphs`
+   - `id`, `project_id`, `created_by`, `status`, `policy_json`, `seed_hash`, `confidence_score`, timestamps.
+2. `asg_nodes`
+   - `id`, `graph_id`, `state_fingerprint`, `url`, `title`, `state_payload_json`, `confidence`, `is_terminal`.
+3. `asg_edges`
+   - `id`, `graph_id`, `from_node_id`, `to_node_id`, `action_type`, `action_payload_json`, `readiness_snapshot_json`, `confidence`, `deterministic_key`.
+4. `asg_paths`
+   - `id`, `graph_id`, `goal_type`, `path_nodes_json`, `path_edges_json`, `score`, `risk_score`, `selected`.
+5. `asg_synthesized_tests`
+   - `id`, `graph_id`, `path_id`, `test_case_id` (nullable pre-save), `steps_json`, `synthesis_manifest_json`, `validation_score`.
+
+Migration notes:
+- Add tables in above order to satisfy FK dependencies.
+- Add indexes: `asg_nodes(graph_id, state_fingerprint)`, `asg_edges(graph_id, deterministic_key)`, `asg_paths(graph_id, score DESC)`.
+
+### Artifact storage layout
+- `artifacts/asg/{graph_id}/build/graph.json`
+- `artifacts/asg/{graph_id}/build/confidence-report.json`
+- `artifacts/asg/{graph_id}/plan/{plan_id}.json`
+- `artifacts/asg/{graph_id}/synthesis/{synthesis_id}.json`
+- `artifacts/asg/{graph_id}/replay/{execution_id}.json`
+
+## 6) Integration Plan
+
+### crawl-and-save integration
+- After crawl completion, trigger ASG build in same service layer (feature-flagged).
+- Reuse crawl actions + readiness snapshots to construct deterministic edges.
+- Persist shadow graph even when not used for primary generation.
+
+### generate-tests integration
+- In generate-tests service, add decision branch:
+  1. If `ASG_ENABLED` and graph confidence >= threshold -> plan + synthesize.
+  2. Else -> fallback to legacy flow_steps/crawl synthesis.
+- Keep output contract identical for downstream execution (`steps: string[]`).
+
+### Low-confidence fallback behavior
+- Confidence below threshold or validation failure returns `fallback_reason_code`.
+- System auto-routes to existing generator path and tags output as `strategy=legacy`.
+- Log both attempted ASG metrics and fallback reason for tuning.
+
+## 7) Risk Register and Mitigations
+
+- **State explosion in complex apps**
+  - Mitigate with hard policy bounds, domain filters, and dedupe fingerprints.
+- **False determinism (hash stable but UI semantically drifted)**
+  - Mitigate with multi-signal confidence (DOM anchors + readiness + action replay checks).
+- **Planner overfitting to narrow paths**
+  - Mitigate with requirement coverage constraints and minimum path diversity rule.
+- **Latency regression**
+  - Mitigate with graph size caps, cached subgraphs, and async artifact writes.
+- **Schema/contract drift with existing workflows**
+  - Mitigate with strict integration tests and flag-off regression suite.
+- **Operational blind spots**
+  - Mitigate with per-stage metrics, reason-coded failures, and runbook ownership.
+
+## 8) Rollout Strategy
+
+### Feature flags
+- `ASG_ENABLED` (master switch).
+- `ASG_SHADOW_MODE` (build/plan metrics only, no output takeover).
+- `ASG_CONFIDENCE_MIN` (threshold gate).
+- `ASG_PROJECT_ALLOWLIST` (tenant/project progressive targeting).
+
+### Shadow mode
+- Phase 1-2 default: ASG runs in parallel; legacy remains source of truth.
+- Compare replay reliability and path quality before enabling primary mode.
+
+### Progressive enablement
+- Stage 0: internal projects only.
+- Stage 1: 10% low-risk tenant cohort.
+- Stage 2: 30-50% mixed cohort after KPI pass.
+- Stage 3: default-on with opt-out for edge apps.
+
+Rollback trigger:
+- Replay pass < 80% for 24h or fallback rate > 40% in enabled cohort.
+
+## 9) Operational Plan
+
+### Observability metrics/logs
+- `asg_build_duration_ms`, `asg_node_count`, `asg_edge_count`.
+- `asg_confidence_score_mean`, `asg_confidence_below_threshold_count`.
+- `asg_plan_success_rate`, `asg_synthesis_success_rate`.
+- `asg_replay_pass_rate`, `asg_flake_delta`.
+- `asg_fallback_rate` + `fallback_reason_code` distribution.
+- Correlated IDs in logs: `graph_id`, `plan_id`, `synthesis_id`, `execution_id`.
+
+### Failure triage playbook
+1. Identify failing stage (`build`, `plan`, `synthesize`, `replay`) via reason code.
+2. Pull corresponding artifact bundle and confidence report.
+3. Check policy bound hits (depth/branch/node caps) and selector stability.
+4. If low confidence systemic: raise threshold or keep fallback; open tuning ticket.
+5. If deterministic mismatch bug: quarantine project from ASG allowlist and patch planner.
+6. Confirm no runtime regression in execution stack (`ExecutionService` path unchanged).
+
+## 10) 2-Week Sprint Breakdown (first 2 sprints)
+
+### Sprint 1 (Week 1): ASG Foundation + Shadow Build
+
+Concrete deliverables:
+- SQLAlchemy models + migrations for `asg_graphs`, `asg_nodes`, `asg_edges`.
+- `/api/v2/asg/build` and `/api/v2/asg/{graph_id}` endpoints.
+- ASG builder v1 from crawl artifacts + readiness signals.
+- Baseline metrics instrumentation and dashboard starter.
+- Shadow-mode integration hook in crawl-and-save.
+
+Done when:
+- 5 seeded apps produce persisted graphs with deterministic ID stability >= 95%.
+- Build endpoint passes contract/integration tests.
+
+### Sprint 2 (Week 2): Planner + Synthesizer + Gated Integration
+
+Concrete deliverables:
+- `asg_paths` + `asg_synthesized_tests` models/migrations.
+- `/api/v2/asg/{graph_id}/plan` and `/api/v2/asg/{graph_id}/synthesize`.
+- Deterministic planner (shortest + requirement coverage mode).
+- Test synthesizer preserving `TestCase.steps: string[]`.
+- Generate-tests integration behind `ASG_ENABLED` + confidence gate + fallback.
+
+Done when:
+- End-to-end graph->plan->synthesize->save test passes in staging.
+- Replay pass >= 85% on pilot set; fallback reason codes emitted on low confidence.
+
+## ADR Recommendation
+
+Create **ADR-010: ASG-Based Deterministic Test Generation**.
+
+ADR-010 should contain:
+- Context: instability of random crawling and deterministic replay requirement.
+- Decision: introduce goal-bounded ASG + planner + synthesizer with confidence gates.
+- Constraints honored: execution dispatch path, lazy tiers, layering, SQLAlchemy, `steps: string[]`.
+- Alternatives considered: random crawl tuning only, full autonomous explorer, pure rule-based scripts.
+- Trade-offs: improved stability vs upfront graph/model complexity.
+- Rollout/rollback policy, observability KPIs, and fallback contract.
