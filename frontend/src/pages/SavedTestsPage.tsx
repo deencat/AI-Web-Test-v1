@@ -10,7 +10,7 @@ import testCategoriesService from '../services/testCategoriesService';
 import executionService from '../services/executionService';
 import schedulesService, { type TestSchedule, type CreateSchedulePayload } from '../services/schedulesService';
 import { GeneratedTestCase, TestCategory } from '../types/api';
-import { Loader2, Plus, Search, Trash2, Play, Eye, Edit, Clock, FolderOpen, ChevronDown } from 'lucide-react';
+import { Loader2, Plus, Search, Trash2, Play, Eye, Edit, Copy, Clock, FolderOpen, ChevronDown } from 'lucide-react';
 
 interface SavedTest {
   id: number;
@@ -83,6 +83,7 @@ export const SavedTestsPage: React.FC = () => {
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [togglingScheduleId, setTogglingScheduleId] = useState<number | null>(null);
   const [scheduledTestIds, setScheduledTestIds] = useState<Record<number, number>>({});
+  const [cloningTestId, setCloningTestId] = useState<number | null>(null);
 
   useEffect(() => {
     loadTests();
@@ -397,6 +398,35 @@ export const SavedTestsPage: React.FC = () => {
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to run test');
     }
+  };
+
+  const handleCloneTest = async (testId: number, options?: { fromDrawer?: boolean }) => {
+    setCloningTestId(testId);
+    try {
+      const cloned = await testsService.cloneTest(testId);
+      const clonedTitle =
+        (cloned as { title?: string }).title ||
+        (cloned as { name?: string }).name ||
+        'Untitled';
+      setPageNotice(`Cloned: ${clonedTitle}`);
+      await loadTests();
+      if (options?.fromDrawer) {
+        closeEditDrawer();
+      }
+      const newId = (cloned as { id?: number | string }).id ?? testId;
+      navigate(`/tests/saved?edit=${newId}`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to clone test');
+    } finally {
+      setCloningTestId(null);
+    }
+  };
+
+  const handleCloneFromDrawer = () => {
+    if (!editingTest) return;
+    const testId = parseInt(editingTest.id, 10);
+    if (Number.isNaN(testId)) return;
+    void handleCloneTest(testId, { fromDrawer: true });
   };
 
   const openScheduleModal = async (test: SavedTest) => {
@@ -911,6 +941,20 @@ export const SavedTestsPage: React.FC = () => {
                       <Edit className="w-5 h-5" />
                     </button>
                     <button
+                      onClick={() => handleCloneTest(test.id)}
+                      disabled={cloningTestId === test.id}
+                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
+                      title="Clone Test Case"
+                      aria-label="Clone Test Case"
+                      data-testid={`clone-test-button-${test.id}`}
+                    >
+                      {cloningTestId === test.id ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <Copy className="w-5 h-5" />
+                      )}
+                    </button>
+                    <button
                       onClick={() => handleRunTest(test.id)}
                       className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
                       title="Run Test"
@@ -1111,6 +1155,24 @@ export const SavedTestsPage: React.FC = () => {
 
             {!editLoading && editingTest && (
               <div className="border-t p-6 flex gap-3">
+                <Button
+                  variant="secondary"
+                  onClick={handleCloneFromDrawer}
+                  disabled={editSaving || cloningTestId === parseInt(editingTest.id, 10)}
+                  data-testid="clone-test-drawer-button"
+                >
+                  {cloningTestId === parseInt(editingTest.id, 10) ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                      Cloning...
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4 mr-1" />
+                      Clone
+                    </>
+                  )}
+                </Button>
                 <Button
                   variant="secondary"
                   onClick={closeEditDrawer}

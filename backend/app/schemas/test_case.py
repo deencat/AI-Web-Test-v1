@@ -292,3 +292,16 @@ class BatchCategoryResponse(BaseModel):
     updated: int
     failed: List[int]
 
+
+# ── Clone Test Case ──────────────────────────────────────────────────────────
+
+class TestCaseCloneRequest(BaseModel):
+    """Request body for POST /tests/{test_case_id}/clone."""
+
+    new_title: Optional[str] = Field(
+        None,
+        min_length=1,
+        max_length=255,
+        description="Optional title override; auto-suffix applied when omitted",
+    )
+

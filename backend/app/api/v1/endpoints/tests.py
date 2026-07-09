@@ -16,6 +16,7 @@ from app.schemas.test_case import (
     BatchDeleteResponse,
     BatchCategoryRequest,
     BatchCategoryResponse,
+    TestCaseCloneRequest,
 )
 from app.crud import test_case as crud
 from app.crud import test_category as category_crud
@@ -301,6 +302,52 @@ def get_test_case(
         )
     
     return sanitize_test_case_for_response(db_test_case)
+
+
+@router.post("/{test_case_id}/clone", response_model=TestCaseResponse, status_code=status.HTTP_201_CREATED)
+def clone_test_case_endpoint(
+    test_case_id: int,
+    body: TestCaseCloneRequest | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Clone an existing test case.
+
+    Creates an independent copy with a smart title suffix, fresh timestamps,
+    and all step content preserved. Does not copy executions or schedules.
+    """
+    original = crud.get_test_case(db=db, test_case_id=test_case_id)
+
+    if not original:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Test case not found",
+        )
+
+    if original.user_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to clone this test case",
+        )
+
+    if body and body.new_title:
+        new_title = body.new_title
+        if crud.title_exists_for_user(db, current_user.id, new_title):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A test case with this title already exists",
+            )
+    else:
+        new_title = crud._generate_clone_title(db, current_user.id, original.title)
+
+    cloned = crud.clone_test_case(
+        db=db,
+        original=original,
+        user_id=current_user.id,
+        new_title=new_title,
+    )
+    return sanitize_test_case_for_response(cloned)
 
 
 @router.patch("/batch/category", response_model=BatchCategoryResponse)
