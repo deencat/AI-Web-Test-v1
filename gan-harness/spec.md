@@ -1,4 +1,15 @@
-# Product Specification: Stop Execution — Cooperative Cancel for 3-Tier Test Runs
+# Product Specification: AI Web Test v1 — GAN Harness Features
+
+This document contains feature specs for the GAN harness. Each major section is self-contained.
+
+| # | Feature | Brief |
+|---|---------|-------|
+| 1 | Stop Execution | Cooperative cancel for 3-tier test runs |
+| 2 | Clone Test Case | Duplicate a saved test case with one click |
+
+---
+
+# Feature 1: Stop Execution — Cooperative Cancel for 3-Tier Test Runs
 
 > Generated from brief: *"Add a Stop button to stop 3-tier test execution (Playwright → XPath → Stagehand AI) for saved test runs."*
 
@@ -719,3 +730,414 @@ See `gan-harness/eval-rubric.md` for weighted scoring (pass ≥ 0.85).
 - Running execution stuck after stop
 - Cancel conflated with delete
 - Normal pass/fail runs regress
+
+---
+
+# Feature 2: Clone Test Case — Duplicate Saved Tests
+
+> Generated from brief: *"Add a Clone Test Case button for saved tests in the AI Web Test v1 platform."*
+
+---
+
+## Vision
+
+QA engineers frequently need to fork an existing saved test — tweak a few steps for a variant flow, test against a different environment, or preserve a baseline before risky edits. **Clone Test Case** gives them a one-click duplicate from the Saved Tests list (and edit drawer) that creates an independent copy with a smart title suffix, fresh timestamps, and all step content preserved. The flow should feel as fast and obvious as duplicating a row in a spreadsheet: click Clone, see the new test appear at the top of the list, optionally land in edit mode.
+
+Mirror the proven **test template clone** pattern (`POST /test-templates/{id}/clone`) already in the codebase — same API shape, same ownership rules, adapted for `TestCase` fields.
+
+---
+
+## User Story
+
+**As a** QA engineer managing saved test cases,  
+**I want** to clone an existing test case with one click,  
+**So that** I can create variations without manually re-entering steps, assertions, categories, and metadata.
+
+**Acceptance (happy path):**
+1. User is on `/tests/saved` with at least one saved test visible.
+2. User clicks **Clone** on a test row (or in the edit drawer).
+3. Button shows brief loading state; API returns 201 with the new test.
+4. List refreshes; cloned test appears at top with title `{original title} (Copy)` (or `(Copy 2)` if name collides).
+5. Cloned test has identical `steps`, `expected_result`, `priority`, `test_type`, `test_category_id`, `tags`, `requires_runtime_credentials`, and `preconditions`.
+6. Cloned test has `status=pending`, new `id`, new `created_at`/`updated_at`, `user_id` = current user.
+7. User can immediately **Run** or **Edit** the clone without affecting the original.
+
+---
+
+## Scope
+
+### In scope
+
+| Area | Deliverable |
+|------|-------------|
+| Backend CRUD | `clone_test_case()` in `backend/app/crud/test_case.py` |
+| Backend API | `POST /api/v1/tests/{test_case_id}/clone` → 201 `TestCaseResponse` |
+| Schema | `TestCaseCloneRequest` with optional `new_title` override |
+| Frontend service | `testsService.cloneTest(id, options?)` |
+| Frontend UI | Clone button on `SavedTestsPage` row actions + edit drawer footer |
+| Tests | Backend unit/API tests + frontend component test |
+| Docs | Brief ADR addendum or section in existing test-management ADR |
+
+### Out of scope
+
+- Bulk clone (multi-select → clone all)
+- Clone into another user's account or cross-tenant copy
+- Copying execution history (`test_executions` rows)
+- Copying schedules (`test_schedules` — clone does not inherit cron/interval jobs)
+- Adding clone to test suite membership automatically (suites keep referencing original `test_case_id`)
+- Copying full step version history (only current `steps`/`expected_result`/`test_data` snapshot; optional v1 version record — see Should-Have)
+- Clone from Execution History or Execution Progress pages
+- MCP server exposure (defer unless trivial — add `clone_test_case` tool in Nice-to-Have)
+
+---
+
+## Current State Analysis
+
+### What exists
+
+| Layer | Location | Status |
+|-------|----------|--------|
+| Saved tests list | `frontend/src/pages/SavedTestsPage.tsx` | Row actions: View, Edit, Run, Schedule, Delete — **no Clone** |
+| Test CRUD API | `backend/app/api/v1/endpoints/tests.py` | `POST /tests`, `GET/PUT/DELETE /tests/{id}` |
+| TestCase model | `backend/app/models/test_case.py` | Full field set including `steps`, `tags`, `test_category_id`, `requires_runtime_credentials` |
+| Template clone (reference) | `test_templates.py` + `TestTemplateService.clone_template()` | **Pattern to mirror** |
+| Edit drawer | `SavedTestsPage` slide-over | Save/Cancel only — no Clone |
+| Step versioning | `versions.py` + `VersionService` | Versions tied to `test_case_id`; not cloned by default |
+
+### What's missing
+
+| Gap | Required artifact |
+|-----|-------------------|
+| Clone CRUD helper | `crud/test_case.clone_test_case()` |
+| Clone API route | `POST /tests/{test_case_id}/clone` in `tests.py` |
+| Request schema | `TestCaseCloneRequest` in `schemas/test_case.py` |
+| Frontend API method | `testsService.cloneTest()` |
+| Clone button (list) | `SavedTestsPage` row action with `Copy` icon |
+| Clone button (drawer) | Edit drawer footer secondary action |
+| Tests | `test_test_case_clone.py`, `SavedTestsPage.clone.test.tsx` (or equivalent) |
+
+---
+
+## Architecture Decision: Server-Side Deep Copy
+
+### Decision
+
+Implement clone as a **server-side deep copy** of the `TestCase` row (new primary key), not a client-side re-POST of fetched JSON. Rationale:
+
+1. Single source of truth for which fields copy vs reset.
+2. Ownership and auth enforced in one place.
+3. Title de-duplication logic centralized on backend.
+4. Consistent with `TestTemplateService.clone_template()`.
+
+### Fields to copy
+
+| Field | Behavior |
+|-------|----------|
+| `title` | `{original} (Copy)` or `{original} (Copy N)` if collision |
+| `description` | Deep copy as-is |
+| `test_type` | Copy |
+| `priority` | Copy |
+| `steps` | Deep copy JSON array |
+| `expected_result` | Copy |
+| `preconditions` | Copy (nullable) |
+| `test_data` | Deep copy (nullable) |
+| `category_id` (KB) | Copy |
+| `test_category_id` (saved-test folder) | Copy — clone stays in same folder |
+| `tags` | Deep copy array |
+| `test_metadata` | Deep copy |
+| `requires_runtime_credentials` | Copy boolean |
+| `scenario_id` | Copy (preserve lineage) |
+| `template_id` | Copy (preserve lineage) |
+
+### Fields to reset / assign
+
+| Field | Behavior |
+|-------|----------|
+| `id` | New auto-increment |
+| `status` | `TestStatus.PENDING` |
+| `user_id` | `current_user.id` (cloner owns the copy) |
+| `created_at` / `updated_at` | DB defaults (`utc_now`) |
+| `executions` | Empty (no relationship rows) |
+
+### Title suffix algorithm
+
+```python
+def _generate_clone_title(db, user_id, base_title: str) -> str:
+    candidate = f"{base_title} (Copy)"
+    if not title_exists_for_user(db, user_id, candidate):
+        return candidate
+    n = 2
+    while title_exists_for_user(db, user_id, f"{base_title} (Copy {n})"):
+        n += 1
+    return f"{base_title} (Copy {n})"
+```
+
+Scope title uniqueness to **same `user_id`** (titles are not globally unique today).
+
+Optional request body `new_title` overrides auto-suffix when provided (validated: non-empty, max 255 chars).
+
+---
+
+## API Contract
+
+### `POST /api/v1/tests/{test_case_id}/clone`
+
+**Auth:** Required (`deps.get_current_user`)
+
+**Ownership:** Source test must exist; non-admin must own source test (`test_case.user_id == current_user.id`), else 403.
+
+**Request body (optional):**
+
+```json
+{
+  "new_title": "My Custom Clone Name"
+}
+```
+
+`TestCaseCloneRequest`:
+- `new_title: Optional[str]` — min 1, max 255; when omitted, auto-suffix applied.
+
+**Responses:**
+
+| Condition | Status | Body |
+|-----------|--------|------|
+| Source not found | 404 | `{"detail": "Test case not found"}` |
+| Wrong user | 403 | `{"detail": "You don't have permission to clone this test case"}` |
+| `new_title` already exists for user | 409 | `{"detail": "A test case with this title already exists"}` |
+| Success | 201 | `TestCaseResponse` for new test |
+
+**Route ordering:** Register **before** any catch-all `/{test_case_id}` routes that might conflict. Path `/tests/{test_case_id}/clone` is distinct from `/tests/{test_case_id}` — no collision.
+
+**Handler logic (pseudocode):**
+
+```python
+@router.post("/{test_case_id}/clone", response_model=TestCaseResponse, status_code=201)
+def clone_test_case_endpoint(test_case_id, body: TestCaseCloneRequest | None, current_user, db):
+    original = crud.get_test_case(db, test_case_id)
+    # 404 / 403 checks ...
+    new_title = body.new_title if body and body.new_title else _generate_clone_title(db, current_user.id, original.title)
+    if title_exists_for_user(db, current_user.id, new_title):
+        raise HTTPException(409, "A test case with this title already exists")
+    cloned = crud.clone_test_case(db, original, user_id=current_user.id, new_title=new_title)
+    return sanitize_test_case_for_response(cloned)
+```
+
+### CRUD: `clone_test_case`
+
+**File:** `backend/app/crud/test_case.py`
+
+```python
+def clone_test_case(
+    db: Session,
+    original: TestCase,
+    *,
+    user_id: int,
+    new_title: str,
+) -> TestCase:
+    """Create a new TestCase copied from original. Does not copy executions or schedules."""
+```
+
+Use `copy.deepcopy` or explicit field assignment for JSON columns (`steps`, `tags`, `test_data`, `test_metadata`).
+
+---
+
+## Frontend UX Spec
+
+### Clone button — list row
+
+**Path:** `frontend/src/pages/SavedTestsPage.tsx`
+
+**Placement:** Row action toolbar, between **Edit** and **Run** (logical grouping: non-destructive mutations before execution).
+
+| Attribute | Value |
+|-----------|-------|
+| Icon | `Copy` from `lucide-react` |
+| `title` / `aria-label` | "Clone Test Case" |
+| `data-testid` | `clone-test-button-{test.id}` |
+| Styling | `p-2 text-blue-600 hover:bg-blue-50 rounded-lg` (matches secondary action palette; not green Run or red Delete) |
+
+**Interaction:**
+1. Click → `setCloningTestId(test.id)` disables that row's Clone button, shows spinner on icon.
+2. `await testsService.cloneTest(test.id)`.
+3. On success → `loadTests()` refresh; toast/notice: `"Cloned: {newTitle}"`.
+4. On error → show inline error or page notice; re-enable button.
+
+**Optional enhancement (Should-Have):** After clone, navigate to `?edit={newId}` so user lands in edit drawer immediately.
+
+### Clone button — edit drawer
+
+**Placement:** Footer button row, left of Cancel:
+
+```tsx
+<Button variant="secondary" onClick={handleCloneFromDrawer} data-testid="clone-test-drawer-button">
+  <Copy className="w-4 h-4 mr-1" /> Clone
+</Button>
+```
+
+Clones the test currently open in the drawer (even if user has unsaved edits — **clone source is server state**, not dirty form; show tooltip: "Clones saved version").
+
+### `testsService.cloneTest`
+
+**File:** `frontend/src/services/testsService.ts`
+
+```typescript
+async cloneTest(
+  testId: number,
+  options?: { newTitle?: string }
+): Promise<Test> {
+  const response = await api.post(`/tests/${testId}/clone`, options ?? {});
+  return response.data;
+}
+```
+
+Mock mode: append a copy to `mockTests` with new id and `(Copy)` suffix.
+
+---
+
+## Design Direction
+
+- **Color palette:** Clone button `#2563eb` (blue-600) on `#eff6ff` (blue-50) hover — distinct from green Run (`#16a34a`) and red Delete (`#dc2626`)
+- **Typography:** Icon-only on list row with `title` tooltip; drawer uses `text-sm font-medium` label "Clone"
+- **Layout:** Inline in existing row action cluster; no new modals for default flow
+- **Visual identity:** `Copy` icon (Lucide), not "duplicate document" emoji
+- **Inspiration:** GitHub "Duplicate workflow", Notion "Duplicate page", existing `test-templates` clone
+
+**Anti-patterns to avoid:**
+- `window.confirm()` before every clone (clone is non-destructive — no confirmation needed)
+- Navigating away from list without refresh (stale list)
+- Client-only clone that omits `requires_runtime_credentials` or `test_category_id`
+- Reusing Delete's red styling for Clone
+
+---
+
+## Features (Prioritized)
+
+### Must-Have (Sprint 5)
+
+1. **`clone_test_case` CRUD** — deep copy with field matrix above
+2. **`POST /tests/{id}/clone`** — auth, ownership, 201/404/403/409
+3. **`TestCaseCloneRequest` schema** — optional `new_title`
+4. **Title suffix algorithm** — `(Copy)` / `(Copy N)` per user
+5. **`testsService.cloneTest()`** — service layer + mock
+6. **List row Clone button** — `SavedTestsPage` with loading state
+7. **Backend tests** — happy path, 404, 403, title collision, field parity
+
+### Should-Have (Sprint 6)
+
+8. **Edit drawer Clone button** — clone from open drawer
+9. **Post-clone navigation** — optional `?edit={newId}` redirect
+10. **Frontend component test** — button renders, calls service, loading state
+11. **Initial version snapshot** — `VersionService.save_version(..., change_reason="cloned_from_{id}")` on clone (v1 for new test)
+
+### Nice-to-Have (Sprint 7+)
+
+12. MCP `clone_test_case` tool in `mcp_server.py`
+13. Keyboard shortcut `C` when row focused (accessibility power-user)
+14. Bulk clone from multi-select
+15. Clone with "Reset status only" option for advanced users
+
+---
+
+## Sprint Plan
+
+### Sprint 5: Clone API + List Button
+
+**Goals:** User can clone from Saved Tests list; new test appears with correct content.
+
+| # | File | Task |
+|---|------|------|
+| 5.1 | `backend/app/schemas/test_case.py` | Add `TestCaseCloneRequest` |
+| 5.2 | `backend/app/crud/test_case.py` | Add `clone_test_case()`, title helper |
+| 5.3 | `backend/app/api/v1/endpoints/tests.py` | Add `POST /{test_case_id}/clone` |
+| 5.4 | `backend/tests/unit/test_test_case_clone.py` | API + CRUD tests |
+| 5.5 | `frontend/src/services/testsService.ts` | `cloneTest()` |
+| 5.6 | `frontend/src/pages/SavedTestsPage.tsx` | Row Clone button + handler |
+
+**Definition of done:** Clone from list creates independent test; original unchanged; `pytest test_test_case_clone.py` passes; `npm run build` succeeds.
+
+---
+
+### Sprint 6: Drawer Clone + Polish
+
+**Goals:** Clone from edit drawer; post-clone UX polish.
+
+| # | File | Task |
+|---|------|------|
+| 6.1 | `SavedTestsPage.tsx` | Drawer Clone button |
+| 6.2 | `SavedTestsPage.tsx` | Optional redirect to `?edit={newId}` |
+| 6.3 | `frontend/src/pages/__tests__/SavedTestsPage.clone.test.tsx` | Component tests |
+| 6.4 | `version_service.py` (optional) | Initial version on clone |
+
+**Definition of done:** Evaluator script steps 1–8 in `eval-rubric-clone-test-case.md` pass.
+
+---
+
+## Test Strategy
+
+### Backend: `test_test_case_clone.py`
+
+| Test | Assertion |
+|------|-----------|
+| `test_clone_happy_path` | 201; new `id` ≠ source; title ends with `(Copy)`; steps equal |
+| `test_clone_preserves_category_and_tags` | `test_category_id`, `tags`, `requires_runtime_credentials` match |
+| `test_clone_resets_status` | `status=pending`; no execution rows |
+| `test_clone_title_collision` | Second clone of same source → `(Copy 2)` |
+| `test_clone_custom_title` | Body `new_title` used |
+| `test_clone_custom_title_conflict` | Duplicate `new_title` → 409 |
+| `test_clone_not_found` | 404 |
+| `test_clone_wrong_user` | 403 |
+| `test_clone_does_not_delete_original` | Source still exists after clone |
+
+### Frontend
+
+- Clone button visible per row with `data-testid`
+- Click triggers `cloneTest` mock; list refresh called
+- Loading disables button during request
+- Error shows notice, does not remove original from list
+
+### Manual / Evaluator script
+
+See `gan-harness/eval-rubric-clone-test-case.md` § Evaluator Test Script.
+
+---
+
+## Risks & Edge Cases
+
+| Scenario | Expected behavior |
+|----------|-------------------|
+| Source has `requires_runtime_credentials=true` | Copied to clone; Run still prompts/injects per ADR-002-12 |
+| Source in a `test_category` folder | Clone placed in same folder |
+| Source is `uncategorized` (`test_category_id=null`) | Clone also uncategorized |
+| Source linked to `scenario_id` / `template_id` | IDs copied (lineage preserved); both tests independent thereafter |
+| Source has active schedule | **Not** copied; user must schedule clone separately |
+| Source member of test suite | Suite unchanged; clone is standalone |
+| Empty `steps` array | Allowed — clone copies empty steps (edge case for draft tests) |
+| Very long title (near 255 chars) | Truncate base before suffix or reject with 422 if suffix would exceed 255 |
+| Admin clones another user's test | **403** unless admin-impersonation pattern exists (match existing test GET ownership) |
+| Double-click Clone | `cloningTestId` guard prevents duplicate API calls |
+| Clone while edit drawer has unsaved changes | Clone uses **persisted** server state, not dirty form |
+| JSON fields with nested objects | Use deep copy to avoid shared references |
+| Concurrent clones of same test | Each gets unique title `(Copy)`, `(Copy 2)`, etc. |
+
+**Empty/error states:**
+- Network error → page notice "Failed to clone test"; button re-enabled
+- 409 title conflict → show detail message; suggest edit title in drawer after clone
+
+---
+
+## Evaluation Criteria
+
+See `gan-harness/eval-rubric-clone-test-case.md` for weighted scoring (pass ≥ 0.85).
+
+**Summary weights:**
+- Backend Clone API & CRUD: 0.35
+- Data fidelity (fields copied correctly): 0.25
+- Frontend Clone UX: 0.25
+- Tests: 0.15
+
+**Automatic fail conditions:**
+- No `POST /tests/{id}/clone` endpoint
+- Clone mutates or deletes source test
+- Clone shares `id` with source
+- Steps not copied (empty clone)
+- No Clone button on SavedTestsPage list
