@@ -121,6 +121,12 @@ class Settings(BaseSettings):
     LLM_LOG_MAX_FILES: int = 200
     LLM_LOG_FULL_PROMPT: bool = False
 
+    # Feature 3: App State Graph (ASG) deterministic test generation
+    ASG_ENABLED: bool = False
+    ASG_SHADOW_MODE: bool = True
+    ASG_CONFIDENCE_MIN: float = 0.75
+    ASG_PROJECT_ALLOWLIST: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,

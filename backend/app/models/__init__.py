@@ -16,6 +16,14 @@ from app.models.browser_profile import BrowserProfile
 from app.models.email_credential import EmailCredential
 from app.models.step_library_module import StepLibraryModule
 from app.models.test_category import TestCategory
+from app.models.asg import (
+    ASGGraph,
+    ASGNode,
+    ASGEdge,
+    ASGPath,
+    ASGSynthesizedTest,
+    ASGGraphStatus,
+)
 
 __all__ = [
     "User",
@@ -35,5 +43,11 @@ __all__ = [
     "EmailCredential",
     "StepLibraryModule",
     "TestCategory",
+    "ASGGraph",
+    "ASGNode",
+    "ASGEdge",
+    "ASGPath",
+    "ASGSynthesizedTest",
+    "ASGGraphStatus",
 ]
 

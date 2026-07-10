@@ -9,6 +9,7 @@ from app.api.v2.endpoints import (
     evolution,
     improve_tests,
     crawl_and_save,
+    asg,
 )
 
 __all__ = [
@@ -21,5 +22,6 @@ __all__ = [
     "evolution",
     "improve_tests",
     "crawl_and_save",
+    "asg",
 ]
 

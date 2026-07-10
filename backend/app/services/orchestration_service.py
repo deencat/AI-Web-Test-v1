@@ -381,6 +381,114 @@ class OrchestrationService:
                 "elements_found": len(ui_elements),
                 "duration_seconds": getattr(observation_result, "execution_time_seconds", None),
             })
+
+            # ASG shadow build after observation (parallel to legacy pipeline)
+            asg_graph_id: Optional[int] = None
+            asg_fallback_reason: Optional[str] = None
+            try:
+                from app.core.config import settings as _asg_settings
+                from app.services.asg_service import (
+                    trigger_shadow_build,
+                    should_use_asg_primary,
+                    ASGService,
+                )
+                from app.schemas.asg import ASGPlanGoal, ASGSynthesizeRequest
+
+                project_id = request.get("project_id")
+                if getattr(_asg_settings, "ASG_SHADOW_MODE", True) or getattr(_asg_settings, "ASG_ENABLED", False):
+                    if db is not None:
+                        asg_graph_id = trigger_shadow_build(
+                            db,
+                            target_url=url,
+                            flow_steps=obs_data.get("flow_steps") or [],
+                            created_by=request.get("user_id", _DEFAULT_USER_ID),
+                            project_id=project_id,
+                            seed_intents=[user_instruction] if user_instruction else [],
+                            page_context=obs_data.get("page_context") or {},
+                        )
+
+                use_asg_primary = should_use_asg_primary(project_id) and asg_graph_id is not None
+                if use_asg_primary and db is not None:
+                    asg_service = ASGService()
+                    passes, fallback_reason = asg_service.evaluate_confidence_gate(db, asg_graph_id)
+                    if passes:
+                        plan = asg_service.plan_paths(
+                            db,
+                            asg_graph_id,
+                            ASGPlanGoal(mode="shortest_path", max_paths=3),
+                        )
+                        if plan.paths:
+                            path_ids = [p.path_id for p in plan.paths]
+                            synth = asg_service.synthesize_tests(
+                                db,
+                                asg_graph_id,
+                                ASGSynthesizeRequest(
+                                    path_ids=path_ids,
+                                    save_test_cases=True,
+                                    login_credentials=login_credentials or None,
+                                ),
+                                user_id=request.get("user_id", _DEFAULT_USER_ID),
+                            )
+                            test_case_ids = [
+                                t.test_case_id for t in synth.tests if t.test_case_id is not None
+                            ]
+                            test_count = len(test_case_ids)
+                            completed_at = datetime.now(timezone.utc)
+                            total_duration = (completed_at - started_at).total_seconds()
+                            if pt:
+                                await pt.emit(workflow_id, "workflow_completed", {
+                                    "workflow_id": workflow_id,
+                                    "status": "completed",
+                                    "test_case_ids": test_case_ids,
+                                    "test_count": test_count,
+                                    "strategy": "asg",
+                                    "asg_graph_id": asg_graph_id,
+                                    "total_duration_seconds": total_duration,
+                                })
+                            set_state(workflow_id, {
+                                "workflow_id": workflow_id,
+                                "status": "completed",
+                                "current_agent": None,
+                                "progress": {},
+                                "total_progress": 1.0,
+                                "started_at": started_at.isoformat(),
+                                "completed_at": completed_at.isoformat(),
+                                "error": None,
+                                "result": {
+                                    "test_case_ids": test_case_ids,
+                                    "test_count": test_count,
+                                    "strategy": "asg",
+                                    "asg_graph_id": asg_graph_id,
+                                    "observation_result": obs_data,
+                                    "total_duration_seconds": total_duration,
+                                },
+                            })
+                            if db:
+                                try:
+                                    db.close()
+                                except Exception:
+                                    pass
+                            return {
+                                "workflow_id": workflow_id,
+                                "status": "completed",
+                                "result": {
+                                    "test_case_ids": test_case_ids,
+                                    "test_count": test_count,
+                                    "strategy": "asg",
+                                    "asg_graph_id": asg_graph_id,
+                                    "total_duration_seconds": total_duration,
+                                },
+                            }
+                    asg_fallback_reason = fallback_reason or "low_confidence"
+                    logger.info(
+                        "Workflow %s: ASG confidence gate failed (%s); falling back to legacy",
+                        workflow_id,
+                        asg_fallback_reason,
+                    )
+            except Exception as _asg_exc:
+                asg_fallback_reason = "asg_error"
+                logger.warning("Workflow %s: ASG primary path failed, legacy fallback: %s", workflow_id, _asg_exc)
+
             if _check_cancelled():
                 return {"workflow_id": workflow_id, "status": "cancelled"}
 

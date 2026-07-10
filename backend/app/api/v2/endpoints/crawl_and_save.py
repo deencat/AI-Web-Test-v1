@@ -778,6 +778,30 @@ async def _run_crawl_and_save(
             "stop_triggered": bool(stop_at_page_hint),
         })
 
+        # ---- 2b. ASG shadow build (feature-flagged) ----
+        try:
+            from app.core.config import settings as _asg_settings
+            if getattr(_asg_settings, "ASG_SHADOW_MODE", True) or getattr(_asg_settings, "ASG_ENABLED", False):
+                from app.db.session import SessionLocal as _AsgSession
+                from app.services.asg_service import trigger_shadow_build
+
+                _asg_db = _AsgSession()
+                try:
+                    asg_graph_id = trigger_shadow_build(
+                        _asg_db,
+                        target_url=url,
+                        flow_steps=flow_steps,
+                        created_by=user_id,
+                        seed_intents=[user_instruction] if user_instruction else [],
+                        page_context=obs_data.get("page_context") or {},
+                    )
+                    if asg_graph_id:
+                        logger.info("CrawlAndSave %s: ASG shadow graph_id=%s", workflow_id, asg_graph_id)
+                finally:
+                    _asg_db.close()
+        except Exception as _asg_exc:
+            logger.warning("CrawlAndSave %s: ASG shadow build skipped: %s", workflow_id, _asg_exc)
+
         # ---- 3. Convert flow_steps → test step strings ----
         crawled_step_strings = _flow_steps_to_test_steps(flow_steps, login_credentials)
 
