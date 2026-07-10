@@ -784,3 +784,108 @@ class TestRemainingServiceCoverage:
 
     def test_get_asg_service_factory(self):
         assert isinstance(get_asg_service(), ASGService)
+
+
+class TestPhase3Integration:
+    def test_synthesize_confidence_gate_returns_fallback(self, db, tmp_path, monkeypatch):
+        monkeypatch.setattr("app.services.asg_service.settings.ASG_CONFIDENCE_MIN", 0.99)
+        service = ASGService(artifacts_root=tmp_path / "asg")
+        build = service.build_graph(
+            db,
+            ASGBuildRequest(
+                target_url="https://example.com",
+                flow_steps=[{"order": 1, "action": "navigate", "page_url": "https://example.com", "target": "home"}],
+            ),
+            created_by=1,
+        )
+        plan = service.plan_paths(db, build.graph_id, ASGPlanGoal(mode="shortest_path", max_paths=1))
+        synth = service.synthesize_tests(
+            db,
+            build.graph_id,
+            ASGSynthesizeRequest(path_ids=[plan.paths[0].path_id]),
+        )
+        assert synth.confidence_gate_passed is False
+        assert synth.fallback_reason_code is not None
+        assert synth.tests == []
+
+    def test_compare_shadow_vs_primary(self, db, tmp_path):
+        service = ASGService(artifacts_root=tmp_path / "asg")
+        flow = [
+            {"order": 1, "action": "navigate", "page_url": "https://example.com", "target": "home"},
+            {"order": 2, "action": "click", "page_url": "https://example.com/x", "target": "Go", "locator": {"css": "#go"}},
+        ]
+        build = service.build_graph(
+            db,
+            ASGBuildRequest(target_url="https://example.com", flow_steps=flow),
+            created_by=1,
+        )
+        diff = service.compare_shadow_vs_primary(db, build.graph_id, flow)
+        assert diff["graph_id"] == build.graph_id
+        assert "step_jaccard_similarity" in diff
+
+    def test_compare_shadow_vs_primary_plan_failure(self, db, tmp_path, monkeypatch):
+        service = ASGService(artifacts_root=tmp_path / "asg")
+        build = service.build_graph(
+            db,
+            ASGBuildRequest(
+                target_url="https://example.com",
+                flow_steps=[{"order": 1, "action": "navigate", "page_url": "https://example.com", "target": "home"}],
+            ),
+            created_by=1,
+        )
+        with patch.object(service, "plan_paths", side_effect=RuntimeError("plan failed")):
+            diff = service.compare_shadow_vs_primary(db, build.graph_id, [])
+        assert diff["asg_step_count"] == 0
+
+    def test_compare_shadow_vs_primary_skips_missing_edges(self, db, tmp_path):
+        service = ASGService(artifacts_root=tmp_path / "asg")
+        build = service.build_graph(
+            db,
+            ASGBuildRequest(
+                target_url="https://example.com",
+                flow_steps=[{"order": 1, "action": "navigate", "page_url": "https://example.com", "target": "home"}],
+            ),
+            created_by=1,
+        )
+        path = asg_crud.create_path(
+            db,
+            graph_id=build.graph_id,
+            goal_type="test",
+            path_nodes_json=["a", "b"],
+            path_edges_json=["nonexistent-edge-key"],
+            score=0.9,
+            risk_score=0.1,
+        )
+        with patch.object(service, "plan_paths") as mock_plan:
+            mock_plan.return_value = type("P", (), {"paths": [type("PP", (), {"path_id": path.id})()]})()
+            diff = service.compare_shadow_vs_primary(db, build.graph_id, [])
+        assert diff["asg_step_count"] == 0
+
+    def test_mark_paths_selected_empty_path_ids(self, db, tmp_path):
+        service = ASGService(artifacts_root=tmp_path / "asg")
+        build = service.build_graph(
+            db,
+            ASGBuildRequest(
+                target_url="https://example.com",
+                flow_steps=[{"order": 1, "action": "navigate", "page_url": "https://example.com", "target": "home"}],
+            ),
+            created_by=1,
+        )
+        asg_crud.mark_paths_selected(db, build.graph_id, [])
+
+    def test_build_records_metrics(self, db, tmp_path):
+        from app.services.asg_metrics import reset_asg_metrics, get_asg_metrics
+
+        reset_asg_metrics()
+        service = ASGService(artifacts_root=tmp_path / "asg")
+        service.build_graph(
+            db,
+            ASGBuildRequest(
+                target_url="https://example.com",
+                flow_steps=[{"order": 1, "action": "navigate", "page_url": "https://example.com", "target": "home"}],
+            ),
+            created_by=1,
+        )
+        snap = get_asg_metrics().snapshot
+        assert snap.build_count == 1
+        assert snap.node_count_total >= 1

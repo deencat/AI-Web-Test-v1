@@ -406,6 +406,17 @@ class OrchestrationService:
                             seed_intents=[user_instruction] if user_instruction else [],
                             page_context=obs_data.get("page_context") or {},
                         )
+                        if (
+                            asg_graph_id
+                            and getattr(_asg_settings, "ASG_SHADOW_MODE", True)
+                            and not should_use_asg_primary(project_id)
+                        ):
+                            ASGService().compare_shadow_vs_primary(
+                                db,
+                                asg_graph_id,
+                                obs_data.get("flow_steps") or [],
+                                login_credentials=login_credentials or None,
+                            )
 
                 use_asg_primary = should_use_asg_primary(project_id) and asg_graph_id is not None
                 if use_asg_primary and db is not None:
@@ -424,6 +435,7 @@ class OrchestrationService:
                                 asg_graph_id,
                                 ASGSynthesizeRequest(
                                     path_ids=path_ids,
+                                    plan_id=plan.plan_id,
                                     save_test_cases=True,
                                     login_credentials=login_credentials or None,
                                 ),

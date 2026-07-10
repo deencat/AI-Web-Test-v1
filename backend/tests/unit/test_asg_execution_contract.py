@@ -87,7 +87,7 @@ async def test_asg_synthesize_then_execution_service_accepts_string_steps(db, ow
     synth = service.synthesize_tests(
         db,
         build.graph_id,
-        ASGSynthesizeRequest(path_ids=[plan.paths[0].path_id], save_test_cases=True),
+        ASGSynthesizeRequest(path_ids=[plan.paths[0].path_id], save_test_cases=True, plan_id=plan.plan_id),
         user_id=owner.id,
     )
 
@@ -130,7 +130,8 @@ async def test_asg_synthesize_then_execution_service_accepts_string_steps(db, ow
          patch.object(exec_service, "_capture_screenshot", new=AsyncMock(return_value=None)), \
          patch("app.services.execution_service.crud_execution.create_execution_step"), \
          patch("app.services.execution_service.get_step_session_snapshot", return_value=None), \
-         patch.object(exec_service, "_execute_step", side_effect=capture_execute_step):
+         patch.object(exec_service, "_execute_step", side_effect=capture_execute_step), \
+         patch("app.services.asg_service.ASGService", lambda *a, **kw: service):
 
         mock_tier_cls.return_value = MagicMock()
         normalized = exec_service._normalize_test_steps(test_case.steps)
@@ -147,13 +148,9 @@ async def test_asg_synthesize_then_execution_service_accepts_string_steps(db, ow
     assert captured_steps
     assert all(isinstance(s, str) for s in captured_steps)
 
-    artifact_path = service.write_replay_artifact(
-        graph_id=build.graph_id,
-        execution_id=execution.id,
-        plan_id=plan.plan_id,
-        synthesis_id=synth.synthesis_id,
-    )
-    replay = json.loads(artifact_path.read_text(encoding="utf-8"))
+    replay_path = tmp_path / "asg" / str(build.graph_id) / "replay" / f"{execution.id}.json"
+    assert replay_path.exists()
+    replay = json.loads(replay_path.read_text(encoding="utf-8"))
     assert replay["graph_id"] == build.graph_id
     assert replay["execution_id"] == execution.id
     assert replay["plan_id"] == plan.plan_id

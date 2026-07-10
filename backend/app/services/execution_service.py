@@ -1256,8 +1256,62 @@ class ExecutionService:
             clear_cancel(execution.id)
             # Cleanup
             await self.cleanup()
-        
+
+        self._write_asg_replay_artifact_if_applicable(test_case=test_case, execution=execution)
+
         return execution
+
+    def _write_asg_replay_artifact_if_applicable(
+        self,
+        *,
+        test_case: TestCase,
+        execution: TestExecution,
+    ) -> None:
+        """Post-execution hook: persist ASG replay bundle when test has ASG provenance."""
+        metadata = test_case.test_metadata if isinstance(test_case.test_metadata, dict) else None
+        if not metadata or metadata.get("strategy") != "asg":
+            return
+        graph_id = metadata.get("graph_id")
+        if not graph_id:
+            return
+        try:
+            from app.services.asg_service import ASGService
+            from app.services.asg_metrics import get_asg_metrics
+
+            result_val = (
+                execution.result.value
+                if execution.result is not None and hasattr(execution.result, "value")
+                else str(execution.result) if execution.result is not None else None
+            )
+            replay_passed = result_val == "pass" or (
+                (execution.failed_steps or 0) == 0 and (execution.passed_steps or 0) > 0
+            )
+
+            service = ASGService()
+            service.write_replay_artifact(
+                graph_id=int(graph_id),
+                execution_id=execution.id,
+                plan_id=metadata.get("plan_id"),
+                synthesis_id=metadata.get("synthesis_id"),
+                extra={
+                    "status": (
+                        execution.status.value
+                        if execution.status is not None and hasattr(execution.status, "value")
+                        else str(execution.status) if execution.status is not None else None
+                    ),
+                    "result": result_val,
+                    "passed_steps": execution.passed_steps,
+                    "failed_steps": execution.failed_steps,
+                    "total_steps": execution.total_steps,
+                },
+            )
+            get_asg_metrics().record_replay(
+                passed=replay_passed,
+                graph_id=int(graph_id),
+                execution_id=execution.id,
+            )
+        except Exception as exc:
+            logger.warning("ASG replay artifact hook failed execution_id=%s: %s", execution.id, exc)
     
     async def _execute_step(
         self, 

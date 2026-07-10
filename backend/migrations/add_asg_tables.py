@@ -6,9 +6,11 @@ Purpose: Deterministic test generation graph persistence.
 import sys
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).parent.parent))
-
 from sqlalchemy import create_engine, inspect
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
 from app.core.config import settings
 from app.db.base import Base

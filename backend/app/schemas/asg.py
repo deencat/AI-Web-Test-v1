@@ -93,6 +93,7 @@ class ASGSynthesizeRequest(BaseModel):
     save_test_cases: bool = False
     test_title_prefix: str = "ASG Generated"
     login_credentials: Optional[Dict[str, str]] = None
+    plan_id: Optional[str] = None
 
 
 class ASGSynthesizedDraftTest(BaseModel):
@@ -106,8 +107,10 @@ class ASGSynthesizedDraftTest(BaseModel):
 
 class ASGSynthesizeResponse(BaseModel):
     graph_id: int
-    synthesis_id: str
-    tests: List[ASGSynthesizedDraftTest]
+    synthesis_id: Optional[str] = None
+    tests: List[ASGSynthesizedDraftTest] = Field(default_factory=list)
+    fallback_reason_code: Optional[str] = None
+    confidence_gate_passed: bool = True
 
 
 class ASGValidateResponse(BaseModel):

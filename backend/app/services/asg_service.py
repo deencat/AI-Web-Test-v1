@@ -35,6 +35,8 @@ from app.schemas.asg import (
     ASGValidateResponse,
 )
 
+from app.services.asg_metrics import get_asg_metrics
+
 logger = logging.getLogger(__name__)
 
 _ARTIFACTS_ROOT = Path(__file__).resolve().parent.parent.parent / "artifacts" / "asg"
@@ -470,6 +472,15 @@ class ASGService:
             {"confidence": confidence.model_dump(), "stats": stats.model_dump()},
         )
 
+        get_asg_metrics().record_build(
+            graph_id=graph.id,
+            duration_ms=duration_ms,
+            node_count=len(nodes),
+            edge_count=len(edges),
+            confidence_mean=mean_conf,
+            below_threshold_count=below,
+        )
+
         return ASGBuildResponse(
             graph_id=graph.id,
             status=ASGGraphStatus.READY.value,
@@ -642,6 +653,12 @@ class ASGService:
             {"plan_id": plan_id, "goal": goal.model_dump(), "paths": [p.model_dump() for p in planned]},
         )
 
+        get_asg_metrics().record_plan(
+            graph_id=graph_id,
+            success=bool(planned),
+            path_count=len(planned),
+        )
+
         return ASGPlanResponse(graph_id=graph_id, plan_id=plan_id, paths=planned)
 
     def _shortest_path(
@@ -693,6 +710,21 @@ class ASGService:
         if not graph:
             raise ValueError(f"Graph {graph_id} not found")
 
+        passes_gate, fallback_reason = self.evaluate_confidence_gate(db, graph_id)
+        if not passes_gate:
+            get_asg_metrics().record_fallback(
+                fallback_reason or "low_confidence",
+                graph_id=graph_id,
+            )
+            get_asg_metrics().record_synthesis(graph_id=graph_id, success=False, test_count=0)
+            return ASGSynthesizeResponse(
+                graph_id=graph_id,
+                synthesis_id=None,
+                tests=[],
+                fallback_reason_code=fallback_reason,
+                confidence_gate_passed=False,
+            )
+
         asg_crud.mark_paths_selected(db, graph_id, request.path_ids)
         synthesis_id = str(uuid.uuid4())
         drafts: List[ASGSynthesizedDraftTest] = []
@@ -725,6 +757,8 @@ class ASGService:
             manifest = {
                 "graph_id": graph_id,
                 "path_id": path_id,
+                "plan_id": request.plan_id,
+                "synthesis_id": synthesis_id,
                 "edge_keys": path.path_edges_json,
                 "node_fingerprints": path.path_nodes_json,
                 "synthesis_profile": request.synthesis_profile,
@@ -773,7 +807,85 @@ class ASGService:
             {"synthesis_id": synthesis_id, "tests": [d.model_dump() for d in drafts]},
         )
 
-        return ASGSynthesizeResponse(graph_id=graph_id, synthesis_id=synthesis_id, tests=drafts)
+        get_asg_metrics().record_synthesis(
+            graph_id=graph_id,
+            success=bool(drafts),
+            test_count=len(drafts),
+        )
+
+        return ASGSynthesizeResponse(
+            graph_id=graph_id,
+            synthesis_id=synthesis_id,
+            tests=drafts,
+            confidence_gate_passed=True,
+        )
+
+    def compare_shadow_vs_primary(
+        self,
+        db: Session,
+        graph_id: int,
+        legacy_flow_steps: List[Dict[str, Any]],
+        *,
+        login_credentials: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Compare ASG-planned path quality against legacy flow_steps output in shadow mode.
+        """
+        from app.api.v2.endpoints.crawl_and_save import _flow_steps_to_test_steps
+
+        legacy_steps = _flow_steps_to_test_steps(legacy_flow_steps, login_credentials)
+        asg_steps: List[str] = []
+
+        try:
+            plan = self.plan_paths(
+                db,
+                graph_id,
+                ASGPlanGoal(mode="shortest_path", max_paths=1),
+            )
+            if plan.paths:
+                edges = {e.deterministic_key: e for e in asg_crud.list_edges(db, graph_id)}
+                path = asg_crud.get_path(db, graph_id, plan.paths[0].path_id)
+                if path:
+                    flow_steps: List[Dict[str, Any]] = []
+                    for edge_key in path.path_edges_json:
+                        edge = edges.get(edge_key)
+                        if not edge:
+                            continue
+                        payload = dict(edge.action_payload_json or {})
+                        payload.setdefault("action", edge.action_type)
+                        flow_steps.append(payload)
+                    asg_steps = _flow_steps_to_test_steps(flow_steps, login_credentials)
+        except Exception as exc:
+            logger.warning("ASG shadow-vs-primary plan failed graph_id=%s: %s", graph_id, exc)
+
+        def _normalize(steps: List[str]) -> set[str]:
+            return {s.strip().lower() for s in steps if s and s.strip()}
+
+        legacy_set = _normalize(legacy_steps)
+        asg_set = _normalize(asg_steps)
+        union = legacy_set | asg_set
+        overlap = legacy_set & asg_set
+        jaccard = round(len(overlap) / len(union), 4) if union else 0.0
+
+        summary = {
+            "graph_id": graph_id,
+            "legacy_step_count": len(legacy_steps),
+            "asg_step_count": len(asg_steps),
+            "step_overlap_count": len(overlap),
+            "step_jaccard_similarity": jaccard,
+            "legacy_longer": len(legacy_steps) > len(asg_steps),
+            "asg_longer": len(asg_steps) > len(legacy_steps),
+            "quality_delta_steps": len(asg_steps) - len(legacy_steps),
+        }
+        logger.info(
+            "ASG shadow-vs-primary diff graph_id=%s legacy_steps=%s asg_steps=%s jaccard=%.4f",
+            graph_id,
+            len(legacy_steps),
+            len(asg_steps),
+            jaccard,
+            extra={"metric": "asg_shadow_diff", **summary},
+        )
+        return summary
 
     def write_replay_artifact(
         self,

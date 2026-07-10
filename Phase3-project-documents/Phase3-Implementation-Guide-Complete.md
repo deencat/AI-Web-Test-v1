@@ -24,6 +24,7 @@
 | **Architecture** | [Phase3-Architecture-Design-Complete.md](Phase3-Architecture-Design-Complete.md) | System design, agent patterns |
 | **Project Management Plan** | [Phase3-Project-Management-Plan-Complete.md](Phase3-Project-Management-Plan-Complete.md) | Sprint planning, budget, tasks |
 | **API v2 Specification** | [API_SPECIFICATION.md](../backend/app/api/v2/API_SPECIFICATION.md) | Endpoints, request/response parameters, examples, chaining |
+| **ADR-010: ASG Deterministic Test Generation** | [ADR-010-asg-deterministic-test-generation.md](../documentation/ADR-010-asg-deterministic-test-generation.md) | App State Graph architecture, confidence gates, rollout; triage: [docs/asg-triage-playbook.md](../docs/asg-triage-playbook.md) |
 
 ---
 

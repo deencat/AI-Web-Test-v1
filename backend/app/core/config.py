@@ -1,5 +1,10 @@
+from pathlib import Path
 from typing import List
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Resolve backend/.env regardless of process working directory (repo root vs backend/).
+_BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 class Settings(BaseSettings):
@@ -128,7 +133,7 @@ class Settings(BaseSettings):
     ASG_PROJECT_ALLOWLIST: str | None = None
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_BACKEND_DIR / ".env"),
         case_sensitive=True,
         extra="ignore",  # Allow extra fields in .env without errors
     )

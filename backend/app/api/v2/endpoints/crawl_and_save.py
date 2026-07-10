@@ -779,11 +779,12 @@ async def _run_crawl_and_save(
         })
 
         # ---- 2b. ASG shadow build (feature-flagged) ----
+        asg_graph_id: Optional[int] = None
         try:
             from app.core.config import settings as _asg_settings
             if getattr(_asg_settings, "ASG_SHADOW_MODE", True) or getattr(_asg_settings, "ASG_ENABLED", False):
                 from app.db.session import SessionLocal as _AsgSession
-                from app.services.asg_service import trigger_shadow_build
+                from app.services.asg_service import ASGService, trigger_shadow_build
 
                 _asg_db = _AsgSession()
                 try:
@@ -804,6 +805,28 @@ async def _run_crawl_and_save(
 
         # ---- 3. Convert flow_steps → test step strings ----
         crawled_step_strings = _flow_steps_to_test_steps(flow_steps, login_credentials)
+
+        if asg_graph_id:
+            try:
+                from app.db.session import SessionLocal as _AsgDiffSession
+                from app.services.asg_service import ASGService
+
+                _diff_db = _AsgDiffSession()
+                try:
+                    ASGService().compare_shadow_vs_primary(
+                        _diff_db,
+                        asg_graph_id,
+                        flow_steps,
+                        login_credentials=login_credentials,
+                    )
+                finally:
+                    _diff_db.close()
+            except Exception as _diff_exc:
+                logger.warning(
+                    "CrawlAndSave %s: ASG shadow-vs-primary diff skipped: %s",
+                    workflow_id,
+                    _diff_exc,
+                )
 
         # ---- 3b. Filter steps that contradict the user instruction ----
         # Removes steps like "Click 'Download My3 App'" when the instruction says
