@@ -1,34 +1,31 @@
-# Generator State — Iteration ASG Phase 3
+# Generator State — Iteration ASG Phase 4
 
 ## What Was Built
-- SQLAlchemy models: `asg_graphs`, `asg_nodes`, `asg_edges`, `asg_paths`, `asg_synthesized_tests`
-- Migration: `backend/migrations/add_asg_tables.py`
-- `ASGService`: fingerprinting, transition normalization, confidence scoring, policy engine, path planner, synthesizer, confidence gate, shadow-vs-primary diff
-- `ASGMetrics` (`app/services/asg_metrics.py`): structured logging, in-memory counters, canary rollback helper
-- CRUD: `backend/app/crud/asg.py`
-- Schemas: `backend/app/schemas/asg.py` (synthesize gate fields on response)
-- API: `/api/v2/asg/build`, `GET /{graph_id}`, `POST /{graph_id}/plan|synthesize|validate`
-- Feature flags: `ASG_ENABLED`, `ASG_SHADOW_MODE`, `ASG_CONFIDENCE_MIN`, `ASG_PROJECT_ALLOWLIST`
-- Integration: crawl-and-save + orchestration shadow build with `compare_shadow_vs_primary()`
-- Post-execution replay hook in `ExecutionService` (does not alter ThreeTier dispatch)
-- Artifact storage under `artifacts/asg/{graph_id}/` including `replay/{execution_id}.json`
-- Docs: `docs/asg-triage-playbook.md`, ADR-010 cross-link in Phase3 implementation guide
-- E2E pipeline test: `backend/tests/e2e/test_asg_pipeline_e2e.py`
-- Metrics unit tests: `backend/tests/unit/test_asg_metrics.py`
+- **Confidence scoring v2** in `score_selector_stability()`: `playwright_suggestions` role+name (0.85) and css_id (0.75) now win over bare `xpath` (0.55)
+- **`_score_selector_stability_v1()`** helper for uplift comparison in confidence reports
+- **`extract_readiness_snapshots_from_flow_steps()`** extracts `readiness` / `post_click_readiness` from flow steps
+- **`normalize_transition()`** copies `playwright_suggestions` from locator bundle into transition payload
+- **`trigger_shadow_build()`** forwards extracted `readiness_snapshots` into `ASGBuildRequest`
+- **Observation agent** attaches per-step `readiness` on navigate/click/input flow_steps
+- **confidence-report.json** now includes `scoring_version: "v2"` and `uplift: {v1_mean, v2_mean}`
+- Pilot fixtures: `backend/tests/fixtures/asg/pilot_graph5_flow_steps.json`, `pilot_graph6_flow_steps.json`
+- Phase 4 tests in `TestPhase4ConfidenceV2` (unit + integration)
 
-## What Changed This Iteration (Phase 3)
-- Wired `write_replay_artifact()` via `ExecutionService._write_asg_replay_artifact_if_applicable()` for `strategy=asg` tests
-- Enforced confidence gate on `POST /api/v2/asg/{graph_id}/synthesize` (returns `fallback_reason_code` when below threshold)
-- Added `ASGMetrics` for build/plan/synthesis/replay/fallback observability
-- Added `evaluate_canary_rollback()` (replay < 80% or fallback > 40%)
-- Added `compare_shadow_vs_primary()` and hooked in orchestration + crawl-and-save shadow paths
-- Added `tests/conftest.py` autouse fixture to relax confidence gate in happy-path ASG tests
-- **100% coverage** on all six ASG modules (`cov-fail-under=100` passes; 87 tests)
+## What Changed This Iteration
+- Fixed xpath-first regression: xpath + role suggestion → **0.85** (was 0.55)
+- Wired readiness snapshots through shadow build path (settled → 0.90, loading_cleared → 0.80)
+- Pilot rebuild from fixtures passes `ASG_CONFIDENCE_MIN=0.75` gate without lowering threshold
+- **100% coverage** maintained on all six ASG modules (94 tests pass)
+
+## Pilot Confidence Scores (v2 rebuild from fixtures)
+| Fixture | Mean Confidence | v1 Mean | v2 Mean | fallback_recommended |
+|---------|----------------|---------|---------|---------------------|
+| pilot_graph5 (18 steps) | 0.7703 | 0.7204 | 0.7703 | false |
+| pilot_graph6 (17 steps) | 0.7700 | 0.7206 | 0.7700 | false |
 
 ## Known Issues
-- Typical fixture graphs score ~0.71 replay confidence at default `ASG_CONFIDENCE_MIN=0.75`; production cohorts need tuning or richer crawl locators
-- Requirement-coverage planner uses title/fingerprint heuristics until Requirements agent mapping is wired
-- ASG primary mode skips Requirements/Analysis/Evolution when confidence passes (by design)
+- Requirement-coverage planner still uses title/fingerprint heuristics
+- Crawl quality tuning (terminal nodes, self-loops) deferred to post-scoring-fix guidelines
 
 ## Dev Server
 - URL: http://localhost:8000

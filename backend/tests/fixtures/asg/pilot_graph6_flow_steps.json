@@ -1,0 +1,371 @@
+[
+  {
+    "order": 1,
+    "action": "navigate",
+    "target": "https://pilot6.example.com",
+    "page_url": "https://pilot6.example.com",
+    "page_title": "Home",
+    "element_type": "navigate",
+    "locator": null,
+    "readiness": {
+      "settled": true
+    }
+  },
+  {
+    "order": 2,
+    "action": "click",
+    "target": "Sign In",
+    "page_url": "https://pilot6.example.com/login",
+    "page_title": "Login",
+    "element_type": "button",
+    "locator": {
+      "xpath": "//button[@id='el-2']",
+      "playwright_suggestions": [
+        {
+          "kind": "role",
+          "role": "button",
+          "name": "Sign In",
+          "snippet": "page.getByRole('button', { name: 'Sign In' })"
+        }
+      ]
+    },
+    "readiness": {
+      "settled": true
+    }
+  },
+  {
+    "order": 3,
+    "action": "input",
+    "target": "Email",
+    "page_url": "https://pilot6.example.com/login",
+    "page_title": "Login",
+    "element_type": "input",
+    "locator": {
+      "xpath": "//textbox[@id='el-3']",
+      "playwright_suggestions": [
+        {
+          "kind": "role",
+          "role": "textbox",
+          "name": "Email",
+          "snippet": "page.getByRole('textbox', { name: 'Email' })"
+        }
+      ]
+    },
+    "readiness": {
+      "loading_cleared": true
+    },
+    "input_type": "text"
+  },
+  {
+    "order": 4,
+    "action": "input",
+    "target": "Password",
+    "page_url": "https://pilot6.example.com/login",
+    "page_title": "Login",
+    "element_type": "input",
+    "locator": {
+      "xpath": "//textbox[@id='el-4']",
+      "playwright_suggestions": [
+        {
+          "kind": "role",
+          "role": "textbox",
+          "name": "Password",
+          "snippet": "page.getByRole('textbox', { name: 'Password' })"
+        }
+      ]
+    },
+    "readiness": {
+      "loading_cleared": true
+    },
+    "input_type": "text"
+  },
+  {
+    "order": 5,
+    "action": "click",
+    "target": "Submit",
+    "page_url": "https://pilot6.example.com/login",
+    "page_title": "Login",
+    "element_type": "button",
+    "locator": {
+      "xpath": "//button[@id='el-5']",
+      "playwright_suggestions": [
+        {
+          "kind": "role",
+          "role": "button",
+          "name": "Submit",
+          "snippet": "page.getByRole('button', { name: 'Submit' })"
+        }
+      ]
+    },
+    "readiness": {
+      "loading_cleared": true
+    }
+  },
+  {
+    "order": 6,
+    "action": "click",
+    "target": "Dashboard",
+    "page_url": "https://pilot6.example.com/dashboard",
+    "page_title": "Dashboard",
+    "element_type": "link",
+    "locator": {
+      "xpath": "//link[@id='el-6']",
+      "playwright_suggestions": [
+        {
+          "kind": "role",
+          "role": "link",
+          "name": "Dashboard",
+          "snippet": "page.getByRole('link', { name: 'Dashboard' })"
+        }
+      ]
+    },
+    "readiness": {
+      "settled": true
+    }
+  },
+  {
+    "order": 7,
+    "action": "click",
+    "target": "Projects",
+    "page_url": "https://pilot6.example.com/dashboard",
+    "page_title": "Dashboard",
+    "element_type": "button",
+    "locator": {
+      "xpath": "//button[@id='el-7']",
+      "playwright_suggestions": [
+        {
+          "kind": "role",
+          "role": "button",
+          "name": "Projects",
+          "snippet": "page.getByRole('button', { name: 'Projects' })"
+        }
+      ]
+    },
+    "readiness": {
+      "loading_cleared": true
+    }
+  },
+  {
+    "order": 8,
+    "action": "click",
+    "target": "New Project",
+    "page_url": "https://pilot6.example.com/projects",
+    "page_title": "Projects",
+    "element_type": "button",
+    "locator": {
+      "xpath": "//button[@id='el-8']",
+      "playwright_suggestions": [
+        {
+          "kind": "role",
+          "role": "button",
+          "name": "New Project",
+          "snippet": "page.getByRole('button', { name: 'New Project' })"
+        }
+      ]
+    },
+    "readiness": {
+      "loading_cleared": true
+    }
+  },
+  {
+    "order": 9,
+    "action": "input",
+    "target": "Project Name",
+    "page_url": "https://pilot6.example.com/projects/new",
+    "page_title": "Projects New",
+    "element_type": "input",
+    "locator": {
+      "xpath": "//textbox[@id='el-9']",
+      "playwright_suggestions": [
+        {
+          "kind": "role",
+          "role": "textbox",
+          "name": "Project Name",
+          "snippet": "page.getByRole('textbox', { name: 'Project Name' })"
+        }
+      ]
+    },
+    "readiness": {
+      "loading_cleared": true
+    },
+    "input_type": "text"
+  },
+  {
+    "order": 10,
+    "action": "click",
+    "target": "Create",
+    "page_url": "https://pilot6.example.com/projects/new",
+    "page_title": "Projects New",
+    "element_type": "button",
+    "locator": {
+      "xpath": "//button[@id='el-10']",
+      "playwright_suggestions": [
+        {
+          "kind": "role",
+          "role": "button",
+          "name": "Create",
+          "snippet": "page.getByRole('button', { name: 'Create' })"
+        }
+      ]
+    },
+    "readiness": {
+      "loading_cleared": true
+    }
+  },
+  {
+    "order": 11,
+    "action": "click",
+    "target": "Settings",
+    "page_url": "https://pilot6.example.com/project/1",
+    "page_title": "Project 1",
+    "element_type": "link",
+    "locator": {
+      "xpath": "//link[@id='el-11']",
+      "playwright_suggestions": [
+        {
+          "kind": "role",
+          "role": "link",
+          "name": "Settings",
+          "snippet": "page.getByRole('link', { name: 'Settings' })"
+        }
+      ]
+    },
+    "readiness": {
+      "loading_cleared": true
+    }
+  },
+  {
+    "order": 12,
+    "action": "input",
+    "target": "Description",
+    "page_url": "https://pilot6.example.com/project/1/settings",
+    "page_title": "Project 1 Settings",
+    "element_type": "input",
+    "locator": {
+      "xpath": "//textbox[@id='el-12']",
+      "playwright_suggestions": [
+        {
+          "kind": "role",
+          "role": "textbox",
+          "name": "Description",
+          "snippet": "page.getByRole('textbox', { name: 'Description' })"
+        }
+      ]
+    },
+    "readiness": {
+      "loading_cleared": true
+    },
+    "input_type": "text"
+  },
+  {
+    "order": 13,
+    "action": "click",
+    "target": "Save",
+    "page_url": "https://pilot6.example.com/project/1/settings",
+    "page_title": "Project 1 Settings",
+    "element_type": "button",
+    "locator": {
+      "xpath": "//button[@id='el-13']",
+      "playwright_suggestions": [
+        {
+          "kind": "role",
+          "role": "button",
+          "name": "Save",
+          "snippet": "page.getByRole('button', { name: 'Save' })"
+        }
+      ]
+    },
+    "readiness": {
+      "loading_cleared": true
+    }
+  },
+  {
+    "order": 14,
+    "action": "click",
+    "target": "Tests",
+    "page_url": "https://pilot6.example.com/project/1",
+    "page_title": "Project 1",
+    "element_type": "link",
+    "locator": {
+      "xpath": "//link[@id='el-14']",
+      "playwright_suggestions": [
+        {
+          "kind": "role",
+          "role": "link",
+          "name": "Tests",
+          "snippet": "page.getByRole('link', { name: 'Tests' })"
+        }
+      ]
+    },
+    "readiness": {
+      "settled": true
+    }
+  },
+  {
+    "order": 15,
+    "action": "click",
+    "target": "Run Suite",
+    "page_url": "https://pilot6.example.com/project/1/tests",
+    "page_title": "Project 1 Tests",
+    "element_type": "button",
+    "locator": {
+      "xpath": "//button[@id='el-15']",
+      "playwright_suggestions": [
+        {
+          "kind": "role",
+          "role": "button",
+          "name": "Run Suite",
+          "snippet": "page.getByRole('button', { name: 'Run Suite' })"
+        }
+      ]
+    },
+    "readiness": {
+      "loading_cleared": true
+    }
+  },
+  {
+    "order": 16,
+    "action": "click",
+    "target": "View Report",
+    "page_url": "https://pilot6.example.com/project/1/tests/run",
+    "page_title": "Project 1 Tests Run",
+    "element_type": "button",
+    "locator": {
+      "xpath": "//button[@id='el-16']",
+      "playwright_suggestions": [
+        {
+          "kind": "role",
+          "role": "button",
+          "name": "View Report",
+          "snippet": "page.getByRole('button', { name: 'View Report' })"
+        }
+      ]
+    },
+    "readiness": {
+      "loading_cleared": true
+    }
+  },
+  {
+    "order": 17,
+    "action": "input",
+    "target": "Search",
+    "page_url": "https://pilot6.example.com/project/1/tests",
+    "page_title": "Project 1 Tests",
+    "element_type": "input",
+    "locator": {
+      "xpath": "//textbox[@id='el-17']",
+      "playwright_suggestions": [
+        {
+          "kind": "role",
+          "role": "textbox",
+          "name": "Search",
+          "snippet": "page.getByRole('textbox', { name: 'Search' })"
+        }
+      ]
+    },
+    "readiness": {
+      "loading_cleared": true
+    },
+    "input_type": "text"
+  }
+]

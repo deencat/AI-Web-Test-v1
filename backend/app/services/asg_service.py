@@ -90,16 +90,93 @@ def normalize_transition(flow_step: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize a crawl action into a deterministic transition payload."""
     action = (flow_step.get("action") or "unknown").lower()
     target = (flow_step.get("target") or "").strip()
-    return {
+    locator = flow_step.get("locator") or {}
+    playwright_suggestions: List[Dict[str, Any]] = []
+    if isinstance(locator, dict):
+        raw_suggestions = locator.get("playwright_suggestions")
+        if isinstance(raw_suggestions, list):
+            playwright_suggestions = raw_suggestions
+    transition: Dict[str, Any] = {
         "action_type": action,
         "target": target,
         "page_url": flow_step.get("page_url") or "",
         "element_type": flow_step.get("element_type") or "",
         "input_type": flow_step.get("input_type") or "",
-        "locator": flow_step.get("locator") or {},
+        "locator": locator,
         "order": flow_step.get("order"),
         "extracted_content": flow_step.get("extracted_content") or "",
     }
+    if playwright_suggestions:
+        transition["playwright_suggestions"] = playwright_suggestions
+    return transition
+
+
+def _get_playwright_suggestions(transition: Dict[str, Any]) -> List[Dict[str, Any]]:
+    suggestions = transition.get("playwright_suggestions")
+    if isinstance(suggestions, list) and suggestions:
+        return suggestions
+    locator = transition.get("locator") or {}
+    if isinstance(locator, dict):
+        loc_suggestions = locator.get("playwright_suggestions")
+        if isinstance(loc_suggestions, list):
+            return loc_suggestions
+    return []
+
+
+def _has_role_name_suggestion(suggestions: List[Dict[str, Any]]) -> bool:
+    return any(
+        s.get("kind") == "role" and s.get("role") and s.get("name")
+        for s in suggestions
+    )
+
+
+def _is_stable_id_css(css: str) -> bool:
+    css = (css or "").strip()
+    return bool(css.startswith("#") and len(css) > 1)
+
+
+def _has_css_id_signal(suggestions: List[Dict[str, Any]], locator: Dict[str, Any]) -> bool:
+    if any(s.get("kind") == "css_id" or s.get("id") for s in suggestions):
+        return True
+    return _is_stable_id_css(str(locator.get("css") or ""))
+
+
+def _score_selector_stability_v1(transition: Dict[str, Any]) -> float:
+    """Legacy v1 selector scoring for uplift comparison only."""
+    locator = transition.get("locator") or {}
+    if not isinstance(locator, dict):
+        return 0.4
+    if locator.get("xpath"):
+        return 0.55
+    if locator.get("css"):
+        return 0.75
+    if locator.get("role") and locator.get("text"):
+        return 0.85
+    target = (transition.get("target") or "").strip()
+    if target and target.lower() not in ("div", "span", "input", "button"):
+        return 0.7
+    return 0.45
+
+
+def extract_readiness_snapshots_from_flow_steps(
+    flow_steps: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Extract per-step readiness snapshots from flow_step payloads."""
+    snapshots: List[Dict[str, Any]] = []
+    for step in flow_steps:
+        order = step.get("order")
+        if order is None:
+            continue
+        readiness = step.get("readiness") or step.get("post_click_readiness")
+        if not isinstance(readiness, dict) or not readiness:
+            continue
+        snap: Dict[str, Any] = {"order": int(order)}
+        for key in ("settled", "loading_cleared", "modal_dismissed"):
+            if key in readiness:
+                snap[key] = readiness[key]
+        if len(snap) > 1:
+            snapshots.append(snap)
+    return snapshots
 
 
 def compute_edge_deterministic_key(
@@ -123,12 +200,19 @@ def score_selector_stability(transition: Dict[str, Any]) -> float:
     locator = transition.get("locator") or {}
     if not isinstance(locator, dict):
         return 0.4
-    if locator.get("xpath"):
-        return 0.55
-    if locator.get("css"):
+
+    suggestions = _get_playwright_suggestions(transition)
+    if _has_role_name_suggestion(suggestions):
+        return 0.85
+    if _has_css_id_signal(suggestions, locator):
         return 0.75
     if locator.get("role") and locator.get("text"):
         return 0.85
+    if locator.get("css"):
+        return 0.75
+    if locator.get("xpath"):
+        return 0.55
+
     target = (transition.get("target") or "").strip()
     if target and target.lower() not in ("div", "span", "input", "button"):
         return 0.7
@@ -418,6 +502,19 @@ class ASGService:
         mean_conf = sum(confidences) / len(confidences) if confidences else 0.0
         below = sum(1 for c in confidences if c < self.confidence_min)
 
+        v1_edge_scores: List[float] = []
+        for edge in edges:
+            transition = dict(edge.action_payload_json or {})
+            order = transition.get("order")
+            readiness = readiness_by_order.get(int(order)) if order is not None else None
+            v1_scores = [
+                _score_selector_stability_v1(transition),
+                score_readiness_signal(readiness),
+                score_action_reproducibility(transition),
+            ]
+            v1_edge_scores.append(round(sum(v1_scores) / len(v1_scores), 4))
+        v1_mean = round(sum(v1_edge_scores) / len(v1_edge_scores), 4) if v1_edge_scores else mean_conf
+
         asg_crud.update_graph_status(
             db, graph, status=ASGGraphStatus.READY.value, confidence_score=mean_conf
         )
@@ -469,7 +566,15 @@ class ASGService:
         self._write_json(gdir / "build" / "graph.json", graph_payload)
         self._write_json(
             gdir / "build" / "confidence-report.json",
-            {"confidence": confidence.model_dump(), "stats": stats.model_dump()},
+            {
+                "confidence": confidence.model_dump(),
+                "stats": stats.model_dump(),
+                "scoring_version": "v2",
+                "uplift": {
+                    "v1_mean": v1_mean,
+                    "v2_mean": round(mean_conf, 4),
+                },
+            },
         )
 
         get_asg_metrics().record_build(
@@ -989,12 +1094,14 @@ def trigger_shadow_build(
         return None
     try:
         service = ASGService()
+        readiness_snapshots = extract_readiness_snapshots_from_flow_steps(flow_steps)
         req = ASGBuildRequest(
             target_url=target_url,
             seed_intents=seed_intents or [],
             flow_steps=flow_steps,
             project_id=project_id,
             page_context=page_context or {},
+            readiness_snapshots=readiness_snapshots,
         )
         resp = service.build_graph(db, req, created_by=created_by)
         logger.info(

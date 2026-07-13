@@ -4,6 +4,7 @@ Additional ASG tests targeting 100% coverage on service, CRUD, and API modules.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -24,8 +25,10 @@ from app.services.asg_service import (
     ASGService,
     compute_node_confidence,
     compute_transition_confidence,
+    extract_readiness_snapshots_from_flow_steps,
     get_asg_service,
     is_asg_enabled_for_project,
+    normalize_transition,
     score_action_reproducibility,
     score_readiness_signal,
     score_selector_stability,
@@ -96,6 +99,28 @@ class TestScoringBranches:
         assert score_selector_stability({"locator": {"role": "btn", "text": "Go"}}) == 0.85
         assert score_selector_stability({"locator": {}, "target": "Checkout"}) == 0.7
         assert score_selector_stability({"locator": {}, "target": "div"}) == 0.45
+        assert score_selector_stability(
+            {
+                "locator": {"xpath": "//button"},
+                "playwright_suggestions": [{"kind": "role", "role": "button", "name": "Go"}],
+            }
+        ) == 0.85
+        assert score_selector_stability(
+            {
+                "locator": {
+                    "xpath": "//div",
+                    "playwright_suggestions": [{"kind": "css_id", "id": "submit"}],
+                }
+            }
+        ) == 0.75
+        assert score_selector_stability(
+            {
+                "locator": {
+                    "xpath": "//div",
+                    "playwright_suggestions": [{"kind": "role", "role": "button"}],
+                }
+            }
+        ) == 0.55
 
     def test_readiness_all_branches(self):
         assert score_readiness_signal(None) == 0.6
@@ -889,3 +914,153 @@ class TestPhase3Integration:
         snap = get_asg_metrics().snapshot
         assert snap.build_count == 1
         assert snap.node_count_total >= 1
+
+
+class TestPhase4ConfidenceV2:
+    FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "asg"
+
+    def test_normalize_transition_copies_playwright_suggestions(self):
+        step = {
+            "action": "click",
+            "locator": {
+                "xpath": "//btn",
+                "playwright_suggestions": [{"kind": "role", "role": "button", "name": "X"}],
+            },
+        }
+        norm = normalize_transition(step)
+        assert norm["playwright_suggestions"][0]["kind"] == "role"
+
+    def test_extract_readiness_snapshots_from_flow_steps(self):
+        steps = [
+            {"order": 1, "action": "navigate", "readiness": {"settled": True}},
+            {"order": 2, "action": "click", "post_click_readiness": {"loading_cleared": True}},
+            {"order": 3, "action": "click"},
+            {"action": "click", "readiness": {"settled": True}},
+        ]
+        snaps = extract_readiness_snapshots_from_flow_steps(steps)
+        assert len(snaps) == 2
+        assert snaps[0]["order"] == 1
+        assert snaps[1]["loading_cleared"] is True
+
+    def test_trigger_shadow_build_forwards_readiness_snapshots(self, db, monkeypatch):
+        monkeypatch.setattr("app.services.asg_service.settings.ASG_SHADOW_MODE", True)
+        captured: dict = {}
+
+        def _capture_build(self, db_session, request, **kwargs):
+            captured["readiness_snapshots"] = request.readiness_snapshots
+            return ASGService.build_graph(self, db_session, request, **kwargs)
+
+        with patch.object(ASGService, "build_graph", _capture_build):
+            trigger_shadow_build(
+                db,
+                target_url="https://example.com",
+                flow_steps=[
+                    {
+                        "order": 1,
+                        "action": "navigate",
+                        "page_url": "https://example.com",
+                        "target": "home",
+                        "readiness": {"settled": True},
+                    },
+                    {
+                        "order": 2,
+                        "action": "click",
+                        "page_url": "https://example.com/a",
+                        "target": "A",
+                        "readiness": {"loading_cleared": True},
+                    },
+                ],
+                created_by=1,
+            )
+        assert len(captured["readiness_snapshots"]) == 2
+
+    def test_build_confidence_report_includes_uplift(self, db, tmp_path):
+        service = ASGService(artifacts_root=tmp_path / "asg")
+        flow = [
+            {
+                "order": 1,
+                "action": "navigate",
+                "page_url": "https://example.com",
+                "target": "home",
+                "readiness": {"settled": True},
+            },
+            {
+                "order": 2,
+                "action": "click",
+                "page_url": "https://example.com/x",
+                "target": "Go",
+                "locator": {
+                    "xpath": "//button",
+                    "playwright_suggestions": [{"kind": "role", "role": "button", "name": "Go"}],
+                },
+                "readiness": {"loading_cleared": True},
+            },
+        ]
+        resp = service.build_graph(
+            db,
+            ASGBuildRequest(target_url="https://example.com", flow_steps=flow),
+            created_by=1,
+        )
+        report_path = tmp_path / "asg" / str(resp.graph_id) / "build" / "confidence-report.json"
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        assert report["scoring_version"] == "v2"
+        assert "v1_mean" in report["uplift"]
+        assert report["uplift"]["v2_mean"] == resp.confidence.mean
+        assert report["uplift"]["v2_mean"] >= report["uplift"]["v1_mean"]
+
+    def test_pilot_rebuild_confidence_uplift(self, db, tmp_path):
+        service = ASGService(artifacts_root=tmp_path / "asg")
+        flow5 = json.loads((self.FIXTURES / "pilot_graph5_flow_steps.json").read_text(encoding="utf-8"))
+        snapshots = extract_readiness_snapshots_from_flow_steps(flow5)
+        resp = service.build_graph(
+            db,
+            ASGBuildRequest(
+                target_url="https://pilot5.example.com",
+                flow_steps=flow5,
+                readiness_snapshots=snapshots,
+                seed_hash="pilot-graph5",
+            ),
+            created_by=1,
+        )
+        assert resp.confidence.mean >= 0.75
+        validation = service.validate_graph(db, resp.graph_id)
+        assert validation.fallback_recommended is False
+
+    def test_weak_signals_graph_fails_confidence_gate(self, db, tmp_path):
+        service = ASGService(artifacts_root=tmp_path / "asg")
+        weak_flow = [
+            {"order": 0, "action": "navigate", "page_url": "https://weak.example.com", "target": "home"},
+        ] + [
+            {
+                "order": i,
+                "action": "click",
+                "page_url": f"https://weak.example.com/p{i}",
+                "target": "div",
+                "locator": {"xpath": f"//div[{i}]"},
+            }
+            for i in range(1, 10)
+        ]
+        resp = service.build_graph(
+            db,
+            ASGBuildRequest(target_url="https://weak.example.com", flow_steps=weak_flow, seed_hash="weak"),
+            created_by=1,
+        )
+        assert resp.confidence.mean < service.confidence_min
+        validation = service.validate_graph(db, resp.graph_id)
+        assert validation.fallback_recommended is True
+
+    def test_v1_uplift_covers_legacy_selector_branches(self, db, tmp_path):
+        service = ASGService(artifacts_root=tmp_path / "asg")
+        flow = [
+            {"order": 0, "action": "navigate", "page_url": "https://example.com", "target": "home"},
+            {"order": 1, "action": "click", "page_url": "https://example.com/a", "target": "div", "locator": {}},
+            {"order": 2, "action": "click", "page_url": "https://example.com/b", "target": "x", "locator": "bad"},
+        ]
+        resp = service.build_graph(
+            db,
+            ASGBuildRequest(target_url="https://example.com", flow_steps=flow, seed_hash="v1-branches"),
+            created_by=1,
+        )
+        report_path = tmp_path / "asg" / str(resp.graph_id) / "build" / "confidence-report.json"
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        assert report["uplift"]["v1_mean"] < report["uplift"]["v2_mean"] or report["uplift"]["v1_mean"] > 0

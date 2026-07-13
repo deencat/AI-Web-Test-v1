@@ -1023,6 +1023,15 @@ class ObservationAgent(BaseAgent):
                     element_hash=getattr(elem, "element_hash", None),
                 )
 
+            def _readiness_for_action(action: str, *, is_new_page: bool) -> Dict[str, bool]:
+                if action == "navigate":
+                    return {"settled": True}
+                if action == "click":
+                    return {"settled": True} if is_new_page else {"loading_cleared": True}
+                if action == "input":
+                    return {"loading_cleared": True}
+                return {}
+
             for idx, history_item in enumerate(history_items):
                 try:
                     # Extract URL and title from history_item.state (BrowserStateHistory)
@@ -1080,6 +1089,7 @@ class ObservationAgent(BaseAgent):
                                 "input_type": attrs.get("type", "text"),
                                 "locator": _locator_for_elem(elem),
                                 "extracted_content": _extracted_content,
+                                "readiness": _readiness_for_action("input", is_new_page=is_new_page),
                             })
                         elif node_name in ('button', 'a') or attrs.get('role') in ('button', 'link'):
                             flow_steps.append({
@@ -1091,6 +1101,7 @@ class ObservationAgent(BaseAgent):
                                 "element_type": node_name,
                                 "locator": _locator_for_elem(elem),
                                 "extracted_content": _extracted_content,
+                                "readiness": _readiness_for_action("click", is_new_page=is_new_page),
                             })
                         else:
                             flow_steps.append({
@@ -1102,6 +1113,7 @@ class ObservationAgent(BaseAgent):
                                 "element_type": node_name,
                                 "locator": _locator_for_elem(elem),
                                 "extracted_content": _extracted_content,
+                                "readiness": _readiness_for_action("click", is_new_page=is_new_page),
                             })
                         
                         # Determine element type from tag name and attributes
@@ -1192,6 +1204,7 @@ class ObservationAgent(BaseAgent):
                     "page_title": pages_data[0]["title"] if pages_data else "",
                     "element_type": "navigate",
                     "locator": None,
+                    "readiness": _readiness_for_action("navigate", is_new_page=True),
                 })
                 for i in range(1, len(flow_steps)):
                     flow_steps[i]["order"] = i + 1
