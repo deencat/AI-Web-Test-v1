@@ -1194,7 +1194,7 @@ Random browser-use crawling yields low repeatability, weak coverage consistency,
 - `crawl-and-save` pipeline: add deterministic state extraction and transition normalization.
 - `generate-tests` workflow: branch to ASG planner when feature flag enabled.
 - Existing agents:
-  - Observation agent: produce structured state observations.
+  - Observation agent: produce structured state observations **and emit `readiness_snapshots` per flow_step** (`{order, settled, loading_cleared, modal_dismissed}`) reusing `post_click_readiness` signals.
   - Evolution agent: propose candidate transitions with risk tags.
   - Requirements agent: map requirement intents to target graph regions.
 - `flow_steps` conversion: upgraded to consume planned path and emit stable string steps.
@@ -1294,6 +1294,74 @@ Random browser-use crawling yields low repeatability, weak coverage consistency,
 - Shadow-vs-primary diff checks for path quality and reliability.
 - Canary monitoring assertions with rollback triggers.
 
+## Phase 4: Confidence Scoring v2 and Pilot Remediation
+
+> **Pilot context (graphs 5 & 6):** Live shadow builds from `generate-tests` (graph 5) and `crawl-and-save` (graph 6) both **fail** the `ASG_CONFIDENCE_MIN=0.75` gate. Graph 5: mean confidence **0.6507**, 44 edges below threshold, 15 nodes / 30 edges. Graph 6: mean confidence **0.65**, 41 below threshold, 20 nodes / 22 edges, `max_depth_reached`, 0 terminal nodes. Per-edge scores cluster at navigate=0.75, click=0.65, input=0.6167. **Root cause:** `score_selector_stability()` in `backend/app/services/asg_service.py` returns **0.55** whenever `locator.xpath` exists, ignoring `playwright_suggestions` entries with `kind=role` + role + name (0.85 tier). Additionally, `trigger_shadow_build()` does not pass `readiness_snapshots` into `ASGBuildRequest` (defaults readiness to **0.60** vs **0.90** for settled). Switching crawl mode (`generate-tests` → `crawl-and-save`) did **not** raise confidence — scoring inputs unchanged.
+
+### Epics
+- **Confidence scoring v2** — `playwright_suggestions`-aware selector stability (fix xpath-first regression).
+- **Readiness snapshot wiring** — Observation/crawl pipelines emit per-step readiness; `trigger_shadow_build()` forwards to ASG build.
+- **Pilot validation** — Rebuild graphs 5/6 from existing `flow_steps.json` artifacts without re-crawl; confirm gate pass before widening rollout.
+
+### Key tasks
+
+#### 1. Selector stability v2
+
+Update `score_selector_stability()` priority order in `backend/app/services/asg_service.py`:
+
+| Priority | Signal | Score |
+|----------|--------|-------|
+| 1 | `playwright_suggestions` entry with `kind=role` + `role` + `name` | **0.85** |
+| 2 | `css_id` / `#id` suggestion (or top-level `locator.css` with stable id selector) | **0.75** |
+| 3 | Top-level `locator.role` + `locator.text` | **0.85** |
+| 4 | `locator.css` (non-id) | **0.75** |
+| 5 | `locator.xpath` **only** when no better suggestion exists | **0.55** |
+
+**Implementation notes:**
+- Inspect `transition.get("playwright_suggestions")` (list) **before** checking `locator.xpath`.
+- When xpath is present alongside a role+name suggestion, role suggestion wins (must not regress to 0.55).
+- Preserve existing fallbacks for bare `target` text and unknown locators.
+
+#### 2. Readiness snapshot wiring
+
+- **Observation agent**, **crawl-and-save**, and **generate-tests** must emit `readiness_snapshots: [{order, settled, loading_cleared, modal_dismissed}]` per `flow_step`, derived from existing `post_click_readiness` signals.
+- **`trigger_shadow_build()`** (`backend/app/services/asg_service.py`) must extract readiness from `flow_steps` (or explicit param) and forward to `ASGBuildRequest.readiness_snapshots`.
+- **`ASGService.build_graph()`** must match snapshots to transitions by `order` when computing `score_readiness_signal()` (settled → **0.90**, loading_cleared → **0.80**, modal_dismissed → **0.75**, missing → **0.60**).
+- Wire same payload in `orchestration_service.py` and `crawl_and_save.py` shadow-build call sites.
+
+#### 3. Pilot rebuild validation
+
+- Rebuild ASG graph from **same** `flow_steps.json` artifacts used for graphs 5 and 6 — **no re-crawl**.
+- Use `POST /api/v2/asg/build` (or internal rebuild script) with scoring v2 + readiness wiring.
+- **Target:** mean graph confidence **>= 0.75** on at least one pilot graph before enabling primary mode for pilot cohort.
+- Document uplift delta in `artifacts/asg/{graph_id}/build/confidence-report.json` (before/after columns).
+
+#### 4. Crawl quality guidelines (secondary — after scoring fix)
+
+- Prefer **crawl-and-save** with `stop_at_page_hint` to reach terminal states (graph 6 had 0 terminal nodes).
+- Reduce self-loop edges in crawl policy; tune `max_depth` when build stats report `max_depth_reached`.
+- Do **not** lower `ASG_CONFIDENCE_MIN` as the primary remediation path.
+
+### Dependencies
+- Phase 3 shadow-mode artifacts (`flow_steps.json`, graph 5/6 build reports).
+- Existing `post_click_readiness` instrumentation in crawl pipeline.
+- `ASGBuildRequest.readiness_snapshots` schema (already present in `backend/app/schemas/asg.py`).
+
+### Acceptance criteria
+- Rebuilding graph 5 or 6 `flow_steps` with scoring v2 yields **mean confidence >= 0.75**.
+- `POST /api/v2/asg/{graph_id}/validate` returns **`fallback_recommended: false`** on pilot rebuild.
+- Readiness snapshots present on **>= 50%** of click/input edges in **new** crawls (post-wiring).
+- **100%** ASG module test coverage maintained (`cov-fail-under=100` in ASG test suite).
+- **`ASG_CONFIDENCE_MIN` is not lowered** as primary remediation.
+
+### Test strategy
+- **Unit:** `score_selector_stability` with xpath + `playwright_suggestions` role entry → **0.85**, not 0.55.
+- **Unit:** `score_selector_stability` xpath-only (no suggestions) → **0.55** (regression guard).
+- **Unit:** `score_readiness_signal` with `settled=True` → **0.90**; missing snapshot → **0.60**.
+- **Unit:** `trigger_shadow_build` forwards `readiness_snapshots` from `flow_steps` into build request.
+- **Integration:** rebuild-from-artifact confidence uplift test (graph 5 or 6 fixture; assert mean >= 0.75).
+- **Regression:** threshold gate still blocks when all signals weak (no false pass on degraded inputs).
+
 ## 5) API and Data Model Plan
 
 ### Proposed endpoints under `/api/v2/asg`
@@ -1338,6 +1406,7 @@ Migration notes:
 
 ### crawl-and-save integration
 - After crawl completion, trigger ASG build in same service layer (feature-flagged).
+- **Deliverable (Phase 4):** Extract `readiness_snapshots` from crawl `flow_steps` / `post_click_readiness` and pass through `trigger_shadow_build()` → `ASGBuildRequest.readiness_snapshots` (not aspirational — required for confidence gate pass).
 - Reuse crawl actions + readiness snapshots to construct deterministic edges.
 - Persist shadow graph even when not used for primary generation.
 
@@ -1366,6 +1435,9 @@ Migration notes:
   - Mitigate with strict integration tests and flag-off regression suite.
 - **Operational blind spots**
   - Mitigate with per-stage metrics, reason-coded failures, and runbook ownership.
+- **Scoring ignores existing role locators**
+  - `score_selector_stability()` currently short-circuits on `locator.xpath` (0.55) before evaluating `playwright_suggestions` with role+name (0.85 tier); pilot graphs 5/6 cluster below `ASG_CONFIDENCE_MIN=0.75` despite strong locators.
+  - Mitigate with **Phase 4 selector stability v2** priority order; validate via pilot rebuild-from-artifact before rollout; do not lower threshold as primary fix.
 
 ## 8) Rollout Strategy
 

@@ -50,6 +50,26 @@
 - P95 generation latency <= 6 minutes for <= 150 nodes.
 - Fallback trigger rate <= 20% after threshold tuning.
 
+### Phase 4: Confidence Scoring v2 (pilot remediation)
+
+- Rebuild graph 5 or 6 `flow_steps` artifact → mean confidence **>= 0.75**.
+- `POST /api/v2/asg/{graph_id}/validate` → `fallback_recommended: false` on pilot rebuild.
+- Readiness snapshots on **>= 50%** of click/input edges in new crawls.
+- ASG module coverage **100%** (`cov-fail-under=100`).
+- **`ASG_CONFIDENCE_MIN` not lowered** as primary fix.
+
+---
+
+## Phase 4 Evaluator Checks
+
+1. Unit: `score_selector_stability` with xpath + `playwright_suggestions` role+name → **0.85** (not 0.55).
+2. Unit: xpath-only, no suggestions → **0.55** (regression).
+3. Unit: `score_readiness_signal(settled=True)` → **0.90**; missing snapshot → **0.60**.
+4. Unit: `trigger_shadow_build` passes `readiness_snapshots` to `ASGBuildRequest`.
+5. Integration: rebuild graph 5/6 fixture without re-crawl; assert mean confidence >= 0.75.
+6. Integration: validate endpoint returns `fallback_recommended: false` on uplifted pilot graph.
+7. Regression: all-weak-signals graph still fails `ASG_CONFIDENCE_MIN` gate.
+
 ---
 
 ## Evaluator Checks
