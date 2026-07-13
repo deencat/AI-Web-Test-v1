@@ -1195,10 +1195,12 @@ Random browser-use crawling yields low repeatability, weak coverage consistency,
 - `generate-tests` workflow: branch to ASG planner when feature flag enabled.
 - Existing agents:
   - Observation agent: produce structured state observations **and emit `readiness_snapshots` per flow_step** (`{order, settled, loading_cleared, modal_dismissed}`) reusing `post_click_readiness` signals.
+  - **Observation agent (Phase 5):** add `asg_guided` crawl mode — browser-use LLM constrained to ASG-allowed edges from current `state_fingerprint`; fallback to free exploration on unknown states with policy caps; optional graph replay driver before free exploration when `ASG_REPLAY_CRAWL` enabled.
   - Evolution agent: propose candidate transitions with risk tags.
   - Requirements agent: map requirement intents to target graph regions.
 - `flow_steps` conversion: upgraded to consume planned path and emit stable string steps.
-- `post_click_readiness`: reused as transition settle/guard signal in graph edge validation.
+- **`crawl-and-save` (Phase 5):** when `ASG_CRAWL_PRIMARY` and confidence gate pass, save ASG-synthesized steps instead of legacy `_flow_steps_to_test_steps()`; shadow diff becomes validation path, not sole ASG output.
+- `post_click_readiness`: reused as transition settle/guard signal in graph edge validation; **Phase 5:** wire live `post_click_readiness` after each click/input during observation (replace heuristic `_readiness_for_action`).
 
 ### NO-CHANGE
 - Execution dispatch and runtime tiers: all test runs still via `ExecutionService -> ThreeTierExecutionService`.
@@ -1362,6 +1364,102 @@ Update `score_selector_stability()` priority order in `backend/app/services/asg_
 - **Integration:** rebuild-from-artifact confidence uplift test (graph 5 or 6 fixture; assert mean >= 0.75).
 - **Regression:** threshold gate still blocks when all signals weak (no false pass on degraded inputs).
 
+## Phase 5: ASG-Guided Exploration
+
+> **Gap closure (post Phase 4):** Phases 1–4 deliver a post-crawl ASG compiler (graph build, planner, synthesizer, confidence gates, shadow mode). Pilot graph 7 live crawl achieves mean confidence **0.7674** (v2) on rebuild, but **crawl-and-save always saves via legacy `_flow_steps_to_test_steps()`** regardless of graph score. ASG does not yet influence the observation/crawl loop — browser-use free exploration remains unstable and non-deterministic. Phase 5 moves ASG **upstream** into observation so exploration is constrained, replayable, and feeds primary test output when gates pass.
+
+### Epics
+- **Constrained observation mode** — `asg_guided` crawl alongside existing browser-use free exploration.
+- **Live readiness during crawl** — real `post_click_readiness` per click/input, not heuristic `_readiness_for_action`.
+- **Graph replay crawl** — re-traverse high-confidence edges from existing graphs; incremental merge by fingerprint + `deterministic_key`.
+- **Crawl-and-save ASG primary path** — save ASG-synthesized steps when gate passes (`ASG_CRAWL_PRIMARY` / `use_asg_steps`).
+- **Drift detection + feedback loop** — successive-crawl Jaccard, failed-replay confidence downgrade, guided-crawl metrics.
+
+### Key tasks
+
+#### 1. Constrained observation mode (`asg_guided`)
+
+- Add crawl mode enum: `free` (default, current browser-use behavior) | `asg_guided` | `replay_then_guided` (when `ASG_REPLAY_CRAWL` on).
+- Extend `ObservationAgent` task payload with `crawl_mode`, optional `graph_id` / `seed_graph_id`, and `asg_policy` (max fallback steps, unknown-state cap).
+- Before each browser-use action, compute current `state_fingerprint` from page snapshot (reuse ASG fingerprinting from Phase 1).
+- Call ASG planner (or seed-graph edge lookup) to obtain **allowed transitions** from current fingerprint: `[{edge_id, action_type, locator, target_fingerprint, confidence}]`.
+- Inject allowed-edge menu into browser-use system/task prompt: LLM must pick among listed edges or declare `UNKNOWN_STATE`.
+- On `UNKNOWN_STATE`: increment fallback counter; if under cap, allow one free-exploration step; log `asg_crawl_fallback_to_free_rate` event.
+- On cap exceeded: terminate crawl gracefully with partial `flow_steps` and reason code `guided_fallback_cap_reached`.
+- Gate behind `ASG_GUIDED_CRAWL`; when off, ObservationAgent behavior unchanged.
+
+**Implementation notes:**
+- Reuse `ASGService.plan_from_state()` (new helper) or lightweight edge-index query — avoid full graph replan per step.
+- browser-use constraint conflicts: if LLM proposes action not in allowed set, reject and re-prompt once; on second mismatch, record `constraint_violation` and fallback per policy.
+- Preserve cooperative cancel checks between guided steps (existing workflow cancel pattern).
+
+#### 2. Live readiness during crawl
+
+- Replace `_readiness_for_action()` heuristic in `observation_agent.py` with calls to existing `post_click_readiness` instrumentation after each click/input/navigate.
+- Emit measured readiness on each `flow_step`: `{order, settled, loading_cleared, modal_dismissed, measured_at_ms}`.
+- Pass live snapshots through crawl artifact → `trigger_shadow_build()` → `ASGBuildRequest.readiness_snapshots` (extends Phase 4 wiring from post-hoc to in-crawl).
+- Timeout policy: if readiness probe exceeds `readiness_probe_timeout_ms` (default 5000), record partial snapshot with `settled=false` and continue (do not block crawl indefinitely).
+- Ensure `flow_steps.json` written by crawl-and-save includes readiness on **>= 90%** of click/input steps in guided mode.
+
+#### 3. Graph replay crawl
+
+- Add `POST /api/v2/asg/{graph_id}/replay-crawl` (or internal `replay_crawl_driver()` invoked from crawl-and-save when `graph_id` present).
+  - Input: `graph_id`, `seed_url`, `max_edges`, `min_edge_confidence`, optional `path_ids`.
+  - Behavior: ordered traversal of high-confidence edges (confidence >= `ASG_CONFIDENCE_MIN`) from seed node; execute actions via Playwright (not browser-use) where locators are deterministic; fall back to guided browser-use only on replay failure.
+- Incremental graph merge after replay/guided crawl:
+  - Dedupe nodes by `state_fingerprint`; dedupe edges by `deterministic_key`.
+  - Merge new observations into existing graph; bump `confidence` on corroborated edges; insert new edges with v2 scoring.
+- Persist replay artifact: `artifacts/asg/{graph_id}/replay/{crawl_run_id}.json` with per-edge pass/fail and timing.
+- Gate behind `ASG_REPLAY_CRAWL`; replay runs before free/guided exploration when enabled and graph exists.
+
+#### 4. Crawl-and-save ASG primary path
+
+- Extend crawl-and-save request schema: `use_asg_steps: bool` (optional; default follows `ASG_CRAWL_PRIMARY` when `ASG_ENABLED=true`).
+- After crawl + ASG build, when `use_asg_steps=true` **and** `validate_graph()` returns `fallback_recommended: false`:
+  1. Plan default coverage path (requirement-coverage or shortest-to-terminal mode).
+  2. Synthesize `steps: string[]` via existing synthesizer.
+  3. Save test case with ASG-synthesized steps as primary output.
+- When gate fails or flag off: retain legacy `_flow_steps_to_test_steps()` path (no behavior regression).
+- Shadow diff (`legacy_steps` vs `asg_steps`) still runs for validation and quality metrics — not the only ASG output path.
+- Define **step quality metric** for KPI: `asg_step_selector_tier_mean` (mean selector stability tier of synthesized steps) and `asg_step_count_delta` vs legacy; target **>= 15% improvement** in selector tier mean on pilot cohort (graphs 5–7 apps).
+
+#### 5. Drift detection + feedback loop
+
+- After each guided/replay crawl, compute Jaccard similarity of `state_fingerprint` sets vs previous crawl (same seed URL + instruction).
+- Store drift report in `artifacts/asg/{graph_id}/build/drift-report.json`: `{jaccard, new_fingerprints, missing_fingerprints, crawl_run_id}`.
+- On replay failure for an edge: downgrade edge `confidence` by configurable delta (default 0.10); if below `ASG_CONFIDENCE_MIN`, exclude from next guided crawl plan.
+- Expose drift summary on `GET /api/v2/asg/{graph_id}` (`last_drift_jaccard`, `edges_downgraded_count`).
+- Emit metrics:
+  - `asg_crawl_guided_rate` — fraction of crawl steps taken from ASG-allowed edge menu.
+  - `asg_crawl_fallback_to_free_rate` — fraction of steps falling back to free browser-use.
+  - `asg_crawl_drift_jaccard` — Jaccard of state fingerprints across successive crawls.
+
+### Dependencies
+- Phase 4 scoring v2 + readiness wiring (complete; pilot graphs pass 0.75 gate on rebuild-from-artifact).
+- Phase 2 planner + synthesizer (plan/synthesize path for crawl-and-save primary).
+- Phase 1 fingerprinting + graph persistence (edge lookup by `state_fingerprint`).
+- `ObservationAgent` browser-use integration and `post_click_readiness` module.
+- Feature flags infrastructure (`ASG_ENABLED`, `ASG_CONFIDENCE_MIN`).
+
+### Acceptance criteria
+- **Crawl stability:** same seed URL + instruction across 3 reruns yields state-fingerprint Jaccard **>= 0.85** on guided cohort (`ASG_GUIDED_CRAWL=true`).
+- **Coverage stability:** unique critical-path node coverage Jaccard **>= 0.90** across 3 guided reruns (pilot apps graphs 5–7).
+- **Crawl-and-save primary:** when `ASG_CRAWL_PRIMARY=true` and gate passes, saved tests use ASG-synthesized steps; `asg_step_selector_tier_mean` improves **>= 15%** vs legacy `_flow_steps_to_test_steps` on pilot cohort.
+- **Replay reliability:** guided-crawl + replay path tests replay pass rate **>= 90%** in staging (existing `ExecutionService -> ThreeTierExecutionService` unchanged).
+- **Fallback safety:** when `ASG_GUIDED_CRAWL=false`, crawl behavior identical to pre-Phase-5 (regression guard).
+- **Drift visibility:** `asg_crawl_drift_jaccard` emitted on every guided crawl; edges downgraded on replay failure excluded from next plan.
+
+### Test strategy
+- **Unit:** `plan_from_state()` returns allowed edges for known fingerprint; empty on unknown; fallback cap enforcement.
+- **Unit:** live readiness extraction replaces `_readiness_for_action` — mock `post_click_readiness` returns propagated to `flow_step.readiness`.
+- **Unit:** incremental merge dedupes by `state_fingerprint` + `deterministic_key`; confidence downgrade on replay fail.
+- **Unit:** crawl-and-save branch — `use_asg_steps=true` + gate pass → synthesizer steps saved; gate fail → legacy path.
+- **Integration:** guided crawl on fixture app produces `flow_steps` with readiness on >= 90% click/input steps.
+- **Integration:** `POST /api/v2/asg/{graph_id}/replay-crawl` traverses high-confidence edges; merge updates graph without duplicate nodes.
+- **Integration:** 3-run Jaccard stability test on seeded fixture (synthetic graph + mock observation) asserts >= 0.85.
+- **E2E:** crawl-and-save with `ASG_CRAWL_PRIMARY` → saved test replays >= 90%; flag-off regression suite green.
+- **Regression:** `TestCase.steps` remains `string[]`; execution dispatch path unchanged; ASG module coverage **100%** maintained.
+
 ## 5) API and Data Model Plan
 
 ### Proposed endpoints under `/api/v2/asg`
@@ -1378,6 +1476,9 @@ Update `score_selector_stability()` priority order in `backend/app/services/asg_
   - Output: draft tests with `steps: string[]` + provenance.
 - `POST /api/v2/asg/{graph_id}/validate`
   - Output: replay confidence report and fallback recommendation.
+- `POST /api/v2/asg/{graph_id}/replay-crawl` **(Phase 5)**
+  - Input: `seed_url`, `max_edges`, `min_edge_confidence`, optional `path_ids`, `crawl_mode` (`replay` | `replay_then_guided`).
+  - Output: `crawl_run_id`, edges traversed/failed, merged graph stats, drift summary.
 
 ### DB tables and migration order (SQLAlchemy)
 1. `asg_graphs`
@@ -1401,6 +1502,8 @@ Migration notes:
 - `artifacts/asg/{graph_id}/plan/{plan_id}.json`
 - `artifacts/asg/{graph_id}/synthesis/{synthesis_id}.json`
 - `artifacts/asg/{graph_id}/replay/{execution_id}.json`
+- `artifacts/asg/{graph_id}/replay/{crawl_run_id}.json` **(Phase 5 — replay-crawl runs)**
+- `artifacts/asg/{graph_id}/build/drift-report.json` **(Phase 5 — successive-crawl drift)**
 
 ## 6) Integration Plan
 
@@ -1409,6 +1512,14 @@ Migration notes:
 - **Deliverable (Phase 4):** Extract `readiness_snapshots` from crawl `flow_steps` / `post_click_readiness` and pass through `trigger_shadow_build()` → `ASGBuildRequest.readiness_snapshots` (not aspirational — required for confidence gate pass).
 - Reuse crawl actions + readiness snapshots to construct deterministic edges.
 - Persist shadow graph even when not used for primary generation.
+- **Deliverable (Phase 5):** When `ASG_CRAWL_PRIMARY=true` and confidence gate passes, save ASG-synthesized steps (`plan` + `synthesize`) instead of `_flow_steps_to_test_steps()`; optional request param `use_asg_steps` overrides auto behavior. Shadow diff remains for validation.
+
+### observation agent integration **(Phase 5)**
+- Add `crawl_mode` to ObservationAgent task payload: `free` | `asg_guided` | `replay_then_guided`.
+- When `ASG_GUIDED_CRAWL=true`: constrain browser-use to ASG-allowed edges from current `state_fingerprint`; fallback to free exploration on unknown states with policy caps.
+- When `ASG_REPLAY_CRAWL=true` and `graph_id` provided: run replay driver before guided/free exploration.
+- Wire live `post_click_readiness` after each action during crawl (replaces `_readiness_for_action` heuristic).
+- Emit guided-crawl metrics: `asg_crawl_guided_rate`, `asg_crawl_fallback_to_free_rate`.
 
 ### generate-tests integration
 - In generate-tests service, add decision branch:
@@ -1438,6 +1549,15 @@ Migration notes:
 - **Scoring ignores existing role locators**
   - `score_selector_stability()` currently short-circuits on `locator.xpath` (0.55) before evaluating `playwright_suggestions` with role+name (0.85 tier); pilot graphs 5/6 cluster below `ASG_CONFIDENCE_MIN=0.75` despite strong locators.
   - Mitigate with **Phase 4 selector stability v2** priority order; validate via pilot rebuild-from-artifact before rollout; do not lower threshold as primary fix.
+- **Constrained crawl too narrow (Phase 5)**
+  - ASG-guided mode may miss novel UI states or regressions outside the seed graph, reducing coverage on fast-changing apps.
+  - Mitigate with unknown-state fallback caps, periodic free-exploration windows, drift Jaccard alerts when coverage drops, and `ASG_GUIDED_CRAWL` opt-out per project.
+- **Replay stale graph (Phase 5)**
+  - Replaying high-confidence edges from an outdated graph may fail silently or produce false confidence on drifted UIs.
+  - Mitigate with drift detection (Jaccard on successive crawls), automatic edge confidence downgrade on replay failure, exclusion from next guided plan, and `last_drift_jaccard` visibility on graph metadata.
+- **browser-use constraint conflicts (Phase 5)**
+  - LLM may propose actions outside the ASG-allowed edge menu, causing retry loops or premature crawl termination.
+  - Mitigate with single re-prompt on mismatch, `constraint_violation` logging, fallback to free step under cap, and metrics on `asg_crawl_fallback_to_free_rate` for tuning.
 
 ## 8) Rollout Strategy
 
@@ -1446,16 +1566,21 @@ Migration notes:
 - `ASG_SHADOW_MODE` (build/plan metrics only, no output takeover).
 - `ASG_CONFIDENCE_MIN` (threshold gate).
 - `ASG_PROJECT_ALLOWLIST` (tenant/project progressive targeting).
+- `ASG_GUIDED_CRAWL` **(Phase 5)** — enable constrained observation mode (`asg_guided` crawl); browser-use picks among ASG-allowed edges.
+- `ASG_REPLAY_CRAWL` **(Phase 5)** — replay known high-confidence edges from existing graph before guided/free exploration.
+- `ASG_CRAWL_PRIMARY` **(Phase 5)** — crawl-and-save uses ASG-synthesized steps when confidence gate passes (replaces legacy `_flow_steps_to_test_steps` as primary output).
 
 ### Shadow mode
 - Phase 1-2 default: ASG runs in parallel; legacy remains source of truth.
 - Compare replay reliability and path quality before enabling primary mode.
+- **Phase 5:** shadow diff on crawl-and-save validates ASG primary output quality before `ASG_CRAWL_PRIMARY` rollout; guided crawl can run in shadow (build graph, keep legacy steps) until Jaccard KPIs pass.
 
 ### Progressive enablement
 - Stage 0: internal projects only.
 - Stage 1: 10% low-risk tenant cohort.
 - Stage 2: 30-50% mixed cohort after KPI pass.
 - Stage 3: default-on with opt-out for edge apps.
+- **Stage 4 (Phase 5):** enable `ASG_GUIDED_CRAWL` on pilot cohort after Jaccard >= 0.85 on 3 reruns; then `ASG_REPLAY_CRAWL`; then `ASG_CRAWL_PRIMARY` when step quality uplift confirmed.
 
 Rollback trigger:
 - Replay pass < 80% for 24h or fallback rate > 40% in enabled cohort.
@@ -1468,7 +1593,14 @@ Rollback trigger:
 - `asg_plan_success_rate`, `asg_synthesis_success_rate`.
 - `asg_replay_pass_rate`, `asg_flake_delta`.
 - `asg_fallback_rate` + `fallback_reason_code` distribution.
-- Correlated IDs in logs: `graph_id`, `plan_id`, `synthesis_id`, `execution_id`.
+- **Phase 5 crawl/exploration metrics:**
+  - `asg_crawl_guided_rate` — share of crawl steps from ASG-allowed edge menu.
+  - `asg_crawl_fallback_to_free_rate` — share of steps falling back to free browser-use.
+  - `asg_crawl_drift_jaccard` — Jaccard similarity of state fingerprints across successive crawls (same seed).
+  - `asg_step_selector_tier_mean` — mean selector stability tier on ASG-primary saved steps vs legacy.
+  - `asg_replay_crawl_edge_pass_rate` — fraction of replay-crawl edges executed successfully.
+  - `asg_edges_downgraded_count` — edges demoted after replay failure per graph.
+- Correlated IDs in logs: `graph_id`, `plan_id`, `synthesis_id`, `execution_id`, `crawl_run_id`.
 
 ### Failure triage playbook
 1. Identify failing stage (`build`, `plan`, `synthesize`, `replay`) via reason code.
@@ -1476,9 +1608,10 @@ Rollback trigger:
 3. Check policy bound hits (depth/branch/node caps) and selector stability.
 4. If low confidence systemic: raise threshold or keep fallback; open tuning ticket.
 5. If deterministic mismatch bug: quarantine project from ASG allowlist and patch planner.
-6. Confirm no runtime regression in execution stack (`ExecutionService` path unchanged).
+6. **Phase 5:** If `asg_crawl_drift_jaccard` < 0.85 for 3 consecutive runs, disable `ASG_GUIDED_CRAWL` for project and trigger graph rebuild.
+7. Confirm no runtime regression in execution stack (`ExecutionService` path unchanged).
 
-## 10) 2-Week Sprint Breakdown (first 2 sprints)
+## 10) 2-Week Sprint Breakdown (first 4 sprints)
 
 ### Sprint 1 (Week 1): ASG Foundation + Shadow Build
 
@@ -1506,6 +1639,40 @@ Done when:
 - End-to-end graph->plan->synthesize->save test passes in staging.
 - Replay pass >= 85% on pilot set; fallback reason codes emitted on low confidence.
 
+### Sprint 3 (Week 3): ASG-Guided Observation + Live Readiness
+
+**Goals:** Move ASG into the crawl loop; replace heuristic readiness with measured signals.
+
+Concrete deliverables:
+- `crawl_mode` enum and `ASG_GUIDED_CRAWL` flag wiring in ObservationAgent.
+- `plan_from_state()` / edge-index lookup for allowed transitions from `state_fingerprint`.
+- browser-use prompt constraint: pick among ASG-allowed edges; unknown-state fallback with caps.
+- Live `post_click_readiness` wired after each click/input during crawl (remove `_readiness_for_action`).
+- Metrics: `asg_crawl_guided_rate`, `asg_crawl_fallback_to_free_rate`.
+
+Done when:
+- Guided crawl on pilot app produces `flow_steps` with live readiness on >= 90% click/input steps.
+- 3-run fingerprint Jaccard >= 0.85 on guided cohort (same seed URL + instruction).
+- Flag-off regression: free crawl behavior unchanged.
+
+### Sprint 4 (Week 4): Replay Crawl + Primary Save + Drift Loop
+
+**Goals:** Replay known graphs, save ASG steps on crawl-and-save, close feedback loop.
+
+Concrete deliverables:
+- `POST /api/v2/asg/{graph_id}/replay-crawl` + internal replay driver.
+- Incremental graph merge (fingerprint + `deterministic_key` dedupe).
+- `ASG_REPLAY_CRAWL` and `ASG_CRAWL_PRIMARY` flags; `use_asg_steps` request param on crawl-and-save.
+- Crawl-and-save primary path: plan + synthesize when gate passes; legacy fallback preserved.
+- Drift detection: `drift-report.json`, edge confidence downgrade on replay fail, `asg_crawl_drift_jaccard` metric.
+- Shadow diff as validation (not sole ASG output).
+
+Done when:
+- Replay pass >= 90% on guided-crawl tests in staging.
+- `ASG_CRAWL_PRIMARY` saves ASG steps when gate passes; `asg_step_selector_tier_mean` uplift >= 15% vs legacy on pilot.
+- Coverage stability Jaccard >= 0.90 across 3 guided reruns.
+- E2E + unit tests green; ASG module coverage 100%.
+
 ## ADR Recommendation
 
 Create **ADR-010: ASG-Based Deterministic Test Generation**.
@@ -1517,3 +1684,15 @@ ADR-010 should contain:
 - Alternatives considered: random crawl tuning only, full autonomous explorer, pure rule-based scripts.
 - Trade-offs: improved stability vs upfront graph/model complexity.
 - Rollout/rollback policy, observability KPIs, and fallback contract.
+
+Create **ADR-011: ASG-Guided Exploration** (Phase 5).
+
+ADR-011 should contain:
+- Context: Phases 1–4 deliver post-crawl ASG only; browser-use crawl remains unstable and does not benefit from graph confidence; crawl-and-save always uses legacy step conversion.
+- Decision: introduce `asg_guided` observation mode, graph replay crawl, live readiness during crawl, crawl-and-save ASG primary path, and drift-driven feedback loop.
+- Constraints honored: `ExecutionService -> ThreeTierExecutionService` unchanged; `TestCase.steps` remains `string[]`; SQLAlchemy only; feature-flagged rollout with fallback to free browser-use crawl.
+- Alternatives considered: post-crawl-only ASG (status quo), full replacement of browser-use with Playwright-only replay, lowering `ASG_CONFIDENCE_MIN` to force primary mode.
+- Trade-offs: crawl stability and step quality vs added observation-loop complexity and stale-graph replay risk.
+- Feature flags: `ASG_GUIDED_CRAWL`, `ASG_REPLAY_CRAWL`, `ASG_CRAWL_PRIMARY`.
+- KPIs: crawl Jaccard >= 0.85, coverage stability >= 0.90, replay pass >= 90%, step selector tier uplift >= 15%.
+- Rollback: disable Phase 5 flags independently; drift Jaccard < 0.85 for 3 runs triggers guided-crawl quarantine.
