@@ -372,11 +372,10 @@ export const TestsPage: React.FC = () => {
                   <BookOpen className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
                   <div className="flex-1">
                     <h3 className="text-sm font-semibold text-gray-900 mb-1">
-                      Knowledge Base Context
+                      Product context
                     </h3>
                     <p className="text-xs text-gray-600 mb-3">
-                      Use uploaded KB documents to generate more accurate, domain-specific tests
-                      with proper field names and workflows.
+                      Use documents from Products &amp; offers to generate more accurate, domain-specific tests.
                     </p>
                     
                     {/* Use KB Context Toggle */}
@@ -390,7 +389,7 @@ export const TestsPage: React.FC = () => {
                         className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                       />
                       <label htmlFor="use-kb-context" className="text-sm text-gray-700 cursor-pointer">
-                        Use Knowledge Base context (recommended)
+                        Include product document context (recommended)
                       </label>
                     </div>
                     

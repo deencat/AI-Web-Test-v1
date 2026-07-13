@@ -1,14 +1,34 @@
-# Business-facing product workspaces (UF track)
-# Maps friendly product id → ReqIQ project + optional program slug for agent sync
-
 products:
-  - id: 5g-mobile-broadband
-    title: "5G Mobile Broadband"
-    title_zh: "5G 流動寬頻"
-    locale: zh-HK
-    reqiq_project_id: cmp0zdx4g0004alp8z77ess7a
-    program_slug: 5g-mobile-broadband
-    wiki_profile: telecom-promo
-    default_urls:
-      webapp: "https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/"
-    pilot: true
+- id: voucher-plan-dns-5gbb
+  title: Voucher Plan (DNS / 5GBB bundle)
+  title_zh: Voucher Plan（DNS／5GBB 組合）
+  locale: zh-HK
+  reqiq_project_id: cmp0zdx4g0004alp8z77ess7a
+  program_slug: voucher-plan-dns-5gbb
+  wiki_profile: telecom-promo
+  default_urls:
+    webapp: https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/
+  pilot: true
+  notes: 'ReqIQ workspace: Voucher Plan — DPCR-1284 DNS × 5GBB × Home Insurance DT
+    flow'
+- id: 5g-voucher-monthly-plan
+  title: 5G Voucher Monthly Plan
+  title_zh: 5G 手提電話代金券月費計劃
+  locale: zh-HK
+  reqiq_project_id: cmp9en6hv000nte01qnbs8jic
+  program_slug: 5g-voucher-monthly-plan
+  wiki_profile: telecom-promo
+  default_urls:
+    webapp: https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/
+  pilot: true
+  notes: 'ReqIQ workspace: 5G Voucher Monthly Plan — URS-3HK-5G-HVP-001'
+- id: 5g-mobile-broadband
+  title: 5G Mobile Broadband
+  locale: zh-HK
+  reqiq_project_id: cmrcykllf0001s5015ynk8uhc
+  program_slug: 5g-mobile-broadband
+  wiki_profile: telecom-promo
+  pilot: false
+  title_zh: 5G 流動寬頻
+  default_urls:
+    webapp: https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en/account/purchase?type=5gBB

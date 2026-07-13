@@ -7,10 +7,17 @@ from app.services.program_sync_agent import build_initiatives_from_wiki
 from app.services.wiki_compile_profile import get_compile_feature, list_wiki_profiles
 
 
-def test_list_products_includes_5g_pilot():
+def test_list_products_includes_pilot_entries():
     items = list_products()
     ids = [p["id"] for p in items]
-    assert "5g-mobile-broadband" in ids
+    assert "voucher-plan-dns-5gbb" in ids
+    assert "5g-voucher-monthly-plan" in ids
+
+
+def test_get_voucher_monthly_plan_product():
+    p = get_product("5g-voucher-monthly-plan")
+    assert p["reqiq_project_id"] == "cmp9en6hv000nte01qnbs8jic"
+    assert p["title"] == "5G Voucher Monthly Plan"
 
 
 def test_create_product_entry_roundtrip(tmp_path, monkeypatch):
@@ -28,10 +35,11 @@ def test_create_product_entry_roundtrip(tmp_path, monkeypatch):
     assert get_product("new-offer")["title_zh"] == "新優惠"
 
 
-def test_get_5g_product_has_reqiq_project():
-    p = get_product("5g-mobile-broadband")
-    assert p["reqiq_project_id"]
-    assert p["program_slug"] == "5g-mobile-broadband"
+def test_get_voucher_plan_dns_product():
+    p = get_product("voucher-plan-dns-5gbb")
+    assert p["reqiq_project_id"] == "cmp0zdx4g0004alp8z77ess7a"
+    assert p["title"] == "Voucher Plan (DNS / 5GBB bundle)"
+    assert p["program_slug"] == "voucher-plan-dns-5gbb"
 
 
 def test_validate_pptx_allowed():
@@ -52,6 +60,7 @@ def test_wiki_telecom_profile_loads():
     assert "telecom-promo" in list_wiki_profiles()
     feature = get_compile_feature("telecom-promo")
     assert "Active promotions" in feature
+    assert "Purchase journeys" in feature
 
 
 SAMPLE_WIKI = """

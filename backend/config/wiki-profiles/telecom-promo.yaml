@@ -22,8 +22,22 @@ feature: |
   ## Ended promotions
   List promotions that have ended (with end date). Note they should no longer be regression-tested.
 
+  ## Purchase journeys
+  REQUIRED when UX/UI flow images or PRE-EXTRACTED PURCHASE JOURNEYS are present.
+  For each distinct flow (e.g. Wi-Fi 7 Unlimited, HSBC offer, Student, Dec promo), use ### subheading.
+  Under each journey include:
+  - Entry point (banners, deep links, notification, SMS)
+  - Branching (Login vs Before Login, New vs Existing, payment variants)
+  - Numbered steps in a table: Step | Screen | User action | Expected | UI labels (EN + 繁中)
+  - Payment & completion (methods, success screen, transaction ref)
+  - Related offers (map to ## Base offer / ## Active promotions plan codes and prices)
+  Preserve PRE-EXTRACTED PURCHASE JOURNEYS content — do not drop steps.
+
+  ## Customer journeys (summary)
+  Short plain-language narrative per journey for business readers (2–4 sentences each).
+
   ## UX and UI (SMCD)
-  Describe layouts from UI mockup images: screens, fields, validation, bilingual labels.
+  Per-screen field lists, validation rules, bilingual labels — detail layer beneath Purchase journeys.
 
   ## Notifications
   SMS, email, and push template copy (EN and 繁中 where available). Trigger events.

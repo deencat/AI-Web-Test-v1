@@ -88,6 +88,9 @@ export async function updateProduct(
 export async function compileProductWiki(productId: string): Promise<{
   message: string;
   sync?: { tests_retired?: number; initiatives_synced?: number };
+  journeys_extracted?: number;
+  ux_sources_processed?: number;
+  vision_used?: boolean;
 }> {
   const { data } = await api.post(`/products/${productId}/compile-wiki`);
   return data;
@@ -98,6 +101,7 @@ export async function generateTestsFromWiki(productId: string): Promise<{
   dedupe_dropped: number;
   batch_id?: string;
   message: string;
+  journey_guided?: boolean;
 }> {
   const { data } = await api.post(`/products/${productId}/generate-tests`);
   return data;
@@ -144,9 +148,53 @@ export async function listProductRequirements(productId: string): Promise<unknow
   return data.items || data.requirements || [];
 }
 
-export async function listProductSources(productId: string): Promise<unknown[]> {
+export async function listProductSources(productId: string): Promise<ProductSource[]> {
   const product = await getProduct(productId);
   const { data } = await api.get(`/requirements/${product.reqiq_project_id}/sources`);
-  if (Array.isArray(data)) return data;
-  return data.items || data.sources || [];
+  if (Array.isArray(data)) return data as ProductSource[];
+  return (data.items || data.sources || []) as ProductSource[];
+}
+
+export async function deleteProductDocument(productId: string, sourceId: string): Promise<void> {
+  const product = await getProduct(productId);
+  await api.delete(`/requirements/${product.reqiq_project_id}/sources/${sourceId}`);
+}
+
+export async function keepTestScenario(productId: string, requirementId: string): Promise<void> {
+  const product = await getProduct(productId);
+  const pid = product.reqiq_project_id;
+  await api.post(`/requirements/${pid}/requirements/${requirementId}/wiki-feedback`, { decision: 'accept' });
+  await api.post(`/requirements/${pid}/requirements/${requirementId}/transition`, { state: 'REVIEWED' });
+}
+
+export async function removeTestScenario(productId: string, requirementId: string): Promise<void> {
+  const product = await getProduct(productId);
+  await api.post(`/requirements/${product.reqiq_project_id}/requirements/${requirementId}/wiki-feedback`, {
+    decision: 'reject',
+    reason: 'Not needed for this release',
+  });
+}
+
+export interface ProductSource {
+  id: string;
+  originalFilename?: string;
+  filename?: string;
+  name?: string;
+  status?: string;
+}
+
+export interface ProductRequirement {
+  id: string;
+  title: string;
+  state: string;
+  customerOutcome?: string;
+  isWikiSuggest?: boolean;
+}
+
+export type ProductWorkflowStep = 'documents' | 'summary' | 'tests';
+
+export function deriveWorkflowStep(status: ProductWorkspaceStatus | null, sourceCount: number): ProductWorkflowStep {
+  if (sourceCount === 0) return 'documents';
+  if (!status?.wiki_ready || status.wiki_stale) return 'summary';
+  return 'tests';
 }

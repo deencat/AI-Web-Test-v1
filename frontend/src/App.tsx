@@ -6,7 +6,6 @@ import { TestsPage } from './pages/TestsPage';
 import { TestDetailPage } from './pages/TestDetailPage';
 import { SavedTestsPage } from './pages/SavedTestsPage';
 import TestSuitesPage from './pages/TestSuitesPage';
-import { KnowledgeBasePage } from './pages/KnowledgeBasePage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ExecutionProgressPage } from './pages/ExecutionProgressPage';
 import { ExecutionHistoryPage } from './pages/ExecutionHistoryPage';
@@ -78,14 +77,7 @@ function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/knowledge-base"
-          element={
-            <ProtectedRoute>
-              <KnowledgeBasePage />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/knowledge-base" element={<Navigate to="/products" replace />} />
         <Route
           path="/settings"
           element={

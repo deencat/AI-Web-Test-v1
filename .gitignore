@@ -34,6 +34,7 @@ logs/
 tmp/
 temp/
 *.tmp
+backend/data/product-documents/
 
 # Build outputs
 scripts/hermes-migrate/dist/*

@@ -1,0 +1,36 @@
+# Program manifest — 5G Voucher Monthly Plan (agent sync)
+program:
+  slug: 5g-voucher-monthly-plan
+  title: "5G Voucher Monthly Plan"
+  kind: pilot
+  locale: zh-HK
+  test_scope: DT_ONLY
+  reqiq_project_id: cmp9en6hv000nte01qnbs8jic
+  registry_project: Three-HK
+
+platform_profile: dt-telecom-default
+
+platform_components:
+  - id: DT_WEBAPP
+    title: WebApp
+    test_surfaces: [ui]
+
+initiatives:
+  - id: hvp-base
+    kind: base_offer
+    title: "5G Handset Voucher Monthly Plan"
+    effective_from: "2025-01-01"
+    effective_to: null
+    audience: all
+    capability_keys: [purchase_journey]
+    platform_components: [DT_WEBAPP]
+    regression_tags: [5g-voucher-monthly-plan, initiative:hvp-base]
+
+journey_templates: []
+
+orchestration_suites: []
+
+factory:
+  program_tags: [5g-voucher-monthly-plan]
+  planner_rules:
+    - "5G Voucher Monthly Plan — synced from product wiki"

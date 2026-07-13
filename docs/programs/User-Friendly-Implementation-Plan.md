@@ -43,9 +43,11 @@ Users must **never** edit `initiatives[]`, `relationship: stack`, or manifest fi
 
 ## 2. Target experience (three screens max)
 
-### Screen A — **Product workspace** (primary entry)
+### Screen A — **Products & offers** (only nav entry)
 
-One row per product line (pilot: **5G Mobile Broadband**).
+Route: `/products` — list; `/products/:id` — workspace for one product line.
+
+No separate Knowledge Base or Programs menu items.
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -66,7 +68,9 @@ Structured sections the AI maintains (users fix mistakes in plain language):
 - Base offer
 - Active promotions (with **effective dates**)
 - Ended promotions (auto-moved when dates pass)
-- UX / UI notes (from SMCD images)
+- **Purchase journeys** (from UX/UI flow images — numbered steps, branches, UI labels)
+- **Customer journeys (summary)** (plain-language narrative)
+- UX / UI notes (from SMCD images — per-screen fields)
 - Notifications (SMS / email / push copy)
 - Terms & conditions (EN / 繁中 pointers)
 - Open questions / gaps
@@ -229,8 +233,11 @@ No `initiatives[]` in this file — dates live in **wiki**.
 | UF-2.4 | Notification templates | Tag source type `notification` | Wiki section “Notifications” |
 | UF-2.5 | T&C dual language | Tag `tc-en`, `tc-zh` | Wiki links both; tests check key clauses |
 | UF-2.6 | Re-upload / version | Same filename replaces or versions | “Added 3 docs today” message |
+| UF-2.7 | **UX flow vision extractor** | `ux_flow_extractor.py` + local upload cache | Upload Figma PNG → **Update summary** adds `## Purchase journeys` with numbered steps |
 
 **Out of scope v1:** Perfect OCR on all slides; human wiki edit is the safety net.
+
+**UF-2.7 implementation (2026-07-13):** PNG/JPG cached under `backend/data/product-documents/{product_id}/`. On compile, vision LLM analyses flow boards (with horizontal tiling for wide images) and merges journeys into wiki.
 
 ---
 
@@ -245,6 +252,7 @@ No `initiatives[]` in this file — dates live in **wiki**.
 | UF-3.3 | **Stale wiki** indicator | Existing `wikiStale` | Orange banner: “New documents — recompile” |
 | UF-3.4 | Light wiki editor | Existing `PATCH …/wiki` | SSCO fixes one paragraph without ReqIQ Advanced |
 | UF-3.5 | Gap list | LLM “Open questions” | Missing T&C flagged in wiki |
+| UF-3.6 | **Purchase journeys** wiki sections | Extended `telecom-promo.yaml` + merge | `## Purchase journeys` + `## Customer journeys (summary)` per flow image |
 
 **June → July example (acceptance):**
 
@@ -266,8 +274,11 @@ No `initiatives[]` in this file — dates live in **wiki**.
 | UF-4.3 | **Generate browser test** per card | `suggest-tests` → Crawl & Save | Pre-filled URL from product config |
 | UF-4.4 | Approve / reject | `wiki-feedback` accept/reject | One click |
 | UF-4.5 | Bulk “Generate all pending” | Batch suggest + import | ≤10 scenarios for pilot |
+| UF-4.6 | **Journey-guided test generation** | `journey_test_hints.py` | `suggest-from-wiki` receives Purchase journey steps + `capabilityKey: purchase_journey` |
 
 **User flow:** Upload → Recompile → **Generate tests** → Review list → **Run overnight**.
+
+**UF-4.6 (2026-07-13):** Generate tests reads `## Purchase journeys` from wiki and passes step tables as hints to ReqIQ.
 
 ---
 

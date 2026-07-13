@@ -32,6 +32,8 @@ from app.services.document_ingest import (
     infer_source_type,
     validate_filename,
 )
+from app.services.journey_test_hints import build_suggest_from_wiki_payload
+from app.services.product_document_store import save_upload
 from app.services.program_sync_agent import sync_program_from_wiki
 from app.services.program_registry_service import ProgramManifestError, create_program_manifest
 from app.services.product_workspace_service import (
@@ -44,6 +46,8 @@ from app.services.product_workspace_service import (
     update_product_entry,
 )
 from app.services.wiki_compile_profile import WikiProfileError, get_compile_feature
+from app.services.wiki_journey_merge import merge_purchase_journeys
+from app.services.ux_flow_extractor import build_compile_feature_supplement, extract_journeys_for_product
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -103,8 +107,12 @@ async def create_product_workspace(
     _reqiq_unavailable()
     product_id = body.id or slug_from_title(body.title)
     try:
-        get_product(product_id)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Product already exists: {product_id}")
+        existing = get_product(product_id)
+        title = existing.get("title") or product_id
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f'Product already exists: {product_id} (listed as "{title}")',
+        )
     except ProductWorkspaceError:
         pass
 
@@ -256,6 +264,12 @@ async def upload_product_documents(
         hint = infer_source_type(upload.filename or "")
         if hint:
             ingested_types.append(hint)
+        save_upload(
+            product_id,
+            upload.filename or "upload",
+            content,
+            source_type=hint,
+        )
         files_payload.append(
             ("file", (upload.filename, content, upload.content_type or "application/octet-stream"))
         )
@@ -293,12 +307,50 @@ async def compile_product_wiki(
     except WikiProfileError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    wiki = await _proxy(reqiq.compile_wiki(product["reqiq_project_id"], feature))
+    extraction = await extract_journeys_for_product(product_id)
+    compile_feature = feature
+    supplement = build_compile_feature_supplement(extraction.journeys_markdown)
+    if supplement:
+        compile_feature = supplement + compile_feature
+
+    wiki = await _proxy(reqiq.compile_wiki(product["reqiq_project_id"], compile_feature))
+
+    wiki_md = ""
+    if isinstance(wiki, dict):
+        wiki_md = str(wiki.get("markdown") or wiki.get("content") or "")
+
+    if extraction.journeys_markdown:
+        merged = merge_purchase_journeys(wiki_md, extraction.journeys_markdown)
+        if merged != wiki_md:
+            patch_resp = await reqiq.patch_wiki(product["reqiq_project_id"], merged)
+            if patch_resp.is_success:
+                wiki_md = merged
+                if isinstance(wiki, dict):
+                    wiki["markdown"] = merged
+                    wiki["content"] = merged
+            else:
+                logger.warning(
+                    "Wiki journey merge patch failed for %s: %s",
+                    product_id,
+                    patch_resp.status_code,
+                )
+
     sync = await _auto_sync_from_wiki(db, product_id)
     msg = "Summary updated from your documents."
+    if extraction.images_processed:
+        msg += f" {extraction.images_processed} UX/UI flow image(s) analysed."
+        if extraction.journey_names:
+            msg += f" Journeys: {', '.join(extraction.journey_names[:5])}."
     if sync and sync.tests_retired:
         msg += f" Ended {sync.tests_retired} outdated test(s) from previous offers."
-    return ProductCompileWikiResponse(wiki=wiki if isinstance(wiki, dict) else {}, sync=sync, message=msg)
+    return ProductCompileWikiResponse(
+        wiki=wiki if isinstance(wiki, dict) else {},
+        sync=sync,
+        message=msg,
+        journeys_extracted=len(extraction.journey_names),
+        ux_sources_processed=extraction.images_processed,
+        vision_used=extraction.vision_used,
+    )
 
 
 @router.post("/{product_id}/generate-tests", response_model=ProductGenerateTestsResponse)
@@ -312,14 +364,27 @@ async def generate_tests_from_wiki(
     except ProductWorkspaceError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
-    result = await _proxy(
-        reqiq.suggest_from_wiki(product["reqiq_project_id"], maxScenarios=10)
-    )
+    wiki_md = ""
+    journey_guided = False
+    try:
+        wiki = await _proxy(reqiq.get_wiki(product["reqiq_project_id"]))
+        wiki_md = str(wiki.get("markdown") or wiki.get("content") or "")
+        journey_guided = "## Purchase journeys" in wiki_md
+    except Exception:
+        logger.warning("Could not load wiki for journey-guided test generation: %s", product_id)
+
+    webapp_url = str((product.get("default_urls") or {}).get("webapp") or "")
+    payload = build_suggest_from_wiki_payload(wiki_md, webapp_url=webapp_url, max_scenarios=10)
+    result = await _proxy(reqiq.suggest_from_wiki(product["reqiq_project_id"], **payload))
+    msg = "Test scenarios created from your summary"
+    if journey_guided:
+        msg += " (guided by Purchase journeys steps)"
     return ProductGenerateTestsResponse(
         created=int(result.get("created") or result.get("createdCount") or 0),
         dedupe_dropped=int(result.get("dedupeDropped") or 0),
         batch_id=result.get("batchId"),
-        message="Test scenarios created from your summary",
+        message=msg,
+        journey_guided=journey_guided,
     )
 
 

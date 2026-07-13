@@ -61,6 +61,7 @@ class ProductGenerateTestsResponse(BaseModel):
     dedupe_dropped: int = 0
     batch_id: Optional[str] = None
     message: str = "Test scenarios generated from wiki"
+    journey_guided: bool = False
 
 
 class ProductCreateRequest(BaseModel):
@@ -85,6 +86,9 @@ class ProductCompileWikiResponse(BaseModel):
     wiki: dict[str, Any] = Field(default_factory=dict)
     sync: Optional[ProductSyncResponse] = None
     message: str = "Summary updated from your documents"
+    journeys_extracted: int = 0
+    ux_sources_processed: int = 0
+    vision_used: bool = False
 
 
 class AllowedFormatsResponse(BaseModel):

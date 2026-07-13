@@ -1,17 +1,19 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Home, FileText, Database, Settings, PlayCircle, FolderOpen, Bot, Library, Globe, MessageSquare, Stethoscope, Package } from 'lucide-react';
+import {
+  Home, FileText, Settings, PlayCircle, FolderOpen, Bot, Library, Globe, MessageSquare, Stethoscope, Package,
+} from 'lucide-react';
 import { isFactoryOperator } from '../../utils/roles';
 
+/** Single hub for documents, summary (wiki), and tests — replaces separate Knowledge Base & Programs. */
 const navItems = [
   { path: '/dashboard', icon: Home, label: 'Dashboard' },
-  { path: '/products', icon: Package, label: 'Products' },
+  { path: '/products', icon: Package, label: 'Products & offers' },
   { path: '/tests', icon: FileText, label: 'Tests' },
   { path: '/step-library', icon: Library, label: 'Step Library' },
   { path: '/crawl-and-save', icon: Globe, label: 'Crawl & Save' },
   { path: '/test-suites', icon: FolderOpen, label: 'Test Suites' },
   { path: '/executions', icon: PlayCircle, label: 'Executions' },
-  { path: '/knowledge-base', icon: Database, label: 'Knowledge Base' },
   { path: '/agent-workflow', icon: Bot, label: 'Agent Workflow' },
   { path: '/agent-console', icon: MessageSquare, label: 'Agent Console' },
   { path: '/heal-review', icon: Stethoscope, label: 'Heal Review' },

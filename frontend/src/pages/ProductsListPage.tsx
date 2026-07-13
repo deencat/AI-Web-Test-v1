@@ -30,20 +30,31 @@ export const ProductsListPage: React.FC = () => {
         <div className="flex justify-between items-start gap-4">
           <div>
             <h1 className="text-2xl font-bold">Products &amp; offers</h1>
-            <p className="text-gray-600 text-sm mt-1 max-w-xl">
-              One place for Marketing, SSCO, and SMCD documents — the system builds a summary and tests for each product line.
+            <p className="text-gray-600 text-sm mt-2 max-w-2xl leading-relaxed">
+              One workspace per product line or offer. Upload documents, build a summary, create tests.
+              Each product links to its own ReqIQ workspace — e.g. Voucher Plan (DNS bundle) and
+              5G Voucher Monthly Plan are separate entries.
             </p>
           </div>
           <Button onClick={() => setShowCreate(true)}>+ New product</Button>
         </div>
+
+        <Card>
+          <ol className="p-4 text-sm text-gray-700 space-y-1 list-decimal list-inside bg-gray-50 rounded-lg">
+            <li>Add documents (PPT, URS, UI images, T&amp;C, notifications…)</li>
+            <li>Update summary — AI reads everything and tracks base vs timed offers</li>
+            <li>Create &amp; run tests — outdated promos are retired automatically</li>
+          </ol>
+        </Card>
+
         {error && <p className="text-red-600 text-sm">{error}</p>}
         <Card>
           {loading ? (
             <p className="p-4 text-gray-500">Loading…</p>
           ) : items.length === 0 ? (
             <div className="p-8 text-center text-gray-500">
-              <p>No products yet.</p>
-              <Button className="mt-4" onClick={() => setShowCreate(true)}>Create your first product</Button>
+              <p className="mb-4">No products yet. Create one per offer line (e.g. Voucher Plan DNS bundle, 5G Voucher Monthly Plan).</p>
+              <Button onClick={() => setShowCreate(true)}>Create your first product</Button>
             </div>
           ) : (
             <ul className="divide-y">
@@ -52,7 +63,6 @@ export const ProductsListPage: React.FC = () => {
                   <Link to={`/products/${p.id}`} className="block">
                     <span className="text-blue-700 font-semibold text-lg hover:underline">{p.title}</span>
                     {p.title_zh && <span className="ml-2 text-gray-500">{p.title_zh}</span>}
-                    <p className="text-sm text-gray-500 mt-1">Upload docs → update summary → create tests</p>
                   </Link>
                 </li>
               ))}
