@@ -1,8 +1,8 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from 'react-router-dom';
 import { EphemeralCredentialProvider } from './context/EphemeralCredentialContext';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
-import { TestsPage } from './pages/TestsPage';
+import { GenerateTestsPage } from './pages/GenerateTestsPage';
 import { TestDetailPage } from './pages/TestDetailPage';
 import { SavedTestsPage } from './pages/SavedTestsPage';
 import TestSuitesPage from './pages/TestSuitesPage';
@@ -16,15 +16,25 @@ import { StepLibraryPage } from './pages/StepLibraryPage';
 import { CrawlAndSavePage } from './pages/CrawlAndSavePage';
 import './index.css';
 
-// Protected Route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = !!localStorage.getItem('token');
-  
+
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
-  
+
   return <>{children}</>;
+}
+
+function TestsRoute() {
+  const [searchParams] = useSearchParams();
+  const editId = searchParams.get('edit');
+
+  if (editId) {
+    return <Navigate to={`/tests/saved?edit=${editId}`} replace />;
+  }
+
+  return <GenerateTestsPage />;
 }
 
 function App() {
@@ -45,7 +55,7 @@ function App() {
           path="/tests"
           element={
             <ProtectedRoute>
-              <TestsPage />
+              <TestsRoute />
             </ProtectedRoute>
           }
         />
@@ -157,4 +167,3 @@ function App() {
 }
 
 export default App;
-

@@ -30,6 +30,18 @@ class Tier1PlaywrightExecutor:
             timeout_ms: Timeout in milliseconds for each action (default 30 seconds)
         """
         self.timeout_ms = timeout_ms
+
+    def _to_playwright_selector(self, selector: str) -> str:
+        """Prefix xpath= for XPath paths Playwright would otherwise parse as CSS."""
+        if not selector or selector.startswith("xpath="):
+            return selector
+        stripped = selector.lstrip()
+        if stripped.startswith("/") or stripped.startswith("("):
+            return f"xpath={selector}"
+        return selector
+
+    def _locator(self, page: Page, selector: str):
+        return page.locator(self._to_playwright_selector(selector)).first
     
     async def execute_step(
         self,
@@ -170,7 +182,7 @@ class Tier1PlaywrightExecutor:
     
     async def _execute_click(self, page: Page, selector: str, instruction: str = ""):
         """Click element and wait for page state to stabilize"""
-        element = page.locator(selector).first
+        element = self._locator(page, selector)
         await element.wait_for(state="visible", timeout=self.timeout_ms)
         
         element_text = await element.text_content() or ""
@@ -222,7 +234,7 @@ class Tier1PlaywrightExecutor:
     
     async def _execute_fill(self, page: Page, selector: str, value: str):
         """Fill input element"""
-        element = page.locator(selector).first
+        element = self._locator(page, selector)
         await element.wait_for(state="visible", timeout=self.timeout_ms)
         await element.fill(value, timeout=self.timeout_ms)
         # Small delay to allow input event handlers to complete
@@ -230,7 +242,7 @@ class Tier1PlaywrightExecutor:
     
     async def _execute_select(self, page: Page, selector: str, value: str):
         """Select dropdown option"""
-        element = page.locator(selector).first
+        element = self._locator(page, selector)
         await element.wait_for(state="visible", timeout=self.timeout_ms)
         await element.select_option(value, timeout=self.timeout_ms)
         # Wait for onChange handlers
@@ -238,7 +250,7 @@ class Tier1PlaywrightExecutor:
     
     async def _execute_check(self, page: Page, selector: str):
         """Check checkbox"""
-        element = page.locator(selector).first
+        element = self._locator(page, selector)
         await element.wait_for(state="visible", timeout=self.timeout_ms)
         if not await element.is_checked():
             await element.check(timeout=self.timeout_ms)
@@ -246,7 +258,7 @@ class Tier1PlaywrightExecutor:
     
     async def _execute_uncheck(self, page: Page, selector: str):
         """Uncheck checkbox"""
-        element = page.locator(selector).first
+        element = self._locator(page, selector)
         await element.wait_for(state="visible", timeout=self.timeout_ms)
         if await element.is_checked():
             await element.uncheck(timeout=self.timeout_ms)
@@ -254,14 +266,14 @@ class Tier1PlaywrightExecutor:
     
     async def _execute_hover(self, page: Page, selector: str):
         """Hover over element"""
-        element = page.locator(selector).first
+        element = self._locator(page, selector)
         await element.wait_for(state="visible", timeout=self.timeout_ms)
         await element.hover(timeout=self.timeout_ms)
         await asyncio.sleep(0.2)
     
     async def _execute_assert(self, page: Page, selector: str, expected_value: str):
         """Assert element contains expected value"""
-        element = page.locator(selector).first
+        element = self._locator(page, selector)
         await element.wait_for(state="visible", timeout=self.timeout_ms)
         
         # Get text content
@@ -281,7 +293,7 @@ class Tier1PlaywrightExecutor:
             await asyncio.sleep(wait_ms / 1000)
         except ValueError:
             # Treat as selector
-            element = page.locator(selector_or_time).first
+            element = self._locator(page, selector_or_time)
             await element.wait_for(state="visible", timeout=self.timeout_ms)
     
     async def _execute_upload_file(self, page: Page, selector: str, file_path: str):
@@ -304,7 +316,7 @@ class Tier1PlaywrightExecutor:
             raise FileNotFoundError(f"File not found: {file_path}")
         
         # Locate file input element
-        element = page.locator(selector).first
+        element = self._locator(page, selector)
         await element.wait_for(state="attached", timeout=self.timeout_ms)
         
         # Verify it's a file input
@@ -339,7 +351,7 @@ class Tier1PlaywrightExecutor:
             ValueError: If element is not a canvas
         """
         # Locate canvas element
-        element = page.locator(selector).first
+        element = self._locator(page, selector)
         await element.wait_for(state="visible", timeout=self.timeout_ms)
         
         # Verify it's a canvas element

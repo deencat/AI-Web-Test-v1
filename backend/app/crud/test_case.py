@@ -1,7 +1,8 @@
 """CRUD operations for test cases."""
+import copy
 import json
 from typing import List, Optional, Dict, Any
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, and_, or_
 
 from app.models.test_case import TestCase, TestType, TestStatus, Priority
@@ -78,6 +79,7 @@ def create_test_case(db: Session, test_case: TestCaseCreate, user_id: int) -> Te
         preconditions=test_case.preconditions,
         test_data=test_case.test_data,
         category_id=test_case.category_id,
+        test_category_id=test_case.test_category_id,
         tags=test_case.tags,
         test_metadata=test_case.test_metadata,
         user_id=user_id
@@ -99,7 +101,12 @@ def get_test_case(db: Session, test_case_id: int) -> Optional[TestCase]:
     Returns:
         Test case or None if not found
     """
-    test_case = db.query(TestCase).filter(TestCase.id == test_case_id).first()
+    test_case = (
+        db.query(TestCase)
+        .options(joinedload(TestCase.test_category))
+        .filter(TestCase.id == test_case_id)
+        .first()
+    )
     
     if test_case:
         parse_test_case_json_fields(test_case)
@@ -114,11 +121,13 @@ def get_test_cases(
     test_type: Optional[TestType] = None,
     status: Optional[TestStatus] = None,
     priority: Optional[Priority] = None,
-    user_id: Optional[int] = None
+    user_id: Optional[int] = None,
+    test_category_id: Optional[int] = None,
+    uncategorized: bool = False,
 ) -> tuple[List[TestCase], int]:
     """
     Get test cases with optional filtering and pagination.
-    
+
     Args:
         db: Database session
         skip: Number of records to skip
@@ -127,12 +136,15 @@ def get_test_cases(
         status: Filter by status
         priority: Filter by priority
         user_id: Filter by user ID
-        
+        test_category_id: Filter by user-defined category ID.
+            Use 0 to filter uncategorized tests (test_category_id IS NULL).
+        uncategorized: When True, filter tests with test_category_id IS NULL.
+
     Returns:
         Tuple of (test cases list, total count)
     """
-    query = db.query(TestCase)
-    
+    query = db.query(TestCase).options(joinedload(TestCase.test_category))
+
     # Apply filters
     if test_type:
         query = query.filter(TestCase.test_type == test_type)
@@ -142,6 +154,10 @@ def get_test_cases(
         query = query.filter(TestCase.priority == priority)
     if user_id:
         query = query.filter(TestCase.user_id == user_id)
+    if uncategorized or test_category_id == 0:
+        query = query.filter(TestCase.test_category_id.is_(None))
+    elif test_category_id is not None:
+        query = query.filter(TestCase.test_category_id == test_category_id)
     
     # Get total count
     total = query.count()
@@ -398,4 +414,58 @@ def search_test_cases(
     test_cases = db_query.order_by(TestCase.created_at.desc()).offset(skip).limit(limit).all()
     
     return test_cases, total
+
+
+def title_exists_for_user(db: Session, user_id: int, title: str) -> bool:
+    """Return True if the user already has a test case with this title."""
+    return (
+        db.query(TestCase)
+        .filter(TestCase.user_id == user_id, TestCase.title == title)
+        .first()
+        is not None
+    )
+
+
+def _generate_clone_title(db: Session, user_id: int, base_title: str) -> str:
+    """Generate a unique clone title with (Copy) or (Copy N) suffix for the user."""
+    candidate = f"{base_title} (Copy)"
+    if not title_exists_for_user(db, user_id, candidate):
+        return candidate
+    n = 2
+    while title_exists_for_user(db, user_id, f"{base_title} (Copy {n})"):
+        n += 1
+    return f"{base_title} (Copy {n})"
+
+
+def clone_test_case(
+    db: Session,
+    original: TestCase,
+    *,
+    user_id: int,
+    new_title: str,
+) -> TestCase:
+    """Create a new TestCase copied from original. Does not copy executions or schedules."""
+    cloned = TestCase(
+        title=new_title,
+        description=original.description,
+        test_type=original.test_type,
+        priority=original.priority,
+        status=TestStatus.PENDING,
+        steps=copy.deepcopy(original.steps) if original.steps is not None else [],
+        expected_result=original.expected_result,
+        preconditions=original.preconditions,
+        test_data=copy.deepcopy(original.test_data) if original.test_data is not None else None,
+        category_id=original.category_id,
+        test_category_id=original.test_category_id,
+        tags=copy.deepcopy(original.tags) if original.tags is not None else None,
+        test_metadata=copy.deepcopy(original.test_metadata) if original.test_metadata is not None else None,
+        requires_runtime_credentials=original.requires_runtime_credentials,
+        scenario_id=original.scenario_id,
+        template_id=original.template_id,
+        user_id=user_id,
+    )
+    db.add(cloned)
+    db.commit()
+    db.refresh(cloned)
+    return cloned
 

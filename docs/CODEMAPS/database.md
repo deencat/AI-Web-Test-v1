@@ -1,118 +1,78 @@
 # Database Codemap
 
-**Last Updated:** 2026-06-30  
-**Entry Points:** `backend/app/db/session.py`, `backend/app/models/__init__.py`
+**Last Updated:** 2026-07-03
+**Entry Points:** `backend/app/db/session.py`, `backend/app/models/*`, `backend/run_migrations.py`
 
 ## Architecture
 
-```
-SQLAlchemy 2.x
-    ├── engine (DATABASE_URL from config)
-    ├── SessionLocal (request-scoped via deps.get_db)
-    ├── Base.metadata.create_all (startup in main.py)
-    └── run_migrations.py (incremental column/table changes)
-```
-
-**Default dev:** SQLite (`sqlite:///./aiwebtest.db`)  
-**Production:** PostgreSQL (`postgresql://...` in `.env`) — see `backend/env.example`
-
-## Entity Relationship (Simplified)
-
-```
-User ──┬── TestCase ──┬── TestExecution ── TestExecutionStep
-       │              ├── TestVersion
-       │              └── (steps JSON)
-       ├── ExecutionSettings ── XPathCache
-       │                    └── TierExecutionLog
-       ├── BrowserProfile
-       ├── EmailCredential
-       ├── UserSetting
-       ├── KBDocument ── KBCategory
-       ├── TestSuite ── TestSuiteItem
-       ├── DebugSession ── DebugStepExecution
-       ├── ExecutionFeedback
-       └── StepLibraryModule
+```text
+DATABASE_URL (PostgreSQL 15 in docker-compose; SQLite for local dev)
+  -> SQLAlchemy 2.0 engine/session
+  -> ORM models (app/models)
+  -> CRUD modules (app/crud)
+  -> Auto-migrations on startup (run_all_migrations_auto)
 ```
 
-## Models — `backend/app/models/`
+## Core Entities
 
-| Model | File | Purpose |
-| --- | --- | --- |
-| `User` | `user.py` | Accounts, roles |
-| `UserSession` | `user_session.py` | Active sessions |
-| `PasswordResetToken` | `password_reset.py` | Password reset flow |
-| `TestCase` | `test_case.py` | Test definitions, steps JSON |
-| `TestVersion` | `test_version.py` | Version history |
-| `TestExecution` | `test_execution.py` | Run records |
-| `TestExecutionStep` | `test_execution.py` | Per-step results |
-| `StepSessionSnapshot` | `test_execution.py` | Resume-from-step browser state (ADR-002-44) |
-| `ExecutionSettings` | `execution_settings.py` | Tier strategy, timeouts |
-| `XPathCache` | `execution_settings.py` | Cached selectors (ADR-002-3) |
-| `TierExecutionLog` | `execution_settings.py` | Per-tier attempt logs |
-| `ExecutionFeedback` | `execution_feedback.py` | Human corrections + RCA |
-| `KBDocument` | `kb_document.py` | Knowledge base files |
-| `KBCategory` | `kb_document.py` | KB categories |
-| `TestTemplate` | `test_template.py` | System/user templates |
-| `TestScenario` | `test_scenario.py` | Scenario metadata |
-| `TestSuite` | `test_suite.py` | Suite grouping |
-| `TestSuiteItem` | `test_suite.py` | Suite membership |
-| `SuiteExecution` | `test_suite.py` | Suite run records |
-| `TestSchedule` | `test_schedule.py` | Cron schedules |
-| `BrowserProfile` | `browser_profile.py` | Browser storage state |
-| `EmailCredential` | `email_credential.py` | Encrypted IMAP creds (ADR-002-38) |
-| `StepLibraryModule` | `step_library_module.py` | Reusable step modules |
-| `DebugSession` | `debug_session.py` | Debug mode sessions |
-| `DebugStepExecution` | `debug_session.py` | Debug step runs |
-| `UserSetting` | `user_settings.py` | Key-value user prefs |
-| `ABTestResult` | `ab_test_result.py` | Prompt variant A/B tests |
+| Model | Table | Purpose |
+|---|---|---|
+| `User` | `users` | Authentication and ownership root |
+| `UserSession` | `user_sessions` | Active JWT sessions |
+| `PasswordResetToken` | `password_reset_tokens` | Password reset flow |
+| `TestCase` | `test_cases` | Generated/saved tests |
+| `TestCategory` | `test_categories` | User-defined saved-test folders |
+| `TestCaseVersion` | `test_versions` | Version history snapshots |
+| `KBCategory` / `KBDocument` | `kb_categories`, `kb_documents` | Knowledge base |
+| `TestExecution` / `TestExecutionStep` | `test_executions`, `test_execution_steps` | Runs and step traces |
+| `TestSuite` / `TestSuiteItem` / `SuiteExecution` | `test_suites`, `test_suite_items`, `suite_executions` | Grouped runs |
+| `TestTemplate` | `test_templates` | Reusable templates |
+| `TestScenario` | `test_scenarios` | Faker-driven scenarios |
+| `TestSchedule` | `test_schedules` | Cron/interval schedules |
+| `UserSetting` | `user_settings` | Per-user provider preferences |
+| `ExecutionSettings` | `execution_settings` | Tier strategy preferences |
+| `XPathCache` / `TierExecutionLog` | `xpath_cache`, `tier_execution_logs` | Self-healing analytics |
+| `ExecutionFeedback` | `execution_feedback` | Human corrections |
+| `DebugSession` / `DebugStepExecution` | `debug_sessions`, `debug_step_executions` | Debug mode |
+| `BrowserProfile` | `browser_profiles` | Persistent browser state |
+| `EmailCredential` | `email_credentials` | IMAP OTP credentials |
+| `StepLibraryModule` | `step_library_modules` | Reusable step modules |
+| `ABTestResult` | `ab_test_results` | Prompt variant A/B tests |
 
-## CRUD Layer — `backend/app/crud/`
+## Key Relationships
 
-| Module | Models |
-| --- | --- |
-| `test_case.py` | TestCase |
-| `test_execution.py` | TestExecution, steps |
-| `execution_settings.py` | ExecutionSettings, XPathCache |
-| `execution_feedback.py` | ExecutionFeedback |
-| `kb_document.py` | KBDocument |
-| `user.py` | User |
-| `browser_profile.py` | BrowserProfile |
-| `step_library.py` | StepLibraryModule |
-| `test_schedule.py` | TestSchedule |
-| `crud_test_suite.py` | TestSuite |
-| `step_session_snapshot.py` | Resume snapshots (ADR-002-44) |
+- `test_cases.user_id` → `users.id`
+- `test_cases.test_category_id` → `test_categories.id`
+- `test_cases.category_id` → `kb_categories.id` (optional KB context)
+- `test_executions.test_case_id` → `test_cases.id`
+- `test_execution_steps.execution_id` → `test_executions.id`
+- `test_versions.test_case_id` → `test_cases.id`
+- `test_schedules.test_case_id` → `test_cases.id`
+- `kb_documents.category_id` → `kb_categories.id`
+- `suite_executions.suite_id` → `test_suites.id`
 
-## Migrations — `backend/migrations/`
+## Execution Status Values
 
-Auto-applied on server start via `run_all_migrations_auto()`. Examples:
+`TestExecution.status`: `pending`, `running`, `passed`, `failed`, `cancelled`, `skipped`
 
-- `add_root_cause_analysis_column.py`
-- `add_step_library_modules_table.py`
-- `add_requires_runtime_credentials.py`
-- `add_custom_models_registry.py`
-- `add_browser_profile_session_storage.py`
+Cancel finalization sets `cancelled` via `crud/test_execution.cancel_execution()` (ADR-009).
 
-## Execution-Related Tables (ADR-002)
+## Migration Notes
 
-| Table / model | ADR | Notes |
-| --- | --- | --- |
-| `execution_settings` | 002-1 | `fallback_strategy` enum (A/B/C) |
-| `xpath_cache` | 002-3, 002-45 | Instruction → selector, TTL, invalidation |
-| `tier_execution_log` | 002-26 | Per-tier attempt audit trail |
-| `execution_feedback` | 002-43 | RCA text, user corrections |
-| `email_credentials` | 002-38 | Fernet-encrypted IMAP |
-| `step_session_snapshots` | 002-44 | Resume-from-step state |
+- `run_all_migrations_auto()` runs on every server start from `app/main.py`.
+- Additional scripts under `backend/migrations/`.
+- Alembic is listed in `requirements.txt`; runtime uses custom migration runner.
 
-## Initialization
+## Infrastructure (docker-compose.yml)
 
-| Script | Purpose |
-| --- | --- |
-| `app/db/init_db.py` | Default admin user, sample data |
-| `app/db/init_templates.py` | System test templates |
-| `app/db/init_kb_categories.py` | Default KB categories |
-| `create_test_user.py` | Dev user helper (repo root script) |
+| Service | Image | Port |
+|---|---|---|
+| `db` | `postgres:15-alpine` | 5432 |
+| `redis` | `redis:7-alpine` | 6379 |
+| `backend` | `backend/Dockerfile` (Python 3.11) | 8000 |
 
-## Related Codemaps
+## Related Areas
 
-- [backend.md](./backend.md) — services using these models
-- [execution-engine.md](./execution-engine.md) — execution persistence flow
+- [Backend](./backend.md)
+- [Execution Engine](./execution-engine.md)
+- [Workers](./workers.md)

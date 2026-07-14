@@ -11,6 +11,7 @@ import { DebugModeModal } from '../components/debug/DebugModeModal';
 import { DebugSessionView } from '../components/debug/DebugSessionView';
 import { RootCauseAnalysisPanel } from '../components/execution/RootCauseAnalysisPanel';
 import { ReRunFromStepButton } from '../components/execution/ReRunFromStepButton';
+import { StopExecutionButton } from '../components/execution/StopExecutionButton';
 import executionService from '../services/executionService';
 import debugService from '../services/debugService';
 import feedbackService from '../services/feedbackService';
@@ -35,6 +36,7 @@ export function ExecutionProgressPage() {
 
   // Sprint 10.12: map step_index (0-based) → root_cause_analysis text
   const [rcaByStepIndex, setRcaByStepIndex] = useState<Record<number, string>>({});
+  const [isStopping, setIsStopping] = useState(false);
 
   const fetchExecutionDetail = async () => {
     if (!executionId) return;
@@ -102,6 +104,28 @@ export function ExecutionProgressPage() {
     setShowCorrectionModal(false);
     setSelectedFeedback(null);
   };
+
+  const handleStopExecution = async () => {
+    if (!executionId || isStopping) return;
+    setIsStopping(true);
+    try {
+      await executionService.cancelExecution(Number(executionId));
+      await fetchExecutionDetail();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to stop execution');
+      setIsStopping(false);
+    }
+  };
+
+  useEffect(() => {
+    if (
+      execution?.status === 'cancelled' ||
+      execution?.status === 'completed' ||
+      execution?.status === 'failed'
+    ) {
+      setIsStopping(false);
+    }
+  }, [execution?.status]);
 
   useEffect(() => {
     fetchExecutionDetail();
@@ -191,6 +215,13 @@ export function ExecutionProgressPage() {
             <p className="text-gray-600 mt-1">Test Case ID: {execution.test_case_id}</p>
           </div>
           <div className="flex items-center gap-3">
+            {(execution.status === 'pending' || execution.status === 'running') && (
+              <StopExecutionButton
+                executionStatus={execution.status}
+                onStop={handleStopExecution}
+                isLoading={isStopping}
+              />
+            )}
             <Button
               variant="primary"
               size="md"

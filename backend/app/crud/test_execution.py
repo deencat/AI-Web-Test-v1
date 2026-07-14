@@ -90,6 +90,35 @@ def complete_execution(
     return execution
 
 
+def cancel_execution(
+    db: Session,
+    execution_id: int,
+    *,
+    total_steps: int = 0,
+    passed_steps: int = 0,
+    failed_steps: int = 0,
+    skipped_steps: int = 0,
+) -> TestExecution:
+    """Mark execution as cancelled with partial progress."""
+    execution = db.query(TestExecution).filter(TestExecution.id == execution_id).first()
+    if execution:
+        execution.status = ExecutionStatus.CANCELLED
+        execution.result = None
+        execution.completed_at = datetime.utcnow()
+        execution.total_steps = total_steps
+        execution.passed_steps = passed_steps
+        execution.failed_steps = failed_steps
+        execution.skipped_steps = skipped_steps
+
+        if execution.started_at:
+            duration = (execution.completed_at - execution.started_at).total_seconds()
+            execution.duration_seconds = duration
+
+        db.commit()
+        db.refresh(execution)
+    return execution
+
+
 def fail_execution(
     db: Session,
     execution_id: int,

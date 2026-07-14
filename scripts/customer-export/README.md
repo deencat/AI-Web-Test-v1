@@ -49,7 +49,7 @@ git push
 
 Edit `export-config.json` to adjust:
 
-- `excludeDirs` / `excludeFiles` — internal paths to omit (includes `scripts`, `gan-harness`, and other dev-only folders)
+- `excludeDirs` / `excludeFiles` — internal paths to omit (includes `scripts`, `gan-harness`, `.cursorrules`, and other dev-only items)
 - `includeDocWhitelist` — documentation files to keep
 - `secretScanPatterns` — patterns flagged before export
 - `overlay/` — customer README, LICENSE, and other files copied last

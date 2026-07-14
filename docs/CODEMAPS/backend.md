@@ -1,151 +1,106 @@
 # Backend Codemap
 
-**Last Updated:** 2026-06-30  
-**Entry Points:** `backend/app/main.py`, `backend/start_server.py`
+**Last Updated:** 2026-07-03
+**Entry Points:** `backend/app/main.py`, `backend/app/api/v1/api.py`, `backend/app/api/v2/api.py`
 
 ## Architecture
 
-```
-                    ┌──────────────────────────────────────┐
-                    │           FastAPI (main.py)           │
-                    │  CORS · rate limit · security · timing │
-                    └───────────────┬──────────────────────┘
-                                    │
-              ┌─────────────────────┴─────────────────────┐
-              ▼                                           ▼
-     /api/v1 (api.py)                            /api/v2 (api.py)
-     CRUD · execution · KB · settings            Agent workflow · crawl-and-save
-              │                                           │
-              ▼                                           ▼
-     endpoints/*.py                              endpoints/*.py
-              │                                           │
-              └─────────────────────┬─────────────────────┘
-                                    ▼
-                          services/ · crud/ · models/
-                                    │
-                    ┌───────────────┼───────────────┐
-                    ▼               ▼               ▼
-            execution_service   agents/      reqq_client
-            three_tier_*        orchestration  openrouter
-            queue_manager       workflow_store universal_llm
+```text
+FastAPI app (app/main.py)
+  -> Middleware (CORS, rate limit, security, timing)
+  -> API v1 router (/api/v1) — product APIs (~190 routes)
+  -> API v2 router (/api/v2) — agent workflow APIs (~15 routes)
+  -> Services (queue, scheduler, execution, generation, ReqIQ proxy)
+  -> CRUD layer (app/crud/*)
+  -> SQLAlchemy models (app/models/*)
+  -> PostgreSQL via DATABASE_URL (SQLite supported for local dev)
 ```
 
-## API Routers
+## Startup Sequence
 
-### v1 — `backend/app/api/v1/api.py` (`/api/v1`)
+1. `Base.metadata.create_all` + `run_all_migrations_auto()`
+2. `init_db()` + `seed_system_templates()`
+3. `start_queue_manager(max_concurrent, check_interval)`
+4. `scheduler_service.start()`
+
+## API v1 Routers (`app/api/v1/api.py`)
 
 | Prefix / Tag | Module | Purpose |
-| --- | --- | --- |
-| `health` | `endpoints/health.py` | Liveness, DB health |
-| `/auth` | `endpoints/auth.py` | JWT login, register |
-| `/users` | `endpoints/users.py` | User profile |
-| `/tests` | `endpoints/tests.py`, `test_generation.py`, `versions.py` | Test CRUD, AI generation, versioning |
-| `/executions` | `endpoints/executions.py` | Run tests, queue, history, resume |
-| `execution-feedback` | `endpoints/execution_feedback.py` | Human feedback on failures |
-| `/kb` | `endpoints/kb.py` | Native knowledge base |
-| `/test-templates` | `endpoints/test_templates.py` | Template library |
-| `/scenarios` | `endpoints/test_scenarios.py` | Scenario management |
-| `/suites` | `endpoints/test_suites.py` | Test suite grouping |
-| `/settings` | `endpoints/settings.py` | Execution settings, XPath cache |
-| `debug` | `endpoints/debug.py` | Interactive debug sessions |
-| `browser-profiles` | `endpoints/browser_profiles.py` | Browser profile CRUD |
-| `uploads` | `endpoints/uploads.py` | File uploads |
-| `email-credentials` | `endpoints/email_credentials.py` | IMAP OTP credentials (ADR-002-38) |
-| `step-library` | `endpoints/step_library.py` | Reusable step modules (ADR-002-42) |
-| `/requirements` | `endpoints/requirements.py` | ReqIQ proxy |
-| `hermes` | `endpoints/hermes.py` | Hermes webhook helpers |
-| `schedules` | `endpoints/schedules.py` | Scheduled test runs |
+|---|---|---|
+| `/health` | `health.py` | Health, DB health, detailed health |
+| `/auth` | `auth.py` | Login, register, refresh, sessions, password reset |
+| `/users` | `users.py` | User management |
+| `/tests` | `test_generation.py` | AI test generation |
+| `/tests` | `tests.py` | Test case CRUD, batch ops, stats |
+| `/tests` | `versions.py` | Version history and rollback |
+| `/test-categories` | `test_categories.py` | Saved-test category taxonomy |
+| `/executions` | `executions.py` | Run, poll, cancel, queue management |
+| `/kb` | `kb.py` | Knowledge base upload and categories |
+| `/test-templates` | `test_templates.py` | Template library |
+| `/scenarios` | `test_scenarios.py` | Scenario generation and Faker data |
+| `/suites` | `test_suites.py` | Test suite CRUD and run |
+| `/settings` | `settings.py` | Provider, execution, XPath cache, analytics |
+| `/debug` | `debug.py` | Step-by-step debug sessions |
+| `/browser-profiles` | `browser_profiles.py` | Persistent browser profiles |
+| `/uploads` | `uploads.py` | File upload helper |
+| `/email-credentials` | `email_credentials.py` | IMAP OTP credential store |
+| `/step-library` | `step_library.py` | Reusable step modules |
+| `/requirements` | `requirements.py` | ReqIQ proxy (projects, wiki, RAG) |
+| `/hermes` | `hermes.py` | Hermes webhook trigger |
+| `/schedules` | `schedules.py` | Cron/interval test scheduling |
+| — | `execution_feedback.py` | Execution feedback and corrections |
 
-### v2 — `backend/app/api/v2/api.py` (`/api/v2`)
+### Execution Highlights
 
-| Router | Module | Purpose |
-| --- | --- | --- |
-| Agent workflow | `endpoints/generate_tests.py` | Full pipeline entry |
-| Observation | `endpoints/observation.py` | Observation agent |
-| Requirements | `endpoints/requirements.py` | Requirements agent |
-| Analysis | `endpoints/analysis.py` | Analysis agent |
-| Evolution | `endpoints/evolution.py` | Evolution agent |
-| Improve tests | `endpoints/improve_tests.py` | Test improvement |
-| Crawl and save | `endpoints/crawl_and_save.py` | URL crawl → saved test |
-| Workflows | `endpoints/workflows.py`, `sse_stream.py` | Status, SSE progress, cancel |
+- `POST /executions/tests/{id}/run` — queue test for 3-tier execution
+- `GET /executions/{id}` — poll status (`pending`, `running`, `passed`, `failed`, `cancelled`)
+- `DELETE /executions/{id}/cancel` — cooperative cancel (ADR-009)
+- `DELETE /executions/{id}` — delete execution record (not cancel)
+
+## API v2 Routers (`app/api/v2/api.py`)
+
+| Endpoint area | Module | Purpose |
+|---|---|---|
+| `POST /generate-tests` | `generate_tests.py` | Full multi-agent pipeline |
+| `POST /observation` | `observation.py` | ObservationAgent only |
+| `POST /requirements` | `requirements.py` | RequirementsAgent only |
+| `POST /analysis` | `analysis.py` | AnalysisAgent only |
+| `POST /evolution` | `evolution.py` | EvolutionAgent only |
+| `POST /improve-tests` | `improve_tests.py` | Test improvement workflow |
+| `POST /crawl-and-save-test` | `crawl_and_save.py` | Browser-use crawl + save |
+| `/workflows/{id}` | `workflows.py` | Status, results, cancel |
+| `/workflows/{id}/stream` | `sse_stream.py` | SSE progress stream |
 
 ## Key Services
 
-| Module | Purpose | Key Exports |
-| --- | --- | --- |
-| `execution_service.py` | Browser lifecycle, step loop, delegates to three-tier | `ExecutionService`, `ExecutionConfig` |
-| `three_tier_execution_service.py` | Tier dispatch, fallback strategies A/B/C | `ThreeTierExecutionService` |
-| `tier1_playwright.py` | CSS/XPath direct Playwright | `Tier1PlaywrightExecutor` |
-| `tier2_hybrid.py` | Stagehand `observe()` + Playwright | `Tier2HybridExecutor` |
-| `tier3_stagehand.py` | Full Stagehand `act()` | `Tier3StagehandExecutor` |
-| `xpath_extractor.py` | XPath via observe | `XPathExtractor` |
-| `xpath_cache_service.py` | PostgreSQL-backed selector cache | Cache read/write/invalidate |
-| `post_click_readiness.py` | Post-click/navigation waits | Payment, SPA, modal handling |
-| `step_progress_guard.py` | Repeated-step progress detection | Confirm-step guard |
-| `stagehand_factory.py` | Python vs TypeScript Stagehand adapter | `StagehandFactory` |
-| `stagehand_service.py` | Stagehand session management | CDP connect, act/observe |
-| `queue_manager.py` | Concurrent execution queue | `start_queue_manager` |
-| `execution_queue.py` | Execution job queue | Background workers |
-| `scheduler_service.py` | In-process cron schedules | Scheduled runs |
-| `orchestration_service.py` | Multi-agent workflow orchestration | Agent pipeline |
-| `workflow_store.py` | Workflow state persistence | SSE/progress backing |
-| `reqiq_client.py` | ReqIQ HTTP client | Server-side proxy |
-| `root_cause_analysis_service.py` | AI failure RCA | Post-execution analysis |
-| `email_otp_service.py` | IMAP OTP retrieval | JIT OTP expansion |
-| `preprod_otp_service.py` | HTTP OTP for preprod | Non-browser OTP |
-| `step_module_resolver.py` | `@module:` step expansion | Step library |
-| `universal_llm.py` | Multi-provider LLM routing | Azure, OpenRouter, etc. |
-| `debug_session_service.py` | Interactive debug mode | Step-range replay |
+| Module | Purpose |
+|---|---|
+| `queue_manager.py` | Concurrent execution queue (default max 5) |
+| `execution_service.py` | Step loop with cooperative cancel polls |
+| `three_tier_execution_service.py` | Playwright → XPath → Stagehand tiers |
+| `execution_cancel_store.py` | In-memory cancel flags (ADR-009) |
+| `scheduler_service.py` | APScheduler-based test schedules |
+| `workflow_store.py` | Agent workflow state and cancel |
+| `orchestration_service.py` | Multi-agent pipeline coordination |
+| `test_generation.py` | LLM test generation |
+| `stagehand_factory.py` / adapters | Stagehand browser automation |
+| `reqiq_client.py` | ReqIQ HTTP client |
+| `kb_context.py` | KB document context for generation |
 
-## Agents — `backend/agents/`
+## Agents (`backend/agents/`)
 
-| Agent | Module | Role |
-| --- | --- | --- |
-| Requirements | `requirements_agent.py` | PRD/requirements analysis |
-| Observation | `observation_agent.py` | Page observation |
-| Analysis | `analysis_agent.py` | Failure analysis |
-| Evolution | `evolution_agent.py` | Test improvement |
-| Base | `base_agent.py` | Shared agent interface |
+| Agent | Module |
+|---|---|
+| Base | `base_agent.py` |
+| Observation | `observation_agent.py` |
+| Requirements | `requirements_agent.py` |
+| Analysis | `analysis_agent.py` |
+| Evolution | `evolution_agent.py` |
+| Browser-use tool | `browser_use_signature_tool.py` |
 
-## Core & Infrastructure
+## Related Areas
 
-| Path | Purpose |
-| --- | --- |
-| `app/core/config.py` | Settings (`API_V1_STR`, `API_V2_STR`, CORS, queue limits) |
-| `app/core/security.py` | JWT, password hashing |
-| `app/core/rate_limit.py` | SlowAPI rate limiting |
-| `app/db/session.py` | SQLAlchemy engine/session |
-| `app/db/init_db.py` | Seed data |
-| `app/middleware/` | Security headers, request timing |
-| `backend/migrations/` | Auto-run column/table migrations |
-| `backend/run_migrations.py` | Migration runner (called from `main.py`) |
-
-## Data Flow — Test Execution Request
-
-```
-POST /api/v1/executions/tests/{id}/execute
-    → executions.py validates user, loads test case
-    → queue_manager enqueues job
-    → execution_service.run_test()
-        → Playwright browser + optional Stagehand CDP
-        → ThreeTierExecutionService.execute_step() per step
-        → Persist TestExecutionStep + screenshots
-    → root_cause_analysis_service (on failure, if enabled)
-```
-
-## External Dependencies
-
-| Package | Purpose |
-| --- | --- |
-| FastAPI / Uvicorn | HTTP API |
-| SQLAlchemy | ORM |
-| Playwright | Browser automation (Tier 1) |
-| stagehand (Python) | AI browser control (Tier 2/3) |
-| slowapi | Rate limiting |
-| cryptography (Fernet) | Email credential encryption |
-
-## Related Codemaps
-
-- [execution-engine.md](./execution-engine.md) — tier details and ADR-002
-- [database.md](./database.md) — models
-- [integrations.md](./integrations.md) — ReqIQ, Stagehand microservice
+- [Database](./database.md)
+- [Execution Engine](./execution-engine.md)
+- [Integrations](./integrations.md)
+- [Workers](./workers.md)

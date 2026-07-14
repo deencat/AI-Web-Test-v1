@@ -3,7 +3,7 @@
 
 **Status:** 🔄 Phase 3 In Progress - Multi-Agent System (Sprint 7-9)  
 **Version:** 1.1.0  
-**Last Updated:** January 27, 2026
+**Last Updated:** July 3, 2026
 
 ---
 
@@ -20,6 +20,7 @@ AI Web Test is a multi-agent test automation platform that reduces test creation
 - ✅ **Knowledge Base** - Document upload and categorization
   - ⚠️ **Limitation:** KB documents not yet used as context in test generation
 - ✅ **Real-time Monitoring** - Live execution progress tracking
+- ✅ **Stop Execution** - Cooperative cancel for queued/running 3-tier runs (ADR-009)
 - ✅ **Test Suites** - Group and execute multiple tests together
 - ✅ **Multi-Provider AI** - Google Gemini, Cerebras, OpenRouter support
 - ✅ **Execution History** - Complete audit trail with filtering and search
@@ -48,7 +49,7 @@ AI Web Test is a multi-agent test automation platform that reduces test creation
 - **Documentation:** 25+ comprehensive guides
 - **Production Readiness:** ✅ Ready for deployment
 
-### Production Ready �
+### Production Ready ✅ �
 - **Test Generation:** 5-90 seconds with 3 AI providers
 - **Test Execution:** Real browsers with full automation
 - **Test Management:** Complete CRUD with search/filter
@@ -63,9 +64,10 @@ AI Web Test is a multi-agent test automation platform that reduces test creation
 ## 🚀 Quick Start
 
 ### Prerequisites
-- **Python 3.13.x** (or 3.12.x)
+- **Python 3.11** (matches `backend/Dockerfile`; 3.12+ may work locally)
 - **Node.js 18.x or 20.x LTS**
 - **Git**
+- **Docker** (optional, for PostgreSQL 15 + Redis 7 via `docker-compose.yml`)
 - **pytest 9.0.2+** (for Phase 3 agent testing)
 
 ### Backend Setup (5 minutes)
@@ -104,9 +106,6 @@ python start_server.py
 ### Phase 3 Development Setup (Additional)
 
 ```bash
-# Switch to Phase 3 feature branch
-git checkout feature/phase3-agent-foundation
-
 # Verify pytest installation
 python -m pytest --version  # Should show 9.0.2+
 
@@ -132,12 +131,21 @@ python -u -m pytest tests/integration/test_four_agent_e2e_real.py::TestFourAgent
 - 🔄 Sprint 9: AnalysisAgent + EvolutionAgent (in planning)
 - 📚 Documentation: Phase3-project-documents/ folder
 
-### Frontend Setup (Coming Soon)
+### Frontend Setup
 
 ```bash
 cd frontend
 npm install
 npm run dev
+```
+
+Open http://localhost:5173 — API defaults to `http://127.0.0.1:8000/api/v1` (set `VITE_API_BASE_URL` in `.env.local` if needed).
+
+### Docker Infrastructure (PostgreSQL + Redis)
+
+```bash
+docker compose up -d db redis
+# Set DATABASE_URL in backend/.env to postgresql://aiwebtest:aiwebtest123@localhost:5432/aiwebtest
 ```
 
 ---
@@ -154,7 +162,7 @@ npm run dev
 - **[ADR-004: Agent Workflow](documentation/ADR-004-agent-workflow.md)**
 
 ### For New Developers
-- **[NEW-PC-SETUP.md](NEW-PC-SETUP.md)** - Complete setup guide for new PC
+- **[NEW-PC-SETUP.md](documentation/archive/NEW-PC-SETUP.md)** - Complete setup guide for new PC (archived)
 - **[API-CHANGELOG.md](API-CHANGELOG.md)** - API version history
 
 ### Phase 3 Documentation (Current)
@@ -168,9 +176,20 @@ npm run dev
 - **[API Quick Reference](project-documents/SPRINT-3-API-QUICK-REFERENCE.md)** - API endpoint reference
 
 ### Technical Documentation
+- **[ADRs](documentation/)** - Architecture decision records (ADR-002 through ADR-009)
+- **[API Agentic Workflow Reference](documentation/API-Agentic-Workflow-Reference.md)** - Agent/crawl/execution API quick reference
+- **[GAN Harness](gan-harness/spec.md)** - Stop Execution spec and evaluation rubric
 - **[Product Requirements](project-documents/AI-Web-Test-v1-PRD.md)** - Full PRD
 - **[Software Requirements](project-documents/AI-Web-Test-v1-SRS.md)** - Technical specs
 - **[UI Design Document](project-documents/ai-web-test-ui-design-document.md)** - UI/UX specifications
+
+### Codemaps (Refreshed)
+- **[Codemap Index](docs/CODEMAPS/INDEX.md)** - High-level architecture map directory
+- **[Backend Codemap](docs/CODEMAPS/backend.md)** - API and service architecture
+- **[Frontend Codemap](docs/CODEMAPS/frontend.md)** - Routes and UI module map
+- **[Database Codemap](docs/CODEMAPS/database.md)** - ORM entities and relationships
+- **[Integrations Codemap](docs/CODEMAPS/integrations.md)** - External service/provider dependencies
+- **[Workers Codemap](docs/CODEMAPS/workers.md)** - Background processing model
 
 ---
 
@@ -179,18 +198,22 @@ npm run dev
 ### Technology Stack
 
 **Backend:**
-- FastAPI 0.115.0+
+- FastAPI >=0.115.0
 - SQLAlchemy 2.0.23
 - Pydantic 2.5.0+
 - Playwright 1.56.0
-- Stagehand 0.5.7
-- Python 3.13.3 (or 3.12.x)
-- pytest 9.0.2 (Phase 3)
-- Cerebras Cloud SDK 1.0.0+ (Phase 3)
+- Stagehand 0.5.6
+- browser-use >=0.12.1 (crawl-and-save)
+- Python 3.11 (Docker base image)
+- Cerebras Cloud SDK 1.0.0+ (Phase 3 agents)
 
-**Database:**
-- SQLite (development)
-- PostgreSQL (production - planned)
+**Frontend:**
+- React ^19.2.0, Vite ^7.1.7, TypeScript ~5.9.3
+
+**Database & Cache:**
+- PostgreSQL 15 (`postgres:15-alpine` via docker-compose)
+- Redis 7 (`redis:7-alpine` via docker-compose)
+- SQLite supported for local development (`DATABASE_URL=sqlite:///./aiwebtest.db`)
 
 **Authentication:**
 - JWT tokens
@@ -208,7 +231,7 @@ npm run dev
 
 ## 🔌 API Endpoints
 
-### Current APIs (47 endpoints)
+### Current APIs (200+ endpoints across v1 and v2)
 
 **Authentication (2)**
 - POST `/api/v1/auth/login` - User login
@@ -222,13 +245,19 @@ npm run dev
 - DELETE `/api/v1/tests/{id}` - Delete test
 - POST `/api/v1/tests/generate` - AI test generation
 
-**Test Execution (9)** ✨ New in Sprint 3
-- POST `/api/v1/tests/{id}/run` - Execute test
+**Test Execution**
+- POST `/api/v1/executions/tests/{id}/run` - Queue test execution
 - GET `/api/v1/executions/{id}` - Get execution details
+- DELETE `/api/v1/executions/{id}/cancel` - Cooperative cancel (ADR-009)
 - GET `/api/v1/executions` - List executions
 - GET `/api/v1/executions/stats` - Execution statistics
-- DELETE `/api/v1/executions/{id}` - Delete execution
-- + 4 queue management endpoints
+- DELETE `/api/v1/executions/{id}` - Delete execution record
+- + queue management endpoints
+
+**Agent Workflow (v2)**
+- POST `/api/v2/generate-tests`, `/observation`, `/requirements`, `/analysis`, `/evolution`
+- POST `/api/v2/crawl-and-save-test`
+- GET/DELETE `/api/v2/workflows/{id}` — status, results, cancel
 
 **Knowledge Base (13)**
 - POST `/api/v1/kb/upload` - Upload document
@@ -373,7 +402,7 @@ Proprietary - All rights reserved
 ## 📞 Support
 
 ### Documentation
-- **Setup Guide:** NEW-PC-SETUP.md
+- **Setup Guide:** documentation/archive/NEW-PC-SETUP.md
 - **API Docs:** http://127.0.0.1:8000/docs (when running)
 - **Frontend Guide:** project-documents/SPRINT-3-FRONTEND-GUIDE.md
 
@@ -411,7 +440,7 @@ Proprietary - All rights reserved
 ## 📊 Statistics
 
 **Current Metrics:**
-- **API Endpoints:** 47
+- **API Endpoints:** 200+ (v1 + v2)
 - **Test Coverage:** 100%
 - **Code Lines:** 10,000+
 - **Documentation:** 5,000+ lines
@@ -455,7 +484,7 @@ VITE_API_BASE_URL=http://127.0.0.1:8000/api/v1
 **Backend won't start:**
 ```bash
 # Check Python version
-python --version  # Should be 3.12.x
+python --version  # Should be 3.11.x (Docker) or 3.11+
 
 # Reinstall dependencies
 pip install -r requirements.txt
@@ -501,10 +530,10 @@ playwright install chromium --with-deps
 
 ---
 
-**Last Updated:** January 27, 2026  
-**Status:** Phase 3 Sprint 9 - AnalysisAgent & EvolutionAgent Planning  
-**Current Branch:** feature/phase3-agent-foundation  
-**Next Sprint:** Sprint 9 Implementation (AnalysisAgent + EvolutionAgent)
+**Last Updated:** July 3, 2026  
+**Status:** Phase 3 — multi-agent system operational; Stop Execution shipped (ADR-009)  
+**ADRs:** `documentation/ADR-001` through `ADR-009` (see `documentation/` folder)  
+**GAN Harness:** `gan-harness/spec.md`, `gan-harness/eval-report.md`
 
 ---
 
@@ -516,13 +545,10 @@ cd backend
 .\venv\Scripts\activate
 
 # 2. Verify Python & pytest
-python --version  # Should be 3.13.x or 3.12.x
+python --version  # Should be 3.11.x
 python -m pytest --version  # Should be 9.0.2+
 
-# 3. Verify current branch
-git branch  # Should show: * feature/phase3-agent-foundation
-
-# 4. Run Phase 3 tests to verify setup
+# 3. Run Phase 3 tests to verify setup
 python -m pytest tests/agents/ -v  # Should see 55/55 passing
 
 # 5. Review Phase 3 documentation

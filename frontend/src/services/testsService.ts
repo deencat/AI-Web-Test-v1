@@ -23,6 +23,8 @@ class TestsService {
     status?: string;
     priority?: string;
     agent?: string;
+    test_category_id?: number;
+    uncategorized?: boolean;
     page?: number;
     per_page?: number;
   }): Promise<Test[]> {
@@ -54,6 +56,8 @@ class TestsService {
         ...(params?.status ? { status: params.status } : {}),
         ...(params?.priority ? { priority: params.priority } : {}),
         ...(params?.agent ? { agent: params.agent } : {}),
+        ...(params?.test_category_id !== undefined ? { test_category_id: params.test_category_id } : {}),
+        ...(params?.uncategorized ? { uncategorized: true } : {}),
       };
 
       const firstResponse = await api.get<any>('/tests', {
@@ -333,6 +337,71 @@ class TestsService {
         '/tests/batch',
         { data: { ids } }
       );
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  async batchAssignCategory(
+    test_ids: number[],
+    test_category_id: number | null
+  ): Promise<{ updated: number; failed: number[] }> {
+    try {
+      const response = await api.patch<{ updated: number; failed: number[] }>(
+        '/tests/batch/category',
+        { test_ids, test_category_id }
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  /**
+   * Clone an existing test case.
+   */
+  async cloneTest(testId: number, options?: { newTitle?: string }): Promise<Test> {
+    if (apiHelpers.useMockData()) {
+      const original = mockTests.find(
+        (t) => t.id === String(testId) || t.id === testId
+      );
+      if (!original) {
+        throw new Error('Test not found');
+      }
+
+      const baseName = original.name || 'Test';
+      let cloneName = `${baseName} (Copy)`;
+      let copyIndex = 2;
+      while (mockTests.some((t) => t.name === cloneName)) {
+        cloneName = `${baseName} (Copy ${copyIndex})`;
+        copyIndex += 1;
+      }
+
+      if (options?.newTitle) {
+        if (mockTests.some((t) => t.name === options.newTitle)) {
+          throw new Error('A test case with this title already exists');
+        }
+        cloneName = options.newTitle;
+      }
+
+      const cloned: Test = {
+        ...original,
+        id: `T-${Date.now()}`,
+        name: cloneName,
+        status: 'pending',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        last_run: undefined,
+        execution_time: undefined,
+      };
+      mockTests.unshift(cloned);
+      return cloned;
+    }
+
+    try {
+      const body = options?.newTitle ? { new_title: options.newTitle } : {};
+      const response = await api.post<Test>(`/tests/${testId}/clone`, body);
       return response.data;
     } catch (error) {
       throw new Error(apiHelpers.getErrorMessage(error));

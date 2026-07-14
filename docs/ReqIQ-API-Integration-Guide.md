@@ -1,6 +1,6 @@
 # AI Web Test — API Integration Guide for ReqIQ
 
-**Version** 1.1 · **Date** 2026-05-14  
+**Version** 1.2 · **Date** 2026-07-03  
 **Base URL** `http://<host>:8000`  
 **OpenAPI spec** → `backend/openapi_spec.json` (import into Postman / Insomnia)  
 **Interactive docs** → `http://localhost:8000/api/v1/docs` (Swagger UI, live server only)  
@@ -769,6 +769,17 @@ Authorization: Bearer <token>
 ```
 
 `status` values: `pending` · `running` · `passed` · `failed` · `error` · `cancelled`
+
+### Cancel Execution (cooperative stop)
+
+```
+DELETE /api/v1/executions/{execution_id}/cancel
+Authorization: Bearer <token>
+```
+
+**Response 204** — no body. Idempotent when execution is already terminal.
+
+Cancels `pending` (dequeued before browser starts) or `running` (cooperative poll between steps/tiers). Partial step history is preserved. Use `DELETE /executions/{id}` only to **delete** the record, not to stop a run. See `documentation/ADR-009-execution-cancel.md`.
 
 ---
 

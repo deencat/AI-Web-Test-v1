@@ -355,6 +355,21 @@ class ExecutionService {
   }
 
   /**
+   * Cancel a pending or running execution cooperatively
+   */
+  async cancelExecution(executionId: number): Promise<void> {
+    if (apiHelpers.useMockData()) {
+      return Promise.resolve();
+    }
+
+    try {
+      await api.delete(`/executions/${executionId}/cancel`);
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
+  /**
    * Get screenshot URL
    */
   getScreenshotUrl(screenshotPath: string): string {

@@ -28,6 +28,7 @@ from app.services.stagehand_adapter import StagehandAdapter
 from app.services.queue_manager import get_queue_manager
 from app.services.execution_queue import get_execution_queue
 from app.services.resume_guard import validate_resume_point
+from app.services.execution_cancel_store import register_cancel, request_cancel, clear_cancel
 
 router = APIRouter()
 
@@ -466,6 +467,57 @@ def get_execution(
         )
     
     return execution
+
+
+@router.delete("/{execution_id}/cancel", status_code=status.HTTP_204_NO_CONTENT)
+def cancel_execution_endpoint(
+    execution_id: int,
+    current_user: User = Depends(deps.get_current_user),
+    db: Session = Depends(deps.get_db),
+):
+    """
+    Cancel a pending or running test execution cooperatively.
+
+    **Authentication required**
+
+    Pending executions are dequeued and marked cancelled immediately.
+    Running executions set an in-memory cancel flag polled by the worker.
+    Terminal states return 204 idempotently.
+    """
+    execution = crud_executions.get_execution(db, execution_id)
+
+    if not execution:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Execution not found",
+        )
+
+    if current_user.role != "admin" and execution.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to cancel this execution",
+        )
+
+    if execution.status == ExecutionStatus.PENDING:
+        queue = get_execution_queue()
+        queue.remove_from_queue(execution_id)
+        crud_executions.cancel_execution(
+            db,
+            execution_id,
+            total_steps=execution.total_steps,
+            passed_steps=execution.passed_steps,
+            failed_steps=execution.failed_steps,
+            skipped_steps=execution.skipped_steps,
+        )
+        clear_cancel(execution_id)
+        return None
+
+    if execution.status == ExecutionStatus.RUNNING:
+        register_cancel(execution_id)
+        request_cancel(execution_id)
+        return None
+
+    return None
 
 
 @router.delete("/{execution_id}", status_code=status.HTTP_204_NO_CONTENT)

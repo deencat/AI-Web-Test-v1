@@ -15,6 +15,7 @@ from app.models.execution_settings import ExecutionSettings, XPathCache, TierExe
 from app.models.browser_profile import BrowserProfile
 from app.models.email_credential import EmailCredential
 from app.models.step_library_module import StepLibraryModule
+from app.models.test_category import TestCategory
 
 __all__ = [
     "User",
@@ -33,5 +34,6 @@ __all__ = [
     "BrowserProfile",
     "EmailCredential",
     "StepLibraryModule",
+    "TestCategory",
 ]
 

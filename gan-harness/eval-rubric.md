@@ -1,49 +1,98 @@
-# Evaluation Rubric: Exec #990 Registration Form Execution Fixes
+# Evaluation Rubric: Stop 3-Tier Execution
 
-**Target:** Three Hong Kong OGP-PPD registration test (Execution #990 or equivalent)  
-**Weight total: 1.0**  
+**Feature:** Cooperative cancel for saved test 3-tier execution  
+**Spec:** `gan-harness/spec.md`  
+**Weight total:** 1.0  
 **Pass threshold:** ≥ 0.85 weighted score  
-**Automatic fail:** Any of the three reported issues reproduces on re-run; or post-fix run marks failing steps PASS
+**Automatic fail:** No cancel API endpoint; no Stop button on ExecutionProgressPage; running execution stuck in `running` after stop click; cancel conflated with DELETE execution record; normal pass/fail runs regress
 
 ---
 
-## Functionality (0.40)
+## Implementation Checklist (Generator)
 
-| ID | Criterion | Pass condition | Weight |
-|----|-----------|----------------|--------|
-| F1 | Eye button click | Step "Click eye button next to 'Collect Personal Info'" activates ID capture / does **not** open hamburger sidebar | 0.12 |
-| F2 | Birth date persistence | After birth-date step **and** after 3 subsequent steps, field displays `2000/01/01` (or normalized equivalent); no red "Required" on Birth Date | 0.14 |
-| F3 | Area dropdown selection | Billing Address Area field shows **Hong Kong** (not "Select an Area"); dropdown closed; no "Required" under Area | 0.14 |
+Sprint order — **do not skip**:
+
+| Sprint | Deliverables | Key paths |
+|--------|--------------|-----------|
+| 1 | Store + CRUD + API | `execution_cancel_store.py`, `crud/test_execution.cancel_execution`, `executions.py` DELETE `/{id}/cancel` |
+| 2 | Execution hooks | `execution_service.execute_test`, `three_tier_execution_service.execute_step(..., cancel_check=)`, `queue_manager.py` |
+| 3 | Frontend | `StopExecutionButton.tsx`, `executionService.cancelExecution`, `ExecutionProgressPage.tsx` |
+| 4 | Docs + regression | `ADR-009-execution-cancel.md`, full test suite |
+
+**Required signatures:**
+
+```python
+# execution_cancel_store.py
+def register_cancel(execution_id: int) -> None: ...
+def request_cancel(execution_id: int) -> bool: ...
+def is_cancel_requested(execution_id: int) -> bool: ...
+def clear_cancel(execution_id: int) -> bool: ...
+
+# three_tier_execution_service.py
+async def execute_step(
+    self, step, execution_id=None, step_index=None,
+    cancel_check: Optional[Callable[[], bool]] = None,
+) -> Dict[str, Any]: ...
+
+# execution_service.py — _execute_step gains same cancel_check param
+```
 
 ---
 
-## Execution Engine Quality (0.30)
+## Backend Cancel API & Store (0.30)
 
 | ID | Criterion | Pass condition | Weight |
 |----|-----------|----------------|--------|
-| E1 | Step parsing | `"select area 'Hong Kong'"` parsed as `action=select`, `value=Hong Kong` | 0.06 |
-| E2 | Tier 2 handles widgets | Birth date and Area steps complete at Tier 2 (no Tier 3 fallback required for these steps) | 0.08 |
-| E3 | Post-action verification | Engine fails step if fill/select value does not stick (not silent PASS) | 0.08 |
-| E4 | Cache safety | Wrong hamburger xpath invalidated; re-observe finds eye icon on retry | 0.08 |
+| B1 | Cancel endpoint exists | `DELETE /api/v1/executions/{id}/cancel` returns 204 | 0.06 |
+| B2 | Auth + ownership | Wrong user → 403; missing execution → 404 | 0.04 |
+| B3 | Pending cancel | `status=pending` → DB `cancelled`, `queue.remove_from_queue()`, never runs | 0.06 |
+| B4 | Running cancel request | `status=running` → `register_cancel` + `request_cancel`; 204 immediately; DB stays `running` until worker finalizes | 0.05 |
+| B5 | `execution_cancel_store.py` | Thread-safe register/request/is_cancel/clear mirroring `workflow_store.py` | 0.05 |
+| B6 | Idempotent cancel | Double cancel or cancel on terminal state → 204, no error | 0.04 |
 
 ---
 
-## Craft / Tests (0.20)
+## Cooperative Execution Hooks (0.25)
 
 | ID | Criterion | Pass condition | Weight |
 |----|-----------|----------------|--------|
-| C1 | Unit tests added | New tests in `test_execution_service_value_extraction.py` and `test_tier2_registration_widgets.py` (or equivalent) | 0.08 |
-| C2 | No regressions | `pytest tests/test_tier2_plan_selection.py tests/test_tier2_payment_helpers.py tests/test_execution_service_value_extraction.py -q` all pass | 0.07 |
-| C3 | Surgical diff | Changes confined to `execution_service.py`, `tier2_hybrid.py`, tests, optional ADR — no unrelated refactors | 0.05 |
+| E1 | Step loop poll | `ExecutionService.execute_test()` checks `is_cancel_requested(execution.id)` before each step (incl. loop blocks) | 0.06 |
+| E2 | Finalize cancelled | `crud.cancel_execution()` sets `status=cancelled`, `completed_at`, partial step counts; **not** `failed` | 0.06 |
+| E3 | 3-tier cancel_check | `ThreeTierExecutionService.execute_step(..., cancel_check=)` polls before Tier 1, before fallback, between Tier 2→3 in option_c | 0.05 |
+| E4 | Cleanup on cancel | `finally` runs `cleanup()` — browser/Stagehand closed; `clear_cancel(execution_id)` in worker | 0.04 |
+| E5 | Queue pre-start guard | `queue_manager._check_and_start_next` skips execution when DB `status=cancelled` | 0.04 |
 
 ---
 
-## Evidence (0.10)
+## Frontend Stop UX (0.25)
 
 | ID | Criterion | Pass condition | Weight |
 |----|-----------|----------------|--------|
-| V1 | Screenshots | `exec_*_step_14_pass.png`: no sidebar overlay; step_24+: birth date filled; step_36: Area=Hong Kong | 0.05 |
-| V2 | LLM log | Observe for eye step describes element near "Collect Personal Info", not "top controls" | 0.05 |
+| F1 | StopExecutionButton component | Exists at `frontend/src/components/execution/StopExecutionButton.tsx` | 0.05 |
+| F2 | Parity with StopAgentButton | Red styling, terminal disable, `data-testid="stop-execution-button"`, "Stopping execution…" via `stop-execution-confirmation` | 0.06 |
+| F3 | ExecutionProgressPage wired | Stop visible when `pending`/`running`; hidden when terminal; placed in header before Debug Step | 0.06 |
+| F4 | No optimistic cancel | `isStopping` local state only; `execution.status` updated via 2s poll, not set to `cancelled` in handler | 0.04 |
+| F5 | executionService.cancelExecution | `DELETE /executions/{id}/cancel` via service layer | 0.04 |
+
+---
+
+## Tests & Documentation (0.10)
+
+| ID | Criterion | Pass condition | Weight |
+|----|-----------|----------------|--------|
+| T1 | Backend unit tests | `backend/tests/unit/test_execution_cancel_store.py` + `test_execution_cancel.py` pass | 0.04 |
+| T2 | Frontend component test | `frontend/src/components/execution/__tests__/StopExecutionButton.test.tsx` passes | 0.03 |
+| T3 | ADR or ADR addendum | `documentation/ADR-009-execution-cancel.md` or ADR-002 addendum section | 0.03 |
+
+---
+
+## Non-Regression (0.10)
+
+| ID | Criterion | Pass condition | Weight |
+|----|-----------|----------------|--------|
+| R1 | Normal execution complete | Run saved test → completes with pass/fail unchanged | 0.04 |
+| R2 | Delete execution distinct | `DELETE /executions/{id}` still deletes record; cancel route is `/{id}/cancel` | 0.03 |
+| R3 | Build clean | `npm run build` in frontend succeeds; backend tests pass | 0.03 |
 
 ---
 
@@ -57,32 +106,36 @@ score = Σ (criterion_weight × pass?1:0)
 |------|-------|---------|
 | Pass | ≥ 0.85 | Ready to merge |
 | Revise | 0.70 – 0.84 | Fix failing criteria |
-| Fail | < 0.70 or automatic fail | Reject |
+| Fail | < 0.70 or any automatic fail | Reject |
 
 ---
 
-## Evaluator Test Script
+## Evaluator Test Script (Playwright / manual)
 
-### Automated (unit)
-```bash
-cd backend && .\venv\Scripts\activate
-python -m pytest tests/test_execution_service_value_extraction.py tests/test_tier2_registration_widgets.py -q
-python -m pytest tests/test_tier2_plan_selection.py tests/test_tier2_payment_helpers.py -q
-```
+1. Log in; open a saved test with ≥ 5 steps; click **Run**.
+2. Land on `/executions/{id}` — confirm **Stop Execution** button visible (red outline).
+3. While status is **pending** or **running**, click Stop.
+4. Confirm inline **"Stopping execution…"** appears (`data-testid="stop-execution-confirmation"`).
+5. Wait (up to 120s for cooperative tier completion) until status badge shows **Cancelled**.
+6. Confirm Stop button hidden/disabled; partial completed steps still listed.
+7. Navigate to Execution History — cancelled run appears with `cancelled` status filter.
+8. Start another run; let it complete normally — pass/fail flow unchanged.
+9. `DELETE /executions/{id}/cancel` on completed run → 204 (idempotent).
+10. `DELETE /executions/{id}` on cancelled run → record deleted (distinct from cancel).
+11. Run backend unit tests: `pytest backend/tests/unit/test_execution_cancel*.py`.
 
-### Live E2E (Three HK registration)
-1. Start backend: `cd backend && python start_server.py`
-2. Re-run the same test case as Execution #990 (Three HK OGP-PPD registration flow)
-3. At step 13–14: confirm eye/ID capture UI; sidebar menu **closed**
-4. At birth-date step + 3 steps later: field = `2000/01/01`
-5. At area step + 2 steps later: Area = `Hong Kong`, no Required error
-6. Compare screenshots to baseline `exec_990_step_{14,24,36}_pass.png`
-7. Check `backend/logs/llm/exec_<id>.jsonl` for improved observe descriptions
+---
 
-### Per-issue verification matrix
+## Anti-patterns (deduct or fail)
 
-| Issue | Step index | PASS signal | FAIL signal |
-|-------|------------|-------------|-------------|
-| Eye click | ~13–14 | ID document dashed box / camera visible; main form in view | Left sidebar with "Direct Input Order" visible |
-| Birth date | ~22–24 | Input shows 2000/01/01 after step 24 | Empty field + "Required" |
-| Area | ~34–36 | Field text "Hong Kong", menu closed | "Select an Area" or open menu with highlight only |
+| Anti-pattern | Action |
+|--------------|--------|
+| POST-only cancel with no DELETE route | Fail B1 |
+| Stop button on SavedTestsPage only, not progress page | Fail F3 |
+| Optimistic UI sets `execution.status = 'cancelled'` before poll confirms | Fail F4 |
+| Cancel sets status `failed` or calls `fail_execution()` | Fail E2 |
+| Uses `DELETE /executions/{id}` for cancel (breaks delete) | Automatic fail |
+| No cleanup — orphaned Playwright after cancel | Fail E4 |
+| Force-kill thread / `Task.cancel()` without cooperative poll | Deduct E1/E3 |
+| Missing auth on cancel endpoint | Fail B2 |
+| `request_cancel` without ensuring key exists for running execution | Deduct B4 |
