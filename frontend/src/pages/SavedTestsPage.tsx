@@ -216,6 +216,7 @@ export const SavedTestsPage: React.FC = () => {
                 description: editForm.description,
                 priority: editForm.priority,
                 test_category_id: editForm.test_category_id,
+                requires_runtime_credentials: editForm.requires_runtime_credentials,
               }
             : t
         )

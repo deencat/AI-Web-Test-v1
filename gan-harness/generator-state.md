@@ -1,25 +1,26 @@
-# Generator State — Iteration Clone Test Case
+# Generator State — Iteration CRM Login Toggle Persist
 
 ## What Was Built
-- `TestCaseCloneRequest` schema with optional `new_title`
-- `clone_test_case()`, `title_exists_for_user()`, `_generate_clone_title()` in CRUD
-- `POST /api/v1/tests/{test_case_id}/clone` endpoint (201, 403, 404, 409)
-- `testsService.cloneTest()` with mock mode support
-- Clone button on SavedTestsPage list row (between Edit and Run) and edit drawer footer
-- Loading state via `cloningTestId` with Copy/Loader2 icons
-- Post-clone navigation to `?edit={newId}`
-- Backend unit tests (`test_test_case_clone.py`) and frontend component tests
+- Added `requires_runtime_credentials` to `sanitize_test_case_for_response` so GET/PUT/list/clone responses no longer default the flag to `false`
+- Unit/API tests for sanitizer true/false, PUT→GET round-trip, list inclusion, clone honesty, and no credential columns/fields
+- SavedTestsPage post-save `setTests` map now includes `requires_runtime_credentials` (Should-Have)
 
 ## What Changed This Iteration
-- Implemented Feature 2: Clone Test Case per gan-harness/spec.md § Feature 2
-- Mirrored test template clone pattern for API shape and ownership rules
-- Deep copy of steps, tags, test_data, test_metadata JSON fields
+- Fixed: API sanitizer omitted `requires_runtime_credentials` (root cause of toggle resetting after reload)
+- Fixed: SavedTests local list lag after edit save omitted the flag
+- Added: `backend/tests/unit/test_requires_runtime_credentials_sanitize.py`
+- Credentials remain ephemeral — only the boolean flag is persisted/returned
 
 ## Known Issues
-- Version snapshot on clone not wired (optional Should-Have deferred)
-- `sanitize_test_case_for_response` does not include `requires_runtime_credentials` in dict (pre-existing)
+- No new Playwright E2E for toggle → save → reload (evaluator can use rubric manual script; T1 unit coverage is present)
+- Dev servers not started in this iteration (Evaluator should start them if needed)
 
 ## Dev Server
-- URL: http://localhost:5173 (frontend) / http://localhost:8000 (backend)
+- Frontend URL: http://localhost:5173
+- Backend URL: http://127.0.0.1:8000
 - Status: not started in this iteration
-- Command: `docker compose up` or separate frontend/backend dev servers
+- Commands:
+  - Backend: `cd backend && .\venv\Scripts\activate; python start_server.py`
+  - Frontend: `cd frontend && npm run dev`
+- Verify flag: `GET http://127.0.0.1:8000/api/v1/tests/{id}` after PUT with `"requires_runtime_credentials": true` must return `true`
+- Backend tests: `cd backend && .\venv\Scripts\activate; python -m pytest tests/unit/ -q -k "requires_runtime or crm_ephemeral"`
