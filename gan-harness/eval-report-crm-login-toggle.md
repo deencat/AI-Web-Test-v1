@@ -6,17 +6,18 @@
 **App URL:** http://localhost:5173  
 **Backend:** http://127.0.0.1:8000  
 **Spec:** `gan-harness/spec.md` § Feature 3  
-**Rubric:** `gan-harness/eval-rubric-crm-login-toggle.md` (pass threshold ≥ 0.85)
+**Rubric:** `gan-harness/eval-rubric-crm-login-toggle.md` (pass threshold ≥ 0.85)  
+**Eval artifact test:** `#1406` (`GAN Eval CRM Toggle Persist 134133`); clone `#1407`
 
 ---
 
 ## Executive Summary
 
-Feature 3 is **implemented and verified**. Sanitizer includes `requires_runtime_credentials`; unit/API tests pass (38/38); live PUT→GET/list/clone round-trips succeed after backend reload with the new code; SavedTestsPage local map includes the flag; browser E2E confirms toggle survives navigate-away and hard reload, OFF persists after disable+save, and TestDetail `RunTestButton` shows the credential prompt when ON.
+Feature 3 is **fully implemented and verified**. The sanitizer now includes `requires_runtime_credentials`; live PUT→GET/list/clone round-trips preserve `true`/`false`; Saved Tests edit drawer toggle survives soft navigate and hard reload; credentials stay ephemeral. Backend unit suites for sanitize + CRM ephemeral credentials passed **38/38**.
 
 **Weighted score: 1.00 / 1.00 — PASS**
 
-All automatic-fail conditions are clear. Credentials remain ephemeral (boolean only).
+All automatic-fail conditions are clear. No Generator gaps block merge.
 
 ---
 
@@ -40,10 +41,10 @@ score = Σ (criterion_weight × pass?1:0)
 
 | Condition | Result |
 |-----------|--------|
-| Sanitizer still omits `requires_runtime_credentials` | ✅ Clear — key present in `sanitize_test_case_for_response` |
-| GET after update `true` returns `false` | ✅ Clear — live PUT→GET `true` (test id 1405) after server reload |
-| Passwords/credentials persisted to DB or `localStorage` | ✅ Clear — no credential columns; GET has boolean only; LS keys `token`/`user` only |
-| CRM auth redesign scope creep | ✅ Clear — surgical sanitizer + SavedTests map + tests only |
+| Sanitizer still omits `requires_runtime_credentials` | ✅ Clear — present in `tests.py` L63 |
+| GET after update `true` returns `false` | ✅ Clear — live `PUT true` → `GET true` on `#1406` |
+| Passwords/credentials persisted to DB or `localStorage` | ✅ Clear — no password/username columns; LS keys only `token`,`user` |
+| CRM auth redesign / scope creep | ✅ Clear — surgical sanitizer + SavedTests map + tests only |
 
 ---
 
@@ -53,11 +54,11 @@ score = Σ (criterion_weight × pass?1:0)
 
 | ID | Criterion | Weight | Status | Evidence |
 |----|-----------|--------|--------|----------|
-| B1 | Sanitizer key present | 0.12 | ✅ PASS | `tests.py` includes `'requires_runtime_credentials': getattr(...)` |
-| B2 | True round-trip | 0.12 | ✅ PASS | Live: PUT `true` → GET `true` on id 1405; unit `test_update_then_get_preserves_true` |
-| B3 | False round-trip | 0.06 | ✅ PASS | Live + unit: PUT `false` → GET `false` |
-| B4 | List includes field | 0.05 | ✅ PASS | Live list item `requires_runtime_credentials: true`; unit `test_list_includes_flag` |
-| B5 | Clone response honest | 0.05 | ✅ PASS | Live clone of `true` source returned `true` (id 1406); unit `test_clone_of_true_source_returns_true` |
+| B1 | Sanitizer key present | 0.12 | ✅ PASS | `sanitize_test_case_for_response` includes `'requires_runtime_credentials': getattr(...)` at `tests.py:63` |
+| B2 | True round-trip | 0.12 | ✅ PASS | Live: create `#1406` → PUT `true` → GET `requires_runtime_credentials=True`; unit `test_update_then_get_preserves_true` |
+| B3 | False round-trip | 0.06 | ✅ PASS | Live PUT `false` → GET `False`; UI OFF save → reload → checkbox unchecked |
+| B4 | List includes field | 0.05 | ✅ PASS | GET list item for `#1406` returned `True` (not missing→default false) |
+| B5 | Clone response honest | 0.05 | ✅ PASS | `POST /tests/1406/clone` → `#1407` with `requires_runtime_credentials=True` |
 
 **Section score: 0.40 / 0.40**
 
@@ -65,9 +66,9 @@ score = Σ (criterion_weight × pass?1:0)
 
 | ID | Criterion | Weight | Status | Evidence |
 |----|-----------|--------|--------|----------|
-| S1 | No credential in DB | 0.08 | ✅ PASS | `TestCase` columns: boolean only; unit asserts no `password`/`username`/`login_credentials` columns |
-| S2 | No credential in API body | 0.06 | ✅ PASS | Live GET keys include `requires_runtime_credentials`; forbidden keys `NONE` |
-| S3 | No localStorage secrets | 0.06 | ✅ PASS | `SavedTestsPage` has no storage writes; browser LS keys only `token`, `user` (no password fields) |
+| S1 | No credential in DB | 0.08 | ✅ PASS | `PRAGMA table_info(test_cases)` — no password/username columns; row `#1406` JSON blobs have no `password` / `login_credentials` / `secret` |
+| S2 | No credential in API body | 0.06 | ✅ PASS | GET `#1406` has boolean only; no `login_credentials` / `password` keys; unit `test_sanitize_response_has_no_credential_fields` |
+| S3 | No localStorage secrets | 0.06 | ✅ PASS | After toggle save cycles, `localStorage` keys = `token`, `user` only; no password/credential blobs |
 
 **Section score: 0.20 / 0.20**
 
@@ -75,11 +76,11 @@ score = Σ (criterion_weight × pass?1:0)
 
 | ID | Criterion | Weight | Status | Evidence |
 |----|-----------|--------|--------|----------|
-| F1 | Toggle survives navigate | 0.08 | ✅ PASS | Flag ON → leave → login/dashboard → `/tests/saved?edit=1405` → checkbox **checked** |
-| F2 | Toggle survives hard reload | 0.08 | ✅ PASS | Hard reload edit URL → `#saved-edit-requires-creds` **checked=true** |
-| F3 | OFF still works | 0.04 | ✅ PASS | Uncheck → Save → reload edit → **checked=false**; API `false` |
-| F4 | SavedTests local map | 0.03 | ✅ PASS | Post-save `setTests` includes `requires_runtime_credentials: editForm.requires_runtime_credentials` |
-| F5 | Run consumes flag | 0.02 | ✅ PASS | TestDetail `RunTestButton` → credential modal (`input[type=password]` present). Note: SavedTests **list** Run still calls `executionService.startExecution` directly (pre-existing; out of Feature 3 scope) |
+| F1 | Toggle survives navigate | 0.08 | ✅ PASS | Enable → Save Changes → Dashboard → Saved Tests → Edit `#1406` → checkbox **checked** |
+| F2 | Toggle survives hard reload | 0.08 | ✅ PASS | Hard navigate `/tests/saved` → Edit `#1406` → checkbox **checked** (hydrate from API) |
+| F3 | OFF still works | 0.04 | ✅ PASS | Uncheck → Save → hard reload → Edit → checkbox **unchecked** |
+| F4 | SavedTests local map | 0.03 | ✅ PASS | `SavedTestsPage.tsx` post-save `setTests` includes `requires_runtime_credentials: editForm.requires_runtime_credentials` (L219) |
+| F5 | Run consumes flag | 0.02 | ✅ PASS | Test Detail `#1406` with switch ON → **▶ Run Test** opens **CRM Login Required** modal (Username/Password). Cancelled without submitting |
 
 **Section score: 0.25 / 0.25**
 
@@ -87,62 +88,98 @@ score = Σ (criterion_weight × pass?1:0)
 
 | ID | Criterion | Weight | Status | Evidence |
 |----|-----------|--------|--------|----------|
-| T1 | Unit/API covers sanitize | 0.07 | ✅ PASS | `test_requires_runtime_credentials_sanitize.py` — true/false sanitize + PUT→GET |
-| T2 | CRM ephemeral tests green | 0.03 | ✅ PASS | `test_crm_ephemeral_credentials.py` green with sanitize suite: **38 passed** |
-| T3 | E2E or evaluator script | 0.05 | ✅ PASS | Evaluator browser + API script executed (no committed Playwright for this feature; rubric allows evaluator script) |
+| T1 | Unit/API covers sanitize | 0.07 | ✅ PASS | `test_requires_runtime_credentials_sanitize.py` — sanitize true/false, no cred fields, PUT→GET, list, clone |
+| T2 | CRM ephemeral still green | 0.03 | ✅ PASS | `test_crm_ephemeral_credentials.py` included in **38 passed** run |
+| T3 | E2E / documented script | 0.05 | ✅ PASS | Rubric evaluator script executed live (API + browser); no new Playwright file (acceptable per rubric) |
 
 **Section score: 0.15 / 0.15**
 
 ---
 
-## E2E Checklist (Rubric Script)
+## E2E Checklist (rubric script)
 
 | # | Step | Result |
 |---|------|--------|
-| 1 | Log in; open Saved Tests | ✅ Pass (`admin` / `admin123`) |
-| 2 | Edit existing / created test | ✅ Pass (id 1405 `CRM Toggle Eval …`) |
-| 3 | Enable Requires CRM Login → Save | ✅ Pass (API + UI) |
-| 4 | PUT response includes `"requires_runtime_credentials": true` | ✅ Pass |
-| 5 | Navigate away → return → Edit → ON | ✅ Pass |
-| 6 | Hard-reload → Edit → ON | ✅ Pass |
-| 7 | GET `/api/v1/tests/{id}` → `true` | ✅ Pass |
-| 8 | Run → credential prompt | ✅ Pass on **TestDetail** (`RunTestButton`); list Run bypasses prompt (pre-existing) |
-| 9 | No password in Local Storage from toggle/save | ✅ Pass |
-| 10 | Disable → Save → reload → OFF; GET `false` | ✅ Pass |
-| 11 | Optional clone of `true` → sanitized `true` | ✅ Pass (API) |
-| 12 | Backend unit tests sanitize/ephemeral | ✅ Pass (38) |
-
-**Passed: 12 / 12** (step 8 qualified: prompt via TestDetail path)
+| 1 | Log in; open Saved Tests | ✅ `admin` / `admin123` → `/tests/saved` |
+| 2 | Edit existing test | ✅ `#1406` edit drawer |
+| 3 | Enable Requires CRM Login → Save | ✅ Save Changes |
+| 4 | PUT response includes `true` | ✅ API + UI path |
+| 5 | Soft navigate away → return → Edit → ON | ✅ F1 |
+| 6 | Hard reload → Edit → ON | ✅ F2 |
+| 7 | GET `/api/v1/tests/{id}` → `true` | ✅ |
+| 8 | Run → credential prompt | ✅ via Test Detail `RunTestButton` |
+| 9 | No password in localStorage | ✅ |
+| 10 | Disable → Save → reload → OFF; GET false | ✅ F3 + API |
+| 11 | Clone of `true` → clone `true` | ✅ `#1407` |
+| 12 | Backend unit tests | ✅ 38 passed |
 
 ---
 
-## Non-Regression Spot Checks
+## Backend Tests Run
 
-| Check | Result |
+```text
+cd backend && .\venv\Scripts\activate
+python -m pytest tests/unit/test_requires_runtime_credentials_sanitize.py tests/unit/test_crm_ephemeral_credentials.py -q
+→ 38 passed
+```
+
+---
+
+## Non-Regression Notes
+
+| Check | Status |
 |-------|--------|
-| Empty description sanitization still present | ✅ Sanitizer still rewrites empty `description` / `expected_result` |
-| Clone still works | ✅ Clone endpoint returned 201 with flag parity |
-| No new migration / column rename | ✅ Confirmed surgical change |
-| Feature 1 Stop Execution | ✅ Not touched (out of this eval’s code paths) |
+| Empty description sanitization still present | ✅ Still in `sanitize_test_case_for_response` (empty → placeholder strings) |
+| Clone of `true` still returns `true` | ✅ Verified live + covered by sanitize tests |
+| Feature 1 Stop / Feature 2 Clone API surfaces | ✅ Not broken by this change; clone used successfully |
+| Scope remains surgical | ✅ No CredentialPrompt redesign, no migration, no credential persistence |
+
+### Pre-existing observation (not a Feature 3 fail)
+
+Saved Tests **list-row** green Play (`handleRunTest`) still calls `executionService.startExecution` directly and **does not** open `CredentialPromptModal`. Credential prompting is wired through `RunTestButton` (e.g. Test Detail). Out of scope for this feature; F5 verified on the existing RunTestButton path.
 
 ---
 
-## Ops Note (Evaluator)
+## Critical Issues (must fix)
 
-First live API check against an already-running backend returned `requires_runtime_credentials: false` while SQLite had `True` — process was serving **stale code** without the sanitizer line. After restarting `python start_server.py`, live round-trips matched unit tests. Implementation is correct; deploy/reload required for verification.
+*None.*
+
+## Major Issues (should fix)
+
+*None for Feature 3 merge.*
+
+## Minor Issues (nice to fix)
+
+1. **No Playwright journey** for toggle → save → reload — optional per rubric; T3 satisfied via evaluator script. Generator may add a focused E2E later.
+2. **Saved Tests list Run bypasses credential modal** — pre-existing; if product wants parity with Test Detail, wire list Run through `RunTestButton` / check `requires_runtime_credentials` (separate ticket).
 
 ---
 
-## Generator Gaps / Follow-ups
+## What Improved Since Last Iteration
 
-1. **No committed Playwright** for toggle → save → reload (Generator known issue; T3 satisfied via evaluator script).
-2. **SavedTests list Run** does not use `RunTestButton` / CredentialPromptModal — pre-existing; out of Feature 3 scope. Consider wiring list Run to the same flag path in a later sprint.
-3. Ensure backend is restarted after sanitizer deploy so staging/local don’t mask the fix.
+- Prior evaluator run was interrupted with **no** report; this run completed full rubric scoring.
+- Sanitizer omission (root cause) is fixed and proven live.
+- SavedTests post-save map includes the flag (Should-Have done).
+
+## What Regressed Since Last Iteration
+
+- None observed.
+
+## Specific Suggestions for Next Iteration
+
+1. Optional: add Playwright spec matching rubric F1/F2 (toggle → save → reload → assert `#saved-edit-requires-creds` checked).
+2. Optional backlog: align Saved Tests list Run with `RunTestButton` credential gating (not part of Feature 3 DoD).
+
+## Screenshots / Artifacts
+
+- Edit drawer toggle ON: `crm-toggle-edit-drawer-on.png` (local screenshots folder)
+- Credential modal: verified via accessibility snapshot — heading **CRM Login Required**, Username/Password fields present; cancelled without submit
+- Live test IDs: `#1406` (source), `#1407` (clone)
 
 ---
 
 ## Verdict
 
-**PASS — 1.00 / 1.00** (threshold ≥ 0.85)
+**PASS — 1.00 / 1.00** (threshold 0.85)
 
-Ready to merge from Feature 3 rubric perspective.
+Ready to merge for Feature 3.
