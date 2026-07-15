@@ -6,6 +6,7 @@ This document contains feature specs for the GAN harness. Each major section is 
 |---|---------|-------|
 | 1 | Stop Execution | Cooperative cancel for 3-tier test runs |
 | 2 | Clone Test Case | Duplicate a saved test case with one click |
+| 3 | CRM Login Toggle Persist | Fix `requires_runtime_credentials` omitted by API sanitizer |
 
 ---
 
@@ -1141,3 +1142,293 @@ See `gan-harness/eval-rubric-clone-test-case.md` for weighted scoring (pass ≥ 
 - Clone shares `id` with source
 - Steps not copied (empty clone)
 - No Clone button on SavedTestsPage list
+
+---
+
+# Feature 3: CRM Login Toggle Persist — `requires_runtime_credentials` Round-Trip
+
+> Generated from brief: *"Fix Requires CRM Login toggle not persisting on saved tests: API sanitizer omits `requires_runtime_credentials` so GET/PUT responses always default to false and UI resets to OFF after navigate/reload."*
+
+---
+
+## Vision
+
+QA engineers mark saved tests that need a one-time CRM/UAT login before Run via the **Requires CRM Login** toggle. That boolean must survive save, list refresh, navigate-away, and page reload — passwords stay ephemeral (prompted at Run only), but the *flag* is durable configuration on `TestCase`. Today the UI looks correct until the next GET: the sanitizer drops the field, Pydantic defaults to `false`, and the toggle flips back to OFF. This feature is a **surgical bugfix**: restore the boolean on every sanitized API response (and keep the Saved Tests local list honest after save) without redesigning CRM auth, credential injection, or Run-prompt UX.
+
+---
+
+## User Story
+
+**As a** QA engineer editing a saved test that needs CRM login,  
+**I want** the **Requires CRM Login** toggle to stay ON after I save and return to the test,  
+**So that** Run continues to show the credential prompt for that test without me re-enabling the toggle every session.
+
+**Acceptance (happy path):**
+1. User opens a saved test in edit drawer (`/tests/saved` → Edit) or on `TestDetailPage`.
+2. User turns **Requires CRM Login** ON and saves (drawer Save, or inline toggle autosave on detail).
+3. PUT response includes `"requires_runtime_credentials": true`.
+4. User closes drawer / navigates away / hard-reloads.
+5. User re-opens the same test — toggle is still **ON**.
+6. GET list and GET by id both return `requires_runtime_credentials: true`.
+7. Turning OFF and saving persists `false` the same way.
+8. No password, username, or credential object is written to DB, response payloads, or `localStorage`.
+
+---
+
+## Scope
+
+### In scope
+
+| Area | Deliverable |
+|------|-------------|
+| Backend sanitizer | Add `requires_runtime_credentials` to `sanitize_test_case_for_response` dict in `backend/app/api/v1/endpoints/tests.py` |
+| Backend verification | Unit/API test: update `true` → GET returns `true` (covers sanitize path used by GET/PUT/list/clone responses) |
+| Frontend local list | Optional but recommended: include `requires_runtime_credentials` in `SavedTestsPage` post-save `setTests` map (parity with other edited fields) |
+| Docs / harness | This Feature 3 section + `gan-harness/eval-rubric-crm-login-toggle.md` |
+
+### Out of scope
+
+- Redesigning CRM / UAT credential prompt, injection, or `{{CRM_PASSWORD}}` placeholder policy
+- Persisting passwords, usernames, or any credential blob (ADR-crm / Sprint 10.14 policy unchanged)
+- New columns, migrations, or schema renames (column already exists)
+- Changing `RunTestButton` / `CredentialPromptModal` behavior beyond consuming the correct flag
+- Refactoring sanitizer to auto-reflect ORM columns (hand-maintained dict stays; one key added)
+- Bulk edit of the flag across many tests
+- New Settings UI or org-wide "always require CRM login" defaults
+
+---
+
+## Current State Analysis
+
+### What exists (works)
+
+| Layer | Location | Status |
+|-------|----------|--------|
+| DB column | `test_cases.requires_runtime_credentials` | Present; migration `add_requires_runtime_credentials.py` |
+| ORM | `backend/app/models/test_case.py` | `Column(Boolean, nullable=False, default=False)` |
+| Schemas | `TestCaseBase` / `TestCaseUpdate` / `TestCaseResponse` | Field defined; Update is `Optional[bool]` |
+| CRUD write | `testsService.updateTest` → endpoint → CRUD | Persists flag correctly when sent |
+| UI controls | `SavedTestsPage` edit drawer checkbox; `TestDetailPage` inline switch | Save sends `requires_runtime_credentials` |
+| Types | `frontend/src/types/api.ts` | Field on `Test` / update request |
+| Run path | `RunTestButton` when flag true | Credential prompt (unchanged by this fix) |
+| Existing unit coverage | `test_crm_ephemeral_credentials.py` | Model/column defaults; not sanitize round-trip |
+
+### What's broken (root cause)
+
+| Gap | Effect |
+|-----|--------|
+| `sanitize_test_case_for_response` builds a hand-maintained dict **without** `requires_runtime_credentials` | GET/PUT/list/clone responses omit the key |
+| `TestCaseResponse` / base schema default `False` | Pydantic fills missing key → always `false` in JSON |
+| UI hydrates from API (`?? false`) | Toggle shows OFF after reload/navigate even though DB is `true` |
+| `SavedTestsPage` post-save `setTests` map omits the field | Local list can lag until `loadTests()`; after refresh, sanitizer bug still wins |
+
+**Confirmed in sanitizer today** (`tests.py` ~lines 43–63): dict includes `id`, `title`, `steps`, `tags`, `test_metadata`, … but **not** `requires_runtime_credentials`.
+
+**Architect finding:** This is a **bug**, not intended behavior. Flag is designed to persist; only credentials are ephemeral.
+
+---
+
+## Architecture Decision: Fix Sanitizer Only (Minimal)
+
+### Decision
+
+**Minimal fix:** one line in `sanitize_test_case_for_response`:
+
+```python
+'requires_runtime_credentials': getattr(test_case, 'requires_runtime_credentials', False),
+```
+
+Use `getattr` for defensive compatibility with any partial ORM objects in tests.
+
+### Rationale
+
+| Approach | Verdict |
+|----------|---------|
+| Add missing key to sanitizer dict | **Accept** — matches how other columns are exposed; smallest correct fix |
+| Stop using sanitizer / return ORM directly | **Reject** — sanitizer still needed for empty `description` / `expected_result` |
+| Auto-generate response from `TestCase.__table__.columns` | **Reject for this feature** — scope creep; can be a later cleanup |
+| Persist credentials to fix "login forgotten" | **Reject** — security policy; wrong problem |
+| Frontend-only localStorage for the flag | **Reject** — DB already stores it; would mask the API bug |
+
+### Secondary (Should-Have) frontend parity
+
+In `SavedTestsPage` `handleSaveEdit` / equivalent, extend the optimistic `setTests` map:
+
+```typescript
+requires_runtime_credentials: editForm.requires_runtime_credentials,
+```
+
+So list-derived UI stays correct even before `closeEditDrawer` → `loadTests()`. Primary user-visible fix remains the API round-trip.
+
+---
+
+## API Contract Impact
+
+No new routes. All existing test-case responses that go through `sanitize_test_case_for_response` must include the boolean:
+
+| Endpoint | Method | Must include field |
+|----------|--------|--------------------|
+| `/api/v1/tests` | GET (list) | Yes |
+| `/api/v1/tests/{id}` | GET | Yes |
+| `/api/v1/tests` | POST create | Yes |
+| `/api/v1/tests/{id}` | PUT update | Yes |
+| `/api/v1/tests/{id}/clone` | POST | Yes (clone already copies ORM flag; response must not zero it) |
+
+**Example PUT/GET body fragment:**
+
+```json
+{
+  "id": 42,
+  "title": "CRM checkout flow",
+  "requires_runtime_credentials": true
+}
+```
+
+**Security invariant (unchanged):** Response never contains password, username, `login_credentials`, or similar. Only the boolean flag.
+
+---
+
+## Design Direction
+
+- **No visual redesign** — keep existing checkbox / switch copy ("Requires CRM Login" / 🔐 label).
+- **Color / typography:** Unchanged; reuse current SavedTests / TestDetail patterns.
+- **Layout:** No new panels, modals, or cards for this fix.
+- **Anti-AI-slop / anti-scope:** Do not invent a "Credentials Hub", password vault UI, or settings page.
+- **Inspiration:** Treat like fixing a missing field in a DTO mapper — invisible when correct, obviously wrong when missing.
+
+**Anti-patterns to avoid:**
+- Writing credentials into `test_data`, `test_metadata`, or `localStorage`
+- Removing schema default so omission returns `null` without fixing sanitizer (still breaks UI)
+- "Fixing" by always forcing toggle ON in the frontend
+- Broad sanitizer rewrite while shipping this bugfix
+
+---
+
+## Features (Prioritized)
+
+### Must-Have (Sprint 7)
+
+1. **Sanitizer field** — `requires_runtime_credentials` in `sanitize_test_case_for_response`
+2. **Round-trip unit/API test** — create/update with `true`, GET asserts `true`; update `false`, GET asserts `false`
+3. **Manual / E2E check** — toggle ON → save → reload → still ON
+
+### Should-Have (Sprint 7, same PR if cheap)
+
+4. **SavedTestsPage local map** — include flag in post-save `setTests` patch
+5. **Frontend regression test** — mock update + reopen / reload hydrate uses API value `true`
+6. **Sanitizer coverage note** — assert list endpoint responses also include the field when DB is true
+
+### Nice-to-Have (Sprint 8+)
+
+7. Shared helper or schema `model_validate` from ORM to reduce future omitted-field bugs
+8. Lint/checklist: when adding `TestCase` columns, update sanitizer dict
+
+---
+
+## Sprint Plan
+
+### Sprint 7: Sanitize + Persist Round-Trip
+
+**Goals:** Toggle survives save + GET; credentials remain ephemeral; tests prove sanitize path.
+
+| # | File | Task |
+|---|------|------|
+| 7.1 | `backend/app/api/v1/endpoints/tests.py` | Add `requires_runtime_credentials` to sanitizer dict |
+| 7.2 | `backend/tests/unit/` (extend `test_crm_ephemeral_credentials.py` or new `test_requires_runtime_credentials_sanitize.py`) | PUT true → GET true via sanitized response |
+| 7.3 | `frontend/src/pages/SavedTestsPage.tsx` | Include flag in post-save list map (Should-Have) |
+| 7.4 | Frontend test (optional) | SavedTests / detail hydrate from response with `true` |
+| 7.5 | E2E (optional but preferred) | Playwright: toggle → save → reload → assert checked |
+
+**Definition of done:**
+- GET `/api/v1/tests/{id}` after update with `requires_runtime_credentials: true` returns `true`
+- Hard reload of edit UI shows toggle ON
+- No credential values in DB row / API JSON / `localStorage`
+- Backend unit tests for sanitize round-trip pass
+- Feature 1/2 behavior unchanged
+
+---
+
+## Acceptance Criteria
+
+| ID | Criterion | Pass condition |
+|----|-----------|----------------|
+| AC1 | Sanitizer includes field | Dict key present; value from ORM (`getattr` safe) |
+| AC2 | Persist true | Update `true` → subsequent GET/list item is `true` |
+| AC3 | Persist false | Update `false` → subsequent GET is `false` |
+| AC4 | UI survive reload | SavedTests drawer and/or TestDetail toggle stay ON after navigate/reload |
+| AC5 | Credentials ephemeral | No password/username persisted; Run prompt still uses ephemeral credentials only |
+| AC6 | Clone response honest | Clone of flag=`true` source returns `requires_runtime_credentials: true` (not forced false by sanitizer) |
+| AC7 | Surgical scope | No CRM redesign, no new migration, no credential storage |
+
+---
+
+## Test Plan
+
+### Backend unit / API
+
+| Test | Assertion |
+|------|-----------|
+| `test_sanitize_includes_requires_runtime_credentials_true` | ORM `True` → sanitized response `.requires_runtime_credentials is True` |
+| `test_sanitize_includes_requires_runtime_credentials_false` | ORM `False` → response `False` |
+| `test_update_then_get_preserves_true` | PUT `{requires_runtime_credentials: true}` → GET body `true` |
+| `test_update_then_get_preserves_false` | PUT `false` → GET `false` |
+| `test_list_includes_flag` | List item for updated test has `true` |
+| Existing ephemeral credential tests | Still pass; no credential persistence regressions |
+
+Prefer testing through the sanitizer and/or HTTP layer so a future sanitizer omission fails CI.
+
+### Frontend
+
+| Test | Assertion |
+|------|-----------|
+| Hydrate from GET | Opening edit with API `true` checks the box / switch |
+| Post-save local map (if AC implemented) | List state includes updated flag without waiting for full refetch quirks |
+| No localStorage credential write | Grep/assert: credential keys never written on toggle save |
+
+### E2E / Evaluator script
+
+See `gan-harness/eval-rubric-crm-login-toggle.md` § Evaluator Test Script.
+
+Suggested flow:
+1. Log in → Saved Tests → Edit a test.
+2. Enable **Requires CRM Login** → Save.
+3. Close drawer → soft navigate away → return → Edit again → assert ON.
+4. Hard reload page → Edit same test → assert ON.
+5. Run test → credential modal appears (flag consumed).
+6. Confirm Network: GET/PUT JSON has `"requires_runtime_credentials": true` and no password fields.
+7. Disable toggle → Save → reload → assert OFF.
+8. Optional: Clone a `true` test → clone response/edit shows ON.
+
+---
+
+## Risks & Edge Cases
+
+| Scenario | Expected behavior |
+|----------|-------------------|
+| Legacy rows created before column existed | DB default `false`; response `false` |
+| Toggle ON but user never Runs | Flag stays true; no credentials stored |
+| Concurrent edit of same test | Last write wins for boolean (existing PUT semantics) |
+| Clone after fix | Source `true` → clone ORM `true` → sanitized response `true` |
+| Admin GET of another user's test | Ownership rules unchanged; response includes true value if permitted |
+| `getattr` when attribute missing | Defaults to `False` (defensive); real `TestCase` always has column |
+| Frontend sends `undefined` on partial update | Existing Update schema `Optional` — omit leaves prior DB value (do not treat omit as force-false in CRUD) |
+
+**Empty/error states:** Unchanged — save errors still show edit drawer error string; do not clear the toggle on failed save.
+
+---
+
+## Evaluation Criteria
+
+See `gan-harness/eval-rubric-crm-login-toggle.md` for weighted scoring (pass ≥ 0.85).
+
+**Summary weights:**
+- Backend sanitizer & API round-trip: 0.40
+- Security (credentials remain ephemeral): 0.20
+- Frontend persistence UX: 0.25
+- Tests & E2E expectations: 0.15
+
+**Automatic fail conditions:**
+- Sanitizer still omits `requires_runtime_credentials`
+- GET after update `true` returns `false`
+- Any password/credential persisted to DB or `localStorage`
+- Unrelated CRM auth redesign shipped as part of this fix

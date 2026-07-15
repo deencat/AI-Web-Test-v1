@@ -10,6 +10,9 @@ import {
 } from '../types/api';
 import { mockTests } from '../mock/tests';
 
+/** Aligned with backend DELETE /tests/batch abuse cap (len(ids) ≤ 100). */
+const BATCH_DELETE_CHUNK_SIZE = 100;
+
 /**
  * Tests Service
  * Handles all test-related API operations
@@ -328,19 +331,32 @@ class TestsService {
   /**
    * Batch delete test cases.
    *
-   * Sends DELETE /tests/batch with the list of IDs.
-   * Returns the number of tests actually deleted and any IDs that failed.
+   * Chunks IDs into ≤100 per request (backend DELETE /tests/batch abuse cap),
+   * sends sequential requests, and aggregates deleted + failed.
    */
   async batchDeleteTests(ids: number[]): Promise<{ deleted: number; failed: number[] }> {
-    try {
-      const response = await api.delete<{ deleted: number; failed: number[] }>(
-        '/tests/batch',
-        { data: { ids } }
-      );
-      return response.data;
-    } catch (error) {
-      throw new Error(apiHelpers.getErrorMessage(error));
+    if (ids.length === 0) {
+      return { deleted: 0, failed: [] };
     }
+
+    let deleted = 0;
+    const failed: number[] = [];
+
+    for (let i = 0; i < ids.length; i += BATCH_DELETE_CHUNK_SIZE) {
+      const chunk = ids.slice(i, i + BATCH_DELETE_CHUNK_SIZE);
+      try {
+        const response = await api.delete<{ deleted: number; failed: number[] }>(
+          '/tests/batch',
+          { data: { ids: chunk } }
+        );
+        deleted += response.data.deleted;
+        failed.push(...response.data.failed);
+      } catch (error) {
+        throw new Error(apiHelpers.getErrorMessage(error));
+      }
+    }
+
+    return { deleted, failed };
   }
 
   async batchAssignCategory(

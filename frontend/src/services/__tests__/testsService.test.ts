@@ -81,6 +81,7 @@ describe('testsService.batchDeleteTests()', () => {
 
     const result = await testsService.batchDeleteTests([1, 2, 3]);
 
+    expect(mockDelete).toHaveBeenCalledTimes(1);
     expect(mockDelete).toHaveBeenCalledWith('/tests/batch', { data: { ids: [1, 2, 3] } });
     expect(result).toEqual({ deleted: 3, failed: [] });
   });
@@ -100,6 +101,55 @@ describe('testsService.batchDeleteTests()', () => {
     mockDelete.mockRejectedValueOnce(new Error('Network error'));
 
     await expect(testsService.batchDeleteTests([1])).rejects.toThrow('Network error');
+  });
+
+  it('returns empty result without calling API when ids is empty', async () => {
+    const result = await testsService.batchDeleteTests([]);
+
+    expect(mockDelete).not.toHaveBeenCalled();
+    expect(result).toEqual({ deleted: 0, failed: [] });
+  });
+
+  it('chunks 101 ids into two sequential DELETE requests of ≤100', async () => {
+    const ids = Array.from({ length: 101 }, (_, i) => i + 1);
+
+    mockDelete
+      .mockResolvedValueOnce({ data: { deleted: 100, failed: [] } })
+      .mockResolvedValueOnce({ data: { deleted: 1, failed: [] } });
+
+    const result = await testsService.batchDeleteTests(ids);
+
+    expect(mockDelete).toHaveBeenCalledTimes(2);
+    expect(mockDelete).toHaveBeenNthCalledWith(1, '/tests/batch', {
+      data: { ids: ids.slice(0, 100) },
+    });
+    expect(mockDelete).toHaveBeenNthCalledWith(2, '/tests/batch', {
+      data: { ids: [101] },
+    });
+    expect(result).toEqual({ deleted: 101, failed: [] });
+  });
+
+  it('aggregates soft failures across chunks', async () => {
+    const ids = Array.from({ length: 101 }, (_, i) => i + 1);
+
+    mockDelete
+      .mockResolvedValueOnce({ data: { deleted: 100, failed: [] } })
+      .mockResolvedValueOnce({ data: { deleted: 0, failed: [101] } });
+
+    const result = await testsService.batchDeleteTests(ids);
+
+    expect(result).toEqual({ deleted: 100, failed: [101] });
+  });
+
+  it('stops and rejects when a later chunk fails hard', async () => {
+    const ids = Array.from({ length: 101 }, (_, i) => i + 1);
+
+    mockDelete
+      .mockResolvedValueOnce({ data: { deleted: 100, failed: [] } })
+      .mockRejectedValueOnce(new Error('Server error'));
+
+    await expect(testsService.batchDeleteTests(ids)).rejects.toThrow('Server error');
+    expect(mockDelete).toHaveBeenCalledTimes(2);
   });
 });
 

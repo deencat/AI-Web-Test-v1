@@ -60,6 +60,7 @@ def sanitize_test_case_for_response(test_case):
         'user_id': test_case.user_id,
         'scenario_id': test_case.scenario_id,
         'template_id': test_case.template_id,
+        'requires_runtime_credentials': getattr(test_case, 'requires_runtime_credentials', False),
     }
 
     if getattr(test_case, 'test_category', None):
