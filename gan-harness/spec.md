@@ -7,6 +7,7 @@ This document contains feature specs for the GAN harness. Each major section is 
 | 1 | Stop Execution | Cooperative cancel for 3-tier test runs |
 | 2 | Clone Test Case | Duplicate a saved test case with one click |
 | 3 | CRM Login Toggle Persist | Fix `requires_runtime_credentials` omitted by API sanitizer |
+| 4 | Timed Wait Step | First-class cancel-aware wait steps (UI + NL parse); not a loop block |
 
 ---
 
@@ -1432,3 +1433,556 @@ See `gan-harness/eval-rubric-crm-login-toggle.md` for weighted scoring (pass ≥
 - GET after update `true` returns `false`
 - Any password/credential persisted to DB or `localStorage`
 - Unrelated CRM auth redesign shipped as part of this fix
+
+---
+
+# Feature 4: Timed Wait Step — First-Class Cancel-Aware Pause
+
+> Generated from brief / architect recommendation: *"NL step `wait 10 seconds` on saved tests is NOT honored. Approach C: UI-insertable wait step + NL/canonical parsing (NOT a loop-block); short-circuit before tier escalation with cancel-aware chunked sleep (ADR-009); fix Tier 1 duration fields and Tier 2 wait no-op; never Stagehand-act waits; do not conflate with ADR-002 readiness waits."*
+
+---
+
+## Vision
+
+QA engineers need an intentional, predictable **pause between steps** — e.g. wait 10 seconds for a third-party redirect, SMS OTP window, or slow backend job — without relying on Stagehand, without cloning the loop-block UX, and without blocking Stop Execution (Feature 1 / ADR-009). **Timed Wait Step** makes wait a **first-class ordinal step** in the same newline-separated `steps` list as click/fill/navigate: insertable from the editor via **[+ Add Wait]**, parseable from natural language (`Wait 10 seconds`) and canonical forms (`wait: 10s`), executed as a **short-circuit sleep** in `ExecutionService` that never escalates through Tier 2/3, and interruptible mid-wait via cancel-aware chunked polling.
+
+The product feel: inserting a wait is as ordinary as inserting a click — a single line in the step list, visible in progress as a normal step, cancelled mid-sleep within ~0.5s of Stop, and clearly distinct from automatic readiness sleeps (spinners, payment gateways, post-click settle).
+
+---
+
+## User Story
+
+**As a** QA engineer authoring or editing a saved test,  
+**I want** to insert a timed wait of N seconds as a normal step (or write `wait 10 seconds` in NL),  
+**So that** the run actually pauses for that duration before the next step, I can Stop mid-wait, and the engine does not burn LLM/Stagehand tokens pretending to “wait.”
+
+**Acceptance (happy path):**
+1. User opens Saved Tests edit drawer or `TestDetailPage` / `TestStepEditor`.
+2. User clicks **[+ Add Wait]**, picks **10 seconds** (or types `Wait 10 seconds` / `wait: 10s` as a line).
+3. Save → `steps` array contains a wait line at the chosen ordinal (e.g. between step 3 and 4).
+4. User Runs the test → progress shows the wait step; wall-clock pause ≈ 10s (± chunk resolution).
+5. During the wait, user clicks **Stop Execution** → status becomes `cancelled` within ~1s (chunk poll); no unbroken 10s sleep after cancel.
+6. Step result for the wait is `passed` (or `cancelled` if stopped mid-wait); `tier_used` is not Tier 2/3 Stagehand.
+7. A non-timed instruction like `Wait for the success message to appear` does **not** sleep a fixed duration; it follows normal action detection / verify / readiness paths.
+
+---
+
+## Scope
+
+### In scope
+
+| Area | Deliverable |
+|------|-------------|
+| Action detection | Timed-wait detection in `ExecutionService._execute_step` (and/or a shared helper) for NL + canonical + structured forms |
+| Short-circuit sleep | Cancel-aware chunked sleep **before** `ThreeTierExecutionService.execute_step` / tier escalation |
+| Duration fields | Read `timeout_ms` / `timeout` / parsed seconds; not only pure-int `value` |
+| Tier 1 | `tier1_playwright._execute_wait` honors ms from structured fields; still used only if short-circuit is bypassed (prefer short-circuit as primary path) |
+| Tier 2 | Fix `tier2_hybrid` `action == "wait": pass` no-op — either never reached for timed waits, or implement real sleep if hit |
+| Tier 3 | Do **not** send timed waits to Stagehand `act("wait…")` |
+| Cap | Max duration clamp (default **120 seconds**) to limit runaway runs |
+| NL boundaries | Timed sleep vs condition wait (`wait for …`) carefully distinguished |
+| UI | **[+ Add Wait]** duration picker inserts a canonical step **line** into the steps textarea/list — **not** `test_data.loop_blocks` / not a `wait_blocks` overlay |
+| Tests | Unit: duration honored, cancel mid-wait, non-timed “wait for X” does not sleep |
+| Docs | ADR note (ADR-002 addendum or short ADR): intentional timed wait vs automatic readiness |
+
+### Out of scope
+
+- **Loop-block-style wait UX** — no `wait_blocks` metadata parallel to `loop_blocks`; no overlay editor that marks start/end ranges for waits
+- Using Stagehand / Tier 3 `act()` to implement sleeps
+- Conflating timed waits with ADR-002 readiness (`post_click_readiness.py`, spinner clears, payment gateway settles, step-boundary loading)
+- Parsing **every** sentence containing the word “wait” as a fixed sleep
+- Unbroken `asyncio.sleep(N)` without cancel chunks (violates ADR-009 mid-wait cancel)
+- Relying on tier escalation (T1 fail → T2 → T3) to “discover” waits
+- Condition waits as a new product (`wait until selector visible` with polling UI) — existing element-wait paths may remain; this feature is **timed** only
+- Suite-level “global delay between all steps” setting
+- Changing queue / cancel store APIs beyond consuming existing `cancel_check` / `is_cancel_requested`
+- Calling tier executors from endpoints (hard constraint unchanged)
+
+---
+
+## Current State Analysis
+
+### What exists
+
+| Layer | Location | Status |
+|-------|----------|--------|
+| Step storage | `TestCase.steps` — typically `List[str]` newline-authored | Works; wait lines are plain strings today |
+| Step editor | `frontend/src/components/TestStepEditor.tsx`, SavedTests edit drawer | Textarea of newline steps + separate `LoopBlockEditor` |
+| Loop blocks | `test_data.loop_blocks` via `LoopBlockEditor.tsx` | **Different concern** — repeat ranges; must not be cloned for waits |
+| Action inference | `ExecutionService._execute_step` (~lines 1350–1388) | Detects navigate/click/fill/verify/upload/… — **no wait/sleep/delay branch** |
+| Tier dispatch | `ThreeTierExecutionService.execute_step` via `ExecutionService` | Correct layering; waits incorrectly fall through as unknown/verify/click-ish |
+| Tier 1 wait | `tier1_playwright.py` `action == "wait"` → `_execute_wait` | Sleeps only if `selector_or_time` parses as **pure int** ms; ignores `timeout_ms` / `timeout`; uses unbroken `asyncio.sleep` |
+| Tier 2 wait | `tier2_hybrid.py` `elif action == "wait": pass` | **No-op** — reports success without sleeping |
+| Tier 3 | `tier3_stagehand.py` | May `act()` on NL including “wait…” without real timed sleep guarantee |
+| Cancel | ADR-009 / `execution_cancel_store` / `cancel_check` in step loop | Exists between steps & tiers; **not** inside a long sleep |
+| Readiness waits | `post_click_readiness.py`, step-boundary loading | Automatic engine behavior — **must stay separate** from user timed waits |
+| Validation | `test_validation_service.py` | Structured `wait` expects `timeout` or `condition` — useful for structured form |
+
+### What's broken (root cause)
+
+| Gap | Effect |
+|-----|--------|
+| No timed-wait detection in `_execute_step` | NL `"wait 10 seconds"` never becomes `action=wait` with duration |
+| No short-circuit before tiers | Engine tries Playwright/Hybrid/Stagehand; Tier 2 no-op “passes” instantly; Tier 3 may hallucinate |
+| Tier 1 `_execute_wait` only `int(selector_or_time)` | Structured `{timeout_ms: 10000}` ignored if value is `"10s"` or empty |
+| Tier 2 `pass` | False-positive success with zero pause |
+| Unbroken sleep if Tier 1 path used | Stop mid-wait blocked until sleep ends (ADR-009 gap for waits) |
+| No UI insert helper | Users type freeform NL that the engine ignores |
+
+**Architect decision:** **Approach C** — UI-insertable wait **step** + NL/canonical parsing. Not a loop-block. Not “fix Stagehand wait.”
+
+---
+
+## Architecture Decision: Approach C — Step + Short-Circuit Sleep
+
+### Decision
+
+1. **Data:** Prefer a **canonical step line** in `steps[]` (string list). Optional structured dict steps remain supported when present.
+2. **Detect** timed waits early in `ExecutionService._execute_step` (or immediately before calling `three_tier_service.execute_step`).
+3. **Short-circuit:** perform cancel-aware chunked sleep in `ExecutionService` (or a tiny helper module owned by execution service), return success **without** calling Tier 1/2/3 for timed waits.
+4. **Hardening:** Fix Tier 1 duration field reads; neutralize Tier 2 wait no-op (so accidental fall-through still sleeps or fails closed — prefer never fall through).
+5. **Never** route timed waits to Stagehand `act()`.
+6. **Cap** duration at **120s** (configurable constant); reject or clamp above max.
+7. **NL:** only patterns that express a **numeric duration** are timed sleeps; “wait for \<UI condition\>” is **not**.
+
+### Rationale
+
+| Approach | Verdict |
+|----------|---------|
+| **C: UI step + NL/canonical + ExecutionService short-circuit** | **Accept** — fits string-step model; cancel-aware; surgical; no parallel metadata |
+| A: Only fix Tier 1 `_execute_wait` | **Reject as sole fix** — NL never maps to wait; Tier 2 no-op still traps escalation; no cancel chunks |
+| B: `wait_blocks` like `loop_blocks` | **Reject** — duplicates UX, splits storage, harder to ordinalize in progress UI |
+| Stagehand `act("wait 10 seconds")` | **Reject** — nondeterministic, costly, not real sleep, breaks cancel story |
+| Unbroken `asyncio.sleep(timeout_ms/1000)` | **Reject** — blocks ADR-009 Stop mid-wait |
+| Treat all “wait …” as sleep | **Reject** — breaks condition/verify phrasing |
+
+### Layering (hard constraints)
+
+```
+Endpoint → ExecutionService.execute_test / _execute_step
+                │
+                ├─ timed wait detected? ──► chunked cancel-aware sleep ──► return (no tiers)
+                │
+                └─ else ──► ThreeTierExecutionService.execute_step(..., cancel_check=)
+                              Tier1 → Tier2 → Tier3
+```
+
+- Endpoints never call tier executors.
+- Lazy Tier 2/3 init (ADR-002-1) remains: timed waits must not force Stagehand init.
+- Cancel polls reuse Feature 1’s `cancel_check` / `is_cancel_requested(execution_id)`.
+
+### Timed vs readiness vs condition (must not conflate)
+
+| Kind | Example | Owner |
+|------|---------|--------|
+| **Timed wait (this feature)** | `Wait 10 seconds`, `wait: 10s`, `{action:"wait", timeout_ms:10000, kind:"timed"}` | User step; ExecutionService short-circuit |
+| **ADR-002 readiness** | Spinner clear, payment iframe settle, post-click networkidle | `post_click_readiness.py` / tier internals — automatic |
+| **Condition / element wait** | `Wait for the success message`, wait until selector visible | Existing verify / selector wait paths — **not** fixed-duration sleep |
+
+---
+
+## Data Model / Canonical Forms
+
+### Preferred: string step lines (fit today’s model)
+
+Canonical forms the parser **must** accept (case-insensitive where noted):
+
+| Form | Example | Parsed duration |
+|------|---------|-----------------|
+| Human NL | `Wait 10 seconds` / `wait 10 second` / `wait 5 secs` | 10000 / 5000 ms |
+| Human NL (minutes) | `Wait 1 minute` / `wait 2 minutes` | 60000 / 120000 ms (then clamp) |
+| Compact | `wait: 10s` / `wait:10s` | 10000 ms |
+| Milliseconds | `WAIT 10000ms` / `wait 10000 ms` | 10000 ms |
+| Seconds keyword | `sleep 3` / `delay 3 seconds` | 3000 ms |
+
+**Canonical insert from UI (recommended single form):**
+
+```text
+wait: 10s
+```
+
+Human-readable alternatives remain valid so existing handwritten tests work:
+
+```text
+Wait 10 seconds
+```
+
+### Optional structured step (when `steps` item is a dict)
+
+```json
+{
+  "action": "wait",
+  "timeout_ms": 10000,
+  "instruction": "Wait 10 seconds",
+  "kind": "timed"
+}
+```
+
+Also accept `timeout` (ms) as alias for `timeout_ms`. Do **not** require `value` to be a pure int string.
+
+### Explicitly not the data model
+
+```json
+// ❌ Do NOT add
+"test_data": {
+  "wait_blocks": [{ "after_step": 3, "duration_ms": 10000 }]
+}
+```
+
+```json
+// ❌ Do NOT reuse loop_blocks for waits
+"loop_blocks": [{ "start": 2, "end": 2, "iterations": 1, "wait_ms": 10000 }]
+```
+
+Wait is an **ordinal step**, same as `"Click Login"`.
+
+### Duration rules
+
+| Rule | Value |
+|------|-------|
+| Minimum | 100 ms (or 1 second if UI only offers whole seconds — document choice; backend should accept ≥100 ms) |
+| Maximum (hard cap) | **120_000 ms (120 s)** — clamp or fail with clear error; prefer **clamp + log warning** for NL; UI picker max 120s |
+| Default UI presets | 1s, 2s, 5s, 10s, 30s, 60s, custom (1–120) |
+| Units | Prefer seconds in UI; store/parse to ms internally |
+
+### Non-timed patterns (must NOT sleep)
+
+Examples that must **not** map to timed sleep:
+
+- `Wait for the success message to appear`
+- `Wait until the spinner disappears`
+- `Wait for navigation to complete`
+- `Wait for #checkout-button to be visible`
+- `Please wait while we process` (no numeric duration)
+
+Heuristic (decisive):
+
+1. Match timed pattern only if a **numeric duration + time unit** (or bare `sleep N` / `WAIT Nms`) is present **and** the primary intent is pause — not “wait for \<target\>”.
+2. Prefer regexes like:
+   - `^\s*(wait|sleep|delay)\s*:?\s*(\d+)\s*(ms|milliseconds?|s|secs?|seconds?|m|mins?|minutes?)?\s*$`
+   - `^\s*(wait|sleep|delay)\s+(\d+)\s*(ms|milliseconds?|s|secs?|seconds?|m|mins?|minutes?)\s*$`
+3. Reject if `wait for` / `wait until` appears (unless a separate timed clause is unambiguously present — v1: **reject** `wait for` entirely as timed).
+
+---
+
+## Backend Behavior Spec
+
+### 1. Detection + short-circuit (`execution_service.py`)
+
+In `_execute_step`, **after** test-data substitution, **before** building heavy tier payloads / calling `three_tier_service.execute_step`:
+
+1. Resolve duration from (priority):
+   - structured `timeout_ms` / `timeout` if `action == "wait"` or `kind == "timed"`
+   - else parse `instruction` / `step_description` with timed-wait regexes
+2. If timed wait:
+   - Clamp to `[min, MAX_TIMED_WAIT_MS]` (120_000)
+   - Call `_sleep_cancel_aware(duration_ms, cancel_check)`
+   - If cancel during sleep → raise/return path consistent with Feature 1 cancel (execution ends `cancelled`; wait step not marked as ordinary failure)
+   - On success return `{ success: True, action: "wait", tier_used: "timed_wait" | "execution_service", duration_ms: actual, ... }` — **do not** invoke tiers
+3. If not timed wait → existing three-tier path unchanged
+
+**Suggested helper** (same file or `backend/app/services/timed_wait.py`):
+
+```python
+async def sleep_cancel_aware(
+    duration_ms: int,
+    cancel_check: Optional[Callable[[], bool]] = None,
+    *,
+    chunk_ms: int = 250,
+) -> None:
+    """Sleep in chunks; if cancel_check() becomes true, abort promptly (ADR-009)."""
+```
+
+- Default chunk **250 ms** (≤500 ms acceptable).
+- Each chunk: `await asyncio.sleep(min(chunk_ms, remaining))` then `if cancel_check and cancel_check(): raise CancelledError` / return sentinel consumed by `_execute_step` / `execute_test`.
+- Must work when `cancel_check` is `None` (still sleep in chunks for consistency, or single sleep — prefer chunks always).
+
+### 2. Tier 1 field fix (`tier1_playwright.py`)
+
+`_execute_wait` today:
+
+```python
+wait_ms = int(selector_or_time)  # fails for "10s", ignores timeout_ms
+await asyncio.sleep(wait_ms / 1000)
+```
+
+Required:
+
+- Prefer `step.get("timeout_ms")` or `step.get("timeout")` when present
+- Else parse duration strings (`10s`, `10000ms`)
+- Else pure int ms
+- Else selector visibility wait (existing non-timed behavior)
+- Use cancel-aware sleep if `cancel_check` is plumbed; if Tier 1 is only a backstop and short-circuit always wins for timed waits, still fix duration parsing + avoid unbroken sleep when cancel is available
+
+### 3. Tier 2 no-op fix (`tier2_hybrid.py`)
+
+```python
+elif action == "wait":
+    pass  # ❌ must not remain
+```
+
+Required: either unreachable for timed waits (preferred via short-circuit) **and** if reached, perform cancel-aware sleep using `timeout_ms`/`timeout`/parsed value — never `pass`.
+
+### 4. Tier 3 / Stagehand
+
+- Timed waits must not call `stagehand.act(...)`.
+- Do not initialize Stagehand solely for a wait step (preserves ADR-002-1 lazy init).
+
+### 5. Progress / screenshots
+
+- Wait steps appear in progress like other steps (step index, instruction text).
+- Screenshot: optional; prefer lightweight (skip or capture once after wait) — do not require Tier 2 observe.
+- `execution_time_ms` should reflect approximate sleep duration.
+
+---
+
+## Frontend UX Spec
+
+### Placement
+
+Primary: **`TestStepEditor`** toolbar (alongside Insert Module / near steps textarea). Secondary: Saved Tests edit drawer if it uses a raw textarea without `TestStepEditor` — add the same control or reuse a shared `AddWaitControl` component.
+
+**Path targets:**
+- `frontend/src/components/TestStepEditor.tsx` (preferred)
+- `frontend/src/pages/SavedTestsPage.tsx` edit drawer steps field (if not using TestStepEditor)
+- Optional: `frontend/src/components/AddWaitButton.tsx` or inline control
+
+### Control: [+ Add Wait]
+
+| Attribute | Value |
+|-----------|-------|
+| Label | `+ Add Wait` |
+| `data-testid` | `add-wait-step-button` |
+| Interaction | Opens compact duration picker (popover or inline select) — **not** a loop-block panel |
+| Presets | 1s, 2s, 5s, 10s, 30s, 60s |
+| Custom | Number input 1–120 (seconds); disable/clamp >120 |
+| Confirm | Inserts line `wait: {n}s` at **cursor position** or **end of steps** (document: prefer end if no cursor API; TestStepEditor textarea — insert at caret if feasible, else append with newline) |
+| Result | Steps remain a newline-separated list; user can reorder by editing text |
+
+**Critical:** Do **not** open `LoopBlockEditor`. Do **not** write `test_data.wait_blocks`.
+
+### Progress page
+
+No special Stop UX beyond Feature 1 — wait must respect existing Stop. Optional badge text: step instruction shows `wait: 10s`.
+
+### Empty / error states
+
+| State | Behavior |
+|-------|----------|
+| Custom duration empty | Disable Insert |
+| Custom > 120 | Clamp to 120 or show inline error “Max 120 seconds” |
+| Custom < 1 | Show error or clamp to 1 |
+| Unsaved insert | User still Save / autosave as today |
+
+---
+
+## Design Direction
+
+- **Color palette:** Neutral secondary control — e.g. slate border `#64748b` text, hover `#f1f5f9`; not purple gradient, not alarm red (red reserved for Stop)
+- **Typography:** Same `text-sm` as Insert Module / loop toolbar; monospace optional for inserted `wait: 10s` line only
+- **Layout:** Compact toolbar button + small popover; airy, not a card grid of durations
+- **Visual identity:** Clock / timer icon (Lucide `Timer` or `Clock`) — distinct from Loop (`Repeat`) and Module insert
+- **Inspiration:** Playwright codegen pause, Cypress `cy.wait(ms)` as an explicit step, Postman delay — utilitarian, not decorative
+- **Anti-AI-slop:** No animated hourglass mascot; no “smart wait AI” marketing copy; no duplicate loop-block chrome
+
+**Anti-patterns to avoid:**
+- Cloning `LoopBlockEditor` UX for waits
+- Modal wizard with 5 screens to add a wait
+- Hiding wait only inside Advanced settings
+- Inserting structured JSON into the textarea mixed with NL lines unless the editor already supports dict steps
+
+---
+
+## Features (Prioritized)
+
+### Must-Have (Sprint 8–9)
+
+1. **Timed-wait detector** — NL + canonical + structured `timeout_ms`/`timeout`
+2. **ExecutionService short-circuit** — cancel-aware chunked sleep; no tier call
+3. **Duration cap** — 120s max
+4. **NL boundaries** — `wait for …` does not sleep
+5. **Tier 1 duration fields** — read `timeout_ms`/`timeout`; parse `10s`
+6. **Tier 2 wait no-op fix** — no silent `pass` for timed wait
+7. **Unit tests** — duration, cancel mid-wait, non-timed exclusion
+8. **UI [+ Add Wait]** — duration picker inserts `wait: Ns` step line
+
+### Should-Have (Sprint 10)
+
+9. Shared `timed_wait.py` helper used by ExecutionService (and Tier 1/2 backstops)
+10. Progress metadata: `tier_used: "timed_wait"`, `duration_ms` on step result
+11. ADR-002 addendum / short note: intentional timed wait vs readiness
+12. Frontend component test for Add Wait insert
+13. SavedTests drawer parity if steps edited outside TestStepEditor
+
+### Nice-to-Have (Sprint 11+)
+
+14. Drag-reorder visual steps (only if product already moving off pure textarea)
+15. Per-project max wait override in settings
+16. Telemetry: count timed-wait steps / cancel-during-wait rate
+17. MCP / Hermes step library module “Wait N seconds”
+
+---
+
+## Sprint Plan
+
+### Sprint 8: Backend Short-Circuit + Cancel-Aware Sleep
+
+**Goals:** NL/canonical/structured timed waits actually pause; Stop works mid-wait; no Stagehand for waits.
+
+| # | File | Task |
+|---|------|------|
+| 8.1 | `backend/app/services/timed_wait.py` (new) or helpers in `execution_service.py` | `parse_timed_wait_ms(instruction, step=None) -> Optional[int]`; `sleep_cancel_aware(...)` |
+| 8.2 | `backend/app/services/execution_service.py` | Detect timed wait in `_execute_step`; short-circuit before `three_tier_service.execute_step` |
+| 8.3 | `backend/app/services/tier1_playwright.py` | `_execute_wait` reads `timeout_ms`/`timeout`; parse duration strings; prefer cancel-aware sleep if check available |
+| 8.4 | `backend/app/services/tier2_hybrid.py` | Replace `action == "wait": pass` with real sleep or explicit “unsupported without duration” error — never silent success |
+| 8.5 | Guard | Assert timed-wait path does not call Tier 3 / does not init Stagehand |
+| 8.6 | `backend/tests/unit/test_timed_wait.py` (new) | Parse matrix, sleep duration (±tolerance), cancel mid-wait, non-timed exclusion, clamp 120s |
+
+**Definition of done:**
+- Running a test whose steps include `Wait 10 seconds` pauses ~10s
+- Cancel during wait → `cancelled` within ~1s
+- `wait for the success message` does not take a fixed 10s sleep from this feature
+- `pytest -k timed_wait` green
+- Feature 1 Stop still works for non-wait steps
+
+---
+
+### Sprint 9: UI Add Wait + Editor Integration
+
+**Goals:** Users can insert a wait without memorizing syntax.
+
+| # | File | Task |
+|---|------|------|
+| 9.1 | `frontend/src/components/AddWaitControl.tsx` (or inline) | Duration picker + presets + clamp 1–120s |
+| 9.2 | `frontend/src/components/TestStepEditor.tsx` | Wire **[+ Add Wait]**; insert `wait: {n}s` into steps text |
+| 9.3 | `SavedTestsPage.tsx` (if needed) | Same control on drawer steps editor |
+| 9.4 | Frontend test | Button inserts expected canonical line; rejects >120 |
+
+**Definition of done:** Evaluator can Add Wait → Save → Run → observe pause; steps JSON contains the wait line (not `loop_blocks`).
+
+---
+
+### Sprint 10: Docs + Polish
+
+**Goals:** Document intentional vs automatic waits; result metadata clarity.
+
+| # | File | Task |
+|---|------|------|
+| 10.1 | `documentation/ADR-002-test-execution-engine.md` addendum **or** short ADR-010 | Timed wait vs readiness; Approach C; cancel chunks |
+| 10.2 | `docs/CODEMAPS/execution-engine.md` | Note short-circuit timed wait in dispatch diagram |
+| 10.3 | Step result fields | Expose `duration_ms` / `tier_used` for wait steps in execution progress payload if cheap |
+
+**Definition of done:** Docs state wait is a **step**, not a loop block; Evaluator rubric script passes.
+
+---
+
+## Test Strategy
+
+### Backend unit: `test_timed_wait.py`
+
+| Test | Assertion |
+|------|-----------|
+| `test_parse_wait_10_seconds` | `"Wait 10 seconds"` → 10000 |
+| `test_parse_wait_canonical` | `"wait: 10s"` → 10000 |
+| `test_parse_wait_ms` | `"WAIT 5000ms"` → 5000 |
+| `test_parse_structured_timeout_ms` | `{action:"wait", timeout_ms:3000}` → 3000 |
+| `test_parse_structured_timeout_alias` | `{action:"wait", timeout:3000}` → 3000 |
+| `test_reject_wait_for_message` | `"Wait for the success message"` → `None` (not timed) |
+| `test_reject_wait_until` | `"Wait until spinner disappears"` → `None` |
+| `test_clamp_above_120s` | `"Wait 999 seconds"` → 120000 (or rejected — pick one; document) |
+| `test_sleep_duration_approx` | Short-circuit sleep 500ms completes in ~500ms ±250ms |
+| `test_cancel_mid_wait` | Set cancel flag after start; sleep aborts <1s for a 10s wait |
+| `test_tier2_wait_not_noop` | If Tier 2 wait path invoked with duration, does not return instant success via `pass` |
+| `test_no_stagehand_for_timed_wait` | Mock three-tier; timed wait never calls Tier 3 execute |
+
+### Frontend
+
+| Test | Assertion |
+|------|-----------|
+| Add Wait inserts line | After confirm 10s, textarea/steps contain `wait: 10s` |
+| Not loop_blocks | Save payload `test_data.loop_blocks` unchanged by Add Wait |
+| Max clamp | Custom 200 → error or clamped 120 |
+
+### Manual / Evaluator script
+
+See `gan-harness/eval-rubric-timed-wait.md` § Evaluator Test Script.
+
+---
+
+## Risks & Edge Cases
+
+| Scenario | Expected behavior |
+|----------|-------------------|
+| Wait as first step | Allowed; sleeps before other actions (after initial navigation if engine always navigates first — do not skip wait) |
+| Wait as last step | Allowed; sleep then complete |
+| Wait inside loop body | Treated as normal step in expanded loop iterations; still cancel-aware |
+| Multiple waits | Each honored independently |
+| `wait: 0s` / empty | Reject or treat as no-op min; prefer validation error in UI |
+| Mixed dict + string steps | Parser handles both |
+| Cancel before wait starts | Existing step-boundary cancel; wait never begins |
+| Cancel during wait | Abort chunked sleep; finalize `cancelled` (ADR-009) |
+| Tier 2 observe init | Timed wait must not force xpath/Stagehand init |
+| Concurrent readiness after previous click | Readiness runs for **previous** action path only; timed wait does not replace or disable readiness for other steps |
+| User writes `wait 10 seconds for the modal` | v1: treat as **non-timed** if `for` present (safe); or document as ambiguous — prefer non-timed |
+| Very long suite with many 120s waits | Cap per step still 120s; no suite-level sum cap in v1 |
+| Clone test with wait steps (Feature 2) | Clone copies step strings including `wait: 10s` |
+
+**Empty/error states:**
+- Parse failure on structured wait without duration → fail step with clear message: `Timed wait requires timeout_ms or duration in instruction`
+- Do not mark as passed via Tier 2 `pass`
+
+---
+
+## Evaluation Criteria
+
+See `gan-harness/eval-rubric-timed-wait.md` for weighted scoring (pass ≥ 0.85).
+
+**Summary weights:**
+- Backend short-circuit & duration fidelity: 0.35
+- Cancel mid-wait (ADR-009): 0.20
+- NL parse boundaries & anti-conflation: 0.15
+- Tier safety (no Stagehand / Tier 2 no-op fixed): 0.15
+- UI Add Wait (step, not loop block): 0.15
+
+**Automatic fail conditions:**
+- Timed wait implemented only via Stagehand `act()`
+- Wait stored as `loop_blocks` / `wait_blocks` instead of a step line
+- Unbroken sleep with no cancel polling (Stop blocked for full duration)
+- Every phrase containing “wait” sleeps a fixed duration
+- Tier 2 `action == "wait": pass` remains for timed waits
+- Conflates feature with changing `post_click_readiness` as the primary “fix”
+
+---
+
+## Success Metrics
+
+| Metric | Target |
+|--------|--------|
+| NL `Wait N seconds` honored | Pause within ±1s of N for N≤30 |
+| Cancel latency mid-wait | ≤ 1s from Stop click to cooperative abort of sleep |
+| False-positive timed parse | 0 on evaluation phrase set (`wait for…`, `wait until…`) |
+| Stagehand invocations on pure wait step | 0 |
+| UI insert | 1 click + duration confirm → canonical line in `steps` |
+| Cap | Durations >120s never run unbounded |
+
+---
+
+## Implementation Order (Generator — do not reorder)
+
+1. Backend short-circuit + cancel-aware chunked sleep  
+2. Fix Tier 1 duration fields; neutralize Tier 2 no-op  
+3. Unit tests (duration, cancel mid-wait, non-timed exclusion)  
+4. UI Add Wait duration picker → inserts canonical line  
+5. Docs/ADR note: intentional timed wait vs automatic readiness  
+
+---
+
+## Related Artifacts
+
+| Artifact | Role |
+|----------|------|
+| `gan-harness/eval-rubric-timed-wait.md` | Weighted Evaluator rubric |
+| `documentation/ADR-009-execution-cancel.md` | Cancel must work mid-wait |
+| `docs/CODEMAPS/execution-engine.md` | Execution layering / readiness distinction |
+| `documentation/ADR-002-test-execution-engine.md` | Readiness waits; addendum target for timed wait note |
+| Feature 1 Stop Execution | Cancel UX + `cancel_check` plumbing to reuse |
