@@ -10,6 +10,7 @@ from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
 import logging
 
 from app.services.post_click_readiness import wait_for_post_click_readiness
+from app.services.timed_wait import parse_timed_wait_ms, sleep_cancel_aware
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +116,7 @@ class Tier1PlaywrightExecutor:
                     raise ValueError(f"No selector provided for step: {instruction}")
                 await self._execute_assert(page, selector, value)
             elif action == "wait":
-                await self._execute_wait(page, selector or value or "1000")
+                await self._execute_wait(page, step, selector or value or "")
             elif action == "upload_file":
                 file_path = step.get("file_path")
                 if not file_path:
@@ -285,16 +286,31 @@ class Tier1PlaywrightExecutor:
                 f"Expected '{expected_value}' in element text, got '{actual_value}'"
             )
     
-    async def _execute_wait(self, page: Page, selector_or_time: str):
-        """Wait for element or time"""
-        try:
-            # Try to parse as number (milliseconds)
-            wait_ms = int(selector_or_time)
-            await asyncio.sleep(wait_ms / 1000)
-        except ValueError:
-            # Treat as selector
-            element = self._locator(page, selector_or_time)
-            await element.wait_for(state="visible", timeout=self.timeout_ms)
+    async def _execute_wait(self, page: Page, step: Dict[str, Any], selector_or_time: str = ""):
+        """Wait for timed duration (preferred) or element visibility (selector)."""
+        instruction = step.get("instruction") or ""
+        duration_ms = parse_timed_wait_ms(instruction, step)
+        if duration_ms is None and selector_or_time:
+            # Prefer structured-style parse: pure int → ms; "10s" → 10000
+            duration_ms = parse_timed_wait_ms(
+                "",
+                {"action": "wait", "value": selector_or_time},
+            )
+
+        if duration_ms is not None:
+            cancel_check = step.get("cancel_check")
+            cancelled = await sleep_cancel_aware(duration_ms, cancel_check)
+            if cancelled:
+                raise InterruptedError("Timed wait cancelled by user")
+            return
+
+        # Treat as selector visibility wait (non-timed)
+        if not selector_or_time:
+            raise ValueError(
+                "Timed wait requires timeout_ms or duration in instruction"
+            )
+        element = self._locator(page, selector_or_time)
+        await element.wait_for(state="visible", timeout=self.timeout_ms)
     
     async def _execute_upload_file(self, page: Page, selector: str, file_path: str):
         """

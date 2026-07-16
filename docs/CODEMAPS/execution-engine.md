@@ -1,7 +1,8 @@
 # Test Execution Engine Codemap
 
-**Last Updated:** 2026-06-30  
-**Canonical ADR:** [`documentation/ADR-002-test-execution-engine.md`](../../documentation/ADR-002-test-execution-engine.md) (Accepted, March 2026 — 52 sub-decisions)
+**Last Updated:** 2026-07-16  
+**Canonical ADR:** [`documentation/ADR-002-test-execution-engine.md`](../../documentation/ADR-002-test-execution-engine.md) (Accepted, March 2026 — 52 sub-decisions)  
+**Timed wait:** [`documentation/ADR-010-timed-wait-step.md`](../../documentation/ADR-010-timed-wait-step.md)
 
 ## Overview
 
@@ -14,8 +15,14 @@ The execution engine runs saved test steps against a live browser. **ADR-002-1**
                     │     ExecutionService            │
                     │  Browser · CDP · screenshots    │
                     │  OTP expand · module resolve    │
+                    │  timed wait short-circuit (ADR-010) │
                     └───────────────┬─────────────────┘
                                     │ per step
+                    ┌───────────────┴─────────────────┐
+                    │ timed wait? → chunked cancel-aware │
+                    │ sleep → return (no tiers)          │
+                    └───────────────┬─────────────────┘
+                                    │ else
                                     ▼
                     ┌─────────────────────────────────┐
                     │   ThreeTierExecutionService     │
@@ -34,6 +41,7 @@ The execution engine runs saved test steps against a live browser. **ADR-002-1**
  tier1_playwright.py    tier2_hybrid.py             tier3_stagehand.py
 ```
 
+**Timed wait (ADR-010):** User steps like `wait: 10s` / `Wait 10 seconds` are handled in `ExecutionService` via `timed_wait.py` **before** tier dispatch. Cancel-aware chunked sleep (ADR-009). Distinct from ADR-002 readiness (`post_click_readiness.py`). Never Stagehand `act("wait…")`.
 ## Fallback Strategies (ExecutionSettings)
 
 Configured via `ExecutionSettings.fallback_strategy` (`app/schemas/execution_settings.py`):
@@ -50,7 +58,8 @@ Tier 2/3 are **lazily initialized** — Stagehand CDP connects only when Tier 1 
 
 | Module | Role |
 | --- | --- |
-| `execution_service.py` | Entry point: launch browser, iterate steps, call three-tier, persist results |
+| `execution_service.py` | Entry point: launch browser, iterate steps, timed-wait short-circuit, call three-tier, persist results |
+| `timed_wait.py` | Parse NL/canonical/structured timed waits; cancel-aware chunked sleep (ADR-010) |
 | `three_tier_execution_service.py` | Strategy dispatch, execution history, tier logging |
 | `tier1_playwright.py` | `Tier1PlaywrightExecutor` — direct locator actions |
 | `tier2_hybrid.py` | `Tier2HybridExecutor` — observe + Playwright |
@@ -75,7 +84,8 @@ Tier 2/3 are **lazily initialized** — Stagehand CDP connects only when Tier 1 
 1. step_module_resolver expands @module: references
 2. OTP steps expanded JIT (email_otp / preprod_otp)
 3. wait_for_step_boundary_readiness (loading indicators, modals)
-4. ThreeTierExecutionService.execute_step(step)
+4. If timed wait (ADR-010): sleep_cancel_aware → return (skip tiers)
+5. Else ThreeTierExecutionService.execute_step(step)
    a. Tier 1: pre-defined selector / action
    b. On failure → Tier 2 (if strategy A or C)
       - xpath_cache lookup
@@ -83,9 +93,9 @@ Tier 2/3 are **lazily initialized** — Stagehand CDP connects only when Tier 1 
       - Playwright execute cached XPath
    c. On failure → Tier 3 (if strategy B or C)
       - stagehand.act(instruction)
-5. post_click_readiness waits (navigation, payment gateways)
-6. step_progress_guard checks confirm-step progress
-7. Persist step result, screenshot, tier_execution_log
+6. post_click_readiness waits (navigation, payment gateways)
+7. step_progress_guard checks confirm-step progress
+8. Persist step result, screenshot, tier_execution_log
 ```
 
 ## API Surface

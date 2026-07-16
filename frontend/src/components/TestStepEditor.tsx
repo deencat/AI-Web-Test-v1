@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { debounce } from 'lodash';
 import { LoopBlockEditor, LoopBlock } from './LoopBlockEditor';
 import { InsertModulePicker } from './InsertModulePicker';
+import { AddWaitControl } from './AddWaitControl';
 
 interface TestStepEditorProps {
   testId: number;
@@ -36,6 +37,28 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
   const [showLoopBlocks, setShowLoopBlocks] = useState(true);
   const [localLoopBlocks, setLocalLoopBlocks] = useState<LoopBlock[]>(loopBlocks);
   const [showModulePicker, setShowModulePicker] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const insertWaitLine = (line: string) => {
+    const textarea = textareaRef.current;
+    if (textarea && typeof textarea.selectionStart === 'number') {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const before = steps.slice(0, start);
+      const after = steps.slice(end);
+      const needsLeadingNl = before.length > 0 && !before.endsWith('\n');
+      const needsTrailingNl = after.length > 0 && !after.startsWith('\n');
+      const inserted =
+        (needsLeadingNl ? '\n' : '') + line + (needsTrailingNl ? '\n' : '');
+      const next = before + inserted + after;
+      setSteps(next);
+      autoSave(next, savedSteps);
+      return;
+    }
+    const next = steps ? `${steps}\n${line}` : line;
+    setSteps(next);
+    autoSave(next, savedSteps);
+  };
 
   // Auto-save function (debounced)
   const autoSave = useCallback(
@@ -261,6 +284,7 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
         </label>
         
         <div className="flex gap-2">
+          <AddWaitControl onInsert={insertWaitLine} />
           <button
             onClick={() => setShowModulePicker(p => !p)}
             className="px-3 py-1 text-sm border border-blue-400 text-blue-600 rounded hover:bg-blue-50"
@@ -293,6 +317,7 @@ export const TestStepEditor: React.FC<TestStepEditorProps> = ({
 
       {/* Textarea */}
       <textarea
+        ref={textareaRef}
         value={steps}
         onChange={handleChange}
         className="w-full h-64 p-3 border border-gray-300 rounded-lg font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"

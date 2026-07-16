@@ -20,6 +20,7 @@ from app.utils.three_uat_test_credentials import is_three_hk_uat_url
 # Sprint 10.17: vision screenshot verification
 from app.services.screenshot_verification_service import ScreenshotVerificationService
 from app.services.universal_llm import VisionNotSupportedError
+from app.services.timed_wait import parse_timed_wait_ms, sleep_cancel_aware
 
 logger = logging.getLogger(__name__)
 
@@ -263,6 +264,37 @@ class Tier2HybridExecutor:
                     "cache_hit": False,
                     "xpath": None,
                     "error": None
+                }
+
+            # Feature 4: timed wait — sleep without XPath / Stagehand observe
+            if action == "wait":
+                duration_ms = parse_timed_wait_ms(instruction, step)
+                if duration_ms is None:
+                    raise ValueError(
+                        "Timed wait requires timeout_ms or duration in instruction"
+                    )
+                cancel_check = step.get("cancel_check")
+                cancelled = await sleep_cancel_aware(duration_ms, cancel_check)
+                if cancelled:
+                    return {
+                        "success": False,
+                        "cancelled": True,
+                        "tier": 2,
+                        "execution_time_ms": (time.time() - start_time) * 1000,
+                        "error": "Execution cancelled by user",
+                    }
+                execution_time_ms = (time.time() - start_time) * 1000
+                logger.info(f"[Tier 2] Timed wait {duration_ms}ms completed in {execution_time_ms:.2f}ms")
+                return {
+                    "success": True,
+                    "tier": 2,
+                    "execution_time_ms": execution_time_ms,
+                    "extraction_time_ms": 0,
+                    "cache_hit": False,
+                    "xpath": None,
+                    "error": None,
+                    "action": "wait",
+                    "duration_ms": duration_ms,
                 }
 
             # Sprint 10.17: vision-based screenshot verification
@@ -3125,8 +3157,18 @@ class Tier2HybridExecutor:
                     f"Expected '{value}' in element text, got '{actual_value}'"
                 )
         elif action == "wait":
-            # Element already waited for above
-            pass
+            # Backstop if wait somehow reached xpath path — never silent pass
+            duration_ms = parse_timed_wait_ms(
+                instruction,
+                {"action": "wait", "value": value},
+            )
+            if duration_ms is None:
+                raise ValueError(
+                    "Timed wait requires timeout_ms or duration in instruction"
+                )
+            cancelled = await sleep_cancel_aware(duration_ms)
+            if cancelled:
+                raise InterruptedError("Timed wait cancelled by user")
         elif action == "upload_file":
             await element.wait_for(state="visible", timeout=self.timeout_ms)
             # value contains the file_path for upload_file actions

@@ -37,6 +37,7 @@ from app.services.root_cause_analysis_service import generate_root_cause_analysi
 from app.services.user_settings_service import user_settings_service
 from app.crud.step_session_snapshot import save_step_session_snapshot, get_step_session_snapshot
 from app.services.execution_cancel_store import register_cancel, is_cancel_requested, clear_cancel
+from app.services.timed_wait import parse_timed_wait_ms, sleep_cancel_aware
 
 logger = logging.getLogger(__name__)
 
@@ -1310,6 +1311,36 @@ class ExecutionService:
                     execution_id
                 )
                 print(f"[DEBUG] After test data generation: step_description = {step_description}")
+
+            # Feature 4 / ADR-010: timed wait short-circuit BEFORE tier escalation.
+            # Never init Stagehand / call Tier 1–3 for pure timed pauses.
+            timed_wait_ms = parse_timed_wait_ms(step_description, detailed_step)
+            if timed_wait_ms is not None:
+                print(f"[DEBUG] Timed wait short-circuit: {timed_wait_ms}ms")
+                wait_start = datetime.utcnow()
+                cancelled = await sleep_cancel_aware(timed_wait_ms, cancel_check)
+                elapsed_ms = int((datetime.utcnow() - wait_start).total_seconds() * 1000)
+                if cancelled:
+                    return {
+                        "success": False,
+                        "cancelled": True,
+                        "error": "Execution cancelled by user",
+                        "actual": "Execution cancelled by user during timed wait",
+                        "expected": step_description,
+                        "action": "wait",
+                        "tier_used": "timed_wait",
+                        "duration_ms": elapsed_ms,
+                    }
+                return {
+                    "success": True,
+                    "actual": f"Timed wait completed ({timed_wait_ms}ms)",
+                    "expected": step_description,
+                    "action": "wait",
+                    "tier_used": "timed_wait",
+                    "tier": "timed_wait",
+                    "duration_ms": elapsed_ms,
+                    "execution_time_ms": elapsed_ms,
+                }
             
             # If 3-tier service is available, use it
             if self.three_tier_service:
