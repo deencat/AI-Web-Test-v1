@@ -8,6 +8,7 @@ This document contains feature specs for the GAN harness. Each major section is 
 | 2 | Clone Test Case | Duplicate a saved test case with one click |
 | 3 | CRM Login Toggle Persist | Fix `requires_runtime_credentials` omitted by API sanitizer |
 | 4 | Timed Wait Step | First-class cancel-aware wait steps (UI + NL parse); not a loop block |
+| 5 | Signature Pad Ink Verification | Fix Tier 3 false-PASS on empty canvas; programmatic stroke + ink verify |
 
 ---
 
@@ -1986,3 +1987,463 @@ See `gan-harness/eval-rubric-timed-wait.md` for weighted scoring (pass ≥ 0.85)
 | `docs/CODEMAPS/execution-engine.md` | Execution layering / readiness distinction |
 | `documentation/ADR-002-test-execution-engine.md` | Readiness waits; addendum target for timed wait note |
 | Feature 1 Stop Execution | Cancel UX + `cancel_check` plumbing to reuse |
+
+---
+
+# Feature 5: Signature Pad Ink Verification — No False-PASS on Empty Canvas
+
+> Generated from brief / architect investigation: *"Fix: Step 'sign under please sign here' (and credit-card 'sign it') marked PASS with empty canvas — Stagehand act() only scrolls/locates; programmatic stroke fallback never runs; no ink verification. Executions #1120 / #1122."*
+
+---
+
+## Vision
+
+QA runs that include consent or payment **signature pads** must leave real ink on the canvas before a step can PASS. Today Tier 3 Stagehand `act()` often returns soft success after `scrollIntoView` / locator-only work on the label text ("Please sign here:"), `_execute_draw_signature_fallback()` never runs because `act()` does not throw, and the step is marked `success=true` with a blank pad — then the form rejects with "Please complete the highlighted required fields." **Signature Pad Ink Verification** makes **programmatic pointer/mouse/touch stroke + ink verification** the source of truth for `draw_signature` / `sign` actions: never treat scroll/locate alone as signed; fail closed when the pad is empty so escalation/retry can occur; share Tier 2’s multi-strategy draw into a reusable module.
+
+The product feel: a sign step either draws a verifiable stroke (PASS) or fails honestly (FAIL) — never a green check on an empty SignaturePad.
+
+---
+
+## User Story
+
+**As a** QA engineer running a saved test that includes "Sign under Please sign here" or "Sign it" on a credit-card pad,  
+**I want** the engine to actually draw on the canvas and verify ink before marking the step passed,  
+**So that** consent/payment forms accept the signature and I do not get false PASS followed by required-field validation errors.
+
+**Acceptance (happy path):**
+1. User Runs a test with a step like `Sign under "Please sign here"` or `Sign it` (credit card modal).
+2. Engine reaches the signature step (Tier 1 may lack selector; Tier 2 may observe `[]` for canvas-not-in-a11y-tree).
+3. On Tier 3 (or shared helper used by Tier 2/3): programmatic stroke runs — **not** only `act()` scroll/locator.
+4. Ink verification passes (`SignaturePad.isEmpty === false` and/or non-blank pixel sample) → step `success=true`, screenshot shows ink.
+5. If stroke fails or pad remains empty → step `success=false` with a clear error (not silent PASS).
+6. Downstream form submit no longer fails solely because the pad was never signed by a false-PASS step.
+7. Step `Click the Signature button` (open modal) is treated as **click**, not `draw_signature` (P2).
+
+---
+
+## Scope
+
+### In scope
+
+| Area | Deliverable |
+|------|-------------|
+| Tier 3 sign path | For `draw_signature` / `sign`: programmatic pointer stroke is source of truth; never treat `act()` `scrollIntoView` / locator-only as signed |
+| Ink verification | Before PASS: pixels and/or `SignaturePad.isEmpty === false`; else FAIL |
+| Shared helper | Prefer `backend/app/services/signature_pad.py` extracting Tier 2 multi-strategy draw + verify |
+| Tier 2 observe-empty | On observe `[]` for sign steps, locate canvas by heuristics (near label / largest visible canvas) before escalate (P1) |
+| Action detection | "Click … Signature" (open modal) → `click`, not `draw_signature` (P2) |
+| Tests | Comprehensive unit coverage of helper + Tier 3 false-success path |
+| Docs | Short note in execution-engine / ADR-002 addendum if architecture changes |
+| Rubric | `gan-harness/eval-rubric-signature-pad.md` |
+
+### Out of scope
+
+- Early Stagehand init for signatures (violates ADR-002-1 lazy tiers)
+- Calling tier executors from endpoints (hard constraint unchanged)
+- Rewiring ObservationAgent `draw_signature_pad` tooling into three-tier as the primary path (may remain generation-only)
+- Painting via `getContext` **alone** without pointer/mouse/touch events (SignaturePad library state requires events; ctx paint may be secondary)
+- Redesigning signature UX in the product under test
+- Changing ExecutionService → ThreeTierExecutionService dispatch layering
+- Frontend UI for a new "Add Signature" control (this is an execution correctness fix)
+- Broad Stagehand `act()` reliability overhaul beyond sign/draw_signature gating
+
+### Goals
+
+1. **P0:** Eliminate false PASS when `act()` only scrolls/locates on sign steps.
+2. **P0:** Ink verification gate before PASS.
+3. **P1:** Tier 2 canvas heuristics when observe returns empty for sign steps.
+4. **P2:** Correct action detection so "Click … Signature" opens the pad via click.
+
+### Non-goals
+
+- Making Stagehand `act()` draw real ink via LLM (unreliable; optional locator aid only).
+- Replacing the three-tier stack for signatures with ObservationAgent tooling.
+- Perfect OCR of handwritten names — only presence of ink / non-empty SignaturePad state.
+
+---
+
+## Current State Analysis
+
+### Investigation evidence (must not regress)
+
+| Execution | Step | Observed failure mode |
+|-----------|------|----------------------|
+| **#1120** | Consent sign (LLM step 48 / UI Step 49) | Tier 2 observe returns `{"elements":[]}` (canvas not in a11y tree); Tier 3 `act()` returns `method:"scrollIntoView"` on "Please sign here:" text; `_execute_draw_signature_fallback()` **never runs** because `act()` does not throw; `success=true` with blank pad (`exec_1120_step_49_pass.png`) |
+| **#1122** | Same pattern | Confirms reproducible false success |
+| Credit card | Steps 43–44 "sign it" | Same false success via locator / `scrollIntoView` |
+| Downstream | Form validation | "Please complete the highlighted required fields" after false-PASS sign |
+
+### What exists
+
+| Layer | Location | Status |
+|-------|----------|--------|
+| Action inference | `execution_service.py` ~1398–1400 | `"sign" \| "signature" \| "draw"` → `draw_signature` (also catches "Click … Signature" — P2 bug) |
+| Tier 1 | `tier1_playwright.py` `_execute_draw_signature` | Draws if selector present; often no selector on NL steps |
+| Tier 2 observe | Hybrid observe / a11y | Canvas often **absent** from a11y tree → `elements: []` → escalate |
+| Tier 2 draw | `tier2_hybrid.py` `_execute_draw_signature` ~3734–3905 | **Capable:** mouse drag + ctx stroke + pointer/touch dispatch |
+| Tier 3 act path | `tier3_stagehand.py` ~270–282 | Trusts `act()` success; fallback **only on exception** |
+| Tier 3 fallback | `_execute_draw_signature_fallback` ~433+ | Exists but **unreachable** on soft act() success |
+| ObservationAgent | `draw_signature_pad` tooling | Generation/orchestration — **not** wired into three-tier execution |
+| SignaturePad apps | Common in consent/payment UIs | Require pointer events for `isEmpty === false`; bare canvas paint may not update library state |
+
+### What's broken (root cause)
+
+| Gap | Effect |
+|-----|--------|
+| Tier 3 trusts `act()` without ink check | `scrollIntoView` / locator soft success → PASS on blank pad |
+| Fallback only on exception | Soft success never triggers `_execute_draw_signature_fallback()` |
+| No ink verification | Blank pad indistinguishable from signed pad at step result layer |
+| Tier 2 empty observe | Escalates to Tier 3 without trying canvas heuristics near "Please sign here" |
+| Action detection over-broad | "Click Signature" misclassified as `draw_signature` |
+
+**Architect decision:** Programmatic stroke is **source of truth** for sign/draw_signature; `act()` may aid locating at most; ink verify before PASS; extract shared `signature_pad.py`.
+
+---
+
+## Architecture Decision: Programmatic Stroke + Ink Gate
+
+### Decision
+
+1. **Source of truth:** For `action in ("draw_signature", "sign")`, always perform (or confirm) a **programmatic multi-strategy stroke** via shared helper — prefer pointer/mouse/touch events (SignaturePad-compatible); ctx paint optional secondary.
+2. **Never PASS on locate-only:** If `act()` result is only `scrollIntoView`, locator, or equivalent non-draw method, treat as **not signed** — run programmatic stroke (do not require `act()` to throw).
+3. **Ink gate:** After stroke attempt, verify ink (`SignaturePad.isEmpty === false` when library present, and/or non-blank pixel sampling on canvas). If empty → **fail** the step (so escalation/retry can happen).
+4. **Shared module:** Extract Tier 2 strategies into `backend/app/services/signature_pad.py` (locate canvas, stroke, verify). Tier 2 and Tier 3 call the same helper.
+5. **`act()` role (optional):** Locator/scroll aid only; never sole success signal for sign steps.
+6. **Lazy tiers:** Do not init Stagehand early solely for signatures (ADR-002-1). Tier 2 heuristics (P1) reduce unnecessary Tier 3.
+7. **Action detection (P2):** Prefer `click` when instruction is clearly "click … signature" (open control), not draw-on-pad.
+
+### Rationale
+
+| Approach | Verdict |
+|----------|---------|
+| **Programmatic stroke + ink verify (shared helper)** | **Accept** — capability already in Tier 2; Tier 3 fallback exists but unreachable |
+| Trust `act()` success for sign | **Reject** — proven false PASS (#1120/#1122) |
+| Fallback only on `act()` exception | **Reject** — soft success skips fallback |
+| Ctx `getContext` paint alone | **Reject as sole strategy** — SignaturePad may stay `isEmpty` |
+| Wire ObservationAgent tool into three-tier | **Defer** — out of scope; generation tooling ≠ execution path |
+| Early Stagehand for every sign step | **Reject** — ADR-002-1 |
+
+### Layering (hard constraints)
+
+```
+Endpoint → ExecutionService._execute_step
+              │
+              └─► ThreeTierExecutionService.execute_step
+                    Tier1 (selector draw if any)
+                      → Tier2 (observe; P1: canvas heuristics on [] for sign)
+                        → Tier3 (act optional locate aid ONLY)
+                              → signature_pad.stroke + verify  ← source of truth
+                              → PASS iff ink verified else FAIL
+```
+
+- Endpoints never call tier executors.
+- Lazy Tier 2/3 init unchanged: do not init Stagehand before Tier 1 failure / normal escalation.
+- Prefer shared helper over duplicating stroke logic in Tier 3 fallback only.
+
+### Soft-success methods that must NOT imply signed
+
+Treat as **not signed** (non-exhaustive; implement via allowlist of draw-like methods or denylist):
+
+- `scrollIntoView` / `scroll`
+- Locator / highlight / focus without pointer stroke
+- `click` on **label text** only (without canvas interaction) — still require stroke + ink
+- Any `act()` result where no pointer path was applied to a `<canvas>`
+
+---
+
+## Target Behavior Spec
+
+### 1. Shared helper (`backend/app/services/signature_pad.py`)
+
+Suggested surface (names flexible; behaviors required):
+
+```python
+async def locate_signature_canvas(page, *, instruction: str | None = None) -> Locator: ...
+async def draw_signature_stroke(page, canvas, *, strategies: ...) -> None: ...
+async def verify_signature_ink(page, canvas) -> bool: ...
+async def sign_canvas(page, *, instruction: str | None = None, xpath: str | None = None) -> SignResult: ...
+```
+
+**Locate heuristics (P0 minimal + P1 expansion):**
+- Explicit xpath/selector when provided
+- `canvas.signature-pad`, `canvas[id*='signature' i]`, `canvas[class*='signature' i]`
+- Near text: "Please sign here", "signature", "Sign here" (ancestor/sibling search)
+- Largest visible `<canvas>` in viewport as last resort (with logging)
+
+**Stroke strategies (order — prefer events for SignaturePad):**
+1. Playwright mouse drag across canvas bbox
+2. Dispatch `pointerdown` / `pointermove` / `pointerup` (+ mouse/touch analogs) on canvas
+3. Optional: ctx 2d stroke as visual backup **after** events (not alone for PASS)
+
+**Verify (required before PASS):**
+1. If `canvas` has SignaturePad instance / `window` hook / common `isEmpty` API → require `isEmpty === false`
+2. Else sample ImageData / dataURL — require non-near-white / non-transparent pixel change vs pre-stroke snapshot when feasible
+3. If verify fails → raise / return failure (do not PASS)
+
+### 2. Tier 3 (`tier3_stagehand.py`)
+
+Replace trust-act-or-exception pattern (~270–282):
+
+**Required logic:**
+1. Optionally call `act()` as locator aid (may scroll label into view).
+2. **Always** call shared `sign_canvas` / strengthen `_execute_draw_signature_fallback` to use shared helper.
+3. **Always** verify ink before returning success.
+4. If ink missing → fail (exception or `success=False`) — do **not** mark PASS because `act()` returned.
+
+Do **not** gate fallback on `except` alone.
+
+### 3. Tier 2 (`tier2_hybrid.py`) — P1
+
+When action is sign/draw_signature and observe returns empty elements:
+- Run canvas locate heuristics before escalating to Tier 3
+- On found canvas → call shared `sign_canvas` + verify
+- On not found → escalate as today
+
+Refactor existing `_execute_draw_signature` to call shared helper (surgical; preserve behavior).
+
+### 4. Action detection (`execution_service.py`) — P2
+
+Adjust order/heuristics so:
+
+| Instruction | Expected action |
+|-------------|-----------------|
+| `Sign under "Please sign here"` | `draw_signature` |
+| `Sign it` / `Draw signature` | `draw_signature` |
+| `Click the Signature button` / `Click Signature` | `click` |
+| `Open the signature pad` | `click` (or navigate/click — not draw) |
+
+Rule of thumb: leading **click/open/tap** on a Signature **control** → `click`; **sign/draw** on pad/label → `draw_signature`.
+
+### 5. Tier 1
+
+Keep selector-based draw; optionally route through shared helper for verify consistency when selector present. Not the primary #1120 fix path.
+
+---
+
+## Design Direction
+
+This feature is **execution correctness**, not a new branded UI surface.
+
+- **Color palette:** N/A for product chrome; failure messages stay existing error red / toast patterns
+- **Typography:** Existing progress step text; error string should be explicit, e.g. `Signature pad appears empty after stroke (ink verification failed)`
+- **Layout philosophy:** No new cards/modals
+- **Visual identity:** Screenshots after PASS must show ink; evaluator compares blank vs signed
+- **Inspiration:** Playwright canvas drawing recipes; SignaturePad event model
+- **Anti-AI-slop:** Do not "fix" by teaching Stagehand a longer prompt alone; do not mark PASS on scroll; do not ship decorative signature animations in our UI
+
+**Anti-patterns to avoid:**
+- `except: fallback` only (soft success hole remains)
+- PASS when `act()` method is `scrollIntoView`
+- Ctx fill alone without events when SignaturePad is present
+- Eager Stagehand init for every sign step
+- Broad unrelated refactors of Tier 2/3
+
+---
+
+## Features (Prioritized)
+
+### Must-Have (Sprint 11 — P0)
+
+1. **Shared `signature_pad.py`** — locate + multi-strategy stroke + ink verify
+2. **Tier 3 always strokes** — programmatic stroke source of truth; `act()` not sole success
+3. **Deny soft-success PASS** — `scrollIntoView` / locator-only ≠ signed
+4. **Ink verification gate** — empty pad → FAIL
+5. **Unit tests** — helper strategies + Tier 3 false-success path (mock `act()` soft success → must still stroke/verify)
+
+### Should-Have (Sprint 12 — P1)
+
+6. **Tier 2 empty-observe heuristics** — find canvas near "Please sign here" / largest visible canvas before escalate
+7. **Tier 2 refactor** — `_execute_draw_signature` delegates to shared helper
+8. **Docs note** — execution-engine / ADR-002 addendum: sign steps require ink verify
+
+### Nice-to-Have (Sprint 13 — P2)
+
+9. **Action detection** — "Click … Signature" → `click` not `draw_signature`
+10. **Pre/post canvas snapshot** in step metadata for debugging
+11. **Telemetry** — count sign false-fail vs ink-verified pass
+
+---
+
+## Sprint Plan
+
+### Sprint 11: P0 — Tier 3 Truth + Ink Gate + Shared Helper
+
+**Goals:** Executions like #1120/#1122 cannot PASS on blank pad; programmatic stroke always runs for sign actions; unit tests lock the false-success path.
+
+| # | File | Task |
+|---|------|------|
+| 11.1 | `backend/app/services/signature_pad.py` (new) | `locate_signature_canvas`, `draw_signature_stroke` (mouse + pointer/touch; optional ctx), `verify_signature_ink`, `sign_canvas` |
+| 11.2 | `backend/app/services/tier3_stagehand.py` | For `draw_signature`/`sign`: do not trust `act()` alone; always call shared stroke; verify ink before success; soft `scrollIntoView` must not PASS |
+| 11.3 | `backend/app/services/tier3_stagehand.py` | Refactor `_execute_draw_signature_fallback` to shared helper (or replace call sites) |
+| 11.4 | `backend/tests/unit/test_signature_pad.py` (new) | Locate heuristics, stroke strategy presence, ink verify true/false, soft-act path never PASS without verify |
+| 11.5 | Tier 3 unit/integration test | Mock `act()` returning `method: scrollIntoView` / success without throw → assert fallback/helper invoked and empty ink → failure |
+
+**Definition of done:**
+- Simulated #1120 path: `act()` soft success + empty canvas → step **fails** (or strokes then verifies)
+- After successful stroke + ink → PASS
+- `pytest -k signature_pad` green
+- No early Stagehand init beyond normal escalation
+- Dispatch still ExecutionService → ThreeTier only
+
+---
+
+### Sprint 12: P1 — Tier 2 Canvas Heuristics + Shared Refactor
+
+**Goals:** Reduce unnecessary Tier 3 when canvas is findable near label despite empty a11y observe.
+
+| # | File | Task |
+|---|------|------|
+| 12.1 | `signature_pad.py` | Heuristics: near "Please sign here" / signature text; largest visible canvas |
+| 12.2 | `tier2_hybrid.py` | On observe `[]` for sign steps, locate via helper before escalate |
+| 12.3 | `tier2_hybrid.py` | `_execute_draw_signature` uses shared helper |
+| 12.4 | Unit tests | Empty observe + visible canvas near label → stroke without requiring Tier 3 |
+| 12.5 | Docs | `docs/CODEMAPS/execution-engine.md` and/or ADR-002 short note |
+
+**Definition of done:** Sign steps with canvas outside a11y tree but visible in DOM can succeed at Tier 2 when heuristics find canvas; ink still verified.
+
+---
+
+### Sprint 13: P2 — Action Detection Hygiene
+
+**Goals:** Opening a signature modal is a click; drawing on the pad is draw_signature.
+
+| # | File | Task |
+|---|------|------|
+| 13.1 | `execution_service.py` | Refine detection so `Click … Signature` → `click` before broad `sign`/`signature` match |
+| 13.2 | Unit tests | Matrix of instructions → expected action |
+| 13.3 | Non-regression | `Sign under Please sign here` still `draw_signature` |
+
+**Definition of done:** Detection matrix green; no regression on true sign NL.
+
+---
+
+## Acceptance Criteria
+
+| ID | Criterion |
+|----|-----------|
+| AC1 | For `draw_signature`/`sign`, programmatic stroke runs even when `act()` returns soft success (`scrollIntoView` / locator) without throwing |
+| AC2 | Step PASS requires ink verification (`SignaturePad.isEmpty === false` and/or non-blank pixels); empty canvas → FAIL |
+| AC3 | `_execute_draw_signature_fallback` / shared helper is reachable on soft `act()` success (not exception-only) |
+| AC4 | Pointer/mouse/touch strategies preferred over ctx-only paint for SignaturePad compatibility |
+| AC5 | Shared module preferred (`signature_pad.py`); Tier 2/3 reuse |
+| AC6 | No eager Stagehand init for signatures (ADR-002-1); dispatch remains ExecutionService → ThreeTier |
+| AC7 | Unit tests cover helper + Tier 3 false-success path comprehensively |
+| AC8 (P1) | Tier 2 on observe `[]` attempts canvas heuristics before escalate |
+| AC9 (P2) | `Click … Signature` → `click`; true sign NL → `draw_signature` |
+| AC10 | Regression: consent + credit-card sign steps must not false-PASS blank pads as in #1120/#1122 |
+
+---
+
+## Test Strategy
+
+### Backend unit: `test_signature_pad.py`
+
+| Test | Assertion |
+|------|-----------|
+| `test_verify_ink_empty_fails` | Blank canvas → `verify_signature_ink` false |
+| `test_verify_ink_after_stroke_passes` | After pointer stroke (or mocked ink) → true |
+| `test_signaturepad_isempty_false` | When `isEmpty` API present, require false |
+| `test_locate_near_please_sign_here` | Heuristic finds canvas near label text |
+| `test_locate_largest_visible_canvas` | Fallback picks largest visible canvas |
+| `test_stroke_uses_pointer_events` | Dispatch/mouse path invoked (not ctx-only) |
+| `test_tier3_soft_act_scrollintoview_does_not_pass` | Mock `act()` → `scrollIntoView` success, empty ink → step failure / helper called |
+| `test_tier3_soft_act_then_stroke_and_verify_passes` | Soft act + successful stroke + ink → success |
+| `test_fallback_not_exception_only` | Helper runs when `act()` does not throw |
+| `test_ctx_only_insufficient_when_signaturepad_empty` | If library still empty after ctx paint alone, verify fails (or stroke includes events) |
+
+### Action detection (Sprint 13)
+
+| Test | Assertion |
+|------|-----------|
+| `test_click_signature_is_click` | `"Click the Signature button"` → `click` |
+| `test_sign_under_is_draw` | `"Sign under Please sign here"` → `draw_signature` |
+| `test_sign_it_is_draw` | `"Sign it"` → `draw_signature` |
+
+### Manual / Evaluator script
+
+See `gan-harness/eval-rubric-signature-pad.md` § Evaluator Test Script.
+
+Reproduce mentally against #1120: consent pad + credit-card pad must show ink on PASS screenshots; empty → FAIL.
+
+---
+
+## Risks & Edge Cases
+
+| Scenario | Expected behavior |
+|----------|-------------------|
+| Canvas not in a11y tree | P1 heuristics / Tier 3 DOM locate; not false PASS |
+| Multiple canvases | Prefer signature-named / near label; else largest visible; log choice |
+| SignaturePad requires pen pressure | pointer events with `pointerType` / pressure as in Tier 2 today |
+| `act()` throws | Still run programmatic stroke (or existing fallback path) + verify |
+| `act()` draws real ink somehow | Verify still runs; PASS only if ink present |
+| Iframe signature pad | Document limitation; best-effort locate in frame if existing patterns allow; else FAIL clearly |
+| Read-only / disabled canvas | Stroke may fail → FAIL with clear error |
+| Step is click-to-open modal | P2: `click`, then later step signs |
+| Tier 1 has good selector | Draw + verify via helper; consistent gate |
+| Cancel mid-stroke | Feature 1 cancel_check if plumbed; do not leave false PASS |
+| Downstream validation message | Should not appear solely due to blank pad after a "passed" sign step |
+
+**Empty/error states:**
+- No canvas found → FAIL: `No signature canvas found`
+- Canvas found, ink still empty after strategies → FAIL: `Signature pad appears empty after stroke (ink verification failed)`
+- Never PASS with blank pad screenshot for sign actions
+
+---
+
+## Evaluation Criteria
+
+See `gan-harness/eval-rubric-signature-pad.md` for weighted scoring (pass ≥ 0.85).
+
+**Summary weights:**
+- Tier 3 no false-PASS / stroke source of truth: 0.35
+- Ink verification gate: 0.25
+- Shared helper + event strategies: 0.15
+- Tests (helper + soft-act path): 0.15
+- P1 heuristics / P2 detection (partial credit if P0 solid): 0.10
+
+**Automatic fail conditions:**
+- Sign step can PASS when `act()` only returns `scrollIntoView` / locator and canvas remains empty
+- Fallback still exception-only (soft success skips stroke)
+- PASS without ink verification
+- Ctx `getContext` paint alone is the only strategy and SignaturePad stays empty while step PASSes
+- Stagehand eagerly initialized for signatures outside normal lazy escalation
+- Tier executors called from endpoints
+- Unrelated large refactors shipped as the "fix"
+
+---
+
+## Success Metrics
+
+| Metric | Target |
+|--------|--------|
+| False PASS on blank consent pad (#1120 class) | 0 |
+| False PASS on credit-card sign (#1122 class) | 0 |
+| Ink verify on every sign PASS | 100% |
+| Soft `act()` success without stroke | 0 (must stroke or fail) |
+| Unit tests for helper + Tier 3 soft path | Comprehensive; CI green |
+| Lazy Stagehand | No new early-init path |
+
+---
+
+## Implementation Order (Generator — do not reorder)
+
+1. Create `signature_pad.py` (locate + event stroke + ink verify)  
+2. Wire Tier 3 sign path: always stroke + verify; kill soft-success PASS  
+3. Unit tests for helper + Tier 3 `scrollIntoView` false-success path  
+4. (P1) Tier 2 empty-observe canvas heuristics + refactor to shared helper  
+5. (P2) Action detection: Click Signature → click  
+
+---
+
+## Related Artifacts
+
+| Artifact | Role |
+|----------|------|
+| `gan-harness/eval-rubric-signature-pad.md` | Weighted Evaluator rubric (this feature) |
+| `backend/app/services/tier3_stagehand.py` | Soft-success hole ~270–282; fallback ~433+ |
+| `backend/app/services/tier2_hybrid.py` | Capable `_execute_draw_signature` ~3734–3905 |
+| `backend/app/services/tier1_playwright.py` | Selector draw path |
+| `backend/app/services/execution_service.py` | Action detection ~1398–1400 |
+| `documentation/ADR-002-test-execution-engine.md` | Lazy tiers ADR-002-1; execution architecture |
+| `docs/CODEMAPS/execution-engine.md` | Dispatch / tier map |
+| Executions #1120 / #1122 | Repro evidence (consent + credit-card blank PASS) |

@@ -42,6 +42,8 @@ The execution engine runs saved test steps against a live browser. **ADR-002-1**
 ```
 
 **Timed wait (ADR-010):** User steps like `wait: 10s` / `Wait 10 seconds` are handled in `ExecutionService` via `timed_wait.py` **before** tier dispatch. Cancel-aware chunked sleep (ADR-009). Distinct from ADR-002 readiness (`post_click_readiness.py`). Never Stagehand `act("wait…")`.
+
+**Signature pad ink verify (Feature 5):** For `draw_signature` / `sign`, programmatic stroke + ink verification in `signature_pad.py` is the source of truth. Tier 3 must **never** PASS on soft Stagehand `act()` (`scrollIntoView` / locator-only) with a blank canvas. Tier 2 tries canvas DOM heuristics when observe returns empty (canvas often absent from a11y tree). Prefer pointer/mouse/touch events over ctx-only paint (SignaturePad `isEmpty`). Lazy Tier 2/3 init unchanged (ADR-002-1).
 ## Fallback Strategies (ExecutionSettings)
 
 Configured via `ExecutionSettings.fallback_strategy` (`app/schemas/execution_settings.py`):
@@ -60,6 +62,7 @@ Tier 2/3 are **lazily initialized** — Stagehand CDP connects only when Tier 1 
 | --- | --- |
 | `execution_service.py` | Entry point: launch browser, iterate steps, timed-wait short-circuit, call three-tier, persist results |
 | `timed_wait.py` | Parse NL/canonical/structured timed waits; cancel-aware chunked sleep (ADR-010) |
+| `signature_pad.py` | Locate canvas, multi-strategy stroke, ink verify for `draw_signature`/`sign` (Feature 5) |
 | `three_tier_execution_service.py` | Strategy dispatch, execution history, tier logging |
 | `tier1_playwright.py` | `Tier1PlaywrightExecutor` — direct locator actions |
 | `tier2_hybrid.py` | `Tier2HybridExecutor` — observe + Playwright |

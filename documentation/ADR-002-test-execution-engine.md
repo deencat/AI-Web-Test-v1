@@ -4139,3 +4139,26 @@ Update `_is_three_hk_promotion_card_click()` to return true when the instruction
   - `test_execute_step_uses_direct_promotion_helper_for_wifi6_price_step`
 
 **Related executions:** #983
+
+---
+
+## ADR-002-54 (Addendum): Signature Pad Ink Verification for draw_signature / sign
+
+**Status:** Accepted (Feature 5 / GAN harness)  
+**Date:** 2026-07-17
+
+### Context
+
+Tier 3 Stagehand `act()` often returns soft success (`scrollIntoView` / locator) on signature label text without drawing ink. Programmatic fallback ran only on `act()` exceptions, producing false PASS on blank canvases (#1120 / #1122).
+
+### Decision
+
+- Shared module `backend/app/services/signature_pad.py` owns locate ? multi-strategy stroke (pointer/mouse/touch preferred) ? ink verify.
+- For `draw_signature` / `sign`, Tier 3 always invokes the shared helper after optional `act()` locator aid; soft `act()` success is never a PASS signal.
+- PASS requires ink (`SignaturePad.isEmpty === false` and/or non-blank pixels).
+- Tier 2: when observe returns empty for sign steps, try canvas DOM heuristics before escalate.
+- Lazy Stagehand init unchanged (ADR-002-1).
+
+### Consequences
+
+False PASS on blank signature pads is eliminated; consent/payment forms receive real ink or an honest FAIL.

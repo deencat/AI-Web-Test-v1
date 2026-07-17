@@ -38,6 +38,7 @@ from app.services.user_settings_service import user_settings_service
 from app.crud.step_session_snapshot import save_step_session_snapshot, get_step_session_snapshot
 from app.services.execution_cancel_store import register_cancel, is_cancel_requested, clear_cancel
 from app.services.timed_wait import parse_timed_wait_ms, sleep_cancel_aware
+from app.services.signature_pad import infer_signature_step_action
 
 logger = logging.getLogger(__name__)
 
@@ -1395,9 +1396,10 @@ class ExecutionService:
                         or "screenshot verify" in desc_lower
                     ):
                         step_data["action"] = "verify_screenshot"
-                    # Check for signature/sign actions first
-                    elif "sign" in desc_lower or "signature" in desc_lower or "draw" in desc_lower:
-                        step_data["action"] = "draw_signature"
+                    # Feature 5 / Sprint 13: Click Signature button → click;
+                    # true sign NL → draw_signature
+                    elif (sig_action := infer_signature_step_action(step_description)):
+                        step_data["action"] = sig_action
                     # Check for dropdown/select actions (select month/year/etc.)
                     # More precise: must have "select/choose" followed by specific dropdown keywords
                     # Exclude cases like "select the $288/month plan" where "month" is part of price

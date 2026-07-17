@@ -21,6 +21,7 @@ from app.utils.three_uat_test_credentials import is_three_hk_uat_url
 from app.services.screenshot_verification_service import ScreenshotVerificationService
 from app.services.universal_llm import VisionNotSupportedError
 from app.services.timed_wait import parse_timed_wait_ms, sleep_cancel_aware
+from app.services.signature_pad import sign_canvas, infer_signature_step_action
 
 logger = logging.getLogger(__name__)
 
@@ -229,8 +230,11 @@ class Tier2HybridExecutor:
             else:
                 # If no action provided, try to infer from instruction
                 instruction = step.get("instruction", "")
-                if any(word in instruction.lower() for word in ["sign", "signature", "draw"]):
+                inferred = infer_signature_step_action(instruction)
+                if inferred == "draw_signature":
                     action = "draw_signature"
+                elif inferred == "click":
+                    action = "click"
                 else:
                     raise ValueError(f"No action provided for step: {instruction}")
             
@@ -529,7 +533,51 @@ class Tier2HybridExecutor:
                 extraction_time_ms = (time.time() - extraction_start) * 1000
                 
                 if not extraction_result["success"]:
-                    raise Exception(f"XPath extraction failed: {extraction_result.get('error')}")
+                    # Feature 5 / Sprint 12: canvas often absent from a11y tree.
+                    # Try DOM heuristics before escalating to Tier 3.
+                    if action in ("draw_signature", "sign"):
+                        logger.info(
+                            "[Tier 2] observe() empty for signature — trying canvas heuristics"
+                        )
+                        sign_result = await sign_canvas(
+                            page, instruction=instruction
+                        )
+                        if sign_result.success and sign_result.ink_verified:
+                            total_time_ms = (time.time() - start_time) * 1000
+                            if sign_result.xpath:
+                                try:
+                                    self.cache_service.cache_xpath(
+                                        page_url=page_url,
+                                        instruction=instruction,
+                                        xpath=sign_result.xpath,
+                                        extraction_time_ms=extraction_time_ms,
+                                        page_title=None,
+                                        element_text="signature-canvas",
+                                    )
+                                except Exception:
+                                    pass
+                            logger.info(
+                                "[Tier 2] ✅ Signature via canvas heuristics "
+                                "(ink verified) in %.2fms",
+                                total_time_ms,
+                            )
+                            return {
+                                "success": True,
+                                "tier": 2,
+                                "execution_time_ms": total_time_ms,
+                                "extraction_time_ms": extraction_time_ms,
+                                "playwright_time_ms": 0,
+                                "cache_hit": False,
+                                "xpath": sign_result.xpath,
+                                "error": None,
+                            }
+                        logger.warning(
+                            "[Tier 2] Canvas heuristics failed for signature: %s",
+                            sign_result.error,
+                        )
+                    raise Exception(
+                        f"XPath extraction failed: {extraction_result.get('error')}"
+                    )
                 
                 xpath = extraction_result["xpath"]
 
@@ -3733,176 +3781,18 @@ class Tier2HybridExecutor:
     
     async def _execute_draw_signature(self, page: Page, xpath: str, signature_text: str = None):
         """
-        Draw a signature on a canvas element using XPath.
-        
-        Args:
-            page: Playwright Page object
-            xpath: XPath selector for canvas element
-            signature_text: Optional text to include in signature
+        Draw a signature on a canvas element using the shared signature_pad helper.
+
+        Prefer pointer/mouse/touch events; ink verification is required before success.
         """
-        # Locate canvas element using XPath
-        element = page.locator(f"xpath={xpath}").first
-        await element.wait_for(state="visible", timeout=self.timeout_ms)
-        
-        # Verify it's a canvas element
-        tag_name = await element.evaluate("el => el.tagName")
-        if tag_name.lower() != "canvas":
-            logger.warning(
-                f"[Tier 2] âš ï¸ Element is not a canvas (tag={tag_name}). "
-                f"Attempting signature drawing anyway..."
+        logger.info(f"[Tier 2] ✍️ Drawing signature via shared helper (xpath={xpath})")
+        result = await sign_canvas(page, xpath=xpath, instruction=signature_text)
+        if not result.success or not result.ink_verified:
+            raise ValueError(
+                result.error
+                or "Signature pad appears empty after stroke (ink verification failed)"
             )
-        
-        # Get canvas dimensions and position
-        bbox = await element.bounding_box()
-        if not bbox:
-            raise ValueError(f"Cannot get bounding box for canvas with XPath: {xpath}")
-        
-        # Focus and scroll to canvas to ensure it's ready for interaction
-        await element.scroll_into_view_if_needed()
-        await element.focus()
-        await asyncio.sleep(0.2)  # Allow focus to settle
-        
-        logger.info(f"[Tier 2] âœï¸ Drawing signature on canvas via XPath (bbox: {bbox})")
-        
-        # Calculate signature path within canvas
-        canvas_x = bbox['x']
-        canvas_y = bbox['y']
-        canvas_width = bbox['width']
-        canvas_height = bbox['height']
-        
-        start_x = canvas_x + canvas_width * 0.2
-        start_y = canvas_y + canvas_height * 0.5
-        end_x = canvas_x + canvas_width * 0.8
-        end_y = canvas_y + canvas_height * 0.5
-        
-        # First attempt: click + mouse drag to create a stroke
-        await page.mouse.move(start_x, start_y)
-        await page.mouse.down()
-        await page.mouse.move(end_x, end_y, steps=6)
-        await page.mouse.up()
-        await asyncio.sleep(0.1)
-
-        # Second attempt: draw directly on the canvas via JS (reliable dot/line)
-        await element.evaluate(
-            """
-            (canvas) => {
-                const width = canvas.clientWidth || 300;
-                const height = canvas.clientHeight || 150;
-
-                if (!canvas.width || !canvas.height) {
-                    canvas.width = width;
-                    canvas.height = height;
-                }
-
-                const ctx = canvas.getContext('2d');
-                if (!ctx) return false;
-
-                ctx.save();
-                ctx.strokeStyle = '#000';
-                ctx.lineWidth = 2;
-                ctx.lineCap = 'round';
-                ctx.beginPath();
-                ctx.moveTo(width * 0.2, height * 0.5);
-                ctx.lineTo(width * 0.8, height * 0.5);
-                ctx.stroke();
-                ctx.restore();
-
-                ctx.fillStyle = '#000';
-                ctx.beginPath();
-                ctx.arc(width * 0.2, height * 0.5, 2, 0, Math.PI * 2);
-                ctx.fill();
-
-                return true;
-            }
-            """
-        )
-
-        # Third attempt: dispatch pointer/mouse/touch events to satisfy signature pad listeners
-        drag_start_x = canvas_x + canvas_width * 0.25
-        drag_start_y = canvas_y + canvas_height * 0.5
-        drag_end_x = canvas_x + canvas_width * 0.65
-        drag_end_y = canvas_y + canvas_height * 0.5
-
-        await element.dispatch_event(
-            "pointerdown",
-            {
-                "clientX": drag_start_x,
-                "clientY": drag_start_y,
-                "buttons": 1,
-                "pointerType": "pen",
-                "pressure": 0.5,
-                "bubbles": True,
-            },
-        )
-        await element.dispatch_event(
-            "pointermove",
-            {
-                "clientX": drag_end_x,
-                "clientY": drag_end_y,
-                "buttons": 1,
-                "pointerType": "pen",
-                "pressure": 0.5,
-                "bubbles": True,
-            },
-        )
-        await element.dispatch_event(
-            "pointerup",
-            {
-                "clientX": drag_end_x,
-                "clientY": drag_end_y,
-                "buttons": 0,
-                "pointerType": "pen",
-                "pressure": 0,
-                "bubbles": True,
-            },
-        )
-
-        await element.dispatch_event(
-            "mousedown",
-            {"clientX": drag_start_x, "clientY": drag_start_y, "buttons": 1, "bubbles": True},
-        )
-        await element.dispatch_event(
-            "mousemove",
-            {"clientX": drag_end_x, "clientY": drag_end_y, "buttons": 1, "bubbles": True},
-        )
-        await element.dispatch_event(
-            "mouseup",
-            {"clientX": drag_end_x, "clientY": drag_end_y, "buttons": 0, "bubbles": True},
-        )
-
-        await element.dispatch_event("click", {"bubbles": True})
-
-        await element.evaluate(
-            """
-            (canvas) => {
-                try {
-                    const rect = canvas.getBoundingClientRect();
-                    const x = rect.left + rect.width * 0.3;
-                    const y = rect.top + rect.height * 0.5;
-                    const touch = new Touch({
-                        identifier: Date.now(),
-                        target: canvas,
-                        clientX: x,
-                        clientY: y,
-                        radiusX: 2,
-                        radiusY: 2,
-                        rotationAngle: 0,
-                        force: 0.5,
-                    });
-                    canvas.dispatchEvent(new TouchEvent('touchstart', { touches: [touch], bubbles: true }));
-                    canvas.dispatchEvent(new TouchEvent('touchmove', { touches: [touch], bubbles: true }));
-                    canvas.dispatchEvent(new TouchEvent('touchend', { changedTouches: [touch], bubbles: true }));
-                } catch (err) {
-                    // Ignore if TouchEvent isn't supported
-                }
-            }
-            """
-        )
-
-        await element.dispatch_event("input", {"bubbles": True})
-        await element.dispatch_event("change", {"bubbles": True})
-        
-        logger.info(f"[Tier 2] âœ… Signature drawn successfully via XPath")
+        logger.info("[Tier 2] ✅ Signature drawn and ink verified via shared helper")
 
 
 
