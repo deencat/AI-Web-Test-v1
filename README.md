@@ -21,6 +21,7 @@ AI Web Test is a multi-agent test automation platform that reduces test creation
   - ⚠️ **Limitation:** KB documents not yet used as context in test generation
 - ✅ **Real-time Monitoring** - Live execution progress tracking
 - ✅ **Stop Execution** - Cooperative cancel for queued/running 3-tier runs (ADR-009)
+- ✅ **Signature Pad Ink Verify** - No false-PASS on empty consent/payment pads (ADR-002-54)
 - ✅ **Test Suites** - Group and execute multiple tests together
 - ✅ **Multi-Provider AI** - Google Gemini, Cerebras, OpenRouter support
 - ✅ **Execution History** - Complete audit trail with filtering and search
@@ -178,7 +179,7 @@ docker compose up -d db redis
 ### Technical Documentation
 - **[ADRs](documentation/)** - Architecture decision records (ADR-002 through ADR-009)
 - **[API Agentic Workflow Reference](documentation/API-Agentic-Workflow-Reference.md)** - Agent/crawl/execution API quick reference
-- **[GAN Harness](gan-harness/spec.md)** - Stop Execution spec and evaluation rubric
+- **[GAN Harness](gan-harness/spec.md)** - Feature specs and eval rubrics (Stop Execution, Signature Pad, etc.)
 - **[Product Requirements](project-documents/AI-Web-Test-v1-PRD.md)** - Full PRD
 - **[Software Requirements](project-documents/AI-Web-Test-v1-SRS.md)** - Technical specs
 - **[UI Design Document](project-documents/ai-web-test-ui-design-document.md)** - UI/UX specifications

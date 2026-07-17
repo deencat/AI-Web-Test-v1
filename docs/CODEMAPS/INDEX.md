@@ -1,6 +1,6 @@
 # Repository Codemaps
 
-**Last Updated:** 2026-07-03
+**Last Updated:** 2026-07-17
 **Scope:** Top-level architecture maps for backend, frontend, data model, workers, and integrations.
 
 ## Areas
@@ -29,7 +29,8 @@
 - **Execution cancel (ADR-009):** `DELETE /api/v1/executions/{id}/cancel` — cooperative stop for 3-tier runs; see [Workers](./workers.md).
 - **Clone test case:** `POST /api/v1/tests/{id}/clone` — duplicate saved tests from Saved Tests UI.
 - **Test categories (ADR-008):** User-defined saved-test organization via `/api/v1/test-categories`.
-- **GAN harness:** Feature specs/rubrics in `gan-harness/` (Stop, Clone, Exec #990 registration).
+- **Signature pad ink verify (ADR-002-54):** Shared `signature_pad.py`; Tier 3 always stroke + ink gate; no false-PASS on empty canvas (#1120/#1122/#1131). See [Execution Engine](./execution-engine.md).
+- **GAN harness:** Feature specs/rubrics in `gan-harness/` (Stop, Clone, Signature Pad, Exec #990 registration).
 
 ## Notes
 

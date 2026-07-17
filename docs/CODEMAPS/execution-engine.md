@@ -1,6 +1,6 @@
 # Test Execution Engine Codemap
 
-**Last Updated:** 2026-07-16  
+**Last Updated:** 2026-07-17  
 **Canonical ADR:** [`documentation/ADR-002-test-execution-engine.md`](../../documentation/ADR-002-test-execution-engine.md) (Accepted, March 2026 — 52 sub-decisions)  
 **Timed wait:** [`documentation/ADR-010-timed-wait-step.md`](../../documentation/ADR-010-timed-wait-step.md)
 
@@ -43,7 +43,7 @@ The execution engine runs saved test steps against a live browser. **ADR-002-1**
 
 **Timed wait (ADR-010):** User steps like `wait: 10s` / `Wait 10 seconds` are handled in `ExecutionService` via `timed_wait.py` **before** tier dispatch. Cancel-aware chunked sleep (ADR-009). Distinct from ADR-002 readiness (`post_click_readiness.py`). Never Stagehand `act("wait…")`.
 
-**Signature pad ink verify (Feature 5 / 5.1):** For `draw_signature` / `sign`, programmatic stroke + ink verification in `signature_pad.py` is the source of truth. Tier 3 must **never** PASS on soft Stagehand `act()` (`scrollIntoView` / locator-only) with a blank canvas. Tier 2 tries canvas DOM heuristics when observe returns empty (canvas often absent from a11y tree). Prefer pointer/mouse/touch events over ctx-only paint (SignaturePad `isEmpty`). **Pixel-only after optional ctx paint is an invalid PASS** for SignaturePad UIs (`include_ctx_paint` defaults off; when on, `reject_pixel_only` fails closed). Lazy Tier 2/3 init unchanged (ADR-002-1).
+**Signature pad ink verify (Feature 5 / 5.1, ADR-002-54):** For `draw_signature` / `sign`, programmatic stroke + ink verification in `signature_pad.py` is the source of truth. Tier 3 must **never** PASS on soft Stagehand `act()` (`scrollIntoView` / locator-only) with a blank canvas — always calls `sign_canvas` after optional `act()` locator aid. Tier 2 tries canvas DOM heuristics when observe returns empty (canvas often absent from a11y tree). Prefer pointer/mouse/touch events over ctx-only paint (SignaturePad `isEmpty`). **Pixel-only after optional ctx paint is an invalid PASS** for SignaturePad UIs (`include_ctx_paint` defaults off; when on, `reject_pixel_only` fails closed). When SignaturePad is present, `isEmpty === false` is required (pixels alone never override). Near-pad red **Required** DOM still visible → fail. `verify_source` logged on PASS/FAIL (`signaturepad` | `pixels` | `required_cleared` | `fail`). `infer_signature_step_action` in `execution_service.py` routes "Click … Signature" to `click`, not `draw_signature`. Lazy Tier 2/3 init unchanged (ADR-002-1). Tests: `backend/tests/unit/test_signature_pad.py` (61 passed, 100% coverage).
 ## Fallback Strategies (ExecutionSettings)
 
 Configured via `ExecutionSettings.fallback_strategy` (`app/schemas/execution_settings.py`):
@@ -101,6 +101,18 @@ Tier 2/3 are **lazily initialized** — Stagehand CDP connects only when Tier 1 
 8. Persist step result, screenshot, tier_execution_log
 ```
 
+### Signature pad flow (`draw_signature` / `sign`)
+
+```
+1. execution_service.infer_signature_step_action → click (open pad) vs draw_signature (stroke)
+2. Tier 1: draw if cached selector present
+3. Tier 2 on observe []: signature_pad canvas heuristics (near label / largest visible canvas)
+4. Tier 3: optional act() locator aid only (soft scrollIntoView ≠ signed)
+5. Always sign_canvas → stroke (mouse → pointer/touch → optional ctx) → ink verify
+6. PASS iff ink verified (SignaturePad not empty and/or allowed non-pixel-only paths)
+   FAIL with verify_source if empty, pixel-only after ctx, or Required still visible
+```
+
 ## API Surface
 
 | Endpoint | Module | Action |
@@ -145,6 +157,7 @@ Tier 2/3 are **lazily initialized** — Stagehand CDP connects only when Tier 1 
 | 002-42 | Step library `@module:` |
 | 002-43–45 | RCA, resume, XPath cache UI |
 | 002-46 | Stagehand LLM JSONL logging |
+| 002-54 | Signature pad ink verify (Feature 5 / 5.1) |
 
 Full decision text: [`documentation/ADR-002-test-execution-engine.md`](../../documentation/ADR-002-test-execution-engine.md)
 

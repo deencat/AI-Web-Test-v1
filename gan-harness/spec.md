@@ -1992,6 +1992,8 @@ See `gan-harness/eval-rubric-timed-wait.md` for weighted scoring (pass ≥ 0.85)
 
 # Feature 5: Signature Pad Ink Verification — No False-PASS on Empty Canvas
 
+> **Implementation status:** Done (Sprints 11–14, Feature 5.1). Eval: [`gan-harness/eval-report-signature-pad.md`](eval-report-signature-pad.md) — PASS 1.00, 61 unit tests, 100% coverage on `backend/app/services/signature_pad.py`.
+
 > Generated from brief / architect investigation: *"Fix: Step 'sign under please sign here' (and credit-card 'sign it') marked PASS with empty canvas — Stagehand act() only scrolls/locates; programmatic stroke fallback never runs; no ink verification. Executions #1120 / #1122."*
 
 ---

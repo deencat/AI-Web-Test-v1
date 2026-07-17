@@ -1,6 +1,6 @@
 # Backend Codemap
 
-**Last Updated:** 2026-07-03
+**Last Updated:** 2026-07-17
 **Entry Points:** `backend/app/main.py`, `backend/app/api/v1/api.py`, `backend/app/api/v2/api.py`
 
 ## Architecture
@@ -78,6 +78,7 @@ FastAPI app (app/main.py)
 | `queue_manager.py` | Concurrent execution queue (default max 5) |
 | `execution_service.py` | Step loop with cooperative cancel polls |
 | `three_tier_execution_service.py` | Playwright → XPath → Stagehand tiers |
+| `signature_pad.py` | Shared locate / stroke / ink verify for `draw_signature`/`sign` (ADR-002-54; used by Tier 2/3) |
 | `execution_cancel_store.py` | In-memory cancel flags (ADR-009) |
 | `scheduler_service.py` | APScheduler-based test schedules |
 | `workflow_store.py` | Agent workflow state and cancel |

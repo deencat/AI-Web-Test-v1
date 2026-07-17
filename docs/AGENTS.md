@@ -1,6 +1,6 @@
 # Agent / developer notes — AI Web Test v1
 
-**Last Updated:** 2026-06-30
+**Last Updated:** 2026-07-17
 
 ## Product context
 
@@ -53,6 +53,8 @@ Fallback strategies (user-configurable): **A** T1→T2, **B** T1→T3, **C** T1�
 
 Key modules: `backend/app/services/execution_service.py` → `three_tier_execution_service.py` → `tier1_playwright.py` / `tier2_hybrid.py` / `tier3_stagehand.py`.
 
+**Signature pad (ADR-002-54 / Feature 5):** Consent/payment sign steps use shared `signature_pad.py` — programmatic stroke + ink verify is the source of truth; Tier 3 never PASSes on soft `act()` (`scrollIntoView`) with a blank canvas. Feature 5.1 rejects cosmetic ctx pixel-only PASS when SignaturePad stays empty or **Required** is still visible. Rubric/eval: `gan-harness/eval-rubric-signature-pad.md`, `gan-harness/eval-report-signature-pad.md`.
+
 See [`docs/CODEMAPS/execution-engine.md`](CODEMAPS/execution-engine.md) for full flow.
 
 ## API surfaces
@@ -94,7 +96,7 @@ Typical flow: ReqIQ RAG → `POST /api/v2/crawl-and-save-test` → `POST /api/v1
 
 | ADR | Topic |
 | --- | --- |
-| [ADR-002](../documentation/ADR-002-test-execution-engine.md) | Three-tier execution engine |
+| [ADR-002](../documentation/ADR-002-test-execution-engine.md) | Three-tier execution engine (incl. ADR-002-54 signature pad ink verify) |
 | [ADR-003](../documentation/ADR-003-test-generation.md) | Test generation |
 | [ADR-004](../documentation/ADR-004-agent-workflow.md) | Agent workflow |
 | [ADR-005](../documentation/ADR-005-kb.md) | Knowledge base |
@@ -110,6 +112,9 @@ Tag PRs/commits with requirement IDs when applicable. See project SRS in `docume
 ```bash
 # Backend tests (activate venv first)
 cd backend && python -m pytest tests/unit/ -q
+
+# Signature pad helper (Feature 5 / 5.1)
+cd backend && python -m pytest tests/unit/test_signature_pad.py -q
 
 # Frontend tests
 cd frontend && npm run test

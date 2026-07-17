@@ -4160,8 +4160,16 @@ A follow-on false PASS (#1131) occurred when optional **ctx paint** drew cosmeti
 - For `draw_signature` / `sign`, Tier 3 always invokes the shared helper after optional `act()` locator aid; soft `act()` success is never a PASS signal.
 - PASS requires real pad/form state: `SignaturePad.isEmpty === false` when the library is present (pixels alone must not override). When no library is found, fail closed on post-ctx pixel-only ink and/or fail if near-pad **Required** validation is still visible.
 - `include_ctx_paint` defaults to **False**. Cosmetic ctx paint must never be the sole PASS signal.
+- When `include_ctx_paint=True`, `reject_pixel_only` fails closed: pixel sampling after ctx paint cannot PASS if SignaturePad is still empty.
+- `verify_source` on `InkVerifyResult` / `SignResult` (`signaturepad` | `pixels` | `required_cleared` | `fail`) — Tier 3 logs it on success and includes it in FAIL messages.
 - Tier 2: when observe returns empty for sign steps, try canvas DOM heuristics before escalate.
+- `infer_signature_step_action`: "Click … Signature" (open modal) → `click`, not `draw_signature`.
 - Lazy Stagehand init unchanged (ADR-002-1).
+
+### Verification
+
+- Unit: `backend/tests/unit/test_signature_pad.py` — 61 tests, 100% coverage on `signature_pad.py` (eval report 2026-07-17).
+- Eval: `gan-harness/eval-report-signature-pad.md` (weighted score 1.00).
 
 ### Consequences
 
