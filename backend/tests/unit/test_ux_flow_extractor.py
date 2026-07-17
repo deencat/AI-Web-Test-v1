@@ -99,3 +99,45 @@ def test_split_image_tiles_wide_board():
     img.save(buf, format="PNG")
     tiles = _split_image_tiles(buf.getvalue())
     assert len(tiles) >= 2
+
+
+def test_parse_response_text_openai_choices():
+    from app.services.ux_flow_extractor import _parse_response_text
+
+    azure_style = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "### Wi-Fi 7\n| Step | Screen |\n| 1 | Banner |",
+                }
+            }
+        ]
+    }
+    text = _parse_response_text(azure_style)
+    assert "### Wi-Fi 7" in text
+    assert "Banner" in text
+
+
+def test_parse_response_text_empty_choices():
+    from app.services.ux_flow_extractor import _parse_response_text
+
+    assert _parse_response_text({"choices": [{"message": {"content": ""}}]}) == ""
+    from app.services.wiki_assembly import is_low_quality_reqiq_wiki
+
+    assert is_low_quality_reqiq_wiki("## QA Summary: flow\nGeneric happy path.")
+    assert not is_low_quality_reqiq_wiki(SAMPLE_WIKI)
+
+
+def test_merge_reqiq_replaces_qa_summary_with_journeys():
+    from app.services.wiki_assembly import merge_reqiq_with_journeys
+
+    journeys = "## Purchase journeys\n\n### Wi-Fi 7\n| Step | Screen | User action | Expected | UI labels |\n| 1 | Banner | Tap | Start | 選擇 |"
+    merged = merge_reqiq_with_journeys(
+        "## QA Summary\nGeneric overview only.",
+        journeys,
+        product_title="5G BB",
+    )
+    assert "## Purchase journeys" in merged
+    assert "QA Summary" not in merged
+    assert "| 1 | Banner |" in merged

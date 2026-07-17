@@ -1,8 +1,8 @@
 # User-friendly product workspace — Implementation plan
 
-**Version:** 1.1 · **Date:** 2026-07-07  
+**Version:** 1.2 · **Date:** 2026-07-17  
 **Track code:** **UF** (user-facing)  
-**Status:** ✅ **UF-0 … UF-6 implemented** (2026-07-07)  
+**Status:** ✅ **UF-0 … UF-6 implemented** (2026-07-07) · 🔜 **Quality follow-on** — see [Quality-Test-Generation-Plan.md](Quality-Test-Generation-Plan.md)  
 **Replaces for business users:** PG sidebar / YAML hub workflow  
 **Keeps under the hood:** PG backend services (agent-operated)
 
@@ -263,7 +263,7 @@ No `initiatives[]` in this file — dates live in **wiki**.
 
 ---
 
-### UF-4 — Test generation (user-friendly) ✅
+### UF-4 — Test generation (user-friendly) ✅ (with known quality gap)
 
 **Estimate:** 4–5 days
 
@@ -279,6 +279,8 @@ No `initiatives[]` in this file — dates live in **wiki**.
 **User flow:** Upload → Recompile → **Generate tests** → Review list → **Run overnight**.
 
 **UF-4.6 (2026-07-13):** Generate tests reads `## Purchase journeys` from wiki and passes step tables as hints to ReqIQ.
+
+**Pilot finding (2026-07-17):** UF-4.1 drafts are **UAT scenario text**, not 3-tier-ready browser tests. UF-4.3 is only wired in Advanced (ReqIQ), not the main product Tests step. Auto-recompile before suggest can **strip** Purchase journeys from the wiki, so UF-4.6 hints degrade. **Follow-on plan:** [Quality-Test-Generation-Plan.md](Quality-Test-Generation-Plan.md) — AWT owns E2E generation + Crawl & Save; ReqIQ stays knowledge/requirements hub; IQ scoring is review-only.
 
 ---
 
@@ -381,6 +383,7 @@ No YAML, Programs hub, or Sync automation button. Backend automation runs inside
 | [Program-Framework.md](Program-Framework.md) | **Internal** — agent contract |
 | [Manifest-Schema.md](Manifest-Schema.md) | **Internal** — agent output format |
 | [Implementation-Plan.md](Implementation-Plan.md) | **PG track** — frozen; agent-only |
+| [Quality-Test-Generation-Plan.md](Quality-Test-Generation-Plan.md) | **Follow-on** — E2E quality path (AWT factory vs ReqIQ drafts) |
 | [examples/5g-mobile-broadband/](examples/5g-mobile-broadband/) | Pilot reference content |
 | Knowledge Base page | **Absorbed** into Product workspace (UF-1) |
 | [Hermes_QA_Autonomous_Workflow_v5.md](../Hermes_QA_Autonomous_Workflow_v5.md) | Factory/agent execution |
@@ -395,3 +398,4 @@ No YAML, Programs hub, or Sync automation button. Backend automation runs inside
 | 2026-07-07 | PG backend **retained**; operated by agent, not users |
 | 2026-07-07 | Pilot product: **5G mobile broadband** single workspace |
 | 2026-07-07 | YAML + redeploy remains valid for **devs/admins** only |
+| 2026-07-17 | Quality path: AWT generates E2E browser tests; ReqIQ = KB/requirements only — see Quality-Test-Generation-Plan |

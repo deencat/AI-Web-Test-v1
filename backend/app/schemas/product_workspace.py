@@ -35,6 +35,7 @@ class ProductWorkspaceStatus(BaseModel):
     source_count: int = 0
     wiki_ready: bool = False
     wiki_stale: bool = False
+    wiki_compile_status: Optional[str] = None
     wiki_compiled_at: Optional[str] = None
     requirement_count: int = 0
     draft_requirement_count: int = 0
@@ -89,6 +90,22 @@ class ProductCompileWikiResponse(BaseModel):
     journeys_extracted: int = 0
     ux_sources_processed: int = 0
     vision_used: bool = False
+
+
+class ProductCompileWikiStartResponse(BaseModel):
+    status: str = "running"
+    message: str = "Summary update started"
+
+
+class ProductCompileWikiProgressResponse(BaseModel):
+    status: str = "idle"  # idle | running | done | error
+    step: str = ""
+    percent: int = 0
+    detail: str = ""
+    started_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    result: Optional[ProductCompileWikiResponse] = None
+    error: Optional[str] = None
 
 
 class AllowedFormatsResponse(BaseModel):

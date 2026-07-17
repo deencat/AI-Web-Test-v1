@@ -36,6 +36,8 @@
 
 **Integration status (2026-05-20):** ReqIQ **Sprint 8/8c/9 APIs are shipped** and validated (`POST …/suggest-from-wiki` → **201** in Docker logs). **“ReqIQ complete” ≠ “AI Web Test complete.”** Proxies exist in AI Web Test (`AI-Web-Test-v1-2`), but **Inc 2 UX parity** is still open — see **§14** (reload list, success toast, batch review panel, `customerOutcome` display). Do not mark Inc 2 done until §14 is met.
 
+**Quality path (2026-07-17):** Product workspace “Create tests” via `suggest-from-wiki` yields **UAT scenario drafts**, not 3-tier-ready browser tests. Executable quality path = AWT journey planner → Crawl & Save → saved tests; ReqIQ stays knowledge/requirements hub; IQ = human review only. See [programs/Quality-Test-Generation-Plan.md](programs/Quality-Test-Generation-Plan.md).
+
 **Sources — standalone images:** ReqIQ accepts **PNG, JPEG, WebP, GIF** and shows **PARSED**, but **does not OCR/vision the pixels** yet (placeholder only → weak RAG/wiki). **Sprint 9b** enrich (ReqIQ sprint plan) will align with PPTX S3e. Until then: use **PPTX** with `REQIQ_PPTX_IMAGE_ENRICH=ocr|vision`, or TXT/MD companions.
 
 ---

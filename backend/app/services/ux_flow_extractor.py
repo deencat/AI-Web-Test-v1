@@ -7,7 +7,9 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Awaitable, Callable, Optional
+
+ProgressCallback = Callable[[str, int, str], Awaitable[None] | None]
 
 from app.services.product_document_store import list_mvp_config_paths, list_ux_ui_image_paths
 from app.services.wiki_journey_merge import CUSTOMER_JOURNEYS_HEADING, PURCHASE_JOURNEYS_HEADING
@@ -19,34 +21,42 @@ _MAX_VISION_WIDTH = 3200
 _MAX_VISION_HEIGHT = 3200
 _TILE_OVERLAP_PX = 120
 
-_VISION_SYSTEM = """You are a telecom DT UX analyst. Extract purchase / customer journeys from mobile app flow diagrams.
-Output ONLY markdown. Be specific about UI labels (English and Traditional Chinese), buttons, form fields, and branches.
-Do not invent steps not visible in the image."""
+_VISION_SYSTEM = """You are a senior telecom DT QA analyst reading My3 app purchase-flow Figma boards.
+Extract E2E-testable journeys: exact UI labels (English + Traditional Chinese), buttons, prices, branches.
+Output ONLY markdown. Use step tables. Mark [illegible] only when text is truly unreadable — do not invent."""
 
-_VISION_USER = """Analyse this UX/UI flow image for a telecom product (5G broadband / mobile plans).
+_VISION_USER = """Analyse this UX/UI flow image for 5G mobile broadband (5GBB) / Wi-Fi plan purchase in the My3 app.
+
+This board may be wide — extract EVERY visible screen in reading order (left→right).
 
 Emit markdown using EXACTLY this structure:
 
-### {Journey name from image title or filename}
-- **Entry point:** (banners, deep links, notifications — what starts the flow)
+### {Journey name — from image title or filename}
+- **Entry point:** (promo banner, 購買 tab, deep link — be specific)
 - **Status:** active | ended | unknown
-- **Offer track:** (e.g. mbase, HSBC, student, dec promo — if identifiable)
+- **Offer track:** (mbase / HSBC / student / dec promo — if visible)
 
 #### Branching
-- List decision points (Login vs Before Login, New vs Existing, etc.)
+- Login vs Before Login (guest skips 購買 hub?)
+- New vs Existing customer
+- Payment method variants (Visa, AlipayHK, WeChat Pay, UnionPay)
+- Any diamond decision nodes — quote visible label text
 
 #### Steps
-| Step | Screen | User action | Expected | UI labels |
-|------|--------|-------------|----------|-----------|
-| 1 | … | … | … | … |
+| Step | Screen (UI copy) | User action | Expected / assert | UI labels (EN + 繁中) |
+|------|------------------|-------------|-------------------|------------------------|
+| 1 | … | Tap … | … | … |
+
+Include ALL phases if visible: banner → plan list → 選擇 → configure contract → 總結 → 確認訂單 → 預約日期 → 結賬 accordion (1–7) → 成功付款.
+Quote prices ($238, $191, $100 SIM fee, etc.) and contract lengths (12/24/30/48 months) when shown.
 
 #### Payment & completion
-- Payment methods shown, success screen, order reference field
+- Upfront amount, payment methods, success screen text (e.g. 成功付款)
 
 #### Related offers
-- Plan codes / prices visible (e.g. $238/mo, 30 months)
+- Plan names, promo codes, router types (Wi-Fi 6 / Wi-Fi 7)
 
-If text is illegible, say [illegible] — do not guess."""
+If this is a tile segment of a wide board, extract only screens visible in this segment."""
 
 _CUSTOMER_SUMMARY_SYSTEM = """Summarise purchase journeys for business readers in 2-4 short paragraphs per journey."""
 
@@ -67,7 +77,7 @@ def _vision_provider() -> str:
 
 
 def _vision_model() -> Optional[str]:
-    return os.getenv("UX_FLOW_VISION_MODEL") or "google/gemini-2.5-flash"
+    return os.getenv("UX_FLOW_VISION_MODEL") or None
 
 
 def _split_image_tiles(image_bytes: bytes) -> list[bytes]:
@@ -113,14 +123,41 @@ def _split_image_tiles(image_bytes: bytes) -> list[bytes]:
 
 
 def _parse_response_text(response: dict) -> str:
-    content = response.get("content") or response.get("message") or ""
+    """Extract assistant text from unified or OpenAI-style vision responses."""
+    if not response:
+        return ""
+
+    content = response.get("content") or response.get("message")
     if isinstance(content, list):
         parts = []
         for block in content:
             if isinstance(block, dict) and block.get("type") == "text":
                 parts.append(str(block.get("text", "")))
-        return "\n".join(parts).strip()
-    return str(content).strip()
+        text = "\n".join(parts).strip()
+        if text:
+            return text
+    elif content:
+        return str(content).strip()
+
+    choices = response.get("choices") or []
+    if choices:
+        message = choices[0].get("message") or {}
+        msg_content = message.get("content")
+        if isinstance(msg_content, str) and msg_content.strip():
+            return msg_content.strip()
+        if isinstance(msg_content, list):
+            parts = []
+            for block in msg_content:
+                if isinstance(block, dict):
+                    if block.get("type") == "text":
+                        parts.append(str(block.get("text", "")))
+                    elif "text" in block:
+                        parts.append(str(block["text"]))
+            text = "\n".join(parts).strip()
+            if text:
+                return text
+
+    return ""
 
 
 def _journey_name_from_markdown(section: str) -> str:
@@ -164,8 +201,23 @@ def _placeholder_section(path: Path, reason: str) -> str:
 #### Steps
 | Step | Screen | User action | Expected | UI labels |
 |------|--------|-------------|----------|-----------|
-| 1 | Entry | Open flow from banner or promo tile | Journey starts | [Re-run Update summary when vision API is configured] |
+| 1 | Entry | Open flow from banner or promo tile | Journey starts | [Re-run Update summary after fixing vision errors] |
 """
+
+
+def _resolve_vision_config(
+    *,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+) -> tuple[str, str]:
+    """UX_FLOW_* env overrides; else caller-supplied user generation settings."""
+    env_provider = os.getenv("UX_FLOW_VISION_PROVIDER", "").strip().lower()
+    env_model = os.getenv("UX_FLOW_VISION_MODEL", "").strip()
+    if env_provider:
+        return env_provider, env_model or (_vision_model() or "gpt-5.2")
+    if provider and model:
+        return provider.lower(), model
+    return _vision_provider(), _vision_model() or "gpt-5.2"
 
 
 async def _vision_analyse_tile(
@@ -176,6 +228,8 @@ async def _vision_analyse_tile(
     tile_index: int,
     tile_total: int,
     offer_context: str,
+    vision_provider: Optional[str] = None,
+    vision_model: Optional[str] = None,
 ) -> str:
     user_text = _VISION_USER
     if tile_total > 1:
@@ -183,15 +237,32 @@ async def _vision_analyse_tile(
     if offer_context:
         user_text += f"\n\n{offer_context}"
 
+    v_provider, v_model = _resolve_vision_config(
+        provider=vision_provider,
+        model=vision_model,
+    )
     response = await llm.vision_completion(
         tile_bytes,
         _VISION_SYSTEM,
         user_text,
-        provider=_vision_provider(),
-        model=_vision_model(),
-        max_tokens=int(os.getenv("UX_FLOW_VISION_MAX_TOKENS", "4096")),
+        provider=v_provider,
+        model=v_model,
+        max_tokens=int(os.getenv("UX_FLOW_VISION_MAX_TOKENS", "8192")),
     )
     return _parse_response_text(response)
+
+
+async def _report_progress(
+    progress: Optional[ProgressCallback],
+    step: str,
+    percent: int,
+    detail: str = "",
+) -> None:
+    if not progress:
+        return
+    maybe = progress(step, percent, detail)
+    if maybe is not None:
+        await maybe
 
 
 async def _extract_single_image(
@@ -199,12 +270,24 @@ async def _extract_single_image(
     path: Path,
     *,
     offer_context: str,
+    vision_provider: Optional[str] = None,
+    vision_model: Optional[str] = None,
+    progress: Optional[ProgressCallback] = None,
+    progress_label: str = "",
+    progress_base: int = 0,
+    progress_span: int = 0,
 ) -> tuple[str, int, bool]:
     image_bytes = path.read_bytes()
     tiles = _split_image_tiles(image_bytes)
     sections: list[str] = []
     vision_ok = False
     for i, tile in enumerate(tiles):
+        if progress and progress_span:
+            tile_pct = progress_base + int(progress_span * i / max(len(tiles), 1))
+            tile_detail = progress_label
+            if len(tiles) > 1:
+                tile_detail = f"{progress_label} — section {i + 1}/{len(tiles)}"
+            await _report_progress(progress, "Analysing UX/UI flows", tile_pct, tile_detail)
         try:
             text = await _vision_analyse_tile(
                 llm,
@@ -213,6 +296,8 @@ async def _extract_single_image(
                 tile_index=i,
                 tile_total=len(tiles),
                 offer_context=offer_context,
+                vision_provider=vision_provider,
+                vision_model=vision_model,
             )
             if text:
                 sections.append(text)
@@ -235,9 +320,16 @@ async def _extract_single_image(
     return merged, len(tiles), vision_ok
 
 
-async def _build_customer_summary(llm: Any, journey_body: str) -> str:
+async def _build_customer_summary(
+    llm: Any,
+    journey_body: str,
+    *,
+    vision_provider: Optional[str] = None,
+    vision_model: Optional[str] = None,
+) -> str:
     if not journey_body.strip():
         return ""
+    v_provider, v_model = _resolve_vision_config(provider=vision_provider, model=vision_model)
     try:
         response = await llm.chat_completion(
             [
@@ -247,8 +339,8 @@ async def _build_customer_summary(llm: Any, journey_body: str) -> str:
                     "content": f"Summarise these purchase journeys for QA and business users:\n\n{journey_body[:8000]}",
                 },
             ],
-            provider=_vision_provider(),
-            model=_vision_model(),
+            provider=v_provider,
+            model=v_model,
             max_tokens=1024,
         )
         return _parse_response_text(response)
@@ -267,7 +359,15 @@ def assemble_journeys_markdown(sections: list[str], customer_summary: str = "") 
     return out
 
 
-async def extract_journeys_for_product(product_id: str) -> JourneyExtractionResult:
+async def extract_journeys_for_product(
+    product_id: str,
+    *,
+    vision_provider: Optional[str] = None,
+    vision_model: Optional[str] = None,
+    progress: Optional[ProgressCallback] = None,
+    progress_base: int = 0,
+    progress_span: int = 0,
+) -> JourneyExtractionResult:
     """Run vision extraction on all cached ux_ui images for a product."""
     from app.services.universal_llm import UniversalLLMService
 
@@ -279,11 +379,24 @@ async def extract_journeys_for_product(product_id: str) -> JourneyExtractionResu
     offer_context = _offer_context_from_mvp_files(product_id)
     llm = UniversalLLMService()
     sections: list[str] = []
+    total = len(paths)
 
-    for path in paths:
+    for idx, path in enumerate(paths):
+        img_base = progress_base + int(progress_span * idx / total) if total and progress_span else progress_base
+        img_span = int(progress_span / total) if total and progress_span else progress_span
+        label = f"Flow {idx + 1}/{total}: {path.name}"
+        await _report_progress(progress, "Analysing UX/UI flows", img_base, label)
         try:
             section, tiles, used_vision = await _extract_single_image(
-                llm, path, offer_context=offer_context
+                llm,
+                path,
+                offer_context=offer_context,
+                vision_provider=vision_provider,
+                vision_model=vision_model,
+                progress=progress,
+                progress_label=label,
+                progress_base=img_base,
+                progress_span=img_span,
             )
             sections.append(section)
             result.images_processed += 1
@@ -299,19 +412,29 @@ async def extract_journeys_for_product(product_id: str) -> JourneyExtractionResu
 
     customer_summary = ""
     if sections and result.vision_used:
-        customer_summary = await _build_customer_summary(llm, "\n\n".join(sections))
+        await _report_progress(
+            progress,
+            "Analysing UX/UI flows",
+            progress_base + progress_span - 2 if progress_span else progress_base,
+            "Writing customer journey summary…",
+        )
+        customer_summary = await _build_customer_summary(
+            llm,
+            "\n\n".join(sections),
+            vision_provider=vision_provider,
+            vision_model=vision_model,
+        )
 
     result.journeys_markdown = assemble_journeys_markdown(sections, customer_summary)
     return result
 
 
 def build_compile_feature_supplement(journeys_markdown: str) -> str:
-    """Prepend extracted journeys to ReqIQ compile feature prompt."""
+    """Short compile hint only — full journey markdown must not go in the compile URL."""
     if not journeys_markdown.strip():
         return ""
     return (
-        "PRE-EXTRACTED PURCHASE JOURNEYS (from UX/UI images — treat as authoritative for steps and UI labels):\n\n"
-        f"{journeys_markdown.strip()}\n\n"
-        "When compiling the wiki, preserve ## Purchase journeys content and align "
-        "## Base offer / ## Active promotions with these flows.\n\n"
+        "Purchase journeys were pre-extracted from UX/UI images in a separate vision step. "
+        "Focus this compile on ## Base offer, ## Active promotions, and related offer sections. "
+        "Purchase journeys will be merged after compile.\n\n"
     )

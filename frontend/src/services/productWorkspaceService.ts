@@ -19,6 +19,7 @@ export interface ProductWorkspaceStatus {
   source_count: number;
   wiki_ready: boolean;
   wiki_stale: boolean;
+  wiki_compile_status?: string | null;
   wiki_compiled_at?: string | null;
   requirement_count: number;
   draft_requirement_count: number;
@@ -59,13 +60,28 @@ export async function getAllowedFormats(): Promise<AllowedFormats> {
   return data;
 }
 
-export async function uploadProductDocuments(productId: string, files: File[]): Promise<unknown> {
+export interface UploadProductDocumentsResult {
+  uploadedCount?: number;
+  rejectedCount?: number;
+  uploaded?: unknown[];
+  rejected?: { filename: string; error: string }[];
+  message?: string;
+  locally_cached?: string[];
+  converted_offer_tables?: string[];
+  embedding_indexed?: boolean;
+}
+
+export async function uploadProductDocuments(
+  productId: string,
+  files: File[],
+): Promise<UploadProductDocumentsResult> {
   const form = new FormData();
   files.forEach((f) => form.append('files', f));
   const { data } = await api.post(`/products/${productId}/upload`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 300000,
   });
-  return data;
+  return data as UploadProductDocumentsResult;
 }
 
 export async function createProduct(body: {
@@ -85,14 +101,35 @@ export async function updateProduct(
   return data;
 }
 
+export type CompileWikiProgress = {
+  status: 'idle' | 'running' | 'done' | 'error';
+  step?: string;
+  percent?: number;
+  detail?: string;
+  started_at?: string;
+  updated_at?: string;
+  error?: string;
+  result?: {
+    message: string;
+    sync?: { tests_retired?: number; initiatives_synced?: number };
+    journeys_extracted?: number;
+    ux_sources_processed?: number;
+    vision_used?: boolean;
+  };
+};
+
 export async function compileProductWiki(productId: string): Promise<{
+  status: string;
   message: string;
-  sync?: { tests_retired?: number; initiatives_synced?: number };
-  journeys_extracted?: number;
-  ux_sources_processed?: number;
-  vision_used?: boolean;
 }> {
-  const { data } = await api.post(`/products/${productId}/compile-wiki`);
+  const { data } = await api.post(`/products/${productId}/compile-wiki`, undefined, {
+    timeout: 30000,
+  });
+  return data;
+}
+
+export async function getCompileWikiProgress(productId: string): Promise<CompileWikiProgress> {
+  const { data } = await api.get(`/products/${productId}/compile-wiki/progress`);
   return data;
 }
 
@@ -156,8 +193,7 @@ export async function listProductSources(productId: string): Promise<ProductSour
 }
 
 export async function deleteProductDocument(productId: string, sourceId: string): Promise<void> {
-  const product = await getProduct(productId);
-  await api.delete(`/requirements/${product.reqiq_project_id}/sources/${sourceId}`);
+  await api.delete(`/products/${productId}/sources/${sourceId}`);
 }
 
 export async function keepTestScenario(productId: string, requirementId: string): Promise<void> {

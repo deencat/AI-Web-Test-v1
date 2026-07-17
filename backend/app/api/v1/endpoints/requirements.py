@@ -62,13 +62,19 @@ async def _proxy(coro: Any) -> Any:
     except Exception as exc:
         # Include ReqIQ response body in the error detail when available
         body: Any = None
+        upstream_status: int | None = None
         if hasattr(exc, "response") and exc.response is not None:  # type: ignore[union-attr]
+            upstream_status = getattr(exc.response, "status_code", None)  # type: ignore[union-attr]
             try:
                 body = exc.response.json()  # type: ignore[union-attr]
             except Exception:
                 body = exc.response.text  # type: ignore[union-attr]
         detail = body if body else str(exc)
         logger.error("ReqIQ proxy error: %s | body: %s", exc, body)
+        # Forward client/conflict errors so the UI sees the real reason
+        # (e.g. 409 wiki_not_compiled) instead of a misleading 502.
+        if isinstance(upstream_status, int) and 400 <= upstream_status < 500:
+            raise HTTPException(status_code=upstream_status, detail=detail)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=detail,

@@ -67,6 +67,7 @@ async def _request(
     params: Any = None,
     headers: dict | None = None,
     retry_on_401: bool = True,
+    timeout: float = 60,
 ) -> httpx.Response:
     """
     Make an authenticated request to ReqIQ.
@@ -78,7 +79,7 @@ async def _request(
     # environment variables.  Without this, corporate proxies intercept the
     # loopback request to localhost:3001 and return 400 "Request on loopback
     # from external IP".
-    async with httpx.AsyncClient(timeout=60, trust_env=False) as client:
+    async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
         token = await _get_token(client)
         auth_headers = {"Authorization": f"Bearer {token}", **(headers or {})}
 
@@ -153,6 +154,7 @@ async def upload_sources(project_id: str, files_payload: list[tuple]) -> dict:
         "POST",
         f"/api/v1/projects/{project_id}/sources/upload",
         files=files_payload,
+        timeout=180,
     )
     if not resp.is_success:
         try:

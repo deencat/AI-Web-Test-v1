@@ -10,6 +10,8 @@
 |----------|---------|
 | [Case-Study.md](Case-Study.md) | How this product maps to platform × features × reference |
 | [Document-Inventory.md](Document-Inventory.md) | Local PDF/JPG assets → capabilities |
+| [Pilot-Checklist.md](Pilot-Checklist.md) | UF-6 pilot checks + quality path |
+| [Quality-Test-Generation-Plan.md](../../Quality-Test-Generation-Plan.md) | Why ReqIQ drafts ≠ E2E browser tests; AWT factory plan |
 
 ## Why this example
 

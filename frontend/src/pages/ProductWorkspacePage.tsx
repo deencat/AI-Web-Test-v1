@@ -7,9 +7,11 @@ import { EditProductModal } from '../components/EditProductModal';
 import { ProductAdvancedReqIQ } from '../components/products/ProductAdvancedReqIQ';
 import {
   compileProductWiki,
+  CompileWikiProgress,
   deleteProductDocument,
   deriveWorkflowStep,
   generateTestsFromWiki,
+  getCompileWikiProgress,
   getProduct,
   getProductStatus,
   getProductWiki,
@@ -27,6 +29,31 @@ import {
   uploadAcceptAttribute,
   uploadProductDocuments,
 } from '../services/productWorkspaceService';
+
+function formatApiError(e: unknown): string {
+  const ax = e as { response?: { data?: { detail?: unknown; message?: string } } };
+  const detail = ax.response?.data?.detail;
+  if (typeof detail === 'string' && detail) return detail;
+  if (detail && typeof detail === 'object') {
+    const d = detail as { message?: string; detail?: string; error?: string };
+    if (typeof d.detail === 'string' && d.detail) return d.detail;
+    if (d.message) return d.message;
+    if (d.error === 'wiki_not_compiled') {
+      return 'Could not create tests yet. If you just uploaded new documents, click Update summary once; otherwise try Create tests again in a moment.';
+    }
+    if (d.error) return d.error;
+    try {
+      return JSON.stringify(detail);
+    } catch {
+      return 'Something went wrong';
+    }
+  }
+  if (ax.response?.data?.message) return String(ax.response.data.message);
+  if (e instanceof Error && e.message.includes('timeout')) {
+    return 'Upload timed out — large files can take a few minutes. Check Documents list; if the file is missing, try again.';
+  }
+  return e instanceof Error ? e.message : 'Something went wrong';
+}
 
 function StepBadge({ n, label, active, done }: { n: number; label: string; active: boolean; done: boolean }) {
   return (
@@ -55,6 +82,15 @@ export const ProductWorkspacePage: React.FC = () => {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [compileProgress, setCompileProgress] = useState<CompileWikiProgress | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopCompilePolling = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -92,6 +128,74 @@ export const ProductWorkspacePage: React.FC = () => {
     load();
   }, [load]);
 
+  const pollCompileProgress = useCallback(async () => {
+    const progress = await getCompileWikiProgress(productId);
+    setCompileProgress(progress);
+    if (progress.status === 'done') {
+      stopCompilePolling();
+      setBusy(null);
+      setMsg(progress.result?.message ?? 'Summary updated.');
+      await load();
+    } else if (progress.status === 'error') {
+      stopCompilePolling();
+      setBusy(null);
+      setErr(progress.error ?? 'Summary update failed');
+    } else if (progress.status === 'running') {
+      setBusy('summary');
+    }
+    return progress;
+  }, [productId, load]);
+
+  const startCompilePolling = useCallback(() => {
+    stopCompilePolling();
+    pollRef.current = setInterval(() => {
+      pollCompileProgress().catch((e: unknown) => {
+        stopCompilePolling();
+        setBusy(null);
+        setErr(formatApiError(e));
+      });
+    }, 1500);
+    pollCompileProgress().catch((e: unknown) => {
+      stopCompilePolling();
+      setBusy(null);
+      setErr(formatApiError(e));
+    });
+  }, [pollCompileProgress]);
+
+  useEffect(() => {
+    getCompileWikiProgress(productId)
+      .then((progress) => {
+        if (progress.status === 'running') {
+          setCompileProgress(progress);
+          setBusy('summary');
+          startCompilePolling();
+        }
+      })
+      .catch(() => undefined);
+    return () => stopCompilePolling();
+  }, [productId, startCompilePolling]);
+
+  const handleUpdateSummary = async () => {
+    setBusy('summary');
+    setErr(null);
+    setMsg(null);
+    setCompileProgress({ status: 'running', step: 'Starting', percent: 0, detail: 'Preparing…' });
+    try {
+      const res = await compileProductWiki(productId);
+      setMsg(res.message);
+      startCompilePolling();
+    } catch (e: unknown) {
+      const ax = e as { response?: { status?: number } };
+      if (ax.response?.status === 409) {
+        startCompilePolling();
+        return;
+      }
+      setBusy(null);
+      setCompileProgress(null);
+      setErr(formatApiError(e));
+    }
+  };
+
   const run = async (label: string, fn: () => Promise<void>) => {
     setBusy(label);
     setErr(null);
@@ -100,8 +204,7 @@ export const ProductWorkspacePage: React.FC = () => {
       await fn();
       await load();
     } catch (e: unknown) {
-      const ax = e as { response?: { data?: { detail?: string } } };
-      setErr(ax.response?.data?.detail || (e instanceof Error ? e.message : 'Something went wrong'));
+      setErr(formatApiError(e));
     } finally {
       setBusy(null);
     }
@@ -109,11 +212,35 @@ export const ProductWorkspacePage: React.FC = () => {
 
   const handleUpload = async (files: FileList | null) => {
     if (!files?.length) return;
+    if (busy && busy !== 'upload') {
+      setErr(`Please wait — "${busy}" is still running. Try again in a moment, or refresh the page if it seems stuck.`);
+      if (fileRef.current) fileRef.current.value = '';
+      return;
+    }
+    setErr(null);
+    setMsg(`Uploading ${files.length} file(s)…`);
     await run('upload', async () => {
-      await uploadProductDocuments(productId, Array.from(files));
-      setMsg(`Added ${files.length} file(s). When ready, click Update summary.`);
+      const res = await uploadProductDocuments(productId, Array.from(files));
+      const rejected = res.rejected ?? [];
+      if (rejected.length > 0) {
+        const names = rejected.map((r) => `${r.filename} (${r.error})`).join('; ');
+        setErr(`Some files were not indexed: ${names}`);
+      }
+      setMsg(
+        res.message
+          ?? `Added ${res.uploadedCount ?? files.length} file(s). Click Update summary when ready.`,
+      );
     });
     if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const openFilePicker = () => {
+    if (busy === 'upload') return;
+    if (busy) {
+      setErr(`Please wait — "${busy}" is still running before adding more files.`);
+      return;
+    }
+    fileRef.current?.click();
   };
 
   const handleRemoveDoc = async (sourceId: string, name: string) => {
@@ -124,8 +251,7 @@ export const ProductWorkspacePage: React.FC = () => {
       setMsg('Document removed.');
       await load();
     } catch (e: unknown) {
-      const ax = e as { response?: { data?: { detail?: string } } };
-      setErr(ax.response?.data?.detail || 'Could not remove document');
+      setErr(formatApiError(e));
     } finally {
       setDeletingId(null);
     }
@@ -153,7 +279,7 @@ export const ProductWorkspacePage: React.FC = () => {
       return 'New or changed documents detected — update the summary so June/July offers and tests stay correct.';
     }
     if (requirements.length === 0) {
-      return 'Summary is ready. Create tests from it, then run overnight if you want automated checks.';
+      return 'Summary is ready. Click Create tests from summary — no need to update the summary again.';
     }
     return 'Review suggested tests below. Keep what matters; remove what does not apply.';
   })();
@@ -193,20 +319,31 @@ export const ProductWorkspacePage: React.FC = () => {
                 UX/UI images become <strong>Purchase journeys</strong> in Summary when you click Update summary.
               </p>
             </div>
-            <label className={`cursor-pointer ${busy === 'upload' ? 'opacity-50' : ''}`}>
-              <span className="inline-block px-4 py-2 bg-blue-700 text-white text-sm rounded-lg hover:bg-blue-800">
+            <div>
+              <button
+                type="button"
+                className={`inline-block px-4 py-2 bg-blue-700 text-white text-sm rounded-lg hover:bg-blue-800 ${
+                  busy === 'upload' ? 'opacity-50 cursor-wait' : busy ? 'opacity-80' : ''
+                }`}
+                disabled={busy === 'upload'}
+                onClick={openFilePicker}
+              >
                 {busy === 'upload' ? 'Uploading…' : '+ Add files'}
-              </span>
+              </button>
               <input
                 ref={fileRef}
                 type="file"
                 multiple
                 className="hidden"
                 accept={uploadAcceptAttribute()}
-                disabled={!!busy}
                 onChange={(e) => handleUpload(e.target.files)}
               />
-            </label>
+              {busy && busy !== 'upload' && (
+                <p className="text-xs text-amber-700 mt-2">
+                  {busy === 'summary' ? 'Updating summary…' : `Working: ${busy}…`} File upload is paused until this finishes.
+                </p>
+              )}
+            </div>
           </div>
           <ul className="divide-y text-sm max-h-52 overflow-y-auto">
             {sources.length === 0 ? (
@@ -245,11 +382,7 @@ export const ProductWorkspacePage: React.FC = () => {
             <div className="flex gap-2">
               <Button
                 disabled={!!busy || sources.length === 0}
-                onClick={() => run('summary', async () => {
-                  const res = await compileProductWiki(productId);
-                  setMsg(res.message);
-                  await load();
-                })}
+                onClick={handleUpdateSummary}
               >
                 {busy === 'summary' ? 'Updating…' : 'Update summary'}
               </Button>
@@ -266,6 +399,23 @@ export const ProductWorkspacePage: React.FC = () => {
               )}
             </div>
           </div>
+          {(busy === 'summary' || compileProgress?.status === 'running') && (
+            <div className="px-4 pb-2">
+              <div className="flex justify-between text-xs text-gray-600 mb-1">
+                <span>{compileProgress?.step || 'Updating summary…'}</span>
+                <span>{compileProgress?.percent ?? 0}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                <div
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                  style={{ width: `${compileProgress?.percent ?? 0}%` }}
+                />
+              </div>
+              {compileProgress?.detail && (
+                <p className="text-xs text-gray-500 mt-1">{compileProgress.detail}</p>
+              )}
+            </div>
+          )}
           <div className="p-4">
             {wikiEditing ? (
               <textarea className="w-full min-h-64 font-mono text-xs border rounded p-3" value={wikiText} onChange={(e) => setWikiText(e.target.value)} />
@@ -275,6 +425,7 @@ export const ProductWorkspacePage: React.FC = () => {
               <p className="text-gray-400 text-sm">
                 The summary lists base offer, active promos (with dates), ended promos,{' '}
                 <strong>Purchase journeys</strong> (from UX/UI images), UX notes, and notification copy.
+                {' '}You can <strong>Edit</strong> and <strong>Save</strong> to push changes directly to ReqIQ.
               </p>
             )}
           </div>
@@ -293,7 +444,7 @@ export const ProductWorkspacePage: React.FC = () => {
                   await load();
                 })}
               >
-                {busy === 'tests' ? 'Creating…' : 'Create tests from summary'}
+                {busy === 'tests' ? 'Creating… (may take ~30s)' : 'Create tests from summary'}
               </Button>
               <Button
                 disabled={!!busy || !status?.wiki_ready}

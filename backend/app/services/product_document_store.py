@@ -104,3 +104,39 @@ def read_upload_bytes(product_id: str, filename: str) -> Optional[bytes]:
     if path.is_file():
         return path.read_bytes()
     return None
+
+
+def remove_upload(product_id: str, filename: str) -> bool:
+    """Remove a cached upload file and its manifest entry."""
+    safe_name = Path(filename or "").name
+    if not safe_name:
+        return False
+    path = _product_dir(product_id) / safe_name
+    removed = False
+    if path.is_file():
+        path.unlink()
+        removed = True
+    files = _load_manifest(product_id)
+    new_files = [f for f in files if f.get("filename") != safe_name]
+    if len(new_files) != len(files):
+        removed = True
+        _save_manifest(product_id, new_files)
+    return removed
+
+
+def remove_upload_for_reqiq_source(product_id: str, source_filename: str) -> bool:
+    """Drop local vision/MVP cache rows that correspond to a ReqIQ source filename."""
+    name = Path(source_filename or "").name
+    if not name:
+        return False
+    removed = remove_upload(product_id, name)
+    lower = name.lower()
+    if "(offer table).md" in lower:
+        stem = name.replace(" (offer table).md", "").replace("(offer table).md", "")
+        stem_base = Path(stem).stem
+        for entry in list_uploads(product_id, source_type="mvp_config"):
+            fn = str(entry.get("filename") or "")
+            if stem_base and stem_base in Path(fn).stem:
+                if remove_upload(product_id, fn):
+                    removed = True
+    return removed
