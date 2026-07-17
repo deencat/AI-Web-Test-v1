@@ -461,9 +461,16 @@ class Tier3StagehandExecutor:
         if not result.success or not result.ink_verified:
             raise ValueError(
                 result.error
-                or "Signature pad appears empty after stroke (ink verification failed)"
+                or (
+                    "Signature pad appears empty after stroke "
+                    f"(ink verification failed; source={result.verify_source})"
+                )
             )
-        logger.info("[Tier 3] ✅ Signature ink verified via shared signature_pad helper")
+        logger.info(
+            "[Tier 3] ✅ Signature ink verified via shared signature_pad helper "
+            "(verify_source=%s)",
+            result.verify_source,
+        )
 
     # ------------------------------------------------------------------
     # Sprint 10.17: verify_screenshot semantic fallback

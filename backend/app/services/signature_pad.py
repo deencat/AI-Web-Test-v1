@@ -1,10 +1,10 @@
 """
 Shared signature-pad locate / stroke / ink-verify helpers.
 
-Feature 5 / Sprint 11–13: programmatic stroke is the source of truth for
+Feature 5 / Sprint 11–14: programmatic stroke is the source of truth for
 ``draw_signature`` / ``sign``. Prefer pointer/mouse/touch events (SignaturePad-
-compatible); optional canvas ctx paint is a visual supplement only — never the
-sole basis for PASS when the library stays empty.
+compatible). Optional canvas ctx paint is off by default — never the sole
+basis for PASS (cosmetic ink / ``source=pixels`` after ctx paint is a false PASS).
 """
 from __future__ import annotations
 
@@ -62,6 +62,15 @@ class SignResult:
     error: Optional[str] = None
     ink_verified: bool = False
     xpath: Optional[str] = None
+    verify_source: Optional[str] = None
+
+
+@dataclass
+class InkVerifyResult:
+    """Structured ink-gate outcome (``source`` is logged as verify_source)."""
+
+    has_ink: bool
+    source: str  # signaturepad | pixels | required_cleared | fail | unknown
 
 
 def is_soft_act_method(method: Optional[str]) -> bool:
@@ -291,19 +300,127 @@ def _extract_quoted_phrases(instruction: str) -> list[str]:
     return [m.strip() for m in re.findall(r'["\']([^"\']+)["\']', instruction or "")]
 
 
+# Multi-point PointerEvent + MouseEvent + TouchEvent path (SignaturePad-compatible).
+# Mirrors ObservationAgent browser_use_signature_tool: pointerId/isPrimary + real drag.
+_STROKE_POINTER_JS = """
+(canvas) => {
+  const r = canvas.getBoundingClientRect();
+  if (r.width < 10 || r.height < 10) {
+    return { ok: false, error: 'canvas_too_small' };
+  }
+
+  const firePointer = (type, clientX, clientY) => {
+    const opts = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      view: window,
+      clientX,
+      clientY,
+      screenX: clientX,
+      screenY: clientY,
+      pointerId: 1,
+      pointerType: 'pen',
+      isPrimary: true,
+      pressure: type === 'pointerup' ? 0 : 0.5,
+      button: 0,
+      buttons: type === 'pointerup' ? 0 : 1,
+    };
+    canvas.dispatchEvent(new PointerEvent(type, opts));
+  };
+
+  const fireMouse = (type, clientX, clientY) => {
+    const buttons = type === 'mouseup' ? 0 : 1;
+    canvas.dispatchEvent(new MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX,
+      clientY,
+      button: 0,
+      buttons,
+    }));
+  };
+
+  const steps = 28;
+  const x0 = r.left + r.width * 0.12;
+  const y0 = r.top + r.height * 0.52;
+  firePointer('pointerdown', x0, y0);
+  fireMouse('mousedown', x0, y0);
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const clientX = r.left + r.width * (0.12 + t * 0.72);
+    const clientY = r.top + r.height * (0.52 + 0.14 * Math.sin(t * Math.PI));
+    firePointer('pointermove', clientX, clientY);
+    fireMouse('mousemove', clientX, clientY);
+  }
+  const xe = r.left + r.width * 0.88;
+  const ye = r.top + r.height * 0.48;
+  firePointer('pointerup', xe, ye);
+  fireMouse('mouseup', xe, ye);
+
+  // Touch drag: move != start (actual drag). Prefer #touchContainer when present.
+  try {
+    const touchTarget =
+      (canvas.closest && canvas.closest('#touchContainer')) ||
+      (canvas.parentElement && canvas.parentElement.id === 'touchContainer'
+        ? canvas.parentElement : null) ||
+      canvas;
+    const id = Date.now() % 100000;
+    const mkTouch = (clientX, clientY) => new Touch({
+      identifier: id,
+      target: touchTarget,
+      clientX,
+      clientY,
+      pageX: clientX,
+      pageY: clientY,
+      radiusX: 2,
+      radiusY: 2,
+      rotationAngle: 0,
+      force: 0.5,
+    });
+    const t0 = mkTouch(x0, y0);
+    touchTarget.dispatchEvent(new TouchEvent('touchstart', {
+      bubbles: true, cancelable: true, touches: [t0], targetTouches: [t0], changedTouches: [t0],
+    }));
+    for (let i = 1; i <= 12; i++) {
+      const t = i / 12;
+      const tx = r.left + r.width * (0.12 + t * 0.72);
+      const ty = r.top + r.height * (0.52 + 0.1 * Math.sin(t * Math.PI));
+      const tm = mkTouch(tx, ty);
+      touchTarget.dispatchEvent(new TouchEvent('touchmove', {
+        bubbles: true, cancelable: true, touches: [tm], targetTouches: [tm], changedTouches: [tm],
+      }));
+    }
+    const te = mkTouch(xe, ye);
+    touchTarget.dispatchEvent(new TouchEvent('touchend', {
+      bubbles: true, cancelable: true, touches: [], targetTouches: [], changedTouches: [te],
+    }));
+  } catch (err) {
+    // Touch constructors may be unsupported
+  }
+
+  canvas.dispatchEvent(new Event('input', { bubbles: true }));
+  canvas.dispatchEvent(new Event('change', { bubbles: true }));
+  return { ok: true, width: r.width, height: r.height };
+}
+"""
+
+
 async def draw_signature_stroke(
     page: Any,
     canvas,
     *,
-    include_ctx_paint: bool = True,
+    include_ctx_paint: bool = False,
 ) -> None:
     """
     Draw a multi-strategy stroke on ``canvas``.
 
     Order (events preferred for SignaturePad ``isEmpty``):
     1. Playwright mouse drag across bbox
-    2. pointer / mouse / touch dispatch
-    3. Optional ctx 2d stroke as visual supplement only
+    2. Real PointerEvent / MouseEvent / TouchEvent multi-point path
+    3. Optional Playwright touchscreen tap-drag when available
+    4. Optional ctx 2d stroke — **off by default**; cosmetic only, never a PASS signal
     """
     await canvas.scroll_into_view_if_needed()
     try:
@@ -338,96 +455,110 @@ async def draw_signature_stroke(
     await page.mouse.up()
     await asyncio.sleep(0.05)
 
-    # 2) Pointer / mouse / touch events (SignaturePad listeners)
-    drag_start_x = canvas_x + canvas_width * 0.25
-    drag_start_y = canvas_y + canvas_height * 0.5
-    drag_end_x = canvas_x + canvas_width * 0.65
-    drag_end_y = canvas_y + canvas_height * 0.5
+    # 2) Real PointerEvent multi-point path (+ mouse + touch drag)
+    try:
+        await canvas.evaluate(_STROKE_POINTER_JS)
+    except Exception as exc:
+        logger.debug("[signature_pad] Pointer JS stroke failed, falling back: %s", exc)
+        # Fallback: Playwright dispatch_event with pointerId/isPrimary
+        drag_start_x = canvas_x + canvas_width * 0.25
+        drag_start_y = canvas_y + canvas_height * 0.5
+        mid_x = canvas_x + canvas_width * 0.45
+        mid_y = canvas_y + canvas_height * 0.4
+        drag_end_x = canvas_x + canvas_width * 0.65
+        drag_end_y = canvas_y + canvas_height * 0.5
+        for etype, x, y, buttons in (
+            ("pointerdown", drag_start_x, drag_start_y, 1),
+            ("pointermove", mid_x, mid_y, 1),
+            ("pointermove", drag_end_x, drag_end_y, 1),
+            ("pointerup", drag_end_x, drag_end_y, 0),
+        ):
+            await canvas.dispatch_event(
+                etype,
+                {
+                    "clientX": x,
+                    "clientY": y,
+                    "buttons": buttons,
+                    "button": 0,
+                    "pointerId": 1,
+                    "pointerType": "pen",
+                    "isPrimary": True,
+                    "pressure": 0.5 if buttons else 0,
+                    "bubbles": True,
+                },
+            )
+        await canvas.dispatch_event(
+            "mousedown",
+            {"clientX": drag_start_x, "clientY": drag_start_y, "buttons": 1, "bubbles": True},
+        )
+        await canvas.dispatch_event(
+            "mousemove",
+            {"clientX": mid_x, "clientY": mid_y, "buttons": 1, "bubbles": True},
+        )
+        await canvas.dispatch_event(
+            "mousemove",
+            {"clientX": drag_end_x, "clientY": drag_end_y, "buttons": 1, "bubbles": True},
+        )
+        await canvas.dispatch_event(
+            "mouseup",
+            {"clientX": drag_end_x, "clientY": drag_end_y, "buttons": 0, "bubbles": True},
+        )
+        await canvas.dispatch_event("input", {"bubbles": True})
+        await canvas.dispatch_event("change", {"bubbles": True})
 
-    await canvas.dispatch_event(
-        "pointerdown",
-        {
-            "clientX": drag_start_x,
-            "clientY": drag_start_y,
-            "buttons": 1,
-            "pointerType": "pen",
-            "pressure": 0.5,
-            "bubbles": True,
-        },
-    )
-    await canvas.dispatch_event(
-        "pointermove",
-        {
-            "clientX": drag_end_x,
-            "clientY": drag_end_y,
-            "buttons": 1,
-            "pointerType": "pen",
-            "pressure": 0.5,
-            "bubbles": True,
-        },
-    )
-    await canvas.dispatch_event(
-        "pointerup",
-        {
-            "clientX": drag_end_x,
-            "clientY": drag_end_y,
-            "buttons": 0,
-            "pointerType": "pen",
-            "pressure": 0,
-            "bubbles": True,
-        },
-    )
+    # 3) Playwright touchscreen when available (helps #touchContainer pads)
+    try:
+        touchscreen = getattr(page, "touchscreen", None)
+        if touchscreen is not None and hasattr(touchscreen, "tap"):
+            # touchscreen has no drag API in all versions — tap near pad center as hint
+            await touchscreen.tap(
+                canvas_x + canvas_width * 0.3,
+                canvas_y + canvas_height * 0.5,
+            )
+    except Exception:
+        pass
 
-    await canvas.dispatch_event(
-        "mousedown",
-        {"clientX": drag_start_x, "clientY": drag_start_y, "buttons": 1, "bubbles": True},
-    )
-    await canvas.dispatch_event(
-        "mousemove",
-        {"clientX": drag_end_x, "clientY": drag_end_y, "buttons": 1, "bubbles": True},
-    )
-    await canvas.dispatch_event(
-        "mouseup",
-        {"clientX": drag_end_x, "clientY": drag_end_y, "buttons": 0, "bubbles": True},
-    )
-
-    await canvas.evaluate(
-        """
-        (canvas) => {
-            try {
-                const rect = canvas.getBoundingClientRect();
-                const x = rect.left + rect.width * 0.3;
-                const y = rect.top + rect.height * 0.5;
-                const touch = new Touch({
-                    identifier: Date.now(),
-                    target: canvas,
-                    clientX: x,
-                    clientY: y,
-                    radiusX: 2,
-                    radiusY: 2,
-                    rotationAngle: 0,
-                    force: 0.5,
-                });
-                canvas.dispatchEvent(new TouchEvent('touchstart', {
-                    touches: [touch], bubbles: true, cancelable: true
-                }));
-                canvas.dispatchEvent(new TouchEvent('touchmove', {
-                    touches: [touch], bubbles: true, cancelable: true
-                }));
-                canvas.dispatchEvent(new TouchEvent('touchend', {
-                    changedTouches: [touch], bubbles: true, cancelable: true
-                }));
-            } catch (err) {
-                // TouchEvent may be unsupported
+    # 4) If SignaturePad instance found and still empty, try library-safe nudge
+    try:
+        await canvas.evaluate(
+            """
+            (canvas) => {
+              function findPad(el) {
+                const direct = el.signaturePad || el._signaturePad || el.__signaturePad;
+                if (direct && typeof direct.isEmpty !== 'undefined') return direct;
+                let node = el;
+                for (let d = 0; d < 8 && node; d++) {
+                  for (const k of Object.keys(node)) {
+                    try {
+                      const v = node[k];
+                      if (!v || typeof v !== 'object') continue;
+                      if (typeof v.isEmpty === 'function' || typeof v.isEmpty === 'boolean') {
+                        if (v.canvas === el || v._canvas === el || !v.canvas) return v;
+                      }
+                    } catch (e) {}
+                  }
+                  node = node.parentElement;
+                }
+                if (window.signaturePad && window.signaturePad.canvas === el) {
+                  return window.signaturePad;
+                }
+                return null;
+              }
+              const pad = findPad(canvas);
+              if (!pad) return false;
+              const empty = typeof pad.isEmpty === 'function' ? pad.isEmpty() : !!pad.isEmpty;
+              if (!empty) return true;
+              // Safe: fire onBegin/onEnd if present — no forged data
+              try { if (typeof pad.onBegin === 'function') pad.onBegin(); } catch (e) {}
+              try { if (typeof pad.onEnd === 'function') pad.onEnd(); } catch (e) {}
+              return false;
             }
-        }
-        """
-    )
+            """
+        )
+    except Exception:
+        pass
 
-    await canvas.dispatch_event("input", {"bubbles": True})
-    await canvas.dispatch_event("change", {"bubbles": True})
-
-    # 3) Optional ctx paint — supplement only (after events)
+    # 5) Optional ctx paint — OFF by default (cosmetic ink must not drive PASS)
     if include_ctx_paint:
         await canvas.evaluate(
             """
@@ -453,93 +584,240 @@ async def draw_signature_stroke(
             }
             """
         )
+        logger.info(
+            "[signature_pad] Ctx paint applied (supplement only; not a PASS signal)"
+        )
 
-    logger.info("[signature_pad] Stroke strategies applied (mouse + pointer/touch + optional ctx)")
+    logger.info(
+        "[signature_pad] Stroke strategies applied (mouse + pointer/touch; ctx=%s)",
+        include_ctx_paint,
+    )
 
 
-async def verify_signature_ink(page: Any, canvas) -> bool:
+async def verify_signature_ink(
+    page: Any,
+    canvas,
+    *,
+    reject_pixel_only: bool = False,
+) -> InkVerifyResult:
     """
-    Return True when the pad has ink.
+    Gate whether the pad has real ink / form state.
 
-    Prefer SignaturePad ``isEmpty === false`` when the library is present;
-    otherwise sample canvas pixels for non-blank content.
+    Rules:
+    - SignaturePad (or equivalent) found → require ``isEmpty === false``;
+      pixels alone must NOT override.
+    - Library not found → do NOT treat post-ctx pixels as success when
+      ``reject_pixel_only`` (ctx paint was used). Prefer DOM gate: fail if
+      red/near-pad ``Required`` still visible; else pixels only if allowed.
     """
     try:
         result = await canvas.evaluate(
             """
             (canvas) => {
-                // SignaturePad instance on element or nearby
-                const pad =
-                    canvas.signaturePad ||
-                    canvas._signaturePad ||
-                    (canvas.__signaturePad) ||
-                    (window.signaturePad && window.signaturePad.canvas === canvas
-                        ? window.signaturePad : null);
+                function findPad(el) {
+                    const direct =
+                        el.signaturePad || el._signaturePad || el.__signaturePad;
+                    if (direct && typeof direct.isEmpty !== 'undefined') return direct;
+                    let node = el;
+                    for (let d = 0; d < 8 && node; d++) {
+                        try {
+                            for (const k of Object.keys(node)) {
+                                const v = node[k];
+                                if (!v || typeof v !== 'object') continue;
+                                if (
+                                    typeof v.isEmpty === 'function' ||
+                                    typeof v.isEmpty === 'boolean'
+                                ) {
+                                    if (
+                                        v.canvas === el ||
+                                        v._canvas === el ||
+                                        v.dotSize !== undefined ||
+                                        v.toData !== undefined
+                                    ) {
+                                        return v;
+                                    }
+                                }
+                            }
+                        } catch (e) {}
+                        node = node.parentElement;
+                    }
+                    if (
+                        window.signaturePad &&
+                        window.signaturePad.canvas === el
+                    ) {
+                        return window.signaturePad;
+                    }
+                    return null;
+                }
 
+                function requiredStillVisible(el) {
+                    let node = el.parentElement;
+                    for (let d = 0; d < 6 && node; d++) {
+                        const walk = node.querySelectorAll
+                            ? node.querySelectorAll('span, label, div, p, small, em, strong')
+                            : [];
+                        for (const t of walk) {
+                            const s = ((t.textContent || '') + '').replace(/\\s+/g, ' ').trim();
+                            if (!s || s.length > 48) continue;
+                            if (!/^required$/i.test(s) && !/\\brequired\\b/i.test(s)) continue;
+                            const cls = ((t.className || '') + '').toLowerCase();
+                            let color = '';
+                            try { color = (window.getComputedStyle(t).color || '').toLowerCase(); } catch (e) {}
+                            const redish =
+                                color.includes('rgb(255') ||
+                                color.includes('rgb(220') ||
+                                color.includes('rgb(244') ||
+                                color.includes('rgb(239') ||
+                                color.includes('#f') ||
+                                color.includes('red');
+                            const errCls =
+                                cls.includes('error') ||
+                                cls.includes('invalid') ||
+                                cls.includes('required') ||
+                                cls.includes('danger') ||
+                                cls.includes('warning');
+                            if (redish || errCls || /^required$/i.test(s)) return true;
+                        }
+                        node = node.parentElement;
+                    }
+                    return false;
+                }
+
+                function samplePixels(el) {
+                    const ctx = el.getContext('2d');
+                    if (!ctx) return { empty: true };
+                    const w = el.width || 0;
+                    const h = el.height || 0;
+                    if (w < 2 || h < 2) return { empty: true };
+                    const sample = ctx.getImageData(0, 0, w, h).data;
+                    let ink = 0;
+                    const step = 16;
+                    for (let i = 0; i < sample.length; i += step) {
+                        const r = sample[i];
+                        const g = sample[i + 1];
+                        const b = sample[i + 2];
+                        const a = sample[i + 3];
+                        if (a > 10 && (r < 250 || g < 250 || b < 250)) {
+                            ink++;
+                            if (ink > 5) return { empty: false };
+                        }
+                    }
+                    return { empty: ink === 0 };
+                }
+
+                const pad = findPad(canvas);
                 if (pad && typeof pad.isEmpty === 'function') {
-                    return { source: 'signaturepad', empty: pad.isEmpty() };
+                    const empty = !!pad.isEmpty();
+                    // Library present: pixels MUST NOT override
+                    return {
+                        source: 'signaturepad',
+                        empty: empty,
+                        has_ink: !empty,
+                        library_present: true,
+                    };
                 }
                 if (pad && typeof pad.isEmpty === 'boolean') {
-                    return { source: 'signaturepad', empty: pad.isEmpty };
+                    const empty = !!pad.isEmpty;
+                    return {
+                        source: 'signaturepad',
+                        empty: empty,
+                        has_ink: !empty,
+                        library_present: true,
+                    };
                 }
 
-                // Common data attribute / sibling hooks
-                try {
-                    const parent = canvas.parentElement;
-                    if (parent) {
-                        const keys = Object.keys(parent);
-                        for (const k of keys) {
-                            const v = parent[k];
-                            if (v && typeof v.isEmpty === 'function') {
-                                return { source: 'signaturepad', empty: v.isEmpty() };
-                            }
-                        }
-                    }
-                } catch (e) {}
-
-                const ctx = canvas.getContext('2d');
-                if (!ctx) return { source: 'pixels', empty: true };
-                const w = canvas.width || 0;
-                const h = canvas.height || 0;
-                if (w < 2 || h < 2) return { source: 'pixels', empty: true };
-
-                const sample = ctx.getImageData(0, 0, w, h).data;
-                // Look for non-near-white / non-transparent pixels
-                let ink = 0;
-                const step = 16; // sample every 4th pixel (RGBA stride * 4)
-                for (let i = 0; i < sample.length; i += step) {
-                    const r = sample[i];
-                    const g = sample[i + 1];
-                    const b = sample[i + 2];
-                    const a = sample[i + 3];
-                    if (a > 10 && (r < 250 || g < 250 || b < 250)) {
-                        ink++;
-                        if (ink > 5) {
-                            return { source: 'pixels', empty: false };
-                        }
-                    }
+                const req = requiredStillVisible(canvas);
+                if (req) {
+                    return {
+                        source: 'fail',
+                        empty: true,
+                        has_ink: false,
+                        library_present: false,
+                        reason: 'required_still_visible',
+                    };
                 }
-                return { source: 'pixels', empty: ink === 0 };
+
+                const pix = samplePixels(canvas);
+                if (!pix.empty) {
+                    // Required not visible + non-blank pixels → form may accept
+                    return {
+                        source: 'pixels',
+                        empty: false,
+                        has_ink: true,
+                        library_present: false,
+                        required_cleared: true,
+                    };
+                }
+                return {
+                    source: 'pixels',
+                    empty: true,
+                    has_ink: false,
+                    library_present: false,
+                };
             }
             """
         )
     except Exception as exc:
         logger.warning("[signature_pad] Ink verification evaluate failed: %s", exc)
-        return False
+        return InkVerifyResult(has_ink=False, source="fail")
 
     if not isinstance(result, dict):
-        return bool(result)
+        ok = bool(result)
+        source = "unknown" if ok else "fail"
+        logger.info(
+            "[signature_pad] Ink verify source=%s has_ink=%s (non-dict)",
+            source,
+            ok,
+        )
+        return InkVerifyResult(has_ink=ok, source=source)
 
+    library_present = bool(result.get("library_present"))
     empty = result.get("empty", True)
-    source = result.get("source", "unknown")
-    has_ink = empty is False
+    raw_source = str(result.get("source") or "unknown")
+    has_ink = result.get("has_ink")
+    if has_ink is None:
+        has_ink = empty is False
+
+    # P0: pixels alone must never override SignaturePad empty
+    if library_present and empty:
+        has_ink = False
+        raw_source = "signaturepad"
+
+    # P0: post-ctx cosmetic pixels are not a PASS (fail closed on pixel-only)
+    if reject_pixel_only and not library_present and raw_source == "pixels" and has_ink:
+        logger.warning(
+            "[signature_pad] Rejecting pixel-only ink after ctx paint "
+            "(cosmetic ink is not form state)"
+        )
+        has_ink = False
+        raw_source = "fail"
+
+    # Promote clearer source when Required cleared and pixels ok (no library)
+    if (
+        has_ink
+        and not library_present
+        and result.get("required_cleared")
+        and raw_source == "pixels"
+    ):
+        raw_source = "required_cleared"
+        logger.info(
+            "[signature_pad] Ink verify source=required_cleared "
+            "(no SignaturePad instance; near-pad Required not visible)"
+        )
+
+    if result.get("reason") == "required_still_visible":
+        raw_source = "fail"
+
     logger.info(
-        "[signature_pad] Ink verify source=%s empty=%s has_ink=%s",
-        source,
+        "[signature_pad] Ink verify source=%s empty=%s has_ink=%s "
+        "library_present=%s reject_pixel_only=%s",
+        raw_source,
         empty,
         has_ink,
+        library_present,
+        reject_pixel_only,
     )
-    return has_ink
+    return InkVerifyResult(has_ink=bool(has_ink), source=raw_source)
 
 
 async def sign_canvas(
@@ -547,13 +825,16 @@ async def sign_canvas(
     *,
     instruction: Optional[str] = None,
     xpath: Optional[str] = None,
-    include_ctx_paint: bool = True,
+    include_ctx_paint: bool = False,
 ) -> SignResult:
     """
     Locate canvas, draw multi-strategy stroke, verify ink.
 
     Returns ``SignResult`` with ``success=False`` and a clear error when no
     canvas is found or ink verification fails (fail closed — never silent PASS).
+
+    ``include_ctx_paint`` defaults to False. If enabled, pixel-only verify after
+    ctx paint is rejected (SignaturePad / Required gate still required).
     """
     try:
         canvas = await locate_signature_canvas(
@@ -573,11 +854,21 @@ async def sign_canvas(
         logger.warning("[signature_pad] %s", msg)
         return SignResult(success=False, error=msg, ink_verified=False)
 
-    has_ink = await verify_signature_ink(page, canvas)
-    if not has_ink:
-        msg = "Signature pad appears empty after stroke (ink verification failed)"
+    verify = await verify_signature_ink(
+        page, canvas, reject_pixel_only=include_ctx_paint
+    )
+    if not verify.has_ink:
+        msg = (
+            "Signature pad appears empty after stroke (ink verification failed"
+            f"; source={verify.source})"
+        )
         logger.warning("[signature_pad] %s", msg)
-        return SignResult(success=False, error=msg, ink_verified=False)
+        return SignResult(
+            success=False,
+            error=msg,
+            ink_verified=False,
+            verify_source=verify.source,
+        )
 
     resolved_xpath = xpath
     if not resolved_xpath:
@@ -610,10 +901,14 @@ async def sign_canvas(
         except Exception:
             resolved_xpath = None
 
-    logger.info("[signature_pad] Sign succeeded with ink verified")
+    logger.info(
+        "[signature_pad] Sign succeeded with ink verified source=%s",
+        verify.source,
+    )
     return SignResult(
         success=True,
         error=None,
         ink_verified=True,
         xpath=resolved_xpath if isinstance(resolved_xpath, str) else xpath,
+        verify_source=verify.source,
     )

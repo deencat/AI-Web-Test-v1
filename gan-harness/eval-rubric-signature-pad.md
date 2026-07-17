@@ -4,7 +4,7 @@
 **Spec:** `gan-harness/spec.md` § Feature 5  
 **Weight total:** 1.0  
 **Pass threshold:** ≥ 0.85 weighted score  
-**Automatic fail:** Sign step PASSes when `act()` only `scrollIntoView`/locator and canvas stays empty; fallback still exception-only; PASS without ink verification; ctx-only paint leaves SignaturePad empty while PASS; eager Stagehand init for signatures; tier executors called from endpoints
+**Automatic fail:** Sign step PASSes when `act()` only `scrollIntoView`/locator and canvas stays empty; fallback still exception-only; PASS without ink verification; ctx-only / **pixel-only after ctx paint** leaves SignaturePad empty (or portal **Required** still shown) while PASS; eager Stagehand init for signatures; tier executors called from endpoints
 
 ---
 
@@ -163,6 +163,7 @@ score = Σ (criterion_weight × pass?1:0)
 | Fallback only on `act()` exception | Automatic fail (S3) |
 | PASS with blank canvas / empty SignaturePad | Automatic fail (I1) |
 | Ctx paint alone; library still empty; step PASS | Automatic fail (I3) |
+| Pixel-only after ctx paint (`source=pixels`) while Required/SignaturePad empty | Automatic fail (I3 / #1131) |
 | Eager Stagehand for signatures | Automatic fail (H3) |
 | Tier executors from endpoints | Automatic fail (H2 / hard constraint) |
 | "Fix" only by longer Stagehand prompt | Automatic fail (S2) |

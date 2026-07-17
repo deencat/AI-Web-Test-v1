@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.services.signature_pad import (
+    InkVerifyResult,
     SignResult,
     draw_signature_stroke,
     infer_signature_step_action,
@@ -107,43 +108,166 @@ class TestInferSignatureStepAction:
 async def test_verify_ink_empty_fails():
     canvas = AsyncMock()
     canvas.evaluate = AsyncMock(
-        return_value={"source": "pixels", "empty": True}
+        return_value={
+            "source": "pixels",
+            "empty": True,
+            "has_ink": False,
+            "library_present": False,
+        }
     )
-    assert await verify_signature_ink(MagicMock(), canvas) is False
+    result = await verify_signature_ink(MagicMock(), canvas)
+    assert isinstance(result, InkVerifyResult)
+    assert result.has_ink is False
+    assert result.source == "pixels"
 
 
 @pytest.mark.asyncio
 async def test_verify_ink_after_stroke_passes():
     canvas = AsyncMock()
     canvas.evaluate = AsyncMock(
-        return_value={"source": "pixels", "empty": False}
+        return_value={
+            "source": "pixels",
+            "empty": False,
+            "has_ink": True,
+            "library_present": False,
+            "required_cleared": True,
+        }
     )
-    assert await verify_signature_ink(MagicMock(), canvas) is True
+    result = await verify_signature_ink(MagicMock(), canvas)
+    assert result.has_ink is True
+    assert result.source == "required_cleared"
+
+
+@pytest.mark.asyncio
+async def test_verify_ink_pixels_without_required_cleared():
+    """Native canvas ink with no Required gate → source stays pixels."""
+    canvas = AsyncMock()
+    canvas.evaluate = AsyncMock(
+        return_value={
+            "source": "pixels",
+            "empty": False,
+            "has_ink": True,
+            "library_present": False,
+        }
+    )
+    result = await verify_signature_ink(MagicMock(), canvas)
+    assert result.has_ink is True
+    assert result.source == "pixels"
 
 
 @pytest.mark.asyncio
 async def test_signaturepad_isempty_false():
     canvas = AsyncMock()
     canvas.evaluate = AsyncMock(
-        return_value={"source": "signaturepad", "empty": False}
+        return_value={
+            "source": "signaturepad",
+            "empty": False,
+            "has_ink": True,
+            "library_present": True,
+        }
     )
-    assert await verify_signature_ink(MagicMock(), canvas) is True
+    result = await verify_signature_ink(MagicMock(), canvas)
+    assert result.has_ink is True
+    assert result.source == "signaturepad"
 
 
 @pytest.mark.asyncio
 async def test_signaturepad_isempty_true_fails():
     canvas = AsyncMock()
     canvas.evaluate = AsyncMock(
-        return_value={"source": "signaturepad", "empty": True}
+        return_value={
+            "source": "signaturepad",
+            "empty": True,
+            "has_ink": False,
+            "library_present": True,
+        }
     )
-    assert await verify_signature_ink(MagicMock(), canvas) is False
+    result = await verify_signature_ink(MagicMock(), canvas)
+    assert result.has_ink is False
+    assert result.source == "signaturepad"
 
 
 @pytest.mark.asyncio
 async def test_verify_ink_evaluate_exception_fails():
     canvas = AsyncMock()
     canvas.evaluate = AsyncMock(side_effect=RuntimeError("boom"))
-    assert await verify_signature_ink(MagicMock(), canvas) is False
+    result = await verify_signature_ink(MagicMock(), canvas)
+    assert result.has_ink is False
+    assert result.source == "fail"
+
+
+@pytest.mark.asyncio
+async def test_pixel_only_after_ctx_paint_does_not_pass():
+    """
+    Exec #1131 class: cosmetic ctx ink + source=pixels must NOT PASS
+    when SignaturePad / form state never updated (reject_pixel_only).
+    """
+    canvas = AsyncMock()
+    canvas.evaluate = AsyncMock(
+        return_value={
+            "source": "pixels",
+            "empty": False,
+            "has_ink": True,
+            "library_present": False,
+            "required_cleared": True,
+        }
+    )
+    result = await verify_signature_ink(
+        MagicMock(), canvas, reject_pixel_only=True
+    )
+    assert result.has_ink is False
+    assert result.source == "fail"
+
+
+@pytest.mark.asyncio
+async def test_signaturepad_empty_pixels_do_not_override():
+    """Library present + isEmpty → pixels alone must not override."""
+    canvas = AsyncMock()
+    canvas.evaluate = AsyncMock(
+        return_value={
+            "source": "signaturepad",
+            "empty": True,
+            "has_ink": False,
+            "library_present": True,
+        }
+    )
+    result = await verify_signature_ink(MagicMock(), canvas)
+    assert result.has_ink is False
+    assert result.source == "signaturepad"
+
+
+@pytest.mark.asyncio
+async def test_signaturepad_empty_overrides_misleading_has_ink():
+    """Even if evaluate lies with has_ink=True, empty library pad fails."""
+    canvas = AsyncMock()
+    canvas.evaluate = AsyncMock(
+        return_value={
+            "source": "pixels",  # misleading
+            "empty": True,
+            "has_ink": True,  # cosmetic pixels claim
+            "library_present": True,
+        }
+    )
+    result = await verify_signature_ink(MagicMock(), canvas)
+    assert result.has_ink is False
+    assert result.source == "signaturepad"
+
+
+@pytest.mark.asyncio
+async def test_required_still_visible_fails():
+    canvas = AsyncMock()
+    canvas.evaluate = AsyncMock(
+        return_value={
+            "source": "fail",
+            "empty": True,
+            "has_ink": False,
+            "library_present": False,
+            "reason": "required_still_visible",
+        }
+    )
+    result = await verify_signature_ink(MagicMock(), canvas)
+    assert result.has_ink is False
+    assert result.source == "fail"
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +377,7 @@ async def test_locate_raises_when_no_canvas():
 async def test_stroke_uses_pointer_events():
     page = AsyncMock()
     page.mouse = AsyncMock()
+    page.touchscreen = None
     canvas = AsyncMock()
     canvas.scroll_into_view_if_needed = AsyncMock()
     canvas.focus = AsyncMock()
@@ -260,20 +385,75 @@ async def test_stroke_uses_pointer_events():
         return_value={"x": 10, "y": 20, "width": 300, "height": 150}
     )
     canvas.dispatch_event = AsyncMock()
-    canvas.evaluate = AsyncMock(return_value=True)
+    # Primary path: multi-point PointerEvent JS (no ctx by default)
+    canvas.evaluate = AsyncMock(return_value={"ok": True, "width": 300, "height": 150})
 
     await draw_signature_stroke(page, canvas)
 
     page.mouse.down.assert_awaited()
     page.mouse.up.assert_awaited()
-    # Pointer events preferred
+    # Pointer JS stroke invoked (evaluate with stroke script)
+    assert canvas.evaluate.await_count >= 1
+    # Default: no ctx paint — only pointer JS + optional pad nudge evaluates
+    # (ctx paint would be an extra evaluate with strokeStyle)
+
+
+@pytest.mark.asyncio
+async def test_stroke_default_skips_ctx_paint():
+    page = AsyncMock()
+    page.mouse = AsyncMock()
+    page.touchscreen = None
+    canvas = AsyncMock()
+    canvas.scroll_into_view_if_needed = AsyncMock()
+    canvas.focus = AsyncMock()
+    canvas.bounding_box = AsyncMock(
+        return_value={"x": 0, "y": 0, "width": 200, "height": 100}
+    )
+    canvas.dispatch_event = AsyncMock()
+
+    eval_scripts = []
+
+    async def capture_eval(script, *args, **kwargs):
+        eval_scripts.append(script if isinstance(script, str) else str(script))
+        return {"ok": True}
+
+    canvas.evaluate = AsyncMock(side_effect=capture_eval)
+    await draw_signature_stroke(page, canvas)  # include_ctx_paint defaults False
+    joined = "\n".join(eval_scripts)
+    assert "strokeStyle" not in joined
+
+
+@pytest.mark.asyncio
+async def test_stroke_pointer_js_fallback_dispatches_events():
+    """When canvas.evaluate for pointer JS fails, dispatch_event path runs."""
+    page = AsyncMock()
+    page.mouse = AsyncMock()
+    page.touchscreen = None
+    canvas = AsyncMock()
+    canvas.scroll_into_view_if_needed = AsyncMock()
+    canvas.focus = AsyncMock()
+    canvas.bounding_box = AsyncMock(
+        return_value={"x": 10, "y": 20, "width": 300, "height": 150}
+    )
+    canvas.dispatch_event = AsyncMock()
+
+    call_n = {"n": 0}
+
+    async def eval_side_effect(script, *args, **kwargs):
+        call_n["n"] += 1
+        # First call is pointer JS — fail to force fallback
+        if call_n["n"] == 1:
+            raise RuntimeError("PointerEvent unsupported")
+        return False  # pad nudge
+
+    canvas.evaluate = AsyncMock(side_effect=eval_side_effect)
+    await draw_signature_stroke(page, canvas, include_ctx_paint=False)
+
     event_names = [c.args[0] for c in canvas.dispatch_event.await_args_list]
     assert "pointerdown" in event_names
     assert "pointermove" in event_names
     assert "pointerup" in event_names
     assert "mousedown" in event_names
-    # ctx paint was also invoked (supplement)
-    assert canvas.evaluate.await_count >= 1
 
 
 @pytest.mark.asyncio
@@ -295,11 +475,49 @@ async def test_ctx_only_insufficient_when_signaturepad_empty():
     Events are required for library state; ctx alone must not PASS.
     """
     canvas = AsyncMock()
-    # Library still empty after ctx-only paint
     canvas.evaluate = AsyncMock(
-        return_value={"source": "signaturepad", "empty": True}
+        return_value={
+            "source": "signaturepad",
+            "empty": True,
+            "has_ink": False,
+            "library_present": True,
+        }
     )
-    assert await verify_signature_ink(MagicMock(), canvas) is False
+    result = await verify_signature_ink(MagicMock(), canvas)
+    assert result.has_ink is False
+    assert result.source == "signaturepad"
+
+
+@pytest.mark.asyncio
+async def test_sign_canvas_rejects_pixel_only_when_ctx_enabled():
+    """sign_canvas(include_ctx_paint=True) rejects pixel-only verify."""
+    page = MagicMock()
+    canvas = AsyncMock()
+
+    with (
+        patch(
+            "app.services.signature_pad.locate_signature_canvas",
+            new_callable=AsyncMock,
+            return_value=canvas,
+        ),
+        patch(
+            "app.services.signature_pad.draw_signature_stroke",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "app.services.signature_pad.verify_signature_ink",
+            new_callable=AsyncMock,
+            return_value=InkVerifyResult(has_ink=False, source="fail"),
+        ) as mock_verify,
+    ):
+        result = await sign_canvas(
+            page, instruction="Sign it", include_ctx_paint=True
+        )
+
+    mock_verify.assert_awaited_once()
+    assert mock_verify.await_args.kwargs.get("reject_pixel_only") is True
+    assert result.success is False
+    assert result.verify_source == "fail"
 
 
 # ---------------------------------------------------------------------------
@@ -325,7 +543,7 @@ async def test_sign_canvas_success():
         patch(
             "app.services.signature_pad.verify_signature_ink",
             new_callable=AsyncMock,
-            return_value=True,
+            return_value=InkVerifyResult(has_ink=True, source="signaturepad"),
         ),
     ):
         canvas.evaluate = AsyncMock(return_value="//canvas[1]")
@@ -333,7 +551,10 @@ async def test_sign_canvas_success():
 
     assert result.success is True
     assert result.ink_verified is True
+    assert result.verify_source == "signaturepad"
     stroke.assert_awaited_once()
+    # Default include_ctx_paint=False
+    assert stroke.await_args.kwargs.get("include_ctx_paint") is False
 
 
 @pytest.mark.asyncio
@@ -354,7 +575,7 @@ async def test_sign_canvas_empty_ink_fails():
         patch(
             "app.services.signature_pad.verify_signature_ink",
             new_callable=AsyncMock,
-            return_value=False,
+            return_value=InkVerifyResult(has_ink=False, source="signaturepad"),
         ),
     ):
         result = await sign_canvas(page, instruction="Sign it")
@@ -362,6 +583,7 @@ async def test_sign_canvas_empty_ink_fails():
     assert result.success is False
     assert result.ink_verified is False
     assert "empty" in (result.error or "").lower()
+    assert result.verify_source == "signaturepad"
 
 
 @pytest.mark.asyncio
@@ -540,14 +762,18 @@ async def test_tier3_fallback_raises_on_empty_ink():
 async def test_verify_ink_non_dict_truthy():
     canvas = AsyncMock()
     canvas.evaluate = AsyncMock(return_value=True)
-    assert await verify_signature_ink(MagicMock(), canvas) is True
+    result = await verify_signature_ink(MagicMock(), canvas)
+    assert result.has_ink is True
+    assert result.source == "unknown"
 
 
 @pytest.mark.asyncio
 async def test_verify_ink_non_dict_falsy():
     canvas = AsyncMock()
     canvas.evaluate = AsyncMock(return_value=0)
-    assert await verify_signature_ink(MagicMock(), canvas) is False
+    result = await verify_signature_ink(MagicMock(), canvas)
+    assert result.has_ink is False
+    assert result.source == "fail"
 
 
 @pytest.mark.asyncio
@@ -605,6 +831,7 @@ async def test_index_of_element_on_error():
 async def test_stroke_continues_when_focus_fails():
     page = AsyncMock()
     page.mouse = AsyncMock()
+    page.touchscreen = None
     canvas = AsyncMock()
     canvas.scroll_into_view_if_needed = AsyncMock()
     canvas.focus = AsyncMock(side_effect=RuntimeError("not focusable"))
@@ -612,9 +839,111 @@ async def test_stroke_continues_when_focus_fails():
         return_value={"x": 0, "y": 0, "width": 200, "height": 100}
     )
     canvas.dispatch_event = AsyncMock()
-    canvas.evaluate = AsyncMock(return_value=True)
+    canvas.evaluate = AsyncMock(return_value={"ok": True})
     await draw_signature_stroke(page, canvas, include_ctx_paint=False)
     page.mouse.down.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_stroke_with_ctx_paint_opt_in():
+    page = AsyncMock()
+    page.mouse = AsyncMock()
+    page.touchscreen = None
+    canvas = AsyncMock()
+    canvas.scroll_into_view_if_needed = AsyncMock()
+    canvas.focus = AsyncMock()
+    canvas.bounding_box = AsyncMock(
+        return_value={"x": 0, "y": 0, "width": 200, "height": 100}
+    )
+    canvas.dispatch_event = AsyncMock()
+    eval_scripts = []
+
+    async def capture_eval(script, *args, **kwargs):
+        eval_scripts.append(script if isinstance(script, str) else str(script))
+        return True
+
+    canvas.evaluate = AsyncMock(side_effect=capture_eval)
+    await draw_signature_stroke(page, canvas, include_ctx_paint=True)
+    joined = "\n".join(eval_scripts)
+    assert "strokeStyle" in joined
+
+
+@pytest.mark.asyncio
+async def test_stroke_touchscreen_tap_when_available():
+    page = AsyncMock()
+    page.mouse = AsyncMock()
+    page.touchscreen = AsyncMock()
+    page.touchscreen.tap = AsyncMock()
+    canvas = AsyncMock()
+    canvas.scroll_into_view_if_needed = AsyncMock()
+    canvas.focus = AsyncMock()
+    canvas.bounding_box = AsyncMock(
+        return_value={"x": 10, "y": 20, "width": 100, "height": 50}
+    )
+    canvas.dispatch_event = AsyncMock()
+    canvas.evaluate = AsyncMock(return_value={"ok": True})
+    await draw_signature_stroke(page, canvas, include_ctx_paint=False)
+    page.touchscreen.tap.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_stroke_touchscreen_tap_exception_swallowed():
+    page = AsyncMock()
+    page.mouse = AsyncMock()
+    page.touchscreen = AsyncMock()
+    page.touchscreen.tap = AsyncMock(side_effect=RuntimeError("no touch"))
+    canvas = AsyncMock()
+    canvas.scroll_into_view_if_needed = AsyncMock()
+    canvas.focus = AsyncMock()
+    canvas.bounding_box = AsyncMock(
+        return_value={"x": 10, "y": 20, "width": 100, "height": 50}
+    )
+    canvas.dispatch_event = AsyncMock()
+    canvas.evaluate = AsyncMock(return_value={"ok": True})
+    await draw_signature_stroke(page, canvas, include_ctx_paint=False)
+    page.mouse.down.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_stroke_pad_nudge_exception_swallowed():
+    page = AsyncMock()
+    page.mouse = AsyncMock()
+    page.touchscreen = None
+    canvas = AsyncMock()
+    canvas.scroll_into_view_if_needed = AsyncMock()
+    canvas.focus = AsyncMock()
+    canvas.bounding_box = AsyncMock(
+        return_value={"x": 0, "y": 0, "width": 200, "height": 100}
+    )
+    canvas.dispatch_event = AsyncMock()
+
+    call_n = {"n": 0}
+
+    async def eval_side_effect(script, *args, **kwargs):
+        call_n["n"] += 1
+        if call_n["n"] == 1:
+            return {"ok": True}  # pointer JS ok
+        raise RuntimeError("pad nudge failed")
+
+    canvas.evaluate = AsyncMock(side_effect=eval_side_effect)
+    await draw_signature_stroke(page, canvas, include_ctx_paint=False)
+    page.mouse.down.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_verify_ink_derives_has_ink_from_empty_when_missing():
+    canvas = AsyncMock()
+    canvas.evaluate = AsyncMock(
+        return_value={
+            "source": "pixels",
+            "empty": False,
+            "library_present": False,
+            # has_ink intentionally omitted
+        }
+    )
+    result = await verify_signature_ink(MagicMock(), canvas)
+    assert result.has_ink is True
+    assert result.source == "pixels"
 
 
 @pytest.mark.asyncio
@@ -636,13 +965,14 @@ async def test_sign_canvas_xpath_resolve_exception_still_succeeds():
         patch(
             "app.services.signature_pad.verify_signature_ink",
             new_callable=AsyncMock,
-            return_value=True,
+            return_value=InkVerifyResult(has_ink=True, source="pixels"),
         ),
     ):
         result = await sign_canvas(page, instruction="Sign it")
 
     assert result.success is True
     assert result.xpath is None
+    assert result.verify_source == "pixels"
 
 
 @pytest.mark.asyncio

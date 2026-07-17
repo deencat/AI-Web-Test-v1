@@ -43,7 +43,7 @@ The execution engine runs saved test steps against a live browser. **ADR-002-1**
 
 **Timed wait (ADR-010):** User steps like `wait: 10s` / `Wait 10 seconds` are handled in `ExecutionService` via `timed_wait.py` **before** tier dispatch. Cancel-aware chunked sleep (ADR-009). Distinct from ADR-002 readiness (`post_click_readiness.py`). Never Stagehand `act("wait…")`.
 
-**Signature pad ink verify (Feature 5):** For `draw_signature` / `sign`, programmatic stroke + ink verification in `signature_pad.py` is the source of truth. Tier 3 must **never** PASS on soft Stagehand `act()` (`scrollIntoView` / locator-only) with a blank canvas. Tier 2 tries canvas DOM heuristics when observe returns empty (canvas often absent from a11y tree). Prefer pointer/mouse/touch events over ctx-only paint (SignaturePad `isEmpty`). Lazy Tier 2/3 init unchanged (ADR-002-1).
+**Signature pad ink verify (Feature 5 / 5.1):** For `draw_signature` / `sign`, programmatic stroke + ink verification in `signature_pad.py` is the source of truth. Tier 3 must **never** PASS on soft Stagehand `act()` (`scrollIntoView` / locator-only) with a blank canvas. Tier 2 tries canvas DOM heuristics when observe returns empty (canvas often absent from a11y tree). Prefer pointer/mouse/touch events over ctx-only paint (SignaturePad `isEmpty`). **Pixel-only after optional ctx paint is an invalid PASS** for SignaturePad UIs (`include_ctx_paint` defaults off; when on, `reject_pixel_only` fails closed). Lazy Tier 2/3 init unchanged (ADR-002-1).
 ## Fallback Strategies (ExecutionSettings)
 
 Configured via `ExecutionSettings.fallback_strategy` (`app/schemas/execution_settings.py`):

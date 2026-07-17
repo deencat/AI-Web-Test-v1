@@ -4145,20 +4145,24 @@ Update `_is_three_hk_promotion_card_click()` to return true when the instruction
 ## ADR-002-54 (Addendum): Signature Pad Ink Verification for draw_signature / sign
 
 **Status:** Accepted (Feature 5 / GAN harness)  
-**Date:** 2026-07-17
+**Date:** 2026-07-17  
+**Amended:** 2026-07-17 (Feature 5.1 / exec #1131)
 
 ### Context
 
 Tier 3 Stagehand `act()` often returns soft success (`scrollIntoView` / locator) on signature label text without drawing ink. Programmatic fallback ran only on `act()` exceptions, producing false PASS on blank canvases (#1120 / #1122).
 
+A follow-on false PASS (#1131) occurred when optional **ctx paint** drew cosmetic ink and ink verify returned `source=pixels` while SignaturePad / form state stayed empty (portal still showed red **Required**).
+
 ### Decision
 
-- Shared module `backend/app/services/signature_pad.py` owns locate ? multi-strategy stroke (pointer/mouse/touch preferred) ? ink verify.
+- Shared module `backend/app/services/signature_pad.py` owns locate → multi-strategy stroke (pointer/mouse/touch preferred) → ink verify.
 - For `draw_signature` / `sign`, Tier 3 always invokes the shared helper after optional `act()` locator aid; soft `act()` success is never a PASS signal.
-- PASS requires ink (`SignaturePad.isEmpty === false` and/or non-blank pixels).
+- PASS requires real pad/form state: `SignaturePad.isEmpty === false` when the library is present (pixels alone must not override). When no library is found, fail closed on post-ctx pixel-only ink and/or fail if near-pad **Required** validation is still visible.
+- `include_ctx_paint` defaults to **False**. Cosmetic ctx paint must never be the sole PASS signal.
 - Tier 2: when observe returns empty for sign steps, try canvas DOM heuristics before escalate.
 - Lazy Stagehand init unchanged (ADR-002-1).
 
 ### Consequences
 
-False PASS on blank signature pads is eliminated; consent/payment forms receive real ink or an honest FAIL.
+False PASS on blank signature pads is eliminated; consent/payment forms receive real ink or an honest FAIL. Pixel-only confidence after ctx paint is rejected for SignaturePad UIs.
