@@ -134,6 +134,7 @@ def _minimal_orm(
     tc.template_id = None
     tc.test_category = None
     tc.requires_runtime_credentials = requires_runtime_credentials
+    tc.readiness_status = "draft"
     return tc
 
 

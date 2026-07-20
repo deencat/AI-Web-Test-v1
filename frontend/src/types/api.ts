@@ -92,6 +92,7 @@ export interface CreateTestRequest {
   test_type: 'e2e' | 'unit' | 'integration' | 'api';
   priority?: 'high' | 'medium' | 'low';
   status?: 'pending' | 'passed' | 'failed' | 'running';
+  readiness_status?: 'draft' | 'ready_to_test' | 'blocked';
   steps: string[];
   expected_result: string;
   preconditions?: string;
@@ -109,6 +110,7 @@ export interface UpdateTestRequest {
   test_type?: 'e2e' | 'unit' | 'integration' | 'api';
   status?: 'passed' | 'failed' | 'pending' | 'running';
   priority?: 'high' | 'medium' | 'low';
+  readiness_status?: 'draft' | 'ready_to_test' | 'blocked';
   steps?: string[];
   expected_result?: string;
   preconditions?: string;

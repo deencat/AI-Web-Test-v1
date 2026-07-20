@@ -31,6 +31,13 @@ class TestStatus(str, enum.Enum):
     SKIPPED = "skipped"
 
 
+class ReadinessStatus(str, enum.Enum):
+    """Workflow readiness tag (authoring), distinct from execution TestStatus."""
+    DRAFT = "draft"
+    READY_TO_TEST = "ready_to_test"
+    BLOCKED = "blocked"
+
+
 class TestCase(Base):
     """Test case model."""
     
@@ -42,6 +49,12 @@ class TestCase(Base):
     test_type = Column(SQLEnum(TestType), nullable=False, index=True)
     priority = Column(SQLEnum(Priority), nullable=False, default=Priority.MEDIUM, index=True)
     status = Column(SQLEnum(TestStatus), nullable=False, default=TestStatus.PENDING, index=True)
+    readiness_status = Column(
+        SQLEnum(ReadinessStatus, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        default=ReadinessStatus.DRAFT,
+        index=True,
+    )
     
     # Test details
     steps = Column(JSON, nullable=False)  # Array of strings

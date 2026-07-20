@@ -2,7 +2,7 @@
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import datetime
-from app.models.test_case import TestType, Priority, TestStatus
+from app.models.test_case import TestType, Priority, TestStatus, ReadinessStatus
 from app.schemas.test_category import TestCategorySummary
 
 
@@ -13,6 +13,10 @@ class TestCaseBase(BaseModel):
     description: str = Field(..., min_length=1, description="Test case description")
     test_type: TestType = Field(..., description="Type of test (e2e, unit, integration, api)")
     priority: Priority = Field(default=Priority.MEDIUM, description="Test priority level")
+    readiness_status: ReadinessStatus = Field(
+        default=ReadinessStatus.DRAFT,
+        description="Workflow readiness tag (draft, ready_to_test, blocked) — not execution status",
+    )
     steps: List[str | Dict[str, Any]] = Field(
         ...,
         min_length=1,
@@ -93,6 +97,10 @@ class TestCaseUpdate(BaseModel):
     test_type: Optional[TestType] = None
     priority: Optional[Priority] = None
     status: Optional[TestStatus] = None
+    readiness_status: Optional[ReadinessStatus] = Field(
+        None,
+        description="Workflow readiness tag (draft, ready_to_test, blocked)",
+    )
     steps: Optional[List[str | Dict[str, Any]]] = Field(None, min_length=1)
     expected_result: Optional[str] = Field(None, min_length=1)
     preconditions: Optional[str] = None
@@ -288,6 +296,25 @@ class BatchCategoryRequest(BaseModel):
 
 class BatchCategoryResponse(BaseModel):
     """Response body for PATCH /tests/batch/category."""
+
+    updated: int
+    failed: List[int]
+
+
+# ── Batch Readiness Assignment ───────────────────────────────────────────────
+
+class BatchReadinessRequest(BaseModel):
+    """Request body for PATCH /tests/batch/readiness."""
+
+    test_ids: List[int] = Field(..., min_length=1, max_length=100)
+    readiness_status: ReadinessStatus = Field(
+        ...,
+        description="Readiness tag to assign (draft, ready_to_test, blocked)",
+    )
+
+
+class BatchReadinessResponse(BaseModel):
+    """Response body for PATCH /tests/batch/readiness."""
 
     updated: int
     failed: List[int]
