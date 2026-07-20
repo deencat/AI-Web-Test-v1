@@ -7,6 +7,7 @@ This document contains feature specs for the GAN harness. Each major section is 
 | 1 | Stop Execution | Cooperative cancel for 3-tier test runs |
 | 2 | Clone Test Case | Duplicate a saved test case with one click |
 | 3 | CRM Login Toggle Persist | Fix `requires_runtime_credentials` omitted by API sanitizer |
+| 4 | Test Readiness Status | Assign Ready / Draft / Blocked on Saved Tests + filter |
 
 ---
 
@@ -1432,3 +1433,364 @@ See `gan-harness/eval-rubric-crm-login-toggle.md` for weighted scoring (pass ≥
 - GET after update `true` returns `false`
 - Any password/credential persisted to DB or `localStorage`
 - Unrelated CRM auth redesign shipped as part of this fix
+
+---
+
+# Feature 4: Test Readiness Status — Saved Tests Status Tags + Filter
+
+> Generated from brief: *"On the Saved Tests page, users should assign/edit a status tag (Ready to Test, Draft, Blocked) on each test case and filter the list by those tags."*
+
+---
+
+## Vision
+
+QA engineers maintain a large Saved Tests library and need a lightweight way to signal **workflow readiness** — which cases are runnable today, which are still being authored, and which are blocked on external deps. **Test Readiness Status** adds a single mutually exclusive status tag on each saved test, visible and editable inline on `/tests/saved`, with a filter that composes with the existing type / priority / schedule / category filters.
+
+This is an **in-app productivity feature**, not a marketing surface. It should feel like the existing category chip/select and filter bar: quiet badges, familiar select controls, no new page, no flashy redesign.
+
+---
+
+## User Story
+
+**As a** QA engineer curating saved test cases,  
+**I want** to mark each test as Ready to Test, Draft, or Blocked and filter the list by that status,  
+**So that** I can focus on runnable tests, park incomplete drafts, and surface blockers without inventing ad-hoc naming conventions.
+
+**Acceptance (happy path):**
+1. User opens `/tests/saved` and sees each row show a readiness badge/select (default **Draft** for existing and new tests).
+2. User changes a row’s status to **Ready to Test** via the inline control → value persists after reload (API round-trip).
+3. User sets the Status filter to **Blocked** → only blocked tests remain; empty-filter copy is clear when none match.
+4. User opens Edit drawer → same status control available; Save persists readiness with other fields.
+5. Status filter composes with category/type/priority/schedule (AND logic, same as today).
+
+---
+
+## Key Product Decision: Single-Select Enum (Not Multi-Tag)
+
+| Option | Verdict |
+|--------|---------|
+| Multi-select tags via existing `tags` JSON | Reject — Ready / Draft / Blocked are mutually exclusive workflow states; multi-tag invites contradictory states |
+| Reuse existing `TestCase.status` (`pending` / `passed` / `failed` / …) | **Reject** — that column is execution/result lifecycle already used by list APIs, stats, and clone (`status=pending`). Overloading it breaks semantics |
+| New column `readiness_status` enum | **Accept** — clear name, SQLAlchemy enum, filterable, single source of truth |
+
+**Canonical values (API / DB snake_case):**
+
+| Value | UI label | Meaning |
+|-------|----------|---------|
+| `draft` | Draft | Still being authored / not ready to run |
+| `ready_to_test` | Ready to Test | Approved for execution |
+| `blocked` | Blocked | Cannot proceed (deps, env, bug, missing data) |
+
+**Default:** `draft` for create, clone (unless Should-Have overrides), and migration backfill of existing rows.  
+**Filter default:** `all` (show everything — do not hide legacy library on first load).
+
+---
+
+## Scope
+
+### In scope
+
+| Area | Deliverable |
+|------|-------------|
+| Model | `ReadinessStatus` enum + `TestCase.readiness_status` column (indexed, non-null, default `draft`) |
+| Migration | SQLAlchemy migration under `backend/migrations/` (or auto-migration pattern used by repo) |
+| Schemas | Include on Create / Update / Response; validate enum |
+| Sanitizer | `sanitize_test_case_for_response` includes `readiness_status` (avoid CRM-toggle class of bug) |
+| CRUD | Update path accepts field; list supports optional `readiness_status` query filter |
+| API | Existing `PUT /api/v1/tests/{id}` + `GET /api/v1/tests` query param — no new resource |
+| Frontend types | `api.ts` + `SavedTest` local interface |
+| Frontend service | `testsService.updateTest` already covers PUT; pass field through |
+| UI — list | Inline status select on each Saved Tests row (mirror category select pattern) |
+| UI — filter | Status `<select>` in the existing filter card next to Type / Priority / Schedule / Category |
+| UI — edit drawer | Status select in edit form; saved with `handleSaveEdit` |
+| Tests | Backend unit/API + frontend SavedTests filter/assign tests |
+| Docs | ADR-010 (or short addendum) — readiness ≠ execution status |
+
+### Out of scope
+
+- New Saved Tests page or sidebar destination
+- Multi-status / freeform tag editor for this feature
+- Changing or renaming existing `TestCase.status` (execution lifecycle)
+- Gating **Run** behind `ready_to_test` only (do not block execution in v1)
+- Auto-transition readiness from execution results (pass → ready, fail → blocked)
+- Suite-level readiness aggregation
+- ReqIQ / Hermes MCP exposure beyond existing test CRUD (unless trivial later)
+- Redesign of Saved Tests layout, colors theme overhaul, or marketing chrome
+
+---
+
+## Current State Analysis
+
+### What exists
+
+| Layer | Location | Status |
+|-------|----------|--------|
+| Saved Tests page | `frontend/src/pages/SavedTestsPage.tsx` | Filters: search, type, priority, schedule, category; row category select; edit drawer |
+| Category pattern (reference) | ADR-008 + inline `row-category-select-*` | **UX pattern to mirror** for readiness |
+| `TestCase.status` | `backend/app/models/test_case.py` `TestStatus` | **Execution lifecycle** — do not reuse |
+| List API filter | `GET /tests?status=` | Filters `TestStatus`, not readiness |
+| `tags` JSON | `TestCase.tags` | Freeform strings — not suitable as exclusive readiness |
+| Update API | `PUT /api/v1/tests/{id}` via `testsService.updateTest` | Extend payload |
+| Sanitizer | `sanitize_test_case_for_response` in `tests.py` | Must whitelist new field |
+| Clone | `crud/test_case.clone_test_case` | Must decide copy vs reset readiness |
+
+### What's missing
+
+| Gap | Required artifact |
+|-----|-------------------|
+| Enum + column | `ReadinessStatus` + `readiness_status` on `TestCase` |
+| Migration | Backfill existing rows → `draft` |
+| Schema + sanitizer | Create/Update/Response + sanitize dict key |
+| List query param | `readiness_status` on `list_test_cases` / `get_test_cases` |
+| Frontend filter state | `filterReadiness` + `filteredTests` AND clause |
+| Row + drawer controls | Selects with `data-testid` hooks |
+| Display labels map | `draft` → "Draft", etc. |
+
+---
+
+## Architecture
+
+### Data model
+
+```text
+test_cases.readiness_status  ENUM('draft','ready_to_test','blocked')
+  NOT NULL DEFAULT 'draft'  INDEX
+```
+
+SQLAlchemy sketch (Generator implements):
+
+```python
+class ReadinessStatus(str, enum.Enum):
+    DRAFT = "draft"
+    READY_TO_TEST = "ready_to_test"
+    BLOCKED = "blocked"
+
+# on TestCase:
+readiness_status = Column(
+    SQLEnum(ReadinessStatus),
+    nullable=False,
+    default=ReadinessStatus.DRAFT,
+    index=True,
+)
+```
+
+### API
+
+| Method | Path | Behavior |
+|--------|------|----------|
+| GET | `/api/v1/tests?readiness_status=draft` | Optional filter (server-side); omit = all |
+| GET | `/api/v1/tests/{id}` | Response includes `readiness_status` |
+| PUT | `/api/v1/tests/{id}` | Body may include `readiness_status`; omit leaves unchanged |
+| POST | `/api/v1/tests` | Optional; default `draft` |
+| POST | `/api/v1/tests/{id}/clone` | Copy source readiness (Must-Have) or reset to `draft` (document choice — **recommend copy**) |
+
+Invalid enum → **422**. Auth/ownership unchanged.
+
+**Layering:** Endpoints → services/CRUD only; no business logic in routers beyond validation wiring. Prefer updating `crud/test_case.py` update + list filters.
+
+### Frontend
+
+| Piece | Behavior |
+|-------|----------|
+| Filter bar | New Status select: All / Ready to Test / Draft / Blocked — `data-testid="saved-tests-readiness-filter"` |
+| Client filter | AND with existing `filteredTests` predicates (even if server filter also used — client filter required when full list already loaded, matching category pattern) |
+| Row control | Compact select styled like category chip — `data-testid={`row-readiness-select-${id}`}` |
+| Inline assign | On change → optimistic local update + `testsService.updateTest(id, { readiness_status })`; revert + toast/error on failure |
+| Edit drawer | Select bound to `editForm.readiness_status`; included in save payload and post-save `setTests` map |
+| Badge colors | Draft = gray; Ready to Test = green/teal; Blocked = amber/red — use existing Tailwind utility patterns (priority/type badges), not new design system |
+
+### Naming collision guard
+
+| Term in UI | Maps to |
+|------------|---------|
+| "Status" filter on Saved Tests | `readiness_status` |
+| Existing `test.status` in API responses | Keep as-is; do **not** show execution `pending/passed` as the new tag |
+| Execution History status | Unrelated — leave alone |
+
+If the UI label "Status" risks confusion with execution status elsewhere, prefer label **"Readiness"** in the filter and drawer; row can still show short labels (Draft / Ready / Blocked).
+
+---
+
+## Features (prioritized)
+
+### Must-Have (Sprint 1–2)
+
+1. **Readiness enum + migration:** Column exists; existing rows backfilled to `draft`; create defaults to `draft`.
+2. **API round-trip:** PUT/GET/list/sanitize include `readiness_status`; invalid value → 422.
+3. **Row inline edit:** Change status on Saved Tests row without opening drawer; persists across reload.
+4. **List filter:** Filter by readiness; composes with category/type/priority/schedule/search.
+5. **Edit drawer parity:** Status editable and saved with other fields.
+6. **Empty / error states:** No matches → clear message; failed inline update shows error and restores prior value.
+7. **Clone honesty:** Clone copies `readiness_status` from source (and sanitizer returns it).
+8. **Non-regression:** Category filters, batch delete, CRM toggle, clone, run still work.
+
+### Should-Have (Sprint 3–4)
+
+1. **Bulk readiness assign:** Toolbar select (like Set Category) for selected rows — `data-testid="set-readiness-button"`.
+2. **Server-side list filter:** `GET /tests?readiness_status=` wired in CRUD (useful for future pagination).
+3. **Filter counts:** Optional counts per readiness in filter dropdown or subtle badge.
+4. **URL query sync:** `?readiness=blocked` (or similar) restores filter on load — mirror `?edit=` pattern lightly.
+5. **TestDetailPage display:** Read-only or editable readiness on detail view if that page shows metadata today.
+6. **Accessibility:** Labelled selects, keyboard operable, status announced on change where easy.
+
+### Nice-to-Have (Sprint 5+)
+
+1. **Run-from-list hint:** Soft badge or tooltip if `blocked` / `draft` when clicking Run (still allow run).
+2. **Bulk filter chips:** Quick-click chips above the list (All / Ready / Draft / Blocked) in addition to dropdown.
+3. **Stats endpoint extension:** Include `by_readiness` alongside existing `by_status` in test stats if present.
+4. **ADR-010** published under `documentation/`.
+5. **Keyboard shortcut** focus filter (skip unless trivial).
+6. **Hermes/OpenAPI note** in integrator docs that readiness is available on test resources.
+
+---
+
+## Design Direction (in-app, not marketing)
+
+- **Color palette:** Reuse Saved Tests neutrals — gray-50/100 panels, blue-600 accents already used for category active state. Readiness: Draft `#6B7280` / bg gray-100; Ready `#047857` / bg emerald-100; Blocked `#B45309` / bg amber-100 (or rose-100 if amber conflicts with pageNotice).
+- **Typography:** Inherit app Inter/system stack already on Saved Tests — do **not** introduce display fonts.
+- **Layout philosophy:** Dense productivity list; one new filter column in the existing filter grid; one compact control in the row badge cluster.
+- **Visual identity:** Match category pill-selects and priority badges — avoid gradient pills, glow, emoji, purple-on-white AI-slop.
+- **Inspiration:** Linear / Jira issue status select; GitHub PR draft badge — small, scannable, editable in place.
+- **Motion:** Subtle only — disabled opacity while saving; no confetti, no page transitions.
+- **Anti-AI-slop:** No new hero, no card redesign, no icon row of status mascots, no dark-mode-only treatment.
+
+### Edge cases
+
+| Scenario | Expected |
+|----------|----------|
+| Legacy rows pre-migration | Backfill `draft` |
+| Filter Ready + Category X | AND — intersection |
+| Concurrent edit of readiness | Last write wins (existing PUT) |
+| Omit field on PUT | Unchanged |
+| Invalid string | 422 |
+| Clone of Blocked | Clone is Blocked (copy policy) |
+| Batch delete with filter active | Deletes selected only; filter unchanged |
+| Mobile narrow | Filter grid stacks as today; row select remains usable |
+
+---
+
+## Technical Stack
+
+- **Frontend:** React/Vite, existing `SavedTestsPage`, Tailwind utility classes, `testsService` in `frontend/src/services/`
+- **Backend:** FastAPI, SQLAlchemy models/schemas/CRUD, `tests.py` endpoints
+- **Key libraries:** No new packages expected
+- **Hard constraints:** Endpoints → services/CRUD; no Prisma; surgical diffs; activate `backend/venv` for pytest
+
+---
+
+## Sprint Plan
+
+### Sprint 1: Data model & API
+
+- Goals: Persist readiness; expose via sanitize + schemas; list/update work.
+- Features: #1, #2 (Must-Have)
+- Definition of done:
+  - Migration applied; column non-null default `draft`
+  - Unit tests: create default, PUT round-trip, sanitizer includes field, invalid → 422
+  - OpenAPI/docs reflect field if generated from schemas
+
+### Sprint 2: Saved Tests UI — assign + filter
+
+- Goals: Users can edit and filter on `/tests/saved`.
+- Features: #3–#6 (Must-Have)
+- Definition of done:
+  - Row select + filter + drawer wired
+  - Frontend tests for filter AND assign
+  - Reload preserves status
+  - Empty filter state covered
+
+### Sprint 3: Clone, bulk, polish
+
+- Goals: Clone honesty; bulk assign; optional URL/server filter.
+- Features: Must-Have #7–#8; Should-Have #1–#4
+- Definition of done:
+  - Clone copies readiness
+  - Bulk assign updates N selected rows
+  - Non-regression suite green for Saved Tests features
+
+### Sprint 4: Docs & evaluation hardening
+
+- Goals: ADR-010; evaluator script pass; Nice-to-Haves if time.
+- Features: Nice-to-Have #4; remaining Should-Haves
+- Definition of done:
+  - ADR documents distinction from `TestStatus`
+  - Rubric score ≥ 0.85
+  - Codemap touch if architecture noted (`docs/CODEMAPS/database.md` readiness row)
+
+---
+
+## Acceptance Criteria
+
+| ID | Criterion | Pass condition |
+|----|-----------|----------------|
+| AC1 | Distinct field | `readiness_status` exists; existing `status` unchanged in meaning |
+| AC2 | Three values only | Only `draft` / `ready_to_test` / `blocked` accepted |
+| AC3 | Default draft | New + migrated tests are `draft` |
+| AC4 | Inline assign | Row select persists via PUT; survives reload |
+| AC5 | Filter | Status filter shows only matching tests; AND with other filters |
+| AC6 | Drawer | Edit form can change readiness and save |
+| AC7 | Sanitizer | List/GET/PUT/clone responses include field |
+| AC8 | Clone | Clone preserves source readiness |
+| AC9 | No Run gate | Draft/Blocked tests can still be executed in v1 |
+| AC10 | Surgical | No new page; no execution-engine changes |
+
+---
+
+## Test Plan
+
+### Backend
+
+| Test | Assertion |
+|------|-----------|
+| Default on create | New test `readiness_status == draft` |
+| Update round-trip | PUT `ready_to_test` → GET same |
+| Invalid enum | PUT `"ready"` → 422 |
+| List filter | `?readiness_status=blocked` returns only blocked |
+| Sanitizer present | Dict key always present |
+| Clone copies | Source blocked → clone blocked |
+| Existing status untouched | `TestStatus.PENDING` still used for execution lifecycle field |
+
+### Frontend
+
+| Test | Assertion |
+|------|-----------|
+| Filter Ready | Only ready rows visible |
+| Filter + category | Intersection |
+| Row change | Calls updateTest with readiness; UI updates |
+| Failed update | Reverts prior value |
+| Drawer save | Payload includes readiness |
+
+### Evaluator script
+
+See `gan-harness/eval-rubric-readiness-status.md`.
+
+---
+
+## Risks & Edge Cases
+
+| Risk | Mitigation |
+|------|------------|
+| Confusing UI "Status" with execution status | Prefer label **Readiness**; document in ADR |
+| Sanitizer omission (CRM-toggle bug class) | Explicit checklist item + unit test |
+| Overloading `tags` JSON | Forbidden in this feature |
+| Gating Run accidentally | Out of scope — AC9 automatic fail if gated |
+| Large list client-only filter lag | Acceptable v1 (same as category); server filter Should-Have |
+
+---
+
+## Evaluation Criteria
+
+See `gan-harness/eval-rubric-readiness-status.md` for weighted scoring (pass ≥ 0.85).
+
+**Summary weights:**
+- Data model & API: 0.35
+- Saved Tests UX (assign + filter): 0.35
+- Craft & non-regression: 0.15
+- Tests & docs: 0.15
+
+**Automatic fail conditions:**
+- Reuses/overwrites `TestCase.status` execution enum for these labels
+- Multi-tag model for Ready/Draft/Blocked
+- No filter on Saved Tests
+- Field omitted from sanitizer (list/GET returns missing/`undefined` treated as wrong)
+- New marketing page or unrelated redesign
