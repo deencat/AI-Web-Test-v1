@@ -374,6 +374,21 @@ class TestsService {
     }
   }
 
+  async batchAssignReadiness(
+    test_ids: number[],
+    readiness_status: 'draft' | 'ready_to_test' | 'blocked'
+  ): Promise<{ updated: number; failed: number[] }> {
+    try {
+      const response = await api.patch<{ updated: number; failed: number[] }>(
+        '/tests/batch/readiness',
+        { test_ids, readiness_status }
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(apiHelpers.getErrorMessage(error));
+    }
+  }
+
   /**
    * Clone an existing test case.
    */

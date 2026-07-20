@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_current_user
 from app.models.user import User
-from app.models.test_case import TestType, TestStatus, Priority
+from app.models.test_case import TestType, TestStatus, Priority, ReadinessStatus
 from app.schemas.test_case import (
     TestCaseCreate,
     TestCaseUpdate,
@@ -16,12 +16,26 @@ from app.schemas.test_case import (
     BatchDeleteResponse,
     BatchCategoryRequest,
     BatchCategoryResponse,
+    BatchReadinessRequest,
+    BatchReadinessResponse,
     TestCaseCloneRequest,
 )
 from app.crud import test_case as crud
 from app.crud import test_category as category_crud
 
 router = APIRouter()
+
+
+def _coerce_readiness_status(value) -> ReadinessStatus:
+    """Normalize readiness to a valid enum; default draft for missing/invalid."""
+    if isinstance(value, ReadinessStatus):
+        return value
+    if isinstance(value, str):
+        try:
+            return ReadinessStatus(value)
+        except ValueError:
+            return ReadinessStatus.DRAFT
+    return ReadinessStatus.DRAFT
 
 
 def sanitize_test_case_for_response(test_case):
@@ -47,6 +61,9 @@ def sanitize_test_case_for_response(test_case):
         'test_type': test_case.test_type,
         'priority': test_case.priority,
         'status': test_case.status,
+        'readiness_status': _coerce_readiness_status(
+            getattr(test_case, 'readiness_status', None)
+        ),
         'steps': test_case.steps,
         'expected_result': expected_result,
         'preconditions': test_case.preconditions,
@@ -160,6 +177,10 @@ def list_test_cases(
         False,
         description="When true, return only uncategorized tests (test_category_id IS NULL)",
     ),
+    readiness_status: Optional[ReadinessStatus] = Query(
+        None,
+        description="Filter by workflow readiness (draft, ready_to_test, blocked)",
+    ),
     user_id: Optional[int] = Query(None, description="Filter by user ID (admin only)"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -173,10 +194,11 @@ def list_test_cases(
     - `skip`: Number of records to skip (pagination)
     - `limit`: Maximum number of records to return (max 1000)
     - `test_type`: Filter by test type (e2e, unit, integration, api)
-    - `status`: Filter by status (pending, in_progress, passed, failed, skipped)
+    - `status`: Filter by execution status (pending, in_progress, passed, failed, skipped)
     - `priority`: Filter by priority (high, medium, low)
     - `test_category_id`: Filter by user-defined category; use `0` for uncategorized only
     - `uncategorized`: When true, return only tests without a user-defined category
+    - `readiness_status`: Filter by readiness tag (draft, ready_to_test, blocked)
     - `user_id`: Filter by user ID (requires admin role)
     
     **Response:**
@@ -207,6 +229,7 @@ def list_test_cases(
         user_id=user_id,
         test_category_id=test_category_id,
         uncategorized=uncategorized,
+        readiness_status=readiness_status,
     )
     
     # Sanitize test cases to handle empty strings in description and expected_result
@@ -383,6 +406,34 @@ def batch_assign_test_category(
         user_id=current_user.id,
     )
     return BatchCategoryResponse(updated=updated, failed=failed)
+
+
+@router.patch("/batch/readiness", response_model=BatchReadinessResponse)
+def batch_assign_readiness(
+    body: BatchReadinessRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Bulk assign readiness_status on test cases.
+
+    **Authentication Required**
+
+    **Request Body:**
+    - `test_ids`: List of test case IDs (1–100)
+    - `readiness_status`: draft | ready_to_test | blocked
+
+    **Response:**
+    - `updated`: Number of tests updated
+    - `failed`: IDs not updated (not found or not owned)
+    """
+    updated, failed = crud.batch_assign_readiness(
+        db=db,
+        test_ids=body.test_ids,
+        readiness_status=body.readiness_status,
+        user_id=current_user.id,
+    )
+    return BatchReadinessResponse(updated=updated, failed=failed)
 
 
 @router.put("/{test_case_id}", response_model=TestCaseResponse)

@@ -1,6 +1,6 @@
 # Models Package
 from app.models.user import User
-from app.models.test_case import TestCase, TestType, Priority, TestStatus
+from app.models.test_case import TestCase, TestType, Priority, TestStatus, ReadinessStatus
 from app.models.kb_document import KBDocument, KBCategory, FileType
 from app.models.test_execution import TestExecution, TestExecutionStep, ExecutionStatus, ExecutionResult
 from app.models.password_reset import PasswordResetToken
@@ -19,7 +19,7 @@ from app.models.test_category import TestCategory
 
 __all__ = [
     "User",
-    "TestCase", "TestType", "Priority", "TestStatus",
+    "TestCase", "TestType", "Priority", "TestStatus", "ReadinessStatus",
     "KBDocument", "KBCategory", "FileType",
     "TestExecution", "TestExecutionStep", "ExecutionStatus", "ExecutionResult",
     "PasswordResetToken",

@@ -57,6 +57,15 @@ DATABASE_URL (PostgreSQL 15 in docker-compose; SQLite for local dev)
 
 Cancel finalization sets `cancelled` via `crud/test_execution.cancel_execution()` (ADR-009).
 
+## Test Case Status Fields (do not conflate)
+
+| Column | Enum | Meaning |
+|---|---|---|
+| `test_cases.status` | `TestStatus` | Execution lifecycle: `pending`, `in_progress`, `passed`, `failed`, `skipped` |
+| `test_cases.readiness_status` | `ReadinessStatus` | Authoring workflow tag: `draft`, `ready_to_test`, `blocked` (default `draft`, indexed) |
+
+See ADR-010. List filter: `GET /api/v1/tests?readiness_status=`.
+
 ## Migration Notes
 
 - `run_all_migrations_auto()` runs on every server start from `app/main.py`.

@@ -5,7 +5,7 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, and_, or_
 
-from app.models.test_case import TestCase, TestType, TestStatus, Priority
+from app.models.test_case import TestCase, TestType, TestStatus, Priority, ReadinessStatus
 from app.schemas.test_case import TestCaseCreate, TestCaseUpdate
 
 
@@ -74,6 +74,7 @@ def create_test_case(db: Session, test_case: TestCaseCreate, user_id: int) -> Te
         test_type=test_case.test_type,
         priority=test_case.priority,
         status=test_case.status,
+        readiness_status=test_case.readiness_status,
         steps=test_case.steps,
         expected_result=test_case.expected_result,
         preconditions=test_case.preconditions,
@@ -124,6 +125,7 @@ def get_test_cases(
     user_id: Optional[int] = None,
     test_category_id: Optional[int] = None,
     uncategorized: bool = False,
+    readiness_status: Optional[ReadinessStatus] = None,
 ) -> tuple[List[TestCase], int]:
     """
     Get test cases with optional filtering and pagination.
@@ -133,12 +135,13 @@ def get_test_cases(
         skip: Number of records to skip
         limit: Maximum number of records to return
         test_type: Filter by test type
-        status: Filter by status
+        status: Filter by execution status
         priority: Filter by priority
         user_id: Filter by user ID
         test_category_id: Filter by user-defined category ID.
             Use 0 to filter uncategorized tests (test_category_id IS NULL).
         uncategorized: When True, filter tests with test_category_id IS NULL.
+        readiness_status: Filter by workflow readiness tag.
 
     Returns:
         Tuple of (test cases list, total count)
@@ -154,6 +157,8 @@ def get_test_cases(
         query = query.filter(TestCase.priority == priority)
     if user_id:
         query = query.filter(TestCase.user_id == user_id)
+    if readiness_status is not None:
+        query = query.filter(TestCase.readiness_status == readiness_status)
     if uncategorized or test_category_id == 0:
         query = query.filter(TestCase.test_category_id.is_(None))
     elif test_category_id is not None:
@@ -451,6 +456,7 @@ def clone_test_case(
         test_type=original.test_type,
         priority=original.priority,
         status=TestStatus.PENDING,
+        readiness_status=getattr(original, "readiness_status", None) or ReadinessStatus.DRAFT,
         steps=copy.deepcopy(original.steps) if original.steps is not None else [],
         expected_result=original.expected_result,
         preconditions=original.preconditions,
@@ -468,4 +474,38 @@ def clone_test_case(
     db.commit()
     db.refresh(cloned)
     return cloned
+
+
+def batch_assign_readiness(
+    db: Session,
+    test_ids: List[int],
+    readiness_status: ReadinessStatus,
+    user_id: int,
+) -> tuple[int, List[int]]:
+    """
+    Bulk assign readiness_status on owned test cases.
+
+    Returns:
+        Tuple of (updated_count, failed_ids)
+    """
+    updated = 0
+    failed: List[int] = []
+
+    for test_id in test_ids:
+        test_case = (
+            db.query(TestCase)
+            .filter(TestCase.id == test_id, TestCase.user_id == user_id)
+            .first()
+        )
+        if not test_case:
+            failed.append(test_id)
+            continue
+
+        test_case.readiness_status = readiness_status
+        updated += 1
+
+    if updated:
+        db.commit()
+
+    return updated, failed
 

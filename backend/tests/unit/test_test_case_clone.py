@@ -18,7 +18,7 @@ from app.api.v1.endpoints import tests as tests_module
 from app.crud import test_case as test_crud
 from app.crud import test_category as category_crud
 from app.db.base import Base
-from app.models.test_case import TestCase, TestType, Priority, TestStatus
+from app.models.test_case import TestCase, TestType, Priority, TestStatus, ReadinessStatus
 from app.models.user import User
 from app.schemas.test_category import TestCategoryCreate
 
@@ -109,6 +109,7 @@ def _make_full_test_case(
         test_type=TestType.E2E,
         priority=Priority.HIGH,
         status=status,
+        readiness_status=ReadinessStatus.READY_TO_TEST,
         steps=[{"action": "click", "selector": "#submit"}],
         expected_result="Success",
         preconditions="User logged in",
@@ -191,6 +192,7 @@ class TestCloneCRUD:
         assert cloned.requires_runtime_credentials == original.requires_runtime_credentials
         assert cloned.scenario_id == original.scenario_id
         assert cloned.template_id == original.template_id
+        assert cloned.readiness_status == original.readiness_status
 
         # Mutating clone must not affect source JSON fields
         cloned.steps.append({"action": "extra"})

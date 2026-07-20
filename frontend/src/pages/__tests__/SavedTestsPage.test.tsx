@@ -65,6 +65,7 @@ const mockTestsService = {
   deleteTest: vi.fn(),
   batchDeleteTests: vi.fn(),
   batchAssignCategory: vi.fn(),
+  batchAssignReadiness: vi.fn(),
 };
 
 vi.mock('../../services/testsService', () => ({
@@ -106,13 +107,19 @@ vi.mock('../../services/schedulesService', () => ({
 // Fixtures
 // ---------------------------------------------------------------------------
 
-const makeSavedTest = (id: number, title = `Test ${id}`) => ({
+const makeSavedTest = (
+  id: number,
+  title = `Test ${id}`,
+  extras: { readiness_status?: string; test_category_id?: number | null } = {}
+) => ({
   id,
   title,
   description: `Description ${id}`,
   test_type: 'e2e',
   priority: 'medium' as const,
   status: 'pending',
+  readiness_status: extras.readiness_status ?? 'draft',
+  test_category_id: extras.test_category_id ?? null,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-02T00:00:00Z',
 });
@@ -323,5 +330,109 @@ describe('SavedTestsPage — batch delete (Sprint 10.5)', () => {
 
     expect(await screen.findByText('Unable to load test for editing.')).toBeInTheDocument();
     expect(mockSetSearchParams).toHaveBeenCalledWith(expect.any(URLSearchParams), { replace: true });
+  });
+});
+
+describe('SavedTestsPage — readiness status (Feature 4)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSearchParams = new URLSearchParams();
+    mockTestsService.getAllTests.mockResolvedValue([
+      makeSavedTest(1, 'Draft One', { readiness_status: 'draft', test_category_id: 10 }),
+      makeSavedTest(2, 'Ready Two', { readiness_status: 'ready_to_test', test_category_id: 10 }),
+      makeSavedTest(3, 'Blocked Three', { readiness_status: 'blocked', test_category_id: 20 }),
+    ]);
+    mockTestsService.getTestById.mockResolvedValue({
+      id: 1,
+      title: 'Draft One',
+      description: 'Description 1',
+      steps: ['step 1'],
+      expected_result: 'done',
+      priority: 'medium',
+      requires_runtime_credentials: false,
+      test_category_id: 10,
+      readiness_status: 'draft',
+    });
+    mockTestsService.updateTest.mockResolvedValue({});
+    mockTestsService.batchAssignReadiness.mockResolvedValue({ updated: 1, failed: [] });
+    mockTestCategoriesService.getAll.mockResolvedValue(TEST_CATEGORIES);
+    mockSchedulesService.listAll.mockResolvedValue([]);
+  });
+
+  it('filters to Ready to Test only', async () => {
+    const user = userEvent.setup();
+    await renderPage();
+
+    await user.selectOptions(screen.getByTestId('saved-tests-readiness-filter'), 'ready_to_test');
+
+    expect(screen.getByText('Ready Two')).toBeInTheDocument();
+    expect(screen.queryByText('Draft One')).not.toBeInTheDocument();
+    expect(screen.queryByText('Blocked Three')).not.toBeInTheDocument();
+  });
+
+  it('ANDs readiness filter with category filter', async () => {
+    const user = userEvent.setup();
+    await renderPage();
+
+    await user.selectOptions(screen.getByTestId('saved-tests-readiness-filter'), 'draft');
+    await user.selectOptions(screen.getByTestId('saved-tests-category-filter'), '10');
+
+    expect(screen.getByText('Draft One')).toBeInTheDocument();
+    expect(screen.queryByText('Ready Two')).not.toBeInTheDocument();
+    expect(screen.queryByText('Blocked Three')).not.toBeInTheDocument();
+  });
+
+  it('row readiness change calls updateTest', async () => {
+    const user = userEvent.setup();
+    await renderPage();
+
+    await user.selectOptions(screen.getByTestId('row-readiness-select-1'), 'ready_to_test');
+
+    expect(mockTestsService.updateTest).toHaveBeenCalledWith('1', {
+      readiness_status: 'ready_to_test',
+    });
+  });
+
+  it('failed row readiness update reverts prior value', async () => {
+    const user = userEvent.setup();
+    mockTestsService.updateTest.mockRejectedValueOnce(new Error('network fail'));
+    await renderPage();
+
+    const select = screen.getByTestId('row-readiness-select-1') as HTMLSelectElement;
+    expect(select.value).toBe('draft');
+
+    await user.selectOptions(select, 'blocked');
+
+    await vi.waitFor(() => {
+      expect(select.value).toBe('draft');
+    });
+    expect(screen.getByText('network fail')).toBeInTheDocument();
+  });
+
+  it('edit drawer save includes readiness_status', async () => {
+    mockSearchParams = new URLSearchParams('edit=1');
+    mockTestsService.updateTest.mockResolvedValue({});
+    const user = userEvent.setup();
+    const { SavedTestsPage } = await import('../SavedTestsPage');
+    render(<SavedTestsPage />);
+
+    expect(await screen.findByText('Edit Test Case')).toBeInTheDocument();
+    await user.selectOptions(screen.getByTestId('saved-edit-readiness-select'), 'blocked');
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    await vi.waitFor(() => {
+      expect(mockTestsService.updateTest).toHaveBeenCalled();
+    });
+    const payload = mockTestsService.updateTest.mock.calls[0][1];
+    expect(payload.readiness_status).toBe('blocked');
+  });
+
+  it('bulk set readiness calls batchAssignReadiness', async () => {
+    const user = userEvent.setup();
+    await renderPage();
+    await user.click(screen.getByTestId('row-checkbox-1'));
+    await user.selectOptions(screen.getByTestId('set-readiness-button'), 'ready_to_test');
+
+    expect(mockTestsService.batchAssignReadiness).toHaveBeenCalledWith([1], 'ready_to_test');
   });
 });

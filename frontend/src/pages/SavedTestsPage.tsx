@@ -12,6 +12,28 @@ import schedulesService, { type TestSchedule, type CreateSchedulePayload } from 
 import { GeneratedTestCase, TestCategory } from '../types/api';
 import { Loader2, Plus, Search, Trash2, Play, Eye, Edit, Copy, Clock, FolderOpen, ChevronDown } from 'lucide-react';
 
+type ReadinessStatus = 'draft' | 'ready_to_test' | 'blocked';
+
+const READINESS_LABELS: Record<ReadinessStatus, string> = {
+  draft: 'Draft',
+  ready_to_test: 'Ready to Test',
+  blocked: 'Blocked',
+};
+
+const READINESS_OPTIONS: ReadinessStatus[] = ['draft', 'ready_to_test', 'blocked'];
+
+function getReadinessColor(status: ReadinessStatus): string {
+  switch (status) {
+    case 'ready_to_test':
+      return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+    case 'blocked':
+      return 'bg-amber-100 text-amber-800 border-amber-200';
+    case 'draft':
+    default:
+      return 'bg-gray-100 text-gray-700 border-gray-200';
+  }
+}
+
 interface SavedTest {
   id: number;
   title: string;
@@ -19,6 +41,7 @@ interface SavedTest {
   test_type: string;
   priority: 'high' | 'medium' | 'low';
   status: string;
+  readiness_status?: ReadinessStatus;
   created_at: string;
   updated_at: string;
   test_category_id?: number | null;
@@ -40,6 +63,7 @@ export const SavedTestsPage: React.FC = () => {
   const [filterType, setFilterType] = useState('all');
   const [filterPriority, setFilterPriority] = useState('all');
   const [filterScheduled, setFilterScheduled] = useState('all');
+  const [filterReadiness, setFilterReadiness] = useState<'all' | ReadinessStatus>('all');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [batchDeleting, setBatchDeleting] = useState(false);
@@ -50,6 +74,7 @@ export const SavedTestsPage: React.FC = () => {
   const [categoryLoading, setCategoryLoading] = useState(false);
   const [categoryActionLoading, setCategoryActionLoading] = useState(false);
   const [bulkCategorySelection, setBulkCategorySelection] = useState('unchanged');
+  const [bulkReadinessSelection, setBulkReadinessSelection] = useState('unchanged');
   const [categoryFormError, setCategoryFormError] = useState<string | null>(null);
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
   const [categoryForm, setCategoryForm] = useState({
@@ -70,6 +95,7 @@ export const SavedTestsPage: React.FC = () => {
     priority: 'medium' as 'high' | 'medium' | 'low',
     requires_runtime_credentials: false,
     test_category_id: null as number | null,
+    readiness_status: 'draft' as ReadinessStatus,
   });
 
   const [scheduleTarget, setScheduleTarget] = useState<{ id: number; title: string } | null>(null);
@@ -174,6 +200,9 @@ export const SavedTestsPage: React.FC = () => {
         requires_runtime_credentials:
           (test as { requires_runtime_credentials?: boolean }).requires_runtime_credentials ?? false,
         test_category_id: (test as { test_category_id?: number | null }).test_category_id ?? null,
+        readiness_status:
+          ((test as { readiness_status?: ReadinessStatus }).readiness_status as ReadinessStatus) ||
+          'draft',
       });
     } catch (err) {
       console.error('Failed to load test:', err);
@@ -205,6 +234,7 @@ export const SavedTestsPage: React.FC = () => {
         expected_result: editForm.expected_result,
         requires_runtime_credentials: editForm.requires_runtime_credentials,
         test_category_id: editForm.test_category_id,
+        readiness_status: editForm.readiness_status,
       });
 
       setTests((prev) =>
@@ -217,6 +247,7 @@ export const SavedTestsPage: React.FC = () => {
                 priority: editForm.priority,
                 test_category_id: editForm.test_category_id,
                 requires_runtime_credentials: editForm.requires_runtime_credentials,
+                readiness_status: editForm.readiness_status,
               }
             : t
         )
@@ -242,12 +273,6 @@ export const SavedTestsPage: React.FC = () => {
     setTests((prev) =>
       prev.map((t) => (t.id === testId ? { ...t, title: newTitle } : t))
     );
-  };
-
-  const getCategoryName = (value: 'all' | 'uncategorized' | number): string => {
-    if (value === 'all') return 'All';
-    if (value === 'uncategorized') return 'Uncategorized';
-    return categories.find((cat) => cat.id === value)?.name || 'Unknown';
   };
 
   const openCreateCategoryModal = () => {
@@ -334,6 +359,59 @@ export const SavedTestsPage: React.FC = () => {
       setSelectedIds(new Set());
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to update category');
+    }
+  };
+
+  const handleAssignReadiness = async (testIds: number[], readiness: ReadinessStatus) => {
+    if (testIds.length === 0) return;
+    const previous = new Map(
+      tests
+        .filter((t) => testIds.includes(t.id))
+        .map((t) => [t.id, (t.readiness_status || 'draft') as ReadinessStatus])
+    );
+    setTests((prev) =>
+      prev.map((t) => (testIds.includes(t.id) ? { ...t, readiness_status: readiness } : t))
+    );
+    try {
+      const result = await testsService.batchAssignReadiness(testIds, readiness);
+      if (result.failed.length > 0) {
+        setTests((prev) =>
+          prev.map((t) =>
+            result.failed.includes(t.id)
+              ? { ...t, readiness_status: previous.get(t.id) || 'draft' }
+              : t
+          )
+        );
+        alert(`${result.updated} test(s) updated. ${result.failed.length} could not be updated.`);
+      }
+      setSelectedIds(new Set());
+    } catch (err) {
+      setTests((prev) =>
+        prev.map((t) =>
+          testIds.includes(t.id)
+            ? { ...t, readiness_status: previous.get(t.id) || 'draft' }
+            : t
+        )
+      );
+      alert(err instanceof Error ? err.message : 'Failed to update readiness');
+    }
+  };
+
+  const handleRowReadinessChange = async (testId: number, readiness: ReadinessStatus) => {
+    const previous =
+      (tests.find((t) => t.id === testId)?.readiness_status as ReadinessStatus) || 'draft';
+    setTests((prev) =>
+      prev.map((t) => (t.id === testId ? { ...t, readiness_status: readiness } : t))
+    );
+    try {
+      await testsService.updateTest(String(testId), { readiness_status: readiness });
+    } catch (err) {
+      setTests((prev) =>
+        prev.map((t) => (t.id === testId ? { ...t, readiness_status: previous } : t))
+      );
+      setPageNotice(
+        err instanceof Error ? err.message : 'Failed to update readiness status'
+      );
     }
   };
 
@@ -552,7 +630,16 @@ export const SavedTestsPage: React.FC = () => {
       activeCategoryFilter === 'all' ||
       (activeCategoryFilter === 'uncategorized' && !test.test_category_id) ||
       (typeof activeCategoryFilter === 'number' && test.test_category_id === activeCategoryFilter);
-    return matchesSearch && matchesType && matchesPriority && matchesScheduled && matchesCategory;
+    const readiness = (test.readiness_status || 'draft') as ReadinessStatus;
+    const matchesReadiness = filterReadiness === 'all' || readiness === filterReadiness;
+    return (
+      matchesSearch &&
+      matchesType &&
+      matchesPriority &&
+      matchesScheduled &&
+      matchesCategory &&
+      matchesReadiness
+    );
   });
 
   const uncategorizedCount = tests.filter((test) => !test.test_category_id).length;
@@ -675,7 +762,7 @@ export const SavedTestsPage: React.FC = () => {
 
           <div className="space-y-6">
             <Card>
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4">
             <div className="md:col-span-1">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Search Tests
@@ -764,6 +851,29 @@ export const SavedTestsPage: React.FC = () => {
                 ))}
               </select>
             </div>
+
+            <div>
+              <label
+                htmlFor="saved-tests-readiness-filter"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
+                Readiness
+              </label>
+              <select
+                id="saved-tests-readiness-filter"
+                value={filterReadiness}
+                onChange={(e) =>
+                  setFilterReadiness(e.target.value as 'all' | ReadinessStatus)
+                }
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                data-testid="saved-tests-readiness-filter"
+              >
+                <option value="all">All</option>
+                <option value="ready_to_test">Ready to Test</option>
+                <option value="draft">Draft</option>
+                <option value="blocked">Blocked</option>
+              </select>
+            </div>
           </div>
             </Card>
 
@@ -807,6 +917,28 @@ export const SavedTestsPage: React.FC = () => {
               </select>
               <ChevronDown className="w-4 h-4 text-gray-400 -ml-7 pointer-events-none" />
             </div>
+            <div className="flex items-center gap-2">
+              <select
+                value={bulkReadinessSelection}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setBulkReadinessSelection(value);
+                  if (value === 'unchanged') return;
+                  void handleAssignReadiness([...selectedIds], value as ReadinessStatus);
+                  setBulkReadinessSelection('unchanged');
+                }}
+                disabled={selectedIds.size === 0 || batchDeleting}
+                data-testid="set-readiness-button"
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+              >
+                <option value="unchanged">Set Readiness ({selectedIds.size})</option>
+                {READINESS_OPTIONS.map((value) => (
+                  <option key={value} value={value}>
+                    {READINESS_LABELS[value]}
+                  </option>
+                ))}
+              </select>
+            </div>
             <Button
               variant="danger"
               disabled={selectedIds.size === 0 || batchDeleting}
@@ -839,7 +971,7 @@ export const SavedTestsPage: React.FC = () => {
               >
                 {tests.length === 0
                   ? 'No saved tests yet. Generate some tests to get started!'
-                  : `No tests match your filters in ${getCategoryName(activeCategoryFilter)}.`}
+                  : 'No tests match your filters.'}
               </p>
               {tests.length === 0 && (
                 <Button variant="primary" onClick={() => navigate('/tests')}>
@@ -914,6 +1046,26 @@ export const SavedTestsPage: React.FC = () => {
                         {categories.map((category) => (
                           <option key={category.id} value={category.id}>
                             {category.name}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={(test.readiness_status || 'draft') as ReadinessStatus}
+                        onChange={(e) => {
+                          void handleRowReadinessChange(
+                            test.id,
+                            e.target.value as ReadinessStatus
+                          );
+                        }}
+                        className={`px-2 py-1 rounded-full text-xs font-medium border ${getReadinessColor(
+                          (test.readiness_status || 'draft') as ReadinessStatus
+                        )}`}
+                        aria-label={`Readiness for ${test.title}`}
+                        data-testid={`row-readiness-select-${test.id}`}
+                      >
+                        {READINESS_OPTIONS.map((value) => (
+                          <option key={value} value={value}>
+                            {READINESS_LABELS[value]}
                           </option>
                         ))}
                       </select>
@@ -1086,6 +1238,33 @@ export const SavedTestsPage: React.FC = () => {
                       {categories.map((category) => (
                         <option key={category.id} value={category.id}>
                           {category.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="saved-edit-readiness"
+                      className="block text-sm font-semibold text-gray-900 mb-2"
+                    >
+                      Readiness
+                    </label>
+                    <select
+                      id="saved-edit-readiness"
+                      value={editForm.readiness_status}
+                      onChange={(e) =>
+                        setEditForm({
+                          ...editForm,
+                          readiness_status: e.target.value as ReadinessStatus,
+                        })
+                      }
+                      className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-blue-700 bg-white"
+                      data-testid="saved-edit-readiness-select"
+                    >
+                      {READINESS_OPTIONS.map((value) => (
+                        <option key={value} value={value}>
+                          {READINESS_LABELS[value]}
                         </option>
                       ))}
                     </select>

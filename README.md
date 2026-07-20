@@ -102,7 +102,7 @@ python start_server.py
 
 **Verify Backend:**
 - Open API docs: http://127.0.0.1:8000/docs
-- Default login: admin@aiwebtest.com / admin123
+- Default login: admin / admin123
 
 ### Phase 3 Development Setup (Additional)
 
