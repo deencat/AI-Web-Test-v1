@@ -89,6 +89,9 @@ backend/*.sqlite3
 # ✅ seed_test_cases.json (seed data - shared via Git)
 # ✅ run_migrations.py (migration runner - shared via Git)
 
+# GAN harness — ephemeral evaluator outputs (regeneratable; commit eval-report*.md instead)
+gan-harness/_eval_artifacts/
+
 # Test artifacts and screenshots
 backend/artifacts/
 backend/artifacts/screenshots/

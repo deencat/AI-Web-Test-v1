@@ -2078,7 +2078,9 @@ class ExecutionService:
             return True
 
         # Exclude plan/price selection clicks (e.g. "Select the $288/month plan")
-        if re.search(r"\$\d+|/\s*month|\bthe\s+\$|\bavailable\s+plans\b", desc_lower):
+        # These price strings are often embedded like: "$228 / 36 month plan".
+        # We avoid treating them as dropdown/select instructions.
+        if re.search(r"\$\s*\d+|/\s*(?:\d+\s*)?month\b|\bthe\s+\$\s*|\bavailable\s+plans\b", desc_lower):
             return False
 
         # Terse phrasing: select <field> '<value>'

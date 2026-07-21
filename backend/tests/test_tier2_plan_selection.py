@@ -940,6 +940,14 @@ class TestThreeHkPromotionCardDirectClick:
             action="click",
         ) is True
 
+    def test_is_three_hk_promotion_card_click_true_for_price_only_plan_step(self):
+        """Regression: price-only steps must not be blocked by empty text-variant extraction."""
+        assert self.executor._is_three_hk_promotion_card_click(
+            page_url="https://wwwuat.three.com.hk/DTPPD/postpaid/preprod4/en",
+            instruction="Click $228 / 36 month plan",
+            action="click",
+        ) is True
+
     def test_three_hk_footer_shows_empty_cart(self):
         assert self.executor._three_hk_footer_shows_empty_cart("$ 0") is True
         assert self.executor._three_hk_footer_shows_empty_cart("$0") is True

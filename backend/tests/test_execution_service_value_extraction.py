@@ -59,6 +59,9 @@ class TestExecutionServiceValueExtraction:
             ("select area 'Hong Kong'", True),
             ("Select area 'New Territories'", True),
             ("Select the $288/month plan", False),
+            ("Click $228 / 36 month plan", False),
+            ("Select $228 as the plan price from the Plan dropdown", True),
+            ("Select contract '36 months'", True),
             ("Click the dropdown arrow", False),
         ],
     )

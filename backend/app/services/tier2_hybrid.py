@@ -1229,7 +1229,13 @@ class Tier2HybridExecutor:
         )
 
     def _extract_three_hk_promotion_text_variants(self, instruction: str) -> tuple[str, ...]:
-        """Extract narrow text variants for plan-name promotion steps like 'wifi7 plan'."""
+        """Extract narrow text variants for plan-name promotion steps.
+
+        Historically we only returned wifi6/wifi7 variants, which made price-only
+        steps like "Click $228 / 36 month plan" produce an empty variant list.
+        That emptiness prevented the direct promotion-card click handler from
+        running (guard requires bool(text_variants)).
+        """
         instruction_lower = (instruction or "").lower()
         variants = []
 
@@ -1238,6 +1244,13 @@ class Tier2HybridExecutor:
 
         if re.search(r"\b(?:wifi|wi\s*-?\s*fi)\s*-?\s*7\b", instruction_lower):
             variants.extend(["wifi7", "wifi 7", "wi-fi 7"])
+
+        # Fallback: for price-only plan steps, still return a non-empty list.
+        # Price matching is handled separately by _extract_plan_price().
+        if not variants and "plan" in instruction_lower:
+            variants.append("plan")
+            if "monthly plan" in instruction_lower:
+                variants.append("monthly plan")
 
         return tuple(dict.fromkeys(variants))
 
